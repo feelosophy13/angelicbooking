@@ -1,5 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { openSaleForAppointment } from "@/server/sales";
 import { z } from "zod";
 import { schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
@@ -85,4 +87,17 @@ export async function removeService(formData: FormData) {
   await removeServiceFromAppointment({ businessId: ctx.business.id, itemId: d.itemId, actorUserId: ctx.user.id });
   revalidatePath(`/app/${d.slug}/appointments/${d.appointmentId}`);
   revalidatePath(`/app/${d.slug}`);
+}
+
+export async function startCheckout(formData: FormData) {
+  const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
+  const ctx = await requireAction(slug, "checkout.take");
+  const saleId = await openSaleForAppointment({
+    businessId: ctx.business.id,
+    appointmentId,
+    actorUserId: ctx.user.id,
+    taxRateBps: ctx.business.taxRateBps,
+    currency: ctx.business.currency,
+  });
+  redirect(`/app/${slug}/sales/${saleId}`);
 }

@@ -281,13 +281,35 @@ custom domains, marketing (campaigns, review requests), data import from Vagaro 
 - Staff: weekly hours, service assignment, days off / custom hours per date, invitations.
 - Services, clients with search, business settings, activity (audit) log viewer.
 
-**Next — Phase 2: payments (see §4.2)**
-1. Stripe Connect onboarding (Standard accounts) from Settings → Payments; store account id,
-   charges_enabled, details_submitted; Connect webhook endpoint with idempotent processing.
-2. Checkout from the appointment page: services + products + tip + discount, card on file
-   (SetupIntent on the connected account), card present via Stripe Terminal, cash, split.
-3. Receipts, refunds, `sales` / `sale_lines` / `payments` tables, daily sales report.
-4. Deposits and no-show fees using saved payment methods.
+**Done — Phase 2: payments (2026-10-06)**
+- Stripe Connect with **Standard** accounts: Settings → Payments starts hosted onboarding,
+  stores the account id and syncs `charges_enabled` / `details_submitted` on return and via
+  the `account.updated` webhook. Each business is paid directly on its own account.
+- One Connect webhook endpoint (`/api/stripe/webhook`) with signature verification and an
+  idempotent `webhook_events` ledger; handles payment succeeded/failed and account updates.
+- Checkout: an appointment opens a numbered sale seeded with its services; add retail
+  products (taxable, with staff credit), $/% discounts, per-provider tips or a ticket tip
+  split by service revenue, sales tax on taxable lines; split payments until the balance is
+  zero. Paying in full marks the appointment completed.
+- Payment methods: cash / other; new card via Stripe Payment Element scoped to the
+  connected account (optionally saved to the client's Stripe Customer on that account);
+  saved card charged off-session. Optional platform fee via `PLATFORM_FEE_BPS`.
+- Refunds (full or partial, Stripe or cash), void, printable receipt, and a Sales report
+  (by staff, by payment method, closed sales) for any date range.
+- Pure pricing math in `packages/core/pricing.ts` with unit tests (totals, proportional
+  discount before tax, tip allocation, money parsing).
+
+**Verified locally without Stripe keys:** product → checkout → discount → tip → two cash
+payments → paid, appointment completed, report totals correct. Stripe paths are implemented
+and typechecked but need real test keys to exercise (see `.env.example`).
+
+**Next — Phase 3: online booking & notifications**
+1. Public booking page at `/book/[slug]`: service → staff → time → client details → confirm,
+   with deposit / card-on-file capture via SetupIntent when the service requires it.
+2. Resend + React Email for confirmations, invitations and receipts; Twilio SMS reminders
+   with two-way confirm; background jobs via Inngest.
+3. Cancellation / reschedule links for clients; waitlist; no-show fee charging from the
+   appointment page using the saved card.
 
 **Deferred polish**
 - Email delivery (Resend) for invitations and, in Phase 3, client notifications.

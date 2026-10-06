@@ -33,10 +33,13 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
         </Card>
         <Card className="p-4">
           <h2 className="mb-1 font-medium">Payments</h2>
-          <p className="text-sm text-stone-600">
-            Stripe Connect onboarding arrives in Phase 2. Each business will connect its own Stripe account here; payments go
-            directly to it.
+          <p className="mb-3 text-sm text-stone-600">
+            Connect your own Stripe account to take card payments, save cards on file and charge no-show fees. Payments go
+            directly to you.
           </p>
+          <Link href={`/app/${slug}/settings/payments`} className="text-sm text-brand-700 underline">
+            {business.stripeChargesEnabled ? "Stripe connected · manage →" : "Set up payments →"}
+          </Link>
           <p className="mt-3 text-xs text-stone-500">Booking URL (Phase 3): /book/{business.slug}</p>
         </Card>
         <Card className="p-4">

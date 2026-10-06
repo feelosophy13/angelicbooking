@@ -62,6 +62,8 @@ export const businesses = pgTable("businesses", {
   stripeAccountId: text("stripe_account_id").unique(),
   stripeChargesEnabled: boolean("stripe_charges_enabled").notNull().default(false),
   stripeDetailsSubmitted: boolean("stripe_details_submitted").notNull().default(false),
+  // Sales tax applied to taxable lines, in basis points (825 = 8.25%).
+  taxRateBps: integer("tax_rate_bps").notNull().default(0),
   // Platform billing
   plan: text("plan").notNull().default("trial"),
   createdAt: createdAt(),
@@ -313,4 +315,9 @@ export const TENANT_TABLES = [
   "appointments",
   "appointment_items",
   "audit_log",
+  "products",
+  "sales",
+  "sale_lines",
+  "payments",
+  "refunds",
 ] as const;

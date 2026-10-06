@@ -29,6 +29,20 @@
       "when": 1791256666805,
       "tag": "0003_deferrable_exclusion",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791322511134,
+      "tag": "0004_sales",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791322511451,
+      "tag": "0005_sales_rls",
+      "breakpoints": true
     }
   ]
 }

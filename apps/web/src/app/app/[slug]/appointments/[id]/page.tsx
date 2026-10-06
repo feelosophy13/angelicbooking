@@ -6,7 +6,9 @@ import { getAppointmentDetail } from "@/server/appointments";
 import { getStaffAvailability, timingFor } from "@/server/availability";
 import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
-import { addService, changeStatus, moveService, removeService, saveNotes } from "./actions";
+import { addService, changeStatus, moveService, removeService, saveNotes, startCheckout } from "./actions";
+import { eq } from "drizzle-orm";
+import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -34,6 +36,7 @@ export default async function AppointmentPage({
   const data = await getAppointmentDetail(business.id, id);
   if (!data) notFound();
   const { appointment, items, client, services, staff } = data;
+  const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: eq(schema.sales.appointmentId, id) }));
   const tz = business.timezone;
   const live = items.filter((i) => i.status !== "cancelled");
   const first = live[0] ?? items[0];
@@ -205,6 +208,23 @@ export default async function AppointmentPage({
         </div>
 
         <div className="space-y-6">
+          <Card className="p-4">
+            <h2 className="mb-2 font-medium">Checkout</h2>
+            {existingSale ? (
+              <Link href={`/app/${slug}/sales/${existingSale.id}`} className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700">
+                {existingSale.status === "open" ? `Continue checkout (#${existingSale.number})` : `View sale #${existingSale.number}`}
+              </Link>
+            ) : appointment.status !== "cancelled" ? (
+              <form action={startCheckout}>
+                <input type="hidden" name="slug" value={slug} />
+                <input type="hidden" name="appointmentId" value={id} />
+                <Button type="submit" className="w-full">Check out · {formatMoney(total, business.currency)}</Button>
+              </form>
+            ) : (
+              <p className="text-sm text-stone-500">Cancelled appointments can&apos;t be checked out.</p>
+            )}
+          </Card>
+
           <Card className="p-4">
             <h2 className="mb-3 font-medium">Status</h2>
             <form action={changeStatus} className="flex flex-wrap gap-1.5">
