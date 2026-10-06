@@ -1,0 +1,18 @@
+{
+  "name": "angelic-booking",
+  "private": true,
+  "packageManager": "pnpm@12.9.1",
+  "scripts": {
+    "dev": "pnpm --filter @angelic/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @angelic/db generate",
+    "db:migrate": "pnpm --filter @angelic/db migrate",
+    "db:seed": "pnpm --filter @angelic/db seed",
+    "db:studio": "pnpm --filter @angelic/db studio"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
