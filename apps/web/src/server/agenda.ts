@@ -16,9 +16,10 @@ export type AgendaItem = {
   notes: string | null;
 };
 
-export async function getDayAgenda(businessId: string, timeZone: string, date: string) {
-  const dayStart = zonedToInstant(date, "00:00", timeZone);
-  const dayEnd = zonedToInstant(shiftISODate(date, 1), "00:00", timeZone);
+/** Active staff plus every appointment item starting within [fromDate, fromDate + days). */
+export async function getRangeAgenda(businessId: string, timeZone: string, fromDate: string, days: number) {
+  const rangeStart = zonedToInstant(fromDate, "00:00", timeZone);
+  const rangeEnd = zonedToInstant(shiftISODate(fromDate, days), "00:00", timeZone);
   return withTenant(businessId, async (tx) => {
     const [staffRows, items] = await Promise.all([
       tx.select().from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
@@ -39,7 +40,7 @@ export async function getDayAgenda(businessId: string, timeZone: string, date: s
         .from(schema.appointmentItems)
         .innerJoin(schema.appointments, eq(schema.appointments.id, schema.appointmentItems.appointmentId))
         .leftJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
-        .where(and(gte(schema.appointmentItems.startAt, dayStart), lt(schema.appointmentItems.startAt, dayEnd)))
+        .where(and(gte(schema.appointmentItems.startAt, rangeStart), lt(schema.appointmentItems.startAt, rangeEnd)))
         .orderBy(asc(schema.appointmentItems.startAt)),
     ]);
     const agenda: AgendaItem[] = items.map((i) => ({
@@ -49,3 +50,5 @@ export async function getDayAgenda(businessId: string, timeZone: string, date: s
     return { staff: staffRows, items: agenda };
   });
 }
+
+export const getDayAgenda = (businessId: string, timeZone: string, date: string) => getRangeAgenda(businessId, timeZone, date, 1);

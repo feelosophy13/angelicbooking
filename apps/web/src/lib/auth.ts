@@ -1,9 +1,22 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins";
+import { createAccessControl } from "better-auth/plugins/access";
+import { adminAc, defaultStatements, memberAc, ownerAc } from "better-auth/plugins/organization/access";
 import { nextCookies } from "better-auth/next-js";
+import { eq, and, isNull } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
+
+// Organization-management permissions (invite/remove members etc.) per role.
+// Business-level permissions live in @angelic/core `can()`.
+const ac = createAccessControl(defaultStatements);
+export const orgRoles = {
+  owner: ac.newRole(ownerAc.statements),
+  manager: ac.newRole(adminAc.statements),
+  provider: ac.newRole(memberAc.statements),
+  front_desk: ac.newRole(memberAc.statements),
+};
 
 /**
  * Better Auth owns users, sessions, organizations and memberships.
@@ -31,9 +44,40 @@ export const auth = betterAuth({
   },
   plugins: [
     organization({
+      ac,
+      roles: orgRoles,
       creatorRole: "owner",
       organizationLimit: 5,
+      invitationExpiresIn: 60 * 60 * 24 * 7,
       organizationHooks: {
+        // When an invitee joins, attach them to the staff row created for their
+        // email (or create one) so they appear on the calendar.
+        afterAcceptInvitation: async ({ invitation, user, organization: org }) => {
+          await db.transaction(async (tx) => {
+            await tx.execute(sql`select set_config('app.business_id', ${org.id}, true)`);
+            const existing = await tx.query.staff.findFirst({
+              where: and(eq(schema.staff.email, invitation.email.toLowerCase()), isNull(schema.staff.userId)),
+            });
+            if (existing) {
+              const placeholder = existing.displayName === invitation.email.split("@")[0];
+              await tx
+                .update(schema.staff)
+                .set({ userId: user.id, displayName: placeholder ? user.name : existing.displayName })
+                .where(eq(schema.staff.id, existing.id));
+            } else {
+              const already = await tx.query.staff.findFirst({ where: eq(schema.staff.userId, user.id) });
+              if (!already) {
+                await tx.insert(schema.staff).values({
+                  businessId: org.id,
+                  userId: user.id,
+                  displayName: user.name,
+                  email: user.email,
+                  bookableOnline: invitation.role === "provider",
+                });
+              }
+            }
+          });
+        },
         afterCreateOrganization: async ({ organization: org, user }) => {
           const meta = safeParse(org.metadata);
           await db.transaction(async (tx) => {

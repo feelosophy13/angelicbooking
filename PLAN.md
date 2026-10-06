@@ -262,22 +262,33 @@ custom domains, marketing (campaigns, review requests), data import from Vagaro 
 
 ## 8. Status (updated 2026-10-05)
 
-**Done — Phase 0 and the first slice of Phase 1**
-- pnpm monorepo: `apps/web` (Next.js 16), `packages/core` (pure logic, 15 unit tests), `packages/db` (Drizzle).
+**Done — Phase 0 and Phase 1**
+- pnpm monorepo: `apps/web` (Next.js 16), `packages/core` (pure logic, 15 unit tests), `packages/db` (Drizzle, 5 DB integration tests).
 - Postgres schema with forced Row-Level Security on every tenant table, a dedicated
-  non-superuser app role, and a GiST exclusion constraint preventing double booking.
-  Verified with SQL tests as the app role.
-- Better Auth with email/password and organizations; organization = tenant.
-  Creating a business also creates its default location, the owner's staff row and hours.
-- Staff dashboard: calendar day view with status changes, staff + weekly hours +
-  service assignment, services with processing/finish/buffer time, clients with search,
-  settings, and a booking flow driven by the availability engine.
-- Verified in the browser: sign up → onboarding → add services → set hours → add client →
-  book a colour service → calendar shows active + finish blocks with a free processing gap.
+  non-superuser app role, and a deferrable GiST exclusion constraint preventing double
+  booking. Isolation and conflict behaviour are covered by `packages/db` integration tests
+  that run as the app role.
+- Better Auth with email/password, organizations and custom roles (owner, manager,
+  provider, front desk). Organization = tenant. Creating a business also creates its
+  default location, the owner's staff row and hours. Invitations produce a shareable link
+  (no email provider yet); accepting one links the invitee to their staff row.
+- Calendar: day view (columns per staff) and week view (columns per day, optional staff
+  filter), drag-to-reschedule across time and staff with DB-enforced conflict rejection,
+  click-through to the appointment page.
+- Appointment page: status flow, cancellation with reason, notes, add a second service
+  (slots after the current booking listed first), move a service to another time/staff,
+  remove a service. Processing-time services stay as active + finish segments.
+- Staff: weekly hours, service assignment, days off / custom hours per date, invitations.
+- Services, clients with search, business settings, activity (audit) log viewer.
 
-**Next (Phase 1 remainder)**
-- Week view and drag-to-reschedule; multi-service appointments; appointment detail page.
-- Schedule overrides / time off UI; invite staff by email (Better Auth invitations).
-- Audit log viewer; Vitest integration tests for `withTenant` isolation.
+**Next — Phase 2: payments (see §4.2)**
+1. Stripe Connect onboarding (Standard accounts) from Settings → Payments; store account id,
+   charges_enabled, details_submitted; Connect webhook endpoint with idempotent processing.
+2. Checkout from the appointment page: services + products + tip + discount, card on file
+   (SetupIntent on the connected account), card present via Stripe Terminal, cash, split.
+3. Receipts, refunds, `sales` / `sale_lines` / `payments` tables, daily sales report.
+4. Deposits and no-show fees using saved payment methods.
 
-**Then Phase 2** — Stripe Connect onboarding and checkout (see §4.2).
+**Deferred polish**
+- Email delivery (Resend) for invitations and, in Phase 3, client notifications.
+- Mobile layout pass on the calendar; keyboard accessibility for drag-to-reschedule.

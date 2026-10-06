@@ -2,7 +2,9 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { headers } from "next/headers";
 import { schema, withTenant } from "@angelic/db";
+import { auth } from "@/lib/auth";
 import { requireAction } from "@/lib/tenant";
 
 const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -80,4 +82,111 @@ export async function saveStaffServices(formData: FormData) {
     }
   });
   revalidatePath(`/app/${slug}/staff/${staffId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Days off / custom hours
+// ---------------------------------------------------------------------------
+const overrideSchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    kind: z.enum(["off", "hours"]),
+    start: z.string().regex(timeRe).optional().or(z.literal("")),
+    end: z.string().regex(timeRe).optional().or(z.literal("")),
+    note: z.string().trim().max(200).optional(),
+  })
+  .refine((o) => o.kind === "off" || (o.start && o.end && o.start < o.end), { message: "Custom hours need a start before the end." });
+
+export async function addOverride(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const staffId = String(formData.get("staffId"));
+  const ctx = await requireAction(slug, "staff.manage");
+  const o = overrideSchema.parse(Object.fromEntries(formData));
+  await withTenant(ctx.business.id, (tx) =>
+    tx
+      .insert(schema.staffScheduleOverrides)
+      .values({
+        businessId: ctx.business.id,
+        staffId,
+        date: o.date,
+        isOff: o.kind === "off",
+        startTime: o.kind === "hours" ? o.start! : null,
+        endTime: o.kind === "hours" ? o.end! : null,
+        note: o.note || null,
+      })
+      .onConflictDoUpdate({
+        target: [schema.staffScheduleOverrides.businessId, schema.staffScheduleOverrides.staffId, schema.staffScheduleOverrides.date],
+        set: {
+          isOff: o.kind === "off",
+          startTime: o.kind === "hours" ? o.start! : null,
+          endTime: o.kind === "hours" ? o.end! : null,
+          note: o.note || null,
+        },
+      }),
+  );
+  revalidatePath(`/app/${slug}/staff/${staffId}`);
+}
+
+export async function deleteOverride(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const staffId = String(formData.get("staffId"));
+  const overrideId = String(formData.get("overrideId"));
+  const ctx = await requireAction(slug, "staff.manage");
+  await withTenant(ctx.business.id, (tx) =>
+    tx.delete(schema.staffScheduleOverrides).where(eq(schema.staffScheduleOverrides.id, overrideId)),
+  );
+  revalidatePath(`/app/${slug}/staff/${staffId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Invitations (Better Auth). No email provider yet: we surface a copyable link.
+// ---------------------------------------------------------------------------
+export async function inviteStaff(_prev: InviteState, formData: FormData): Promise<InviteState> {
+  const slug = String(formData.get("slug"));
+  const ctx = await requireAction(slug, "members.manage");
+  const parsed = z
+    .object({
+      email: z.string().trim().toLowerCase().email(),
+      role: z.enum(["manager", "provider", "front_desk"]),
+      staffId: z.string().optional(),
+    })
+    .safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: "Enter a valid email and role." };
+  const h = await headers();
+  try {
+    const inv = await auth.api.createInvitation({
+      headers: h,
+      body: { email: parsed.data.email, role: parsed.data.role, organizationId: ctx.business.id, resend: true },
+    });
+    // Pre-create / tag the staff row so the invitee lands on the calendar once they accept.
+    await withTenant(ctx.business.id, async (tx) => {
+      const existing = await tx.query.staff.findFirst({ where: eq(schema.staff.email, parsed.data.email) });
+      if (!existing) {
+        await tx.insert(schema.staff).values({
+          businessId: ctx.business.id,
+          displayName: parsed.data.email.split("@")[0]!,
+          email: parsed.data.email,
+          bookableOnline: parsed.data.role === "provider",
+        });
+      }
+    });
+    revalidatePath(`/app/${slug}/staff`);
+    return { ok: true, link: inviteLink(inv.id) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Could not create invitation" };
+  }
+}
+
+export async function cancelInvite(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  await requireAction(slug, "members.manage");
+  const invitationId = String(formData.get("invitationId"));
+  await auth.api.cancelInvitation({ headers: await headers(), body: { invitationId } });
+  revalidatePath(`/app/${slug}/staff`);
+}
+
+export type InviteState = { error?: string; ok?: boolean; link?: string } | undefined;
+
+function inviteLink(id: string) {
+  return `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${id}`;
 }

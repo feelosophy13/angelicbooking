@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireAction } from "@/lib/tenant";
 import { TIMEZONES } from "@/lib/utils";
 import { Button, Card, Field, Input, PageHeader, Select } from "@/components/ui";
@@ -37,6 +38,11 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
             directly to it.
           </p>
           <p className="mt-3 text-xs text-stone-500">Booking URL (Phase 3): /book/{business.slug}</p>
+        </Card>
+        <Card className="p-4">
+          <h2 className="mb-1 font-medium">Activity log</h2>
+          <p className="mb-3 text-sm text-stone-600">Every booking, reschedule and status change, with who did it.</p>
+          <Link href={`/app/${slug}/settings/audit`} className="text-sm text-brand-700 underline">View activity log →</Link>
         </Card>
       </div>
     </>

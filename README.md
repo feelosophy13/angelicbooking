@@ -8,6 +8,7 @@ its own Stripe account. See [PLAN.md](PLAN.md) for the full product and technica
 ```
 apps/web          Next.js 16 app: staff dashboard, auth, (later) public booking pages
 packages/core     Pure domain logic: availability engine, time helpers, permissions. Unit-tested.
+                  (packages/db also has DB integration tests for RLS; `pnpm test` runs both.)
 packages/db       Drizzle schema, migrations, Row-Level Security, tenant-scoped query helper
 ```
 

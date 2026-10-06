@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { SignOutButton } from "./sign-out";
 import { NavLink } from "./nav-link";
@@ -18,7 +19,7 @@ export default async function AppLayout({
     { href: `${base}/clients`, label: "Clients" },
     { href: `${base}/services`, label: "Services" },
     { href: `${base}/staff`, label: "Staff" },
-    { href: `${base}/settings`, label: "Settings" },
+    ...(can(role, "business.manage") ? [{ href: `${base}/settings`, label: "Settings" }] : []),
   ];
   return (
     <div className="flex min-h-screen">
