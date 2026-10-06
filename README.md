@@ -51,3 +51,4 @@ Services with processing time create two items (active + finish) so the gap stay
 | `pnpm db:generate` | Generate a migration from schema changes |
 | `pnpm db:migrate` | Apply migrations |
 | `pnpm db:studio` | Drizzle Studio |
+| `apps/web/scripts/payroll-check.mts` | Dev check: run payroll for a slug and period, write the workbook, print the Summary tab (see file header) |

@@ -21,7 +21,9 @@ export default async function AppLayout({
     { href: `${base}/services`, label: "Services" },
     { href: `${base}/products`, label: "Products" },
     { href: `${base}/staff`, label: "Staff" },
+    { href: `${base}/time`, label: "Time clock" },
     ...(can(role, "reports.view") ? [{ href: `${base}/reports`, label: "Sales" }] : []),
+    ...(can(role, "payroll.view") ? [{ href: `${base}/payroll`, label: "Payroll" }] : []),
     ...(can(role, "business.manage") ? [{ href: `${base}/settings`, label: "Settings" }] : []),
   ];
   return (

@@ -535,6 +535,27 @@ export async function salesReport(businessId: string, from: Date, to: Date) {
         .where(and(closed, sql`${schema.payments.status} in ('succeeded','partially_refunded','refunded')`))
         .groupBy(schema.payments.method),
     ]);
-    return { sales, byStaff, byMethod };
+    const [byService, appts] = await Promise.all([
+      tx
+        .select({
+          name: schema.saleLines.name,
+          kind: schema.saleLines.kind,
+          count: sql<number>`count(*)`,
+          amount: sql<number>`coalesce(sum(${schema.saleLines.amountCents}), 0)`,
+        })
+        .from(schema.saleLines)
+        .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
+        .where(and(closed, sql`${schema.saleLines.kind} in ('service','product')`))
+        .groupBy(schema.saleLines.name, schema.saleLines.kind)
+        .orderBy(sql`sum(${schema.saleLines.amountCents}) desc`)
+        .limit(25),
+      tx
+        .select({ status: schema.appointments.status, source: schema.appointments.source, count: sql<number>`count(*)` })
+        .from(schema.appointments)
+        .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id))
+        .where(and(gte(schema.appointmentItems.startAt, from), lt(schema.appointmentItems.startAt, to), eq(schema.appointmentItems.sortOrder, 0)))
+        .groupBy(schema.appointments.status, schema.appointments.source),
+    ]);
+    return { sales, byStaff, byMethod, byService, appts };
   });
 }

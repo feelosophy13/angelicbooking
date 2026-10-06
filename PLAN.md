@@ -325,12 +325,36 @@ and typechecked but need real test keys to exercise (see `.env.example`).
 reschedule → cancel; notification rows, reminder scheduling/cancellation and audit entries
 all correct; job endpoint rejects bad auth and processes due rows.
 
-**Next — Phase 4: reports & payroll**
-1. Commission rules per staff (service %, product %, CC-tip fee %, 1099 vs W-2) and a payroll
-   period report producing the per-provider sheets used today, with CSV/PDF export.
-2. Richer reports: by service/category, client retention, no-show rate; appointment list export.
-3. Then Phase 5: Expo mobile app with Tap to Pay, memberships/packages, multi-location,
-   custom domains, Vagaro CSV import, Inngest for durable jobs if volume demands it.
+**Done — Phase 4: reports & payroll (2026-10-06)**
+- Pay rules per staff member (Staff → Pay): position, pay type (commission 1099 / hourly W-2 /
+  salary W-2), main-service %, product/package % (default 5), card-tip fee % (default 3),
+  hourly rate, salary per period, overtime override, optional withholding ($ or %).
+- Time clock: staff clock in/out on their own row; managers add or remove hours manually;
+  per-period totals. Hours feed hourly pay with optional 1.5× overtime over 40h per workweek.
+- Payroll page for any period: summary table (Employee, Position, Pay type, Rate,
+  Commission, Wage, Cash tip, Card tip, Card-tip fee, Total, Service revenue, Service
+  profit), per-employee breakdown with the full transaction list, adjustments
+  (training pay, transfers), finalize (frozen snapshot per period), and downloads:
+  the full workbook (Summary tab + one tab per employee in the salon's commission or simple
+  layout) and the accountant's W-2 summary (hourly/salary only, no performance columns).
+- Math lives in `packages/core/payroll.ts`, unit-tested against the salon's own validated
+  examples (Raina's Total 1099, Maria's and Dasia's Total Check) to the cent. Lines are
+  credited to the appointment date (so deposits land in the right period), discounts and
+  tax are allocated per line, tips are split cash/card by how the sale was paid, fully
+  refunded sales are listed but not paid, partial refunds reduce goods proportionally.
+- Sales report gained top services/products and appointment counts by status (no-show rate,
+  online share).
+
+**Verified locally:** pay rules saved, hours added and clock in/out, payroll for Oct 1–6
+reconciles exactly with sale #1001 (discount, tax, partial refund, cash tip), adjustment
+added, period finalized, workbook generated with Summary + per-employee tabs.
+
+**Next — Phase 5**
+1. Expo mobile app (calendar, checkout, Tap to Pay via Stripe Terminal).
+2. Memberships and packages as sellable items with redemption; gift cards.
+3. Multi-location under one business; custom booking domains.
+4. Vagaro CSV import (clients, services, future appointments) and parallel-run checklist.
+5. Inngest (or similar) for durable jobs once volume warrants; Resend/Twilio keys to go live.
 
 **Deferred polish**
 - Email delivery (Resend) for invitations and, in Phase 3, client notifications.

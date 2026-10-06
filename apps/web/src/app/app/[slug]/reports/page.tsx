@@ -20,7 +20,7 @@ export default async function ReportsPage({
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
   const from = isDate(sp.from) ? sp.from! : today;
   const to = isDate(sp.to) ? sp.to! : from;
-  const { sales, byStaff, byMethod } = await salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz));
+  const { sales, byStaff, byMethod, byService, appts } = await salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz));
   const money = (c: number) => formatMoney(Number(c), business.currency);
   const sum = (k: "subtotalCents" | "discountCents" | "taxCents" | "tipCents" | "totalCents" | "refundedCents") => sales.reduce((s, r) => s + r[k], 0);
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: tz });
@@ -80,6 +80,34 @@ export default async function ReportsPage({
               </tbody>
             </table>
           )}
+        </Card>
+        <Card>
+          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Top services &amp; products</h2>
+          {byService.length === 0 ? <div className="p-4"><Empty title="Nothing sold in this range" /></div> : (
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Item</th><th className="px-4 py-2 text-right">Qty</th><th className="px-4 py-2 text-right">Revenue</th></tr></thead>
+              <tbody className="divide-y divide-stone-100">
+                {byService.map((r) => <tr key={`${r.kind}:${r.name}`}><td className="px-4 py-2">{r.name} <span className="text-xs text-stone-400">{r.kind}</span></td><td className="px-4 py-2 text-right">{Number(r.count)}</td><td className="px-4 py-2 text-right">{money(r.amount)}</td></tr>)}
+              </tbody>
+            </table>
+          )}
+        </Card>
+        <Card>
+          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Appointments in range</h2>
+          {(() => {
+            const total = appts.reduce((s, a) => s + Number(a.count), 0);
+            const by = (st: string) => appts.filter((a) => a.status === st).reduce((s, a) => s + Number(a.count), 0);
+            const online = appts.filter((a) => a.source === "online").reduce((s, a) => s + Number(a.count), 0);
+            const rows: [string, number][] = [["Booked / confirmed", by("booked") + by("confirmed")], ["Completed", by("completed")], ["No-shows", by("no_show")], ["Cancelled", by("cancelled")], ["Booked online", online]];
+            return total === 0 ? <div className="p-4"><Empty title="No appointments in this range" /></div> : (
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-stone-100">
+                  {rows.map(([l, n]) => <tr key={l}><td className="px-4 py-2">{l}</td><td className="px-4 py-2 text-right">{n}</td><td className="px-4 py-2 text-right text-stone-500">{total ? Math.round((n / total) * 100) : 0}%</td></tr>)}
+                  <tr className="font-medium"><td className="px-4 py-2">Total</td><td className="px-4 py-2 text-right">{total}</td><td /></tr>
+                </tbody>
+              </table>
+            );
+          })()}
         </Card>
         <Card className="lg:col-span-2">
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Closed sales</h2>

@@ -15,6 +15,7 @@ import {
   uniqueIndex,
   primaryKey,
   check,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
 
@@ -42,6 +43,7 @@ export const appointmentStatus = pgEnum("appointment_status", [
 ]);
 
 export const appointmentSource = pgEnum("appointment_source", ["staff", "online", "import"]);
+export const payType = pgEnum("pay_type", ["commission", "hourly", "salary"]);
 
 // ---------------------------------------------------------------------------
 // Tenant root. id === organization.id (Better Auth). Not RLS-protected itself:
@@ -115,6 +117,17 @@ export const staff = pgTable(
     bookableOnline: boolean("bookable_online").notNull().default(true),
     active: boolean("active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
+    // ---- Pay configuration (see packages/core/payroll.ts). Percentages in basis points.
+    position: text("position"), // e.g. Lash Artist, Esthetician, Receptionist
+    payType: payType("pay_type").notNull().default("commission"),
+    mainCommissionBps: integer("main_commission_bps").notNull().default(0), // 4000 = 40%
+    productCommissionBps: integer("product_commission_bps").notNull().default(500), // 5%
+    ccTipFeeBps: integer("cc_tip_fee_bps").notNull().default(300), // 3% of card tips
+    hourlyRateCents: integer("hourly_rate_cents").notNull().default(0),
+    salaryPerPeriodCents: integer("salary_per_period_cents").notNull().default(0),
+    overtimeOverride: boolean("overtime_override"), // null = follow the run setting
+    taxDeductionCents: integer("tax_deduction_cents"), // normally null: accountant fills in
+    taxDeductionBps: integer("tax_deduction_bps"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -310,6 +323,64 @@ export const notifications = pgTable(
   ],
 );
 
+// Hours for hourly staff: manual entries or clock in/out.
+export const timeEntries = pgTable(
+  "time_entries",
+  {
+    id: id(),
+    businessId: businessId(),
+    staffId: text("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "cascade" }),
+    date: date("date").notNull(), // local calendar date the hours belong to
+    minutes: integer("minutes").notNull().default(0),
+    clockInAt: timestamp("clock_in_at", { withTimezone: true }),
+    clockOutAt: timestamp("clock_out_at", { withTimezone: true }),
+    note: text("note"),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("time_entries_staff_date_idx").on(t.businessId, t.staffId, t.date), check("time_entries_minutes_ck", sql`${t.minutes} >= 0`)],
+);
+
+// One-off pay lines for a period (training pay, transfers, corrections).
+export const payrollAdjustments = pgTable(
+  "payroll_adjustments",
+  {
+    id: id(),
+    businessId: businessId(),
+    staffId: text("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "cascade" }),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    label: text("label").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("payroll_adjustments_period_idx").on(t.businessId, t.periodStart, t.periodEnd)],
+);
+
+export const payrollRunStatus = pgEnum("payroll_run_status", ["draft", "finalized"]);
+
+// A finalized pay period: the computed result is frozen as JSON for the record.
+export const payrollRuns = pgTable(
+  "payroll_runs",
+  {
+    id: id(),
+    businessId: businessId(),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    status: payrollRunStatus("status").notNull().default("finalized"),
+    overtime: boolean("overtime").notNull().default(false),
+    snapshot: jsonb("snapshot").notNull(),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("payroll_runs_period_uq").on(t.businessId, t.periodStart, t.periodEnd)],
+);
+
 export const waitlistStatus = pgEnum("waitlist_status", ["open", "booked", "closed"]);
 
 export const waitlist = pgTable(
@@ -393,4 +464,7 @@ export const TENANT_TABLES = [
   "refunds",
   "notifications",
   "waitlist",
+  "time_entries",
+  "payroll_adjustments",
+  "payroll_runs",
 ] as const;

@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { headers } from "next/headers";
 import { schema, withTenant } from "@angelic/db";
+import { parseMoney } from "@angelic/core";
 import { auth } from "@/lib/auth";
 import { requireAction } from "@/lib/tenant";
 import { queueOneOff } from "@/lib/notify";
@@ -200,4 +201,49 @@ export type InviteState = { error?: string; ok?: boolean; link?: string } | unde
 
 function inviteLink(id: string) {
   return `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${id}`;
+}
+
+// ---------------------------------------------------------------------------
+// Pay configuration
+// ---------------------------------------------------------------------------
+const pct = z.string().trim().transform((v) => (v === "" ? 0 : Math.round(Number(v) * 100))).refine((n) => Number.isFinite(n) && n >= 0 && n <= 10_000, "Enter a percent between 0 and 100");
+const moneyOpt = z.string().trim().transform((v) => (v === "" ? null : parseMoney(v))).refine((n) => n === null || n !== null, "Enter an amount");
+
+export async function savePay(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const staffId = String(formData.get("staffId"));
+  const ctx = await requireAction(slug, "members.manage");
+  const d = z
+    .object({
+      position: z.string().trim().max(60),
+      payType: z.enum(["commission", "hourly", "salary"]),
+      mainCommissionPct: pct,
+      productCommissionPct: pct,
+      ccTipFeePct: pct,
+      hourlyRate: moneyOpt,
+      salaryPerPeriod: moneyOpt,
+      overtimeOverride: z.enum(["default", "yes", "no"]),
+      taxDeductionAmount: moneyOpt,
+      taxDeductionPct: z.string().trim(),
+    })
+    .parse(Object.fromEntries(formData));
+  const taxBps = d.taxDeductionPct === "" ? null : Math.round(Number(d.taxDeductionPct) * 100);
+  await withTenant(ctx.business.id, (tx) =>
+    tx
+      .update(schema.staff)
+      .set({
+        position: d.position || null,
+        payType: d.payType,
+        mainCommissionBps: d.mainCommissionPct,
+        productCommissionBps: d.productCommissionPct,
+        ccTipFeeBps: d.ccTipFeePct,
+        hourlyRateCents: d.hourlyRate ?? 0,
+        salaryPerPeriodCents: d.salaryPerPeriod ?? 0,
+        overtimeOverride: d.overtimeOverride === "default" ? null : d.overtimeOverride === "yes",
+        taxDeductionCents: d.taxDeductionAmount,
+        taxDeductionBps: Number.isFinite(taxBps as number) ? taxBps : null,
+      })
+      .where(eq(schema.staff.id, staffId)),
+  );
+  revalidatePath(`/app/${slug}/staff/${staffId}`);
 }
