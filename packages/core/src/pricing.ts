@@ -1,7 +1,7 @@
 /** Pure money math for checkout. All amounts are integer cents. */
 
 export interface PricingLine {
-  kind: "service" | "product" | "tip" | "fee" | "adjustment";
+  kind: "service" | "product" | "tip" | "fee" | "adjustment" | "gift_card" | "package" | "membership";
   amountCents: number;
   taxable: boolean;
   staffId?: string | null;

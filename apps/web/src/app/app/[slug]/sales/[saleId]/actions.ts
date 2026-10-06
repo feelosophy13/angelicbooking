@@ -15,9 +15,11 @@ import {
   SaleError,
   setDiscount,
   setTips,
+  settleIfPaid,
   voidSale,
 } from "@/server/sales";
 import { stripe } from "@/lib/stripe";
+import { addOfferLine, redeemCredit, redeemGiftCard } from "@/server/offers";
 
 export type SaleActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -177,5 +179,36 @@ export async function voidOpenSale(formData: FormData) {
   const d = base.parse(Object.fromEntries(formData));
   const ctx = await ctxFor(d.slug);
   await voidSale({ businessId: ctx.business.id, saleId: d.saleId, actorUserId: ctx.user.id });
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+export async function addOffer(formData: FormData) {
+  const d = base.extend({ kind: z.enum(["gift_card", "package", "membership"]), refId: z.string().optional(), amount: z.string().optional(), recipientName: z.string().optional() }).parse(Object.fromEntries(formData));
+  const ctx = await ctxFor(d.slug);
+  await addOfferLine({ businessId: ctx.business.id, saleId: d.saleId, kind: d.kind, refId: d.refId || null, amountCents: d.amount ? parseMoney(d.amount) : null, recipientName: d.recipientName?.trim() || null });
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+export async function payWithGiftCard(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
+  const d = base.extend({ code: z.string().min(4), amount: z.string() }).parse(Object.fromEntries(formData));
+  const ctx = await ctxFor(d.slug);
+  const cents = parseMoney(d.amount);
+  if (cents === null || cents <= 0) return { error: "Enter an amount." };
+  try {
+    await redeemGiftCard({ businessId: ctx.business.id, saleId: d.saleId, code: d.code, amountCents: cents, actorUserId: ctx.user.id });
+    await settleIfPaid(ctx.business.id, d.saleId, ctx.user.id, ctx.business.taxRateBps);
+  } catch (e) {
+    return friendly(e);
+  }
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+  revalidatePath(`/app/${d.slug}`);
+  return { ok: true };
+}
+
+export async function useCredit(formData: FormData) {
+  const d = base.extend({ lineId: z.string().min(1), source: z.enum(["package", "membership"]), sourceId: z.string().min(1) }).parse(Object.fromEntries(formData));
+  const ctx = await ctxFor(d.slug);
+  await redeemCredit({ businessId: ctx.business.id, saleId: d.saleId, lineId: d.lineId, source: d.source, sourceId: d.sourceId, actorUserId: ctx.user.id });
+  await settleIfPaid(ctx.business.id, d.saleId, ctx.user.id, ctx.business.taxRateBps);
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }

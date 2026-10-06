@@ -349,12 +349,38 @@ all correct; job endpoint rejects bad auth and processes due rows.
 reconciles exactly with sale #1001 (discount, tax, partial refund, cash tip), adjustment
 added, period finalized, workbook generated with Summary + per-employee tabs.
 
-**Next — Phase 5**
-1. Expo mobile app (calendar, checkout, Tap to Pay via Stripe Terminal).
-2. Memberships and packages as sellable items with redemption; gift cards.
-3. Multi-location under one business; custom booking domains.
-4. Vagaro CSV import (clients, services, future appointments) and parallel-run checklist.
-5. Inngest (or similar) for durable jobs once volume warrants; Resend/Twilio keys to go live.
+**Done — Phase 5 (2026-10-06)**
+- **Vagaro import** (Settings → Import): upload CSV or Excel exports (title rows above the
+  header are detected), auto-mapped columns with a preview you can correct, then import
+  services (existing names skipped), clients (matched by phone/email, then name; updated not
+  duplicated; phones normalised to E.164), and appointments (staff matched by name, unknown
+  services created as hidden placeholders, exact duplicates skipped, overlaps with existing
+  bookings reported row by row). Each run is logged with counts and errors.
+- **Gift cards, packages, memberships** (Packages & gifts page): define packages (N sessions
+  of a service, optional expiry) and monthly membership plans (included sessions and/or a
+  discount); issue gift cards. At checkout: sell any of them as a line (fulfilled when the
+  sale is paid: code issued, sessions credited, membership started or renewed), redeem a gift
+  card as a payment method, and cover a service line with a package session or membership
+  credit. Automatic monthly card billing for memberships is deferred to Stripe subscriptions.
+- **Multi-location**: locations CRUD with a default, primary location per staff member,
+  location filter on the calendar, location step on the public booking page, appointments
+  tagged with the staff member's location.
+- **Custom booking domain**: set a hostname under Settings → Locations & domain; the proxy
+  rewrites requests on that host to the business's booking page (DNS/SSL steps shown).
+- **Mobile**: `apps/mobile` Expo app (Expo Router, Better Auth Expo client with secure token
+  storage) with sign-in, today's agenda per business with day navigation, and an appointment
+  screen with status changes, backed by `/api/mobile/*` routes on the web app (bearer auth).
+  Typechecks; not yet run on a device in this session.
+
+**Verified locally:** services/clients/appointments imports from sample Vagaro-style files
+(including a deliberate overlap and a duplicate re-run), package and gift card creation,
+a checkout selling a package and paying with the gift card plus cash, locations and import
+pages rendering.
+
+**Deferred**
+- Stripe subscriptions for membership auto-billing; Tap to Pay in the mobile app
+  (`@stripe/stripe-terminal-react-native`); push notifications; Inngest for durable jobs.
+- Running the Expo app on a simulator and a device; App Store / Play builds via EAS.
 
 **Deferred polish**
 - Email delivery (Resend) for invitations and, in Phase 3, client notifications.

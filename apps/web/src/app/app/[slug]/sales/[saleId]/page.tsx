@@ -6,9 +6,11 @@ import { getSale } from "@/server/sales";
 import { listSavedCards } from "@/server/stripe-connect";
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatMoney } from "@/lib/utils";
-import { Button, Card, PageHeader, Select } from "@/components/ui";
-import { addProduct, applyDiscount, applyTips, deleteLine, payManual, payWithSavedCard, refund, voidOpenSale } from "./actions";
-import { DiscountForm, ManualPayForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
+import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
+import { addOffer, addProduct, applyDiscount, applyTips, deleteLine, payManual, payWithGiftCard, payWithSavedCard, refund, useCredit, voidOpenSale } from "./actions";
+import { getClientCredits, getOffersCatalog } from "@/server/offers";
+import { withTenant } from "@angelic/db";
+import { DiscountForm, GiftCardPayForm, ManualPayForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
 import { CardPayment } from "./card-payment";
 
 export default async function SalePage({ params }: { params: Promise<{ slug: string; saleId: string }> }) {
@@ -29,6 +31,8 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
     .map((s) => ({ id: s.id, name: s.displayName }));
   const currentTips = Object.fromEntries(lines.filter((l) => l.kind === "tip" && l.staffId).map((l) => [l.staffId!, l.amountCents]));
   const goods = lines.filter((l) => l.kind !== "tip");
+  const catalog = open ? await getOffersCatalog(business.id) : null;
+  const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
 
   return (
@@ -62,7 +66,19 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       <p>{l.name}{l.quantity > 1 ? ` × ${l.quantity}` : ""}</p>
                       <p className="text-xs text-stone-500">{[l.kind, staff.find((s) => s.id === l.staffId)?.displayName, l.taxable ? "taxable" : null].filter(Boolean).join(" · ")}</p>
                     </td>
-                    <td className="py-2 text-right">{money(l.amountCents)}</td>
+                    <td className="py-2 text-right">
+                      {money(l.amountCents)}
+                      {open && l.kind === "service" && l.amountCents > 0 ? (
+                        <div className="mt-1 flex flex-wrap justify-end gap-1">
+                          {credits.packages.filter((p) => p.serviceId === l.serviceId).map((p) => (
+                            <form key={p.id} action={useCredit}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="lineId" value={l.id} /><input type="hidden" name="source" value="package" /><input type="hidden" name="sourceId" value={p.id} /><button className="rounded border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-[11px] text-brand-800">Use package ({p.remaining} left)</button></form>
+                          ))}
+                          {credits.memberships.filter((m) => m.creditsRemaining > 0 && (!m.includedServiceId || m.includedServiceId === l.serviceId)).map((m) => (
+                            <form key={m.id} action={useCredit}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="lineId" value={l.id} /><input type="hidden" name="source" value="membership" /><input type="hidden" name="sourceId" value={m.id} /><button className="rounded border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-[11px] text-brand-800">Use {m.planName} credit ({m.creditsRemaining} left)</button></form>
+                          ))}
+                        </div>
+                      ) : null}
+                    </td>
                     <td className="w-10 py-2 text-right">
                       {open ? (
                         <form action={deleteLine}>
@@ -118,6 +134,27 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}`} action={applyDiscount} slug={slug} saleId={sale.id} currentCents={sale.discountCents} note={sale.discountNote} />
               </Card>
               <Card className="p-4 md:col-span-2">
+                <h2 className="mb-2 font-medium">Sell a gift card, package or membership</h2>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <form action={addOffer} className="space-y-2">
+                    <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="kind" value="gift_card" />
+                    <Input name="amount" inputMode="decimal" placeholder="Gift card amount" required />
+                    <Input name="recipientName" placeholder="Recipient (optional)" />
+                    <Button type="submit" size="sm" variant="secondary">Add gift card</Button>
+                  </form>
+                  <form action={addOffer} className="space-y-2">
+                    <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="kind" value="package" />
+                    <Select name="refId" required>{(catalog?.packages ?? []).filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)}</option>)}</Select>
+                    <Button type="submit" size="sm" variant="secondary" disabled={!catalog?.packages.some((p) => p.active)}>Add package</Button>
+                  </form>
+                  <form action={addOffer} className="space-y-2">
+                    <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="kind" value="membership" />
+                    <Select name="refId" required>{(catalog?.plans ?? []).filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)}/mo</option>)}</Select>
+                    <Button type="submit" size="sm" variant="secondary" disabled={!client || !catalog?.plans.some((p) => p.active)}>Add membership{!client ? " (needs client)" : ""}</Button>
+                  </form>
+                </div>
+              </Card>
+              <Card className="p-4 md:col-span-2">
                 <h2 className="mb-2 font-medium">Tips</h2>
                 {staffOnTicket.length === 0 ? (
                   <p className="text-sm text-stone-500">Add a service line to assign tips.</p>
@@ -169,6 +206,10 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                     <div>
                       <h3 className="mb-1 text-sm font-medium text-stone-700">Cash / other</h3>
                       <ManualPayForm key={due} action={payManual} slug={slug} saleId={sale.id} dueCents={due} />
+                    </div>
+                    <div className="border-t border-stone-200 pt-4">
+                      <h3 className="mb-1 text-sm font-medium text-stone-700">Gift card</h3>
+                      <GiftCardPayForm key={`gc${due}`} action={payWithGiftCard} slug={slug} saleId={sale.id} dueCents={due} />
                     </div>
                     <div className="border-t border-stone-200 pt-4">
                       <h3 className="mb-1 text-sm font-medium text-stone-700">Card</h3>

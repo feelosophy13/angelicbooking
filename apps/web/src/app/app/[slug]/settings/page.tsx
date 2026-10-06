@@ -53,6 +53,16 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
           <Link href={`/app/${slug}/settings/notifications`} className="text-sm text-brand-700 underline">Message log →</Link>
         </Card>
         <Card className="p-4">
+          <h2 className="mb-1 font-medium">Locations &amp; domain</h2>
+          <p className="mb-3 text-sm text-stone-600">Add locations, pick the default, and serve booking from your own hostname.</p>
+          <Link href={`/app/${slug}/settings/locations`} className="text-sm text-brand-700 underline">Locations &amp; domain →</Link>
+        </Card>
+        <Card className="p-4">
+          <h2 className="mb-1 font-medium">Import from Vagaro</h2>
+          <p className="mb-3 text-sm text-stone-600">Bring over clients, services and upcoming appointments from CSV or Excel exports.</p>
+          <Link href={`/app/${slug}/settings/import`} className="text-sm text-brand-700 underline">Import data →</Link>
+        </Card>
+        <Card className="p-4">
           <h2 className="mb-1 font-medium">Activity log</h2>
           <p className="mb-3 text-sm text-stone-600">Every booking, reschedule and status change, with who did it.</p>
           <Link href={`/app/${slug}/settings/audit`} className="text-sm text-brand-700 underline">View activity log →</Link>

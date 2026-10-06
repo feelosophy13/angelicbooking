@@ -20,6 +20,7 @@ export default async function AppLayout({
     { href: `${base}/waitlist`, label: "Waitlist" },
     { href: `${base}/services`, label: "Services" },
     { href: `${base}/products`, label: "Products" },
+    { href: `${base}/offers`, label: "Packages & gifts" },
     { href: `${base}/staff`, label: "Staff" },
     { href: `${base}/time`, label: "Time clock" },
     ...(can(role, "reports.view") ? [{ href: `${base}/reports`, label: "Sales" }] : []),

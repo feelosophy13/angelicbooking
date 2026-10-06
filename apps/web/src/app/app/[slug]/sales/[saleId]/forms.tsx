@@ -100,3 +100,19 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents }: { acti
     </form>
   );
 }
+
+export function GiftCardPayForm({ action, slug, saleId, dueCents }: { action: Action; slug: string; saleId: string; dueCents: number }) {
+  const [state, act, pending] = useActionState(action, undefined);
+  return (
+    <form action={act} className="space-y-2">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="saleId" value={saleId} />
+      <div className="grid grid-cols-[1fr_6rem] gap-2">
+        <Input name="code" placeholder="Gift card code" className="font-mono uppercase" required />
+        <Input name="amount" inputMode="decimal" defaultValue={(dueCents / 100).toFixed(2)} />
+      </div>
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+      <Button type="submit" size="sm" variant="secondary" disabled={pending}>{pending ? "…" : "Redeem gift card"}</Button>
+    </form>
+  );
+}

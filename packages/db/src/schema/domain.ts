@@ -76,6 +76,8 @@ export const businesses = pgTable("businesses", {
   bookingPolicy: text("booking_policy"),
   reminderHours: integer("reminder_hours").notNull().default(24),
   addressLine: text("address_line"),
+  // Optional custom hostname for the public booking page (e.g. book.angelicbeauty.com).
+  customDomain: text("custom_domain").unique(),
   // Platform billing
   plan: text("plan").notNull().default("trial"),
   createdAt: createdAt(),
@@ -114,6 +116,7 @@ export const staff = pgTable(
     email: text("email"),
     phone: text("phone"),
     color: text("color").notNull().default("#6366f1"),
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }), // primary location
     bookableOnline: boolean("bookable_online").notNull().default(true),
     active: boolean("active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -467,4 +470,10 @@ export const TENANT_TABLES = [
   "time_entries",
   "payroll_adjustments",
   "payroll_runs",
+  "gift_cards",
+  "packages",
+  "client_packages",
+  "membership_plans",
+  "client_memberships",
+  "import_jobs",
 ] as const;

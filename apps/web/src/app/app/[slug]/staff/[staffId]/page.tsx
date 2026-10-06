@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { Button, Card, Input, PageHeader } from "@/components/ui";
-import { addOverride, deleteOverride, savePay, saveSchedule, saveStaffServices } from "../actions";
+import { addOverride, deleteOverride, savePay, saveSchedule, saveStaffLocation, saveStaffServices } from "../actions";
 import { can } from "@angelic/core";
 import { formatDateLong } from "@/lib/utils";
 import { gte } from "drizzle-orm";
@@ -18,6 +18,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ sl
     const person = await tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId) });
     if (!person) return null;
     const today = new Date().toISOString().slice(0, 10);
+    const locations = await tx.select().from(schema.locations).orderBy(asc(schema.locations.name));
     const [schedule, services, mapped, overrides] = await Promise.all([
       tx.select().from(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, staffId)),
       tx.select().from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
@@ -28,7 +29,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ sl
         .where(and(eq(schema.staffScheduleOverrides.staffId, staffId), gte(schema.staffScheduleOverrides.date, today)))
         .orderBy(asc(schema.staffScheduleOverrides.date)),
     ]);
-    return { person, schedule, services, mapped: new Set(mapped.map((m) => m.serviceId)), overrides };
+    return { person, schedule, services, mapped: new Set(mapped.map((m) => m.serviceId)), overrides, locations };
   });
   if (!data) notFound();
   const byDay = new Map(data.schedule.map((r) => [r.weekday, r]));
@@ -60,6 +61,22 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ sl
             <Button type="submit" className="mt-2">Save hours</Button>
           </form>
         </Card>
+        {data.locations.length > 1 ? (
+          <Card className="p-4 lg:col-span-2">
+            <form action={saveStaffLocation} className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="slug" value={slug} />
+              <input type="hidden" name="staffId" value={staffId} />
+              <div className="min-w-56"><label className="mb-1 block text-xs font-medium text-stone-600">Primary location</label>
+                <Select name="locationId" defaultValue={data.person.locationId ?? ""}>
+                  <option value="">Any / unassigned</option>
+                  {data.locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </Select>
+              </div>
+              <Button type="submit" variant="secondary">Save location</Button>
+            </form>
+          </Card>
+        ) : null}
+
         <Card className="p-4">
           <h2 className="mb-1 font-medium">Services performed</h2>
           <p className="mb-3 text-xs text-stone-500">If none are selected, this person can be booked for every service.</p>

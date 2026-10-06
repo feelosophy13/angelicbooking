@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Angelic Booking",
+    "slug": "angelic-booking",
+    "scheme": "angelic",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": { "bundleIdentifier": "com.angelicbooking.app", "supportsTablet": true },
+    "android": { "package": "com.angelicbooking.app" },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "extra": { "apiUrl": "http://localhost:3001" }
+  }
+}

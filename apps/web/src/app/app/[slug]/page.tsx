@@ -5,6 +5,8 @@ import { formatDateLong, shiftISODate } from "@/lib/utils";
 import { LinkButton, PageHeader, Empty } from "@/components/ui";
 import { CalendarGrid, type CalColumn, type CalItem } from "./calendar-grid";
 import { can } from "@angelic/core";
+import { asc } from "drizzle-orm";
+import { schema, withTenant } from "@angelic/db";
 
 function startOfWeek(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -17,7 +19,7 @@ export default async function CalendarPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ date?: string; view?: string; staff?: string }>;
+  searchParams: Promise<{ date?: string; view?: string; staff?: string; location?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
@@ -28,7 +30,11 @@ export default async function CalendarPage({
   const view = sp.view === "week" ? "week" : "day";
   const from = view === "week" ? startOfWeek(date) : date;
   const days = view === "week" ? 7 : 1;
-  const { staff, items } = await getRangeAgenda(business.id, tz, from, days);
+  const agenda = await getRangeAgenda(business.id, tz, from, days);
+  const locations = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.name)));
+  const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
+  const staff = locationFilter ? agenda.staff.filter((s) => !s.locationId || s.locationId === locationFilter) : agenda.staff;
+  const items = agenda.items.filter((i) => staff.some((s) => s.id === i.staffId));
   const staffFilter = staff.some((s) => s.id === sp.staff) ? sp.staff! : null;
 
   const minuteOf = (d: Date) => {
@@ -68,7 +74,7 @@ export default async function CalendarPage({
       href: `/app/${slug}/appointments/${i.appointmentId}`,
     }));
 
-  const nav = (d: string) => `?view=${view}&date=${d}${staffFilter ? `&staff=${staffFilter}` : ""}`;
+  const nav = (d: string) => `?view=${view}&date=${d}${staffFilter ? `&staff=${staffFilter}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}`;
   const step = view === "week" ? 7 : 1;
   const title = view === "week" ? `Week of ${formatDateLong(from)}` : formatDateLong(date);
 
@@ -79,6 +85,17 @@ export default async function CalendarPage({
           <a href={`?view=day&date=${date}`} className={`rounded-md px-3 py-1 ${view === "day" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Day</a>
           <a href={`?view=week&date=${date}`} className={`rounded-md px-3 py-1 ${view === "week" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Week</a>
         </div>
+        {locations.length > 1 ? (
+          <form className="contents">
+            <input type="hidden" name="view" value={view} />
+            <input type="hidden" name="date" value={date} />
+            <select name="location" defaultValue={locationFilter ?? ""} className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-sm">
+              <option value="">All locations</option>
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+            <button className="h-8 rounded-lg border border-stone-300 bg-white px-3 text-sm">Go</button>
+          </form>
+        ) : null}
         {view === "week" ? (
           <form className="contents">
             <input type="hidden" name="view" value="week" />

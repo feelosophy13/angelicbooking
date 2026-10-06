@@ -247,3 +247,12 @@ export async function savePay(formData: FormData) {
   );
   revalidatePath(`/app/${slug}/staff/${staffId}`);
 }
+
+export async function saveStaffLocation(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const staffId = String(formData.get("staffId"));
+  const locationId = String(formData.get("locationId") ?? "");
+  const ctx = await requireAction(slug, "staff.manage");
+  await withTenant(ctx.business.id, (tx) => tx.update(schema.staff).set({ locationId: locationId || null }).where(eq(schema.staff.id, staffId)));
+  revalidatePath(`/app/${slug}/staff/${staffId}`);
+}

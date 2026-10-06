@@ -14,9 +14,13 @@ export async function getPublicBusiness(slug: string): Promise<PublicBusiness | 
   return b && b.onlineBookingEnabled ? b : null;
 }
 
-export async function getPublicMenu(businessId: string) {
+export async function getPublicLocations(businessId: string) {
+  return withTenant(businessId, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.isDefault), asc(schema.locations.name)));
+}
+
+export async function getPublicMenu(businessId: string, locationId?: string | null) {
   return withTenant(businessId, async (tx) => {
-    const [services, categories, staff] = await Promise.all([
+    const [services, categories, staffAll] = await Promise.all([
       tx
         .select()
         .from(schema.services)
@@ -29,6 +33,10 @@ export async function getPublicMenu(businessId: string) {
         .where(and(eq(schema.staff.active, true), eq(schema.staff.bookableOnline, true)))
         .orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
     ]);
+    const staffLoc = locationId
+      ? (await tx.select({ id: schema.staff.id, locationId: schema.staff.locationId }).from(schema.staff)).filter((x) => !x.locationId || x.locationId === locationId).map((x) => x.id)
+      : null;
+    const staff = staffLoc ? staffAll.filter((s) => staffLoc.includes(s.id)) : staffAll;
     return { services, categories, staff };
   });
 }

@@ -73,10 +73,13 @@ export async function bookAppointment(input: {
 }): Promise<{ appointmentId: string }> {
   try {
     return await withTenant(input.businessId, async (tx) => {
+      const staffRow = await tx.query.staff.findFirst({ where: eq(schema.staff.id, input.staffId) });
+      const defaultLoc = await tx.query.locations.findFirst({ where: eq(schema.locations.isDefault, true) });
       const [appt] = await tx
         .insert(schema.appointments)
         .values({
           businessId: input.businessId,
+          locationId: staffRow?.locationId ?? defaultLoc?.id ?? null,
           clientId: input.clientId,
           notes: input.notes ?? null,
           source: input.source ?? "staff",

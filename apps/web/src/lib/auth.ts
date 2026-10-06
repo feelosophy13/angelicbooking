@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { organization } from "better-auth/plugins";
+import { bearer, organization } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import { adminAc, defaultStatements, memberAc, ownerAc } from "better-auth/plugins/organization/access";
 import { nextCookies } from "better-auth/next-js";
@@ -39,6 +39,7 @@ export const auth = betterAuth({
     },
   }),
   emailAndPassword: { enabled: true, minPasswordLength: 8 },
+  trustedOrigins: ["angelic://", "exp://", "http://localhost:8081"],
   session: {
     cookieCache: { enabled: true, maxAge: 5 * 60 },
   },
@@ -108,6 +109,7 @@ export const auth = betterAuth({
         },
       },
     }),
+    bearer(), // mobile: Authorization: Bearer <session token>
     nextCookies(), // must be last
   ],
 });

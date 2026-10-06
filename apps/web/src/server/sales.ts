@@ -3,6 +3,7 @@ import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { allocateProportionally, computeTotals, type Discount } from "@angelic/core";
 import { platformFeeBps, stripe } from "@/lib/stripe";
 import { ensureStripeCustomer } from "./stripe-connect";
+import { fulfilOfferLines } from "./offers";
 
 export class SaleError extends Error {}
 
@@ -241,8 +242,14 @@ async function closeIfPaid(tx: TenantDb, saleId: string, taxRateBps: number, act
         .set({ status: "completed" })
         .where(and(eq(schema.appointmentItems.appointmentId, sale.appointmentId), sql`${schema.appointmentItems.status} <> 'cancelled'`));
     }
+    await fulfilOfferLines(tx, businessId, saleId);
     await audit(tx, businessId, actorUserId, "sale.paid", saleId, { total: t.totalCents });
   }
+}
+
+/** Re-evaluate a sale after an external payment row was added (gift card, credit). */
+export async function settleIfPaid(businessId: string, saleId: string, actorUserId: string, taxRateBps: number) {
+  await withTenant(businessId, (tx) => closeIfPaid(tx, saleId, taxRateBps, actorUserId, businessId));
 }
 
 /** Cash / other (external) payment. */

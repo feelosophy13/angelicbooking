@@ -1,16 +1,35 @@
 import Link from "next/link";
 import { instantToISODate } from "@angelic/core";
-import { getAvailableDates, getPublicBusiness, getPublicMenu, getPublicSlots } from "@/server/public-booking";
+import { getAvailableDates, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots } from "@/server/public-booking";
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
 import { BookingForm, WaitlistForm } from "./forms";
 
-type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string };
+type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string };
 
 export default async function PublicBookingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
   const sp = await searchParams;
   const business = (await getPublicBusiness(slug))!;
-  const { services, categories, staff } = await getPublicMenu(business.id);
+  const locations = await getPublicLocations(business.id);
+  const location = locations.length > 1 ? (locations.find((l) => l.id === sp.location) ?? null) : (locations[0] ?? null);
+  if (locations.length > 1 && !location) {
+    return (
+      <>
+        <Step n={1} title="Choose a location" />
+        <ul className="divide-y divide-stone-200 overflow-hidden rounded-xl border border-stone-200 bg-white">
+          {locations.map((l) => (
+            <li key={l.id}>
+              <Link href={`?location=${l.id}`} className="block px-4 py-3 hover:bg-stone-50">
+                <p className="font-medium">{l.name}</p>
+                <p className="text-xs text-stone-500">{[l.addressLine1, l.city, l.state].filter(Boolean).join(", ")}</p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </>
+    );
+  }
+  const { services, categories, staff } = await getPublicMenu(business.id, locations.length > 1 ? location?.id : null);
   const tz = business.timezone;
   const today = instantToISODate(new Date(), tz);
   const service = services.find((s) => s.id === sp.service) ?? null;
@@ -18,7 +37,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : null;
   const q = (extra: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries({ service: service?.id, staff: staffChoice ?? undefined, date: date ?? undefined, ...extra })) if (v) p.set(k, v);
+    for (const [k, v] of Object.entries({ location: locations.length > 1 ? location?.id : undefined, service: service?.id, staff: staffChoice ?? undefined, date: date ?? undefined, ...extra })) if (v) p.set(k, v);
     return `?${p.toString()}`;
   };
 
