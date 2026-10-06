@@ -476,4 +476,5 @@ export const TENANT_TABLES = [
   "membership_plans",
   "client_memberships",
   "import_jobs",
+  "product_categories",
 ] as const;

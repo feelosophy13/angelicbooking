@@ -85,6 +85,20 @@
       "when": 1791324840554,
       "tag": "0011_phase5_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791326285542,
+      "tag": "0012_product_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791326285882,
+      "tag": "0013_product_categories_rls",
+      "breakpoints": true
     }
   ]
 }

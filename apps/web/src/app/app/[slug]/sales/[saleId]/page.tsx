@@ -116,7 +116,11 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                     <input type="hidden" name="slug" value={slug} />
                     <input type="hidden" name="saleId" value={sale.id} />
                     <Select name="productId">
-                      {products.map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)}</option>)}
+                      {[...new Set(products.map((p) => p.category ?? "Other"))].map((cat) => (
+                        <optgroup key={cat} label={cat}>
+                          {products.filter((p) => (p.category ?? "Other") === cat).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)}</option>)}
+                        </optgroup>
+                      ))}
                     </Select>
                     <div className="grid grid-cols-[5rem_1fr] gap-2">
                       <input name="quantity" type="number" min={1} max={99} defaultValue={1} className="h-10 rounded-lg border border-stone-300 px-3 text-sm" />

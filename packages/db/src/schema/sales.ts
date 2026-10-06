@@ -22,11 +22,23 @@ export const saleLineKind = pgEnum("sale_line_kind", ["service", "product", "tip
 export const paymentMethod = pgEnum("payment_method", ["cash", "card", "card_on_file", "terminal", "other", "gift_card"]);
 export const paymentStatus = pgEnum("payment_status", ["pending", "succeeded", "failed", "refunded", "partially_refunded"]);
 
+export const productCategories = pgTable(
+  "product_categories",
+  {
+    id: id(),
+    businessId: businessId(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("product_categories_business_idx").on(t.businessId)],
+);
+
 export const products = pgTable(
   "products",
   {
     id: id(),
     businessId: businessId(),
+    categoryId: text("category_id").references(() => productCategories.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     sku: text("sku"),
     priceCents: integer("price_cents").notNull(),

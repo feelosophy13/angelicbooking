@@ -113,7 +113,12 @@ export async function getSale(businessId: string, saleId: string) {
       tx.select().from(schema.payments).where(eq(schema.payments.saleId, saleId)).orderBy(asc(schema.payments.createdAt)),
       sale.clientId ? tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) }) : Promise.resolve(null),
       tx.select().from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)),
-      tx.select().from(schema.products).where(eq(schema.products.active, true)).orderBy(asc(schema.products.name)),
+      tx
+        .select({ id: schema.products.id, name: schema.products.name, priceCents: schema.products.priceCents, taxable: schema.products.taxable, category: schema.productCategories.name })
+        .from(schema.products)
+        .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
+        .where(eq(schema.products.active, true))
+        .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name)),
     ]);
     const refunds = pays.length
       ? await tx.select().from(schema.refunds).where(sql`${schema.refunds.paymentId} in ${pays.map((p) => p.id)}`)
