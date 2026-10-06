@@ -4,6 +4,7 @@ import { z } from "zod";
 import { instantToISODate } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { bookAppointment, BookingError } from "@/server/booking";
+import { notifyAppointment } from "@/lib/notify";
 
 const schema = z.object({
   slug: z.string(),
@@ -21,7 +22,7 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
   const ctx = await requireAction(d.slug, "appointments.write.any");
   const startAt = new Date(d.startAt);
   try {
-    await bookAppointment({
+    const { appointmentId } = await bookAppointment({
       businessId: ctx.business.id,
       clientId: d.clientId,
       serviceId: d.serviceId,
@@ -30,6 +31,7 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
       notes: d.notes,
       createdByUserId: ctx.user.id,
     });
+    await notifyAppointment(ctx.business, appointmentId, "confirmation");
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     throw e;

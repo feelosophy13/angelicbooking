@@ -6,6 +6,8 @@ import { headers } from "next/headers";
 import { schema, withTenant } from "@angelic/db";
 import { auth } from "@/lib/auth";
 import { requireAction } from "@/lib/tenant";
+import { queueOneOff } from "@/lib/notify";
+import { inviteEmail } from "@/lib/notify/templates";
 
 const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -162,14 +164,23 @@ export async function inviteStaff(_prev: InviteState, formData: FormData): Promi
     await withTenant(ctx.business.id, async (tx) => {
       const existing = await tx.query.staff.findFirst({ where: eq(schema.staff.email, parsed.data.email) });
       if (!existing) {
-        await tx.insert(schema.staff).values({
-          businessId: ctx.business.id,
-          displayName: parsed.data.email.split("@")[0]!,
-          email: parsed.data.email,
-          bookableOnline: parsed.data.role === "provider",
-        });
+        const [row] = await tx
+          .insert(schema.staff)
+          .values({
+            businessId: ctx.business.id,
+            displayName: parsed.data.email.split("@")[0]!,
+            email: parsed.data.email,
+            bookableOnline: parsed.data.role === "provider",
+          })
+          .returning({ id: schema.staff.id });
+        // Default hours so they are bookable as soon as they accept; editable under Staff.
+        await tx.insert(schema.staffSchedules).values(
+          [2, 3, 4, 5, 6].map((weekday) => ({ businessId: ctx.business.id, staffId: row!.id, weekday, startTime: "09:00", endTime: "17:00" })),
+        );
       }
     });
+    const mail = inviteEmail({ businessName: ctx.business.name, role: parsed.data.role, link: inviteLink(inv.id) });
+    await queueOneOff(ctx.business.id, { channel: "email", template: "invite", recipient: parsed.data.email, subject: mail.subject, body: mail.html });
     revalidatePath(`/app/${slug}/staff`);
     return { ok: true, link: inviteLink(inv.id) };
   } catch (e) {

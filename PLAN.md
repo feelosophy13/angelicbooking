@@ -303,13 +303,34 @@ custom domains, marketing (campaigns, review requests), data import from Vagaro 
 payments → paid, appointment completed, report totals correct. Stripe paths are implemented
 and typechecked but need real test keys to exercise (see `.env.example`).
 
-**Next — Phase 3: online booking & notifications**
-1. Public booking page at `/book/[slug]`: service → staff → time → client details → confirm,
-   with deposit / card-on-file capture via SetupIntent when the service requires it.
-2. Resend + React Email for confirmations, invitations and receipts; Twilio SMS reminders
-   with two-way confirm; background jobs via Inngest.
-3. Cancellation / reschedule links for clients; waitlist; no-show fee charging from the
-   appointment page using the saved card.
+**Done — Phase 3: online booking & notifications (2026-10-06)**
+- Public booking page at `/book/[slug]`: service → provider (or "any") → month calendar
+  showing only days with openings → time → details → confirmed page with a manage link.
+  Enforces the business's minimum notice and max-advance window, re-validates the slot at
+  submit, and matches or creates the client by phone/email. Waitlist sign-up when a day is full.
+- Client self-service at `/book/[slug]/manage/[token]` (unguessable token per appointment):
+  reschedule to another open time or cancel, allowed until the cancellation window closes.
+- Notifications: confirmation, rescheduled, cancellation and reminder messages by email
+  (Resend) and SMS (Twilio) via plain fetch; opt-in respected; reminders scheduled N hours
+  before and re-queued on reschedule / cancelled on cancellation. Immediate sends run after
+  the response via `after()`; due reminders are delivered by `POST /api/jobs/notifications`
+  guarded by `JOBS_SECRET` (call it from any scheduler). Without provider keys, messages are
+  recorded as "skipped" and visible under Settings → Messages.
+- Staff invitations are emailed when email is configured; the link is still shown in the UI.
+- Settings → Online booking: toggle, notice/advance/cancellation windows, reminder hours,
+  no-show fee, address, policy text, and the booking link. Waitlist page for staff.
+- No-show fee: charge a saved card from the appointment page (needs Stripe).
+
+**Verified locally without provider keys:** book online as a new client → confirmation page →
+reschedule → cancel; notification rows, reminder scheduling/cancellation and audit entries
+all correct; job endpoint rejects bad auth and processes due rows.
+
+**Next — Phase 4: reports & payroll**
+1. Commission rules per staff (service %, product %, CC-tip fee %, 1099 vs W-2) and a payroll
+   period report producing the per-provider sheets used today, with CSV/PDF export.
+2. Richer reports: by service/category, client retention, no-show rate; appointment list export.
+3. Then Phase 5: Expo mobile app with Tap to Pay, memberships/packages, multi-location,
+   custom domains, Vagaro CSV import, Inngest for durable jobs if volume demands it.
 
 **Deferred polish**
 - Email delivery (Resend) for invitations and, in Phase 3, client notifications.

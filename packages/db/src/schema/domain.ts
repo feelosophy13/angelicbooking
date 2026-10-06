@@ -64,6 +64,16 @@ export const businesses = pgTable("businesses", {
   stripeDetailsSubmitted: boolean("stripe_details_submitted").notNull().default(false),
   // Sales tax applied to taxable lines, in basis points (825 = 8.25%).
   taxRateBps: integer("tax_rate_bps").notNull().default(0),
+  // Online booking policy
+  onlineBookingEnabled: boolean("online_booking_enabled").notNull().default(true),
+  minNoticeMin: integer("min_notice_min").notNull().default(120),
+  maxAdvanceDays: integer("max_advance_days").notNull().default(60),
+  cancelWindowHours: integer("cancel_window_hours").notNull().default(24),
+  requireCardOnline: boolean("require_card_online").notNull().default(false),
+  noShowFeeCents: integer("no_show_fee_cents").notNull().default(0),
+  bookingPolicy: text("booking_policy"),
+  reminderHours: integer("reminder_hours").notNull().default(24),
+  addressLine: text("address_line"),
   // Platform billing
   plan: text("plan").notNull().default("trial"),
   createdAt: createdAt(),
@@ -248,13 +258,74 @@ export const appointments = pgTable(
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancellationReason: text("cancellation_reason"),
+    // Secret for the client's self-service page (cancel / reschedule). Unguessable.
+    manageToken: text("manage_token")
+      .notNull()
+      .default(sql`encode(gen_random_bytes(18), 'hex')`)
+      .$defaultFn(() => randomToken()),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index("appointments_business_idx").on(t.businessId),
     index("appointments_client_idx").on(t.businessId, t.clientId),
+    uniqueIndex("appointments_manage_token_uq").on(t.manageToken),
   ],
+);
+
+function randomToken(): string {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return Buffer.from(bytes).toString("hex");
+}
+
+export const notificationChannel = pgEnum("notification_channel", ["email", "sms"]);
+export const notificationStatus = pgEnum("notification_status", ["queued", "sent", "failed", "skipped", "cancelled"]);
+
+// Outbound messages to clients and staff. Rows are created immediately and
+// delivered either right away (after the response) or by the jobs route.
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+    appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "cascade" }),
+    channel: notificationChannel("channel").notNull(),
+    template: text("template").notNull(), // confirmation | reminder | cancellation | rescheduled | receipt | invite
+    recipient: text("recipient").notNull(),
+    subject: text("subject"),
+    body: text("body").notNull(), // rendered text (sms) or html (email)
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).defaultNow().notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    status: notificationStatus("status").notNull().default("queued"),
+    providerId: text("provider_id"),
+    error: text("error"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("notifications_due_idx").on(t.status, t.scheduledAt),
+    index("notifications_appointment_idx").on(t.appointmentId),
+    index("notifications_business_idx").on(t.businessId, t.createdAt),
+  ],
+);
+
+export const waitlistStatus = pgEnum("waitlist_status", ["open", "booked", "closed"]);
+
+export const waitlist = pgTable(
+  "waitlist",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    serviceId: text("service_id").references(() => services.id, { onDelete: "set null" }),
+    staffId: text("staff_id").references(() => staff.id, { onDelete: "set null" }),
+    date: date("date").notNull(),
+    notes: text("notes"),
+    status: waitlistStatus("status").notNull().default("open"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("waitlist_business_date_idx").on(t.businessId, t.status, t.date)],
 );
 
 // One row per (service, staff) within an appointment. The time range is what
@@ -320,4 +391,6 @@ export const TENANT_TABLES = [
   "sale_lines",
   "payments",
   "refunds",
+  "notifications",
+  "waitlist",
 ] as const;

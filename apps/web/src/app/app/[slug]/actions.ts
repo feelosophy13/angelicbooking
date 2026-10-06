@@ -4,6 +4,9 @@ import { z } from "zod";
 import { schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { BookingError, rescheduleService, setAppointmentStatus } from "@/server/booking";
+import { notifyAppointment } from "@/lib/notify";
+import { schema as dbSchema, withTenant } from "@angelic/db";
+import { eq } from "drizzle-orm";
 
 const statusSchema = z.enum(schema.appointmentStatus.enumValues);
 
@@ -13,6 +16,7 @@ export async function updateAppointmentStatus(formData: FormData) {
   const appointmentId = String(formData.get("appointmentId"));
   const status = statusSchema.parse(formData.get("status"));
   await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id);
+  if (status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");
   revalidatePath(`/app/${slug}`);
 }
 
@@ -38,6 +42,8 @@ export async function moveAppointmentItem(input: {
       newStaffId: parsed.data.newStaffId ?? null,
       actorUserId: ctx.user.id,
     });
+    const item = await withTenant(ctx.business.id, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId) }));
+    if (item) await notifyAppointment(ctx.business, item.appointmentId, "rescheduled");
   } catch (e) {
     if (e instanceof BookingError) return { ok: false, error: e.message };
     throw e;

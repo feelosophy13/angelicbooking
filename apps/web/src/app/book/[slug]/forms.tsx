@@ -1,0 +1,49 @@
+"use client";
+import { useActionState } from "react";
+import { bookOnline, joinWaitlistAction, type PublicState } from "./actions";
+import { Button, Field, Input, Notice, Textarea } from "@/components/ui";
+
+export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number }) {
+  const [state, action, pending] = useActionState<PublicState, FormData>(bookOnline, undefined);
+  return (
+    <form action={action} className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
+      <input type="hidden" name="slug" value={props.slug} />
+      <input type="hidden" name="serviceId" value={props.serviceId} />
+      <input type="hidden" name="staffId" value={props.staffId} />
+      <input type="hidden" name="startAt" value={props.startAt} />
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="First name"><Input name="firstName" required autoComplete="given-name" /></Field>
+        <Field label="Last name"><Input name="lastName" autoComplete="family-name" /></Field>
+      </div>
+      <Field label="Mobile number" hint="For text confirmations and reminders."><Input name="phone" type="tel" autoComplete="tel" /></Field>
+      <Field label="Email"><Input name="email" type="email" autoComplete="email" /></Field>
+      <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+      <Button type="submit" className="w-full" disabled={pending}>{pending ? "Booking…" : "Confirm booking"}</Button>
+      <p className="text-xs text-stone-500">You can cancel or reschedule online up to {props.cancelWindowHours} hours before.{props.policy ? ` ${props.policy}` : ""}</p>
+    </form>
+  );
+}
+
+export function WaitlistForm(props: { slug: string; serviceId: string; staffId: string; date: string }) {
+  const [state, action, pending] = useActionState<PublicState, FormData>(joinWaitlistAction, undefined);
+  if (state?.ok) return <Notice kind="success">You're on the waitlist. We'll contact you if a spot opens up.</Notice>;
+  return (
+    <form action={action} className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
+      <input type="hidden" name="slug" value={props.slug} />
+      <input type="hidden" name="serviceId" value={props.serviceId} />
+      <input type="hidden" name="staffId" value={props.staffId} />
+      <input type="hidden" name="date" value={props.date} />
+      <p className="text-sm font-medium">Join the waitlist for this day</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="First name"><Input name="firstName" required /></Field>
+        <Field label="Last name"><Input name="lastName" /></Field>
+      </div>
+      <Field label="Mobile number"><Input name="phone" type="tel" /></Field>
+      <Field label="Email"><Input name="email" type="email" /></Field>
+      <Field label="Preferred times"><Input name="notes" placeholder="Afternoons, after 3pm…" /></Field>
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+      <Button type="submit" variant="secondary" className="w-full" disabled={pending}>{pending ? "…" : "Join waitlist"}</Button>
+    </form>
+  );
+}

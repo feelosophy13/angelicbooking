@@ -10,6 +10,9 @@ import { addService, changeStatus, moveService, removeService, saveNotes, startC
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
+import { NoShowFeeForm } from "./no-show-form";
+import { listSavedCards } from "@/server/stripe-connect";
+import { isStripeConfigured } from "@/lib/stripe";
 
 const STATUS_LABEL: Record<string, string> = {
   booked: "Booked",
@@ -37,6 +40,8 @@ export default async function AppointmentPage({
   if (!data) notFound();
   const { appointment, items, client, services, staff } = data;
   const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: eq(schema.sales.appointmentId, id) }));
+  const stripeReady = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled;
+  const savedCards = stripeReady && client?.stripeCustomerId ? await listSavedCards(business.stripeAccountId!, client.stripeCustomerId).catch(() => []) : [];
   const tz = business.timezone;
   const live = items.filter((i) => i.status !== "cancelled");
   const first = live[0] ?? items[0];
@@ -252,6 +257,14 @@ export default async function AppointmentPage({
               </p>
             )}
           </Card>
+
+          {!locked && !existingSale && savedCards.length > 0 ? (
+            <Card className="p-4">
+              <h2 className="mb-1 font-medium">No-show fee</h2>
+              <p className="mb-2 text-xs text-stone-500">Charges the client&apos;s saved card and marks the appointment as a no-show.</p>
+              <NoShowFeeForm slug={slug} appointmentId={id} defaultAmount={((business.noShowFeeCents || Math.min(total, 2500)) / 100).toFixed(2)} cards={savedCards} />
+            </Card>
+          ) : null}
 
           <Card className="p-4">
             <h2 className="mb-2 font-medium">Client</h2>

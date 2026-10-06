@@ -17,6 +17,7 @@ export default async function AppLayout({
   const nav = [
     { href: base, label: "Calendar" },
     { href: `${base}/clients`, label: "Clients" },
+    { href: `${base}/waitlist`, label: "Waitlist" },
     { href: `${base}/services`, label: "Services" },
     { href: `${base}/products`, label: "Products" },
     { href: `${base}/staff`, label: "Staff" },
