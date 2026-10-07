@@ -1,8 +1,9 @@
 import { and, asc, eq, gte } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { formatDateLong } from "@/lib/utils";
-import { Button, Card, Input, Select, Empty } from "@/components/ui";
+import { dateLong } from "@/lib/format";
+import { Card, Input, Select, Empty } from "@/components/ui";
+import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
 import { addOverride, deleteOverride } from "../../actions";
 
 export default async function StaffTimeOffPage({ params }: { params: Promise<{ slug: string; staffId: string }> }) {
@@ -21,39 +22,38 @@ export default async function StaffTimeOffPage({ params }: { params: Promise<{ s
           <ul className="divide-y divide-stone-100 text-sm">
             {overrides.map((o) => (
               <li key={o.id} className="flex items-center gap-3 px-4 py-2">
-                <span className="w-56 font-medium">{formatDateLong(o.date)}</span>
+                <span className="w-60 font-medium">{dateLong(o.date)}</span>
                 <span className="flex-1 text-stone-600">{o.isOff ? "Day off" : `${hhmm(o.startTime!)} – ${hhmm(o.endTime!)}`}{o.note ? ` · ${o.note}` : ""}</span>
                 <form action={deleteOverride}>
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="staffId" value={staffId} />
                   <input type="hidden" name="overrideId" value={o.id} />
-                  <Button size="sm" variant="ghost" type="submit">Remove</Button>
+                  <ConfirmSubmit title="Remove this entry?" body={`${dateLong(o.date)} goes back to the regular weekly hours.`} confirmLabel="Remove" variant="ghost">Remove</ConfirmSubmit>
                 </form>
               </li>
             ))}
           </ul>
         )}
       </Card>
-      <Card className="p-4">
+      <Card className="p-5">
         <h2 className="mb-3 font-medium">Add</h2>
-        <form action={addOverride} className="space-y-2">
+        <ActionForm action={addOverride}>
           <input type="hidden" name="slug" value={slug} />
           <input type="hidden" name="staffId" value={staffId} />
-          <div><label className="mb-1 block text-xs font-medium text-stone-600">Date</label><Input type="date" name="date" required /></div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-stone-600">Type</label>
+          <Field label="Date" name="date" required><Input type="date" name="date" required /></Field>
+          <Field label="Type" name="kind">
             <Select name="kind" defaultValue="off">
               <option value="off">Day off</option>
               <option value="hours">Custom hours</option>
             </Select>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Start" name="start" hint="Custom hours only"><Input type="time" name="start" className="px-2" /></Field>
+            <Field label="End" name="end"><Input type="time" name="end" className="px-2" /></Field>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div><label className="mb-1 block text-xs font-medium text-stone-600">Start</label><Input type="time" name="start" className="px-2" /></div>
-            <div><label className="mb-1 block text-xs font-medium text-stone-600">End</label><Input type="time" name="end" className="px-2" /></div>
-          </div>
-          <div><label className="mb-1 block text-xs font-medium text-stone-600">Note</label><Input name="note" placeholder="Vacation, training…" /></div>
-          <Button type="submit" variant="secondary">Add</Button>
-        </form>
+          <Field label="Note" name="note"><Input name="note" placeholder="Vacation, training…" /></Field>
+          <SubmitButton variant="secondary" pendingText="Adding…">Add</SubmitButton>
+        </ActionForm>
       </Card>
     </div>
   );

@@ -1,9 +1,14 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { Plus } from "lucide-react";
+
+export const metadata: Metadata = { title: "Services" };
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { formatMoney } from "@/lib/utils";
+import { duration } from "@/lib/format";
 import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 import { toggleServiceActive } from "./actions";
 
@@ -27,10 +32,10 @@ export default async function ServicesPage({ params }: { params: Promise<{ slug:
     <>
       <PageHeader title="Services">
         {manage ? <LinkButton href={`/app/${slug}/services/categories`}>Categories</LinkButton> : null}
-        {manage ? <LinkButton href={`/app/${slug}/services/new`} variant="primary">+ New service</LinkButton> : null}
+        {manage ? <LinkButton href={`/app/${slug}/services/new`} variant="primary"><Plus className="h-4 w-4" /> New service</LinkButton> : null}
       </PageHeader>
       <div className="space-y-4">
-        {rows.length === 0 ? <Empty title="No services yet" body="Add your menu with “New service”." /> : null}
+        {rows.length === 0 ? <Empty title="No services yet" body="Your menu is what clients see when they book." action={{ href: `/app/${slug}/services/new`, label: "Add your first service" }} /> : null}
         {[...groups.entries()].map(([cat, list]) => (
           <Card key={cat}>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">{cat}</h2>
@@ -44,10 +49,10 @@ export default async function ServicesPage({ params }: { params: Promise<{ slug:
                       <p className={s.active ? "font-medium" : "font-medium text-stone-400 line-through"}>{s.name}</p>
                     )}
                     <p className="text-xs text-stone-500">
-                      {s.durationMin} min
-                      {s.gapMin ? ` + ${s.gapMin} processing` : ""}
-                      {s.finishMin ? ` + ${s.finishMin} finish` : ""}
-                      {s.bufferAfterMin ? ` + ${s.bufferAfterMin} buffer` : ""}
+                      {duration(s.durationMin)}
+                      {s.gapMin ? ` + ${duration(s.gapMin)} processing` : ""}
+                      {s.finishMin ? ` + ${duration(s.finishMin)} finish` : ""}
+                      {s.bufferAfterMin ? ` + ${duration(s.bufferAfterMin)} buffer` : ""}
                       {s.depositCents ? ` · deposit ${formatMoney(s.depositCents, business.currency)}` : ""}
                       {!s.bookableOnline ? " · not online" : ""}
                     </p>

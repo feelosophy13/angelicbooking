@@ -1,23 +1,27 @@
+import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
-import { Button, Field, FormPage, Input, Textarea } from "@/components/ui";
+import { FormPage, Input, Textarea } from "@/components/ui";
+import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { createClient } from "../actions";
+
+export const metadata: Metadata = { title: "New client" };
 
 export default async function NewClientPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   await requireAction(slug, "clients.write");
   return (
     <FormPage title="New client" backHref={`/app/${slug}/clients`} backLabel="Clients" width="max-w-lg">
-      <form action={createClient} className="space-y-3">
+      <ActionForm action={createClient}>
         <input type="hidden" name="slug" value={slug} />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="First name"><Input name="firstName" required autoFocus /></Field>
-          <Field label="Last name"><Input name="lastName" /></Field>
+          <Field label="First name" name="firstName" required><Input name="firstName" required autoFocus /></Field>
+          <Field label="Last name" name="lastName"><Input name="lastName" /></Field>
         </div>
-        <Field label="Mobile phone"><Input name="phone" type="tel" /></Field>
-        <Field label="Email"><Input name="email" type="email" /></Field>
-        <Field label="Notes"><Textarea name="notes" rows={3} placeholder="Allergies, formulas, preferences" /></Field>
-        <Button type="submit">Create client</Button>
-      </form>
+        <Field label="Mobile phone" name="phone" hint="Used for text confirmations and reminders."><Input name="phone" type="tel" /></Field>
+        <Field label="Email" name="email"><Input name="email" type="email" /></Field>
+        <Field label="Notes" name="notes"><Textarea name="notes" rows={3} placeholder="Allergies, formulas, preferences" /></Field>
+        <SubmitButton pendingText="Creating…">Create client</SubmitButton>
+      </ActionForm>
     </FormPage>
   );
 }

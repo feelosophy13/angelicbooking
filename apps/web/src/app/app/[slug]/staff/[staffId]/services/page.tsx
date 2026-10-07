@@ -1,7 +1,8 @@
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { Button, Card } from "@/components/ui";
+import { Card } from "@/components/ui";
+import { SubmitButton } from "@/components/form";
 import { saveStaffServices } from "../../actions";
 
 export default async function StaffServicesPage({ params }: { params: Promise<{ slug: string; staffId: string }> }) {
@@ -24,7 +25,7 @@ export default async function StaffServicesPage({ params }: { params: Promise<{ 
             {s.name} <span className="text-stone-400">· {s.durationMin} min</span>
           </label>
         ))}
-        <Button type="submit" className="mt-2">Save services</Button>
+        <SubmitButton className="mt-2" pendingText="Saving…">Save services</SubmitButton>
       </form>
     </Card>
   );

@@ -1,8 +1,12 @@
-import Link from "next/link";
+import type { Metadata } from "next";
+import { Plus } from "lucide-react";
+import { ConfirmSubmit } from "@/components/form";
+
+export const metadata: Metadata = { title: "Locations" };
 import { asc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { Button, Card, LinkButton, PageHeader } from "@/components/ui";
+import { BackLink, Button, Card, LinkButton, PageHeader } from "@/components/ui";
 import { deleteLocation, setDefaultLocation } from "./actions";
 
 export default async function LocationsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -11,9 +15,9 @@ export default async function LocationsPage({ params }: { params: Promise<{ slug
   const rows = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.createdAt)));
   return (
     <>
+      <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Locations">
-        <Link href={`/app/${slug}/settings`} className="text-sm text-brand-700 underline">← Settings</Link>
-        <LinkButton href={`/app/${slug}/settings/locations/new`} variant="primary">+ New location</LinkButton>
+        <LinkButton href={`/app/${slug}/settings/locations/new`} variant="primary"><Plus className="h-4 w-4" /> New location</LinkButton>
       </PageHeader>
       <Card className="max-w-3xl">
         <ul className="divide-y divide-stone-100">
@@ -26,7 +30,7 @@ export default async function LocationsPage({ params }: { params: Promise<{ slug
               {!l.isDefault ? (
                 <>
                   <form action={setDefaultLocation}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={l.id} /><Button size="sm" variant="ghost" type="submit">Make default</Button></form>
-                  <form action={deleteLocation}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={l.id} /><Button size="sm" variant="ghost" type="submit">Remove</Button></form>
+                  <form action={deleteLocation}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={l.id} /><ConfirmSubmit title={`Remove ${l.name}?`} body="Staff assigned here become unassigned; past appointments keep their records." confirmLabel="Remove" variant="ghost">Remove</ConfirmSubmit></form>
                 </>
               ) : null}
             </li>

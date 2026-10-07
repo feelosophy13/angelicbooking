@@ -1,4 +1,8 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { Plus } from "lucide-react";
+
+export const metadata: Metadata = { title: "Products" };
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
@@ -27,10 +31,10 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
     <>
       <PageHeader title="Products">
         {manage ? <LinkButton href={`/app/${slug}/products/categories`}>Categories</LinkButton> : null}
-        {manage ? <LinkButton href={`/app/${slug}/products/new`} variant="primary">+ New product</LinkButton> : null}
+        {manage ? <LinkButton href={`/app/${slug}/products/new`} variant="primary"><Plus className="h-4 w-4" /> New product</LinkButton> : null}
       </PageHeader>
       <div className="space-y-4">
-        {rows.length === 0 ? <Empty title="No retail products yet" body="Shampoo, styling products, gift items…" /> : null}
+        {rows.length === 0 ? <Empty title="No retail products yet" body="Shampoo, styling products, gift items…" action={{ href: `/app/${slug}/products/new`, label: "Add a product" }} /> : null}
         {[...groups.entries()].map(([cat, list]) => (
           <Card key={cat}>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">{cat}</h2>

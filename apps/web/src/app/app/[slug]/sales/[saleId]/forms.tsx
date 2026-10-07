@@ -1,6 +1,7 @@
 "use client";
 import { useActionState } from "react";
 import { Button, Field, Input, Notice, Select } from "@/components/ui";
+import { ConfirmSubmit, SubmitButton } from "@/components/form";
 import type { SaleActionState } from "./actions";
 
 type Action = (prev: SaleActionState, fd: FormData) => Promise<SaleActionState>;
@@ -63,7 +64,7 @@ export function ManualPayForm({ action, slug, saleId, dueCents }: { action: Acti
       </div>
       <Input name="note" placeholder="Note (e.g. Venmo, gift)" />
       {state?.error ? <Notice>{state.error}</Notice> : null}
-      <Button type="submit" size="sm" disabled={pending}>{pending ? "…" : "Record payment"}</Button>
+      <SubmitButton size="sm" pendingText="Recording…">Record payment</SubmitButton>
     </form>
   );
 }
@@ -81,7 +82,7 @@ export function SavedCardForm({ action, slug, saleId, dueCents, cards }: { actio
       </Select>
       <Input name="amount" inputMode="decimal" defaultValue={(dueCents / 100).toFixed(2)} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
-      <Button type="submit" size="sm" disabled={pending}>{pending ? "Charging…" : "Charge saved card"}</Button>
+      <SubmitButton size="sm" pendingText="Charging…">Charge saved card</SubmitButton>
     </form>
   );
 }
@@ -95,7 +96,7 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents }: { acti
       <input type="hidden" name="paymentId" value={paymentId} />
       <Input name="amount" inputMode="decimal" defaultValue={(maxCents / 100).toFixed(2)} className="w-28" />
       <Input name="reason" placeholder="Reason" className="w-40" />
-      <Button type="submit" size="sm" variant="danger" disabled={pending}>Refund</Button>
+      <ConfirmSubmit title="Issue this refund?" body="Card refunds go back to the original card through Stripe and can't be reversed." confirmLabel="Refund" variant="danger">Refund</ConfirmSubmit>
       {state?.error ? <Notice>{state.error}</Notice> : null}
     </form>
   );

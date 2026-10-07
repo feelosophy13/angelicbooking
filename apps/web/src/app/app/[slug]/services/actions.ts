@@ -6,58 +6,55 @@ import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { ensureCategory } from "@/server/categories";
-
-const money = z.string().trim().regex(/^\d+(\.\d{1,2})?$/, "Enter a price like 45 or 45.50").transform((v) => Math.round(Number(v) * 100));
-const minutes = (min: number) => z.coerce.number().int().min(min).max(600);
+import { f, formAction } from "@/lib/form";
+import { setFlash } from "@/lib/flash";
 
 const fields = z.object({
-  name: z.string().trim().min(1).max(80),
-  description: z.string().trim().max(300).optional(),
+  slug: z.string(),
+  serviceId: z.string().optional(),
+  name: f.text(1, 80),
+  description: f.optional(300),
   categoryId: z.string().optional(),
-  categoryIdNew: z.string().trim().max(60).optional(),
-  durationMin: minutes(5),
-  gapMin: minutes(0),
-  finishMin: minutes(0),
-  bufferAfterMin: minutes(0),
-  price: money,
-  deposit: money.or(z.literal("").transform(() => 0)),
-  bookableOnline: z.string().optional(),
+  categoryIdNew: f.optional(60),
+  durationMin: f.int(5, 600),
+  gapMin: f.int(0, 600),
+  finishMin: f.int(0, 600),
+  bufferAfterMin: f.int(0, 120),
+  price: f.money("price"),
+  deposit: f.moneyOptional(),
+  bookableOnline: f.checkbox(),
 });
 
-async function resolveCategory(businessId: string, d: { categoryId?: string; categoryIdNew?: string }) {
+async function resolveCategory(businessId: string, d: { categoryId?: string; categoryIdNew: string | null }) {
   if (d.categoryIdNew) return ensureCategory(businessId, "service", d.categoryIdNew);
   return d.categoryId || null;
 }
 
-export async function createService(formData: FormData) {
-  const slug = String(formData.get("slug"));
-  const ctx = await requireAction(slug, "services.manage");
-  const d = fields.parse(Object.fromEntries(formData));
+export const createService = formAction(fields, async (d) => {
+  const ctx = await requireAction(d.slug, "services.manage");
   const categoryId = await resolveCategory(ctx.business.id, d);
   await withTenant(ctx.business.id, (tx) =>
     tx.insert(schema.services).values({
       businessId: ctx.business.id,
       categoryId,
       name: d.name,
-      description: d.description || null,
+      description: d.description,
       durationMin: d.durationMin,
       gapMin: d.gapMin,
       finishMin: d.finishMin,
       bufferAfterMin: d.bufferAfterMin,
       priceCents: d.price,
       depositCents: d.deposit,
-      bookableOnline: d.bookableOnline !== "off",
+      bookableOnline: d.bookableOnline,
     }),
   );
-  revalidatePath(`/app/${slug}/services`);
-  redirect(`/app/${slug}/services`);
-}
+  await setFlash(`${d.name} added`);
+  revalidatePath(`/app/${d.slug}/services`);
+  redirect(`/app/${d.slug}/services`);
+});
 
-export async function updateService(formData: FormData) {
-  const slug = String(formData.get("slug"));
-  const serviceId = String(formData.get("serviceId"));
-  const ctx = await requireAction(slug, "services.manage");
-  const d = fields.parse(Object.fromEntries(formData));
+export const updateService = formAction(fields, async (d) => {
+  const ctx = await requireAction(d.slug, "services.manage");
   const categoryId = await resolveCategory(ctx.business.id, d);
   await withTenant(ctx.business.id, (tx) =>
     tx
@@ -65,20 +62,21 @@ export async function updateService(formData: FormData) {
       .set({
         categoryId,
         name: d.name,
-        description: d.description || null,
+        description: d.description,
         durationMin: d.durationMin,
         gapMin: d.gapMin,
         finishMin: d.finishMin,
         bufferAfterMin: d.bufferAfterMin,
         priceCents: d.price,
         depositCents: d.deposit,
-        bookableOnline: d.bookableOnline === "on",
+        bookableOnline: d.bookableOnline,
       })
-      .where(eq(schema.services.id, serviceId)),
+      .where(eq(schema.services.id, d.serviceId ?? "")),
   );
-  revalidatePath(`/app/${slug}/services`);
-  revalidatePath(`/app/${slug}/services/${serviceId}`);
-}
+  revalidatePath(`/app/${d.slug}/services`);
+  revalidatePath(`/app/${d.slug}/services/${d.serviceId}`);
+  return "Service saved";
+});
 
 export async function toggleServiceActive(formData: FormData) {
   const slug = String(formData.get("slug"));
@@ -86,5 +84,6 @@ export async function toggleServiceActive(formData: FormData) {
   const id = String(formData.get("serviceId"));
   const active = formData.get("active") === "true";
   await withTenant(ctx.business.id, (tx) => tx.update(schema.services).set({ active }).where(eq(schema.services.id, id)));
+  await setFlash(active ? "Service shown again" : "Service hidden");
   revalidatePath(`/app/${slug}/services`);
 }

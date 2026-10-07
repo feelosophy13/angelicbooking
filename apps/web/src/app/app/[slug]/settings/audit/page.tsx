@@ -1,8 +1,11 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Activity log" };
 import { desc, eq, inArray } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { Card, PageHeader, Empty } from "@/components/ui";
+import { BackLink, Card, PageHeader, Empty } from "@/components/ui";
 
 export default async function AuditPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -19,9 +22,8 @@ export default async function AuditPage({ params }: { params: Promise<{ slug: st
 
   return (
     <>
-      <PageHeader title="Activity log">
-        <Link href={`/app/${slug}/settings`} className="text-sm text-brand-700 underline">← Settings</Link>
-      </PageHeader>
+      <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
+      <PageHeader title="Activity log" />
       {rows.length === 0 ? (
         <Empty title="Nothing yet" body="Bookings, reschedules and status changes will show up here." />
       ) : (

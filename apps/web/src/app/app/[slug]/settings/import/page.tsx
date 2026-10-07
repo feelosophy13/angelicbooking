@@ -1,9 +1,11 @@
-import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Import from Vagaro" };
 import { desc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { FIELDS } from "@/lib/import/mapping";
-import { Card, PageHeader, Notice } from "@/components/ui";
+import { BackLink, Card, PageHeader, Notice } from "@/components/ui";
 import { readStaged } from "./actions";
 import { MappingForm, UploadForm } from "./forms";
 
@@ -21,9 +23,8 @@ export default async function ImportPage({ params, searchParams }: { params: Pro
 
   return (
     <>
-      <PageHeader title="Import from Vagaro">
-        <Link href={`/app/${slug}/settings`} className="text-sm text-brand-700 underline">← Settings</Link>
-      </PageHeader>
+      <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
+      <PageHeader title="Import from Vagaro" />
       {done ? (
         <div className="mb-4">
           <Notice kind={done.errors.length ? "error" : "success"}>

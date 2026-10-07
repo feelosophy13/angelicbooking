@@ -1,8 +1,12 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Waitlist" };
 import { requireAction } from "@/lib/tenant";
 import { listWaitlist } from "@/server/public-booking";
-import { formatDateLong } from "@/lib/utils";
+import { dateLong as formatDateLong } from "@/lib/format";
 import { Button, Card, PageHeader, Empty } from "@/components/ui";
+import { ConfirmSubmit } from "@/components/form";
 import { updateWaitlist } from "./actions";
 
 export default async function WaitlistPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -26,7 +30,7 @@ export default async function WaitlistPage({ params }: { params: Promise<{ slug:
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="id" value={w.id} />
                   <Button name="status" value="booked" size="sm" variant="secondary" type="submit">Booked</Button>
-                  <Button name="status" value="closed" size="sm" variant="ghost" type="submit">Remove</Button>
+                  <ConfirmSubmit name="status" value="closed" title="Remove from the waitlist?" confirmLabel="Remove" variant="ghost">Remove</ConfirmSubmit>
                 </form>
               </li>
             ))}

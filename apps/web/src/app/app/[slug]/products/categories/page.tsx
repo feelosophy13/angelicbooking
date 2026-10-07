@@ -1,9 +1,11 @@
-import Link from "next/link";
+import type { Metadata } from "next";
 import { eq, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
-import { LinkButton, PageHeader } from "@/components/ui";
+import { BackLink, LinkButton, PageHeader } from "@/components/ui";
+
+export const metadata: Metadata = { title: "Product categories" };
 import { CategoryList } from "@/components/categories";
 import { moveCategoryAction, removeCategory, renameCategoryAction } from "../../categories-actions";
 
@@ -17,8 +19,8 @@ export default async function ProductCategoriesPage({ params }: { params: Promis
   const counts = Object.fromEntries(countRows.filter((r) => r.id).map((r) => [r.id!, Number(r.n)]));
   return (
     <>
+      <div className="mb-2"><BackLink href={`/app/${slug}/products`}>Products</BackLink></div>
       <PageHeader title="Product categories">
-        <Link href={`/app/${slug}/products`} className="text-sm text-brand-700 underline">← Products</Link>
         <LinkButton href={`/app/${slug}/products/categories/new`} variant="primary">+ New category</LinkButton>
       </PageHeader>
       <p className="mb-3 text-sm text-stone-600">This order is used in the product picker at checkout. Deleting a category leaves its products uncategorised.</p>

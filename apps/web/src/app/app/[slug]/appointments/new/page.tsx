@@ -1,9 +1,13 @@
+import type { Metadata } from "next";
 import { asc, eq } from "drizzle-orm";
+
+export const metadata: Metadata = { title: "New appointment" };
 import { schema, withTenant } from "@angelic/db";
 import { instantToISODate } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { getStaffAvailability, staffForService, timingFor } from "@/server/availability";
 import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
+import { duration } from "@/lib/format";
 import { Button, Card, Field, Input, PageHeader, Select, Empty } from "@/components/ui";
 import { BookForm } from "./book-form";
 
@@ -61,7 +65,7 @@ export default async function NewAppointmentPage({
               <Select name="serviceId" defaultValue={service?.id ?? ""} required>
                 <option value="" disabled>Choose a service</option>
                 {services.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name} · {s.durationMin} min · {formatMoney(s.priceCents, business.currency)}</option>
+                  <option key={s.id} value={s.id}>{s.name} · {duration(s.durationMin)} · {formatMoney(s.priceCents, business.currency)}</option>
                 ))}
               </Select>
             </Field>

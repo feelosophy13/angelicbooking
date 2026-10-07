@@ -1,4 +1,8 @@
+import type { Metadata } from "next";
+import { Plus } from "lucide-react";
 import { can } from "@angelic/core";
+
+export const metadata: Metadata = { title: "Packages" };
 import { requireBusiness } from "@/lib/tenant";
 import { getOffersCatalog } from "@/server/offers";
 import { formatMoney } from "@/lib/utils";
@@ -14,7 +18,7 @@ export default async function PackagesPage({ params }: { params: Promise<{ slug:
   return (
     <>
       <PageHeader title="Packages">
-        {manage ? <LinkButton href={`/app/${slug}/packages/new`} variant="primary">+ New package</LinkButton> : null}
+        {manage ? <LinkButton href={`/app/${slug}/packages/new`} variant="primary"><Plus className="h-4 w-4" /> New package</LinkButton> : null}
       </PageHeader>
       <p className="mb-3 text-sm text-stone-600">Prepaid sessions of one service. Sold at checkout; sessions are redeemed on later visits.</p>
       {packages.length === 0 ? <Empty title="No packages yet" /> : (

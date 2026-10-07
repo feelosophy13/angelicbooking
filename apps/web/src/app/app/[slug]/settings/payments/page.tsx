@@ -1,7 +1,10 @@
-import Link from "next/link";
 import { requireAction } from "@/lib/tenant";
 import { isStripeConfigured, platformFeeBps } from "@/lib/stripe";
-import { Button, Card, Field, Input, Notice, PageHeader } from "@/components/ui";
+import type { Metadata } from "next";
+import { BackLink, Button, Card, Input, Notice, PageHeader } from "@/components/ui";
+import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
+
+export const metadata: Metadata = { title: "Payments" };
 import { connectStripe, disconnectStripe, refreshStripe, saveTax } from "./actions";
 
 export default async function PaymentsSettingsPage({
@@ -21,9 +24,8 @@ export default async function PaymentsSettingsPage({
 
   return (
     <>
-      <PageHeader title="Payments">
-        <Link href={`/app/${slug}/settings`} className="text-sm text-brand-700 underline">← Settings</Link>
-      </PageHeader>
+      <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
+      <PageHeader title="Payments" />
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="p-4">
           <h2 className="mb-1 font-medium">Stripe account</h2>
@@ -69,7 +71,7 @@ export default async function PaymentsSettingsPage({
                 </a>
                 <form action={disconnectStripe}>
                   <input type="hidden" name="slug" value={slug} />
-                  <Button type="submit" variant="ghost">Disconnect</Button>
+                  <ConfirmSubmit title="Disconnect Stripe?" body="Card payments stop until you reconnect. Your Stripe account and its history are unaffected." confirmLabel="Disconnect" variant="ghost">Disconnect</ConfirmSubmit>
                 </form>
               </div>
             </div>
@@ -79,13 +81,13 @@ export default async function PaymentsSettingsPage({
         <Card className="p-4">
           <h2 className="mb-1 font-medium">Sales tax</h2>
           <p className="mb-3 text-sm text-stone-600">Applied to taxable product lines at checkout. Services are not taxed.</p>
-          <form action={saveTax} className="flex items-end gap-2">
+          <ActionForm action={saveTax} className="flex items-end gap-2">
             <input type="hidden" name="slug" value={slug} />
-            <Field label="Rate (%)">
+            <Field label="Rate (%)" name="taxPct">
               <Input name="taxPct" type="number" step="0.01" min={0} max={30} defaultValue={(business.taxRateBps / 100).toFixed(2)} className="w-32" />
             </Field>
-            <Button type="submit" variant="secondary">Save</Button>
-          </form>
+            <SubmitButton variant="secondary" pendingText="Saving…">Save</SubmitButton>
+          </ActionForm>
         </Card>
 
         <Card className="p-4 lg:col-span-2">

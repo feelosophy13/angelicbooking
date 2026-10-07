@@ -1,11 +1,18 @@
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { headers } from "next/headers";
-import Link from "next/link";
 import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
-import { PageHeader, Tabs } from "@/components/ui";
+import { BackLink, PageHeader, Tabs } from "@/components/ui";
+import type { Metadata } from "next";
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string; staffId: string }> }): Promise<Metadata> {
+  const { slug, staffId } = await params;
+  const { business } = await requireAction(slug, "staff.manage");
+  const person = await withTenant(business.id, (tx) => tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId) }));
+  return { title: person ? `${person.displayName} · Staff` : "Staff" };
+}
 
 export default async function StaffDetailLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string; staffId: string }> }) {
   const { slug, staffId } = await params;
@@ -24,9 +31,8 @@ export default async function StaffDetailLayout({ children, params }: { children
   const current = h.get("x-pathname") ?? "";
   return (
     <>
-      <PageHeader title={person.displayName}>
-        <Link href={`/app/${slug}/staff`} className="text-sm text-brand-700 underline">← Staff</Link>
-      </PageHeader>
+      <div className="mb-2"><BackLink href={`/app/${slug}/staff`}>Staff</BackLink></div>
+      <PageHeader title={person.displayName} />
       <Tabs items={tabs} current={current} />
       {children}
     </>

@@ -1,12 +1,23 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { Plus } from "lucide-react";
+import { StatusBadge } from "@/components/status-badge";
+import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { formatMoney, formatTime } from "@/lib/utils";
-import { Button, Card, Field, Input, LinkButton, PageHeader, Textarea, Empty } from "@/components/ui";
+import { BackLink, Card, Input, LinkButton, PageHeader, Textarea, Empty } from "@/components/ui";
 import { updateClient } from "../actions";
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
+  const { slug, clientId } = await params;
+  const { business } = await requireBusiness(slug);
+  const c = await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) }));
+  return { title: c ? `${c.firstName} ${c.lastName}`.trim() + " · Clients" : "Client" };
+}
 
 export default async function ClientPage({ params }: { params: Promise<{ slug: string; clientId: string }> }) {
   const { slug, clientId } = await params;
@@ -51,9 +62,9 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
 
   return (
     <>
+      <div className="mb-2"><BackLink href={`/app/${slug}/clients`}>Clients</BackLink></div>
       <PageHeader title={`${client.firstName} ${client.lastName}`.trim()}>
-        <Link href={`/app/${slug}/clients`} className="text-sm text-brand-700 underline">← Clients</Link>
-        {can(role, "appointments.write.any") ? <LinkButton href={`/app/${slug}/appointments/new?clientId=${client.id}`} variant="primary">+ Book appointment</LinkButton> : null}
+        {can(role, "appointments.write.any") ? <LinkButton href={`/app/${slug}/appointments/new?clientId=${client.id}`} variant="primary"><Plus className="h-4 w-4" /> Book appointment</LinkButton> : null}
       </PageHeader>
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
@@ -62,7 +73,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             {upcoming.length === 0 ? <div className="p-4"><Empty title="Nothing booked" /></div> : (
               <ul className="divide-y divide-stone-100 text-sm">
                 {upcoming.reverse().map((v) => (
-                  <li key={v.id}><Link href={`/app/${slug}/appointments/${v.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span>{fmtDate.format(v.startAt)} · {formatTime(v.startAt, tz)} · {v.serviceName} with {v.staffName}</span><span className="text-xs uppercase text-stone-500">{v.status.replace("_", " ")}</span></Link></li>
+                  <li key={v.id}><Link href={`/app/${slug}/appointments/${v.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span>{fmtDate.format(v.startAt)} · {formatTime(v.startAt, tz)} · {v.serviceName} with {v.staffName}</span><StatusBadge status={v.status} /></Link></li>
                 ))}
               </ul>
             )}
@@ -72,7 +83,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             {past.length === 0 ? <div className="p-4"><Empty title="No past visits" /></div> : (
               <ul className="divide-y divide-stone-100 text-sm">
                 {past.map((v) => (
-                  <li key={v.id}><Link href={`/app/${slug}/appointments/${v.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span className={v.status === "cancelled" || v.status === "no_show" ? "text-stone-400" : ""}>{fmtDate.format(v.startAt)} · {v.serviceName} with {v.staffName}</span><span className="text-xs uppercase text-stone-500">{v.status.replace("_", " ")}</span></Link></li>
+                  <li key={v.id}><Link href={`/app/${slug}/appointments/${v.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span className={v.status === "cancelled" || v.status === "no_show" ? "text-stone-400" : ""}>{fmtDate.format(v.startAt)} · {v.serviceName} with {v.staffName}</span><StatusBadge status={v.status} /></Link></li>
                 ))}
               </ul>
             )}
@@ -82,7 +93,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             {sales.length === 0 ? <div className="p-4"><Empty title="No sales yet" /></div> : (
               <ul className="divide-y divide-stone-100 text-sm">
                 {sales.map((s) => (
-                  <li key={s.id}><Link href={`/app/${slug}/sales/${s.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span>#{s.number} · {fmtDate.format(s.createdAt)}</span><span>{money(s.totalCents)} <span className="text-xs uppercase text-stone-500">{s.status}</span></span></Link></li>
+                  <li key={s.id}><Link href={`/app/${slug}/sales/${s.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span>#{s.number} · {fmtDate.format(s.createdAt)}</span><span className="flex items-center gap-2">{money(s.totalCents)} <StatusBadge status={s.status} /></span></Link></li>
                 ))}
               </ul>
             )}
@@ -92,20 +103,20 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
           <Card className="p-4">
             <h2 className="mb-3 font-medium">Details</h2>
             {write ? (
-              <form action={updateClient} className="space-y-3">
+              <ActionForm action={updateClient}>
                 <input type="hidden" name="slug" value={slug} />
                 <input type="hidden" name="clientId" value={client.id} />
                 <div className="grid grid-cols-2 gap-3">
-                  <Field label="First name"><Input name="firstName" defaultValue={client.firstName} required /></Field>
-                  <Field label="Last name"><Input name="lastName" defaultValue={client.lastName} /></Field>
+                  <Field label="First name" name="firstName" required><Input name="firstName" defaultValue={client.firstName} required /></Field>
+                  <Field label="Last name" name="lastName"><Input name="lastName" defaultValue={client.lastName} /></Field>
                 </div>
-                <Field label="Mobile phone"><Input name="phone" type="tel" defaultValue={client.phone ?? ""} /></Field>
-                <Field label="Email"><Input name="email" type="email" defaultValue={client.email ?? ""} /></Field>
-                <Field label="Notes"><Textarea name="notes" rows={4} defaultValue={client.notes ?? ""} /></Field>
+                <Field label="Mobile phone" name="phone"><Input name="phone" type="tel" defaultValue={client.phone ?? ""} /></Field>
+                <Field label="Email" name="email"><Input name="email" type="email" defaultValue={client.email ?? ""} /></Field>
+                <Field label="Notes" name="notes"><Textarea name="notes" rows={4} defaultValue={client.notes ?? ""} /></Field>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="smsOptIn" defaultChecked={client.smsOptIn} className="h-4 w-4 accent-brand-600" /> Text messages</label>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="emailOptIn" defaultChecked={client.emailOptIn} className="h-4 w-4 accent-brand-600" /> Emails</label>
-                <Button type="submit" variant="secondary">Save</Button>
-              </form>
+                <SubmitButton variant="secondary" pendingText="Saving…">Save</SubmitButton>
+              </ActionForm>
             ) : (
               <div className="space-y-1 text-sm">
                 {client.phone ? <p>{client.phone}</p> : null}

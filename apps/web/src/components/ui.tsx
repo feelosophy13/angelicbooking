@@ -1,6 +1,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { ArrowLeft, Inbox } from "lucide-react";
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost" | "danger";
@@ -97,15 +98,7 @@ export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLab
   return <label className={cn("mb-1 block text-sm font-medium text-stone-700", className)} {...props} />;
 }
 
-export function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
-  return (
-    <div>
-      <Label>{label}</Label>
-      {children}
-      {hint ? <p className="mt-1 text-xs text-stone-500">{hint}</p> : null}
-    </div>
-  );
-}
+export { Field } from "./form";
 
 export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return <div className={cn("rounded-xl border border-stone-200 bg-white shadow-sm", className)} {...props} />;
@@ -120,12 +113,23 @@ export function PageHeader({ title, children }: { title: string; children?: Reac
   );
 }
 
-export function Empty({ title, body }: { title: string; body?: string }) {
+export function Empty({ title, body, action }: { title: string; body?: string; action?: { href: string; label: string } }) {
   return (
     <div className="rounded-xl border border-dashed border-stone-300 p-10 text-center">
+      <Inbox className="mx-auto mb-2 h-6 w-6 text-stone-300" aria-hidden />
       <p className="font-medium text-stone-700">{title}</p>
       {body ? <p className="mt-1 text-sm text-stone-500">{body}</p> : null}
+      {action ? <div className="mt-4"><LinkButton href={action.href} variant="primary" size="sm">{action.label}</LinkButton></div> : null}
     </div>
+  );
+}
+
+/** "← Back to X" link used in page headers. */
+export function BackLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} className="inline-flex items-center gap-1 text-sm text-stone-600 hover:text-stone-900">
+      <ArrowLeft className="h-4 w-4" aria-hidden /> {children}
+    </Link>
   );
 }
 
@@ -146,10 +150,9 @@ export function Notice({ kind = "error", children }: { kind?: "error" | "success
 export function FormPage({ title, backHref, backLabel, children, width = "max-w-2xl" }: { title: string; backHref: string; backLabel: string; children: React.ReactNode; width?: string }) {
   return (
     <>
-      <PageHeader title={title}>
-        <Link href={backHref} className="text-sm text-brand-700 underline">← {backLabel}</Link>
-      </PageHeader>
-      <Card className={cn("p-4", width)}>{children}</Card>
+      <div className="mb-2"><BackLink href={backHref}>{backLabel}</BackLink></div>
+      <PageHeader title={title} />
+      <Card className={cn("p-5", width)}>{children}</Card>
     </>
   );
 }

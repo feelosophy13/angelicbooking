@@ -3,39 +3,39 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@angelic/db";
-import { parseMoney } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
+import { f, formAction } from "@/lib/form";
 
-const schemaZ = z.object({
-  onlineBookingEnabled: z.string().optional(),
-  requireCardOnline: z.string().optional(),
-  minNoticeMin: z.coerce.number().int().min(0).max(7 * 24 * 60),
-  maxAdvanceDays: z.coerce.number().int().min(1).max(365),
-  cancelWindowHours: z.coerce.number().int().min(0).max(168),
-  reminderHours: z.coerce.number().int().min(1).max(168),
-  noShowFee: z.string().optional(),
-  bookingPolicy: z.string().trim().max(1000),
-  addressLine: z.string().trim().max(200),
-});
-
-export async function saveBookingSettings(formData: FormData) {
-  const slug = String(formData.get("slug"));
-  const { business } = await requireAction(slug, "business.manage");
-  const d = schemaZ.parse(Object.fromEntries(formData));
-  const fee = parseMoney(d.noShowFee ?? "") ?? 0;
-  await db
-    .update(schema.businesses)
-    .set({
-      onlineBookingEnabled: d.onlineBookingEnabled === "on",
-      requireCardOnline: d.requireCardOnline === "on",
-      minNoticeMin: d.minNoticeMin,
-      maxAdvanceDays: d.maxAdvanceDays,
-      cancelWindowHours: d.cancelWindowHours,
-      reminderHours: d.reminderHours,
-      noShowFeeCents: fee,
-      bookingPolicy: d.bookingPolicy || null,
-      addressLine: d.addressLine || null,
-    })
-    .where(eq(schema.businesses.id, business.id));
-  revalidatePath(`/app/${slug}/settings/booking`);
-}
+export const saveBookingSettings = formAction(
+  z.object({
+    slug: z.string(),
+    onlineBookingEnabled: f.checkbox(),
+    requireCardOnline: f.checkbox(),
+    minNoticeMin: f.int(0, 7 * 24 * 60),
+    maxAdvanceDays: f.int(1, 365),
+    cancelWindowHours: f.int(0, 168),
+    reminderHours: f.int(1, 168),
+    noShowFee: f.moneyOptional(),
+    bookingPolicy: f.optional(1000),
+    addressLine: f.optional(200),
+  }),
+  async (d) => {
+    const ctx = await requireAction(d.slug, "business.manage");
+    await db
+      .update(schema.businesses)
+      .set({
+        onlineBookingEnabled: d.onlineBookingEnabled,
+        requireCardOnline: d.requireCardOnline,
+        minNoticeMin: d.minNoticeMin,
+        maxAdvanceDays: d.maxAdvanceDays,
+        cancelWindowHours: d.cancelWindowHours,
+        reminderHours: d.reminderHours,
+        noShowFeeCents: d.noShowFee,
+        bookingPolicy: d.bookingPolicy,
+        addressLine: d.addressLine,
+      })
+      .where(eq(schema.businesses.id, ctx.business.id));
+    revalidatePath(`/app/${d.slug}/settings/booking`);
+    return "Booking settings saved";
+  },
+);

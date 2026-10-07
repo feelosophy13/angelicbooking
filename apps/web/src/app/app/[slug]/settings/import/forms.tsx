@@ -1,11 +1,12 @@
 "use client";
 import { useActionState } from "react";
 import { commitImport, uploadImport, type UploadState } from "./actions";
-import { Button, Field, Notice, Select } from "@/components/ui";
+import { Field, Notice, Select } from "@/components/ui";
+import { SubmitButton } from "@/components/form";
 import type { FieldSpec } from "@/lib/import/mapping";
 
 export function UploadForm({ slug }: { slug: string }) {
-  const [state, action, pending] = useActionState<UploadState, FormData>(uploadImport, undefined);
+  const [state, action] = useActionState<UploadState, FormData>(uploadImport, undefined);
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="slug" value={slug} />
@@ -20,13 +21,13 @@ export function UploadForm({ slug }: { slug: string }) {
         <input type="file" name="file" accept=".csv,.xlsx,.xls,text/csv" required className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm" />
       </Field>
       {state?.error ? <Notice>{state.error}</Notice> : null}
-      <Button type="submit" disabled={pending}>{pending ? "Reading file…" : "Upload and preview"}</Button>
+      <SubmitButton pendingText="Reading file…">Upload and preview</SubmitButton>
     </form>
   );
 }
 
 export function MappingForm({ slug, staged, headers, fields, mapping, rowCount }: { slug: string; staged: string; headers: string[]; fields: FieldSpec[]; mapping: Record<string, string>; rowCount: number }) {
-  const [state, action, pending] = useActionState<UploadState, FormData>(commitImport, undefined);
+  const [state, action] = useActionState<UploadState, FormData>(commitImport, undefined);
   return (
     <form action={action} className="space-y-3">
       <input type="hidden" name="slug" value={slug} />
@@ -42,7 +43,7 @@ export function MappingForm({ slug, staged, headers, fields, mapping, rowCount }
         ))}
       </div>
       {state?.error ? <Notice>{state.error}</Notice> : null}
-      <Button type="submit" disabled={pending}>{pending ? "Importing…" : `Import ${rowCount} rows`}</Button>
+      <SubmitButton pendingText="Importing…">Import {rowCount} rows</SubmitButton>
     </form>
   );
 }

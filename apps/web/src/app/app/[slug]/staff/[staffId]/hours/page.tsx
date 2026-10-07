@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { Button, Card, Input } from "@/components/ui";
+import { Card, Input } from "@/components/ui";
+import { SubmitButton } from "@/components/form";
 import { saveSchedule } from "../../actions";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -32,7 +33,7 @@ export default async function StaffHoursPage({ params }: { params: Promise<{ slu
             </div>
           );
         })}
-        <Button type="submit" className="mt-2">Save hours</Button>
+        <SubmitButton className="mt-2" pendingText="Saving…">Save hours</SubmitButton>
       </form>
     </Card>
   );

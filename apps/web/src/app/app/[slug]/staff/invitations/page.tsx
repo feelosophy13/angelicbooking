@@ -1,8 +1,11 @@
-import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { title: "Staff invitations" };
 import { and, asc, eq, gt } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { Button, Card, PageHeader, Empty } from "@/components/ui";
+import { BackLink, Card, PageHeader, Empty } from "@/components/ui";
+import { ConfirmSubmit } from "@/components/form";
 import { cancelInvite } from "../actions";
 import { InviteForm } from "../invite-form";
 
@@ -16,9 +19,8 @@ export default async function InvitationsPage({ params }: { params: Promise<{ sl
     .orderBy(asc(schema.invitation.email));
   return (
     <>
-      <PageHeader title="Staff invitations">
-        <Link href={`/app/${slug}/staff`} className="text-sm text-brand-700 underline">← Staff</Link>
-      </PageHeader>
+      <div className="mb-2"><BackLink href={`/app/${slug}/staff`}>Staff</BackLink></div>
+      <PageHeader title="Staff invitations" />
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Pending</h2>
@@ -34,7 +36,7 @@ export default async function InvitationsPage({ params }: { params: Promise<{ sl
                   <form action={cancelInvite}>
                     <input type="hidden" name="slug" value={slug} />
                     <input type="hidden" name="invitationId" value={inv.id} />
-                    <Button size="sm" variant="ghost" type="submit">Revoke</Button>
+                    <ConfirmSubmit title={`Revoke the invitation for ${inv.email}?`} body="The link stops working. You can invite them again later." confirmLabel="Revoke" variant="ghost">Revoke</ConfirmSubmit>
                   </form>
                 </li>
               ))}

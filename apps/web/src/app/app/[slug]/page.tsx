@@ -1,4 +1,8 @@
+import type { Metadata } from "next";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { instantToISODate } from "@angelic/core";
+
+export const metadata: Metadata = { title: "Calendar" };
 import { getRangeAgenda } from "@/server/agenda";
 import { requireBusiness } from "@/lib/tenant";
 import { formatDateLong, shiftISODate } from "@/lib/utils";
@@ -109,16 +113,16 @@ export default async function CalendarPage({
             <button className="h-8 rounded-lg border border-stone-300 bg-white px-3 text-sm">Go</button>
           </form>
         ) : null}
-        <LinkButton href={nav(shiftISODate(date, -step))} size="sm">‹</LinkButton>
+        <LinkButton href={nav(shiftISODate(date, -step))} size="sm" aria-label="Previous"><ChevronLeft className="h-4 w-4" /></LinkButton>
         <LinkButton href={nav(today)} size="sm" variant={date === today ? "ghost" : "secondary"}>Today</LinkButton>
-        <LinkButton href={nav(shiftISODate(date, step))} size="sm">›</LinkButton>
+        <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label="Next"><ChevronRight className="h-4 w-4" /></LinkButton>
         {can(role, "appointments.write.any") ? (
-          <LinkButton href={`/app/${slug}/appointments/new?date=${date}`} variant="primary" size="sm">+ New appointment</LinkButton>
+          <LinkButton href={`/app/${slug}/appointments/new?date=${date}`} variant="primary" size="sm"><Plus className="h-4 w-4" /> New appointment</LinkButton>
         ) : null}
       </PageHeader>
 
       {staff.length === 0 ? (
-        <Empty title="No staff yet" body="Add a staff member before booking appointments." />
+        <Empty title="No staff yet" body="Add a staff member before booking appointments." action={{ href: `/app/${slug}/staff/new`, label: "Add a staff member" }} />
       ) : (
         <CalendarGrid
           slug={slug}

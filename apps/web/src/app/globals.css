@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme {
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --color-brand-50: #f5f3ff;
   --color-brand-100: #ede9fe;
   --color-brand-500: #7c3aed;
@@ -15,3 +16,7 @@
 body {
   @apply bg-stone-50 text-stone-900 antialiased;
 }
+
+h1, h2, h3 { letter-spacing: -0.01em; }
+input[type="time"]::-webkit-calendar-picker-indicator, input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.6; }
+@media print { aside, header, nav, .print\:hidden { display: none !important; } main { padding: 0 !important; } }

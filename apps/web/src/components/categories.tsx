@@ -1,4 +1,6 @@
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { Card, Input } from "@/components/ui";
+import { ConfirmSubmit } from "@/components/form";
 
 type Category = { id: string; name: string; sortOrder: number };
 
@@ -25,11 +27,11 @@ export function CategoryList(props: {
           <li key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm">
             <form action={props.actions.move} className="flex">
               {hidden({ id: c.id, dir: "up" })}
-              <button className="px-1 text-stone-400 hover:text-stone-800 disabled:opacity-30" disabled={i === 0} aria-label="Move up">▲</button>
+              <button className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-30" disabled={i === 0} aria-label="Move up"><ArrowUp className="h-4 w-4" /></button>
             </form>
             <form action={props.actions.move} className="flex">
               {hidden({ id: c.id, dir: "down" })}
-              <button className="px-1 text-stone-400 hover:text-stone-800 disabled:opacity-30" disabled={i === props.categories.length - 1} aria-label="Move down">▼</button>
+              <button className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-30" disabled={i === props.categories.length - 1} aria-label="Move down"><ArrowDown className="h-4 w-4" /></button>
             </form>
             <form action={props.actions.rename} className="flex flex-1 items-center gap-1">
               {hidden({ id: c.id })}
@@ -39,7 +41,7 @@ export function CategoryList(props: {
             <span className="w-16 text-right text-xs text-stone-400">{props.counts[c.id] ?? 0} item{(props.counts[c.id] ?? 0) === 1 ? "" : "s"}</span>
             <form action={props.actions.remove}>
               {hidden({ id: c.id })}
-              <button className="px-2 text-xs text-stone-400 hover:text-red-600" aria-label="Delete category">Delete</button>
+              <ConfirmSubmit title={`Delete “${c.name}”?`} body={`${props.counts[c.id] ?? 0} item(s) will become uncategorised. This can't be undone.`} confirmLabel="Delete" variant="ghost" className="text-stone-500 hover:text-red-600">Delete</ConfirmSubmit>
             </form>
           </li>
         ))}

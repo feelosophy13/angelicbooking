@@ -1,21 +1,22 @@
-import Link from "next/link";
+import type { Metadata } from "next";
+import { StatusBadge } from "@/components/status-badge";
+
+export const metadata: Metadata = { title: "Messages" };
 import { desc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { emailConfigured, smsConfigured } from "@/lib/notify/providers";
-import { Card, PageHeader, Empty, Notice } from "@/components/ui";
+import { BackLink, Card, PageHeader, Empty, Notice } from "@/components/ui";
 
 export default async function NotificationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "business.manage");
   const rows = await withTenant(business.id, (tx) => tx.select().from(schema.notifications).orderBy(desc(schema.notifications.createdAt)).limit(200));
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: business.timezone });
-  const tone: Record<string, string> = { sent: "text-emerald-700", failed: "text-red-700", skipped: "text-amber-700", queued: "text-stone-600", cancelled: "text-stone-400" };
   return (
     <>
-      <PageHeader title="Messages">
-        <Link href={`/app/${slug}/settings`} className="text-sm text-brand-700 underline">← Settings</Link>
-      </PageHeader>
+      <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
+      <PageHeader title="Messages" />
       {!emailConfigured() || !smsConfigured() ? (
         <div className="mb-4">
           <Notice>
@@ -37,7 +38,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
                   <td className="px-4 py-2">{n.template}</td>
                   <td className="px-4 py-2">{n.recipient}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmt.format(n.scheduledAt)}</td>
-                  <td className={`px-4 py-2 ${tone[n.status] ?? ""}`}>{n.status}{n.error ? <span className="block text-xs text-stone-500">{n.error}</span> : null}</td>
+                  <td className="px-4 py-2"><StatusBadge status={n.status} />{n.error ? <span className="block text-xs text-stone-500">{n.error}</span> : null}</td>
                 </tr>
               ))}
             </tbody>

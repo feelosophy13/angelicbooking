@@ -1,4 +1,10 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { Download, Plus } from "lucide-react";
+import { ConfirmSubmit } from "@/components/form";
+import { dateShort } from "@/lib/format";
+
+export const metadata: Metadata = { title: "Payroll" };
 import { instantToISODate, rateLabel } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { defaultPeriod, getFinalizedRun, listPayrollRuns, runPayroll } from "@/server/payroll";
@@ -51,14 +57,14 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-2">
           <h2 className="text-sm font-semibold text-stone-600">Summary</h2>
           <div className="flex gap-2">
-            <LinkButton href={`/app/${slug}/payroll/export?${qs}`} size="sm">Download workbook (.xlsx)</LinkButton>
-            <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=w2`} size="sm">W-2 summary for accountant</LinkButton>
+            <LinkButton href={`/app/${slug}/payroll/export?${qs}`} size="sm"><Download className="h-4 w-4" /> Workbook (.xlsx)</LinkButton>
+            <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=w2`} size="sm"><Download className="h-4 w-4" /> W-2 summary</LinkButton>
             <form action={finalize}>
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="start" value={start} />
               <input type="hidden" name="end" value={end} />
               {overtime ? <input type="hidden" name="overtime" value="on" /> : null}
-              <Button type="submit" size="sm" variant="primary">{finalized ? "Re-finalize" : "Finalize period"}</Button>
+              <ConfirmSubmit title={finalized ? "Re-finalize this period?" : "Finalize this pay period?"} body="A snapshot of these figures is saved for the record. You can re-run later if anything changes." confirmLabel={finalized ? "Re-finalize" : "Finalize"} variant="primary">{finalized ? "Re-finalize" : "Finalize period"}</ConfirmSubmit>
             </form>
           </div>
         </div>
@@ -134,7 +140,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                       <tbody className="divide-y divide-stone-100">
                         {[...e.miscRows, ...e.mainRows, ...e.refundedRows].map((l, i) => (
                           <tr key={i} className={l.refunded ? "text-stone-400 line-through" : ""}>
-                            <td className="py-1 pr-2">{l.date}</td><td className="py-1 pr-2">{l.customer}</td><td className="py-1 pr-2">{l.name}</td><td className="py-1 pr-2">{l.kind === "service" ? "main" : "misc"}</td>
+                            <td className="py-1 pr-2">{dateShort(l.date)}</td><td className="py-1 pr-2">{l.customer}</td><td className="py-1 pr-2">{l.name}</td><td className="py-1 pr-2">{l.kind === "service" ? "main" : "misc"}</td>
                             <td className="py-1 pr-2 text-right">{money(l.cashCents)}</td><td className="py-1 pr-2 text-right">{money(l.cashTipCents)}</td><td className="py-1 pr-2 text-right">{money(l.cardCents)}</td><td className="py-1 pr-2 text-right">{money(l.cardTipCents)}</td><td className="py-1 pr-2 text-right">{money(l.discountCents)}</td><td className="py-1 text-right">{money(l.amtPaidCents)}</td>
                           </tr>
                         ))}
@@ -151,7 +157,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <Card className="p-4">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="font-medium">Adjustments</h2>
-              <LinkButton href={`/app/${slug}/payroll/adjustments/new?start=${start}&end=${end}`} size="sm">+ Add</LinkButton>
+              <LinkButton href={`/app/${slug}/payroll/adjustments/new?start=${start}&end=${end}`} size="sm"><Plus className="h-4 w-4" /> Add</LinkButton>
             </div>
             <p className="mb-2 text-xs text-stone-500">One-off lines for this period: training pay, transfers, corrections.</p>
             {result.adjustmentRows.length === 0 ? <p className="text-sm text-stone-500">None for this period.</p> : (
@@ -159,7 +165,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                 {result.adjustmentRows.map((a) => (
                   <li key={a.id} className="flex items-center justify-between py-1.5">
                     <span>{result.employees.find((e) => e.employee.staffId === a.staffId)?.employee.name} · {a.label} · {money(a.amountCents)}</span>
-                    <form action={deleteAdjustment}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={a.id} /><button className="text-xs text-stone-400 hover:text-red-600">✕</button></form>
+                    <form action={deleteAdjustment}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={a.id} /><ConfirmSubmit title="Remove this adjustment?" confirmLabel="Remove" variant="ghost" className="text-stone-500 hover:text-red-600">Remove</ConfirmSubmit></form>
                   </li>
                 ))}
               </ul>
@@ -170,7 +176,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
             {runs.length === 0 ? <p className="text-sm text-stone-500">None yet.</p> : (
               <ul className="divide-y divide-stone-100 text-sm">
                 {runs.map((r) => (
-                  <li key={r.id} className="py-1.5"><Link href={`?start=${r.periodStart}&end=${r.periodEnd}&overtime=${r.overtime ? 1 : 0}`} className="text-brand-700 underline">{r.periodStart} → {r.periodEnd}</Link></li>
+                  <li key={r.id} className="py-1.5"><Link href={`?start=${r.periodStart}&end=${r.periodEnd}&overtime=${r.overtime ? 1 : 0}`} className="text-brand-700 underline">{dateShort(r.periodStart)} – {dateShort(r.periodEnd)}</Link></li>
                 ))}
               </ul>
             )}

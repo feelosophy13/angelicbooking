@@ -1,4 +1,8 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { StatusBadge } from "@/components/status-badge";
+
+export const metadata: Metadata = { title: "Sales" };
 import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { salesReport } from "@/server/sales";
@@ -122,7 +126,7 @@ export default async function ReportsPage({
                     <td className="px-4 py-2">{s.clientFirst ? `${s.clientFirst} ${s.clientLast ?? ""}` : "Walk-in"}</td>
                     <td className="px-4 py-2 text-right">{money(s.totalCents)}</td>
                     <td className="px-4 py-2 text-right">{money(s.tipCents)}</td>
-                    <td className="px-4 py-2 capitalize">{s.status}</td>
+                    <td className="px-4 py-2"><StatusBadge status={s.status} /></td>
                   </tr>
                 ))}
               </tbody>

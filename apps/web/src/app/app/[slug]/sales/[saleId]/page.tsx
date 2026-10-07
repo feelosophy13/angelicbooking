@@ -1,4 +1,8 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { StatusBadge } from "@/components/status-badge";
+import { ConfirmSubmit } from "@/components/form";
+import { dateTime } from "@/lib/format";
 import { notFound } from "next/navigation";
 import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
@@ -7,6 +11,13 @@ import { listSavedCards } from "@/server/stripe-connect";
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatMoney } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string; saleId: string }> }): Promise<Metadata> {
+  const { slug, saleId } = await params;
+  const { business } = await requireAction(slug, "checkout.take");
+  const d = await getSale(business.id, saleId);
+  return { title: d ? `Sale #${d.sale.number}` : "Sale" };
+}
 import { addOffer, addProduct, applyDiscount, applyTips, deleteLine, payManual, payWithGiftCard, payWithSavedCard, refund, useCredit, voidOpenSale } from "./actions";
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
 import { withTenant } from "@angelic/db";
@@ -48,13 +59,13 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
             <div className="mb-2 flex items-center justify-between">
               <div>
                 <p className="font-medium">{client ? `${client.firstName} ${client.lastName}`.trim() : "Walk-in"}</p>
-                <p className="text-xs text-stone-500">{fmt.format(sale.createdAt)} · <span className="uppercase">{sale.status}</span></p>
+                <p className="flex items-center gap-2 text-xs text-stone-500">{dateTime(sale.createdAt, business.timezone)} <StatusBadge status={sale.status} /></p>
               </div>
               {open && sale.paidCents === 0 ? (
                 <form action={voidOpenSale}>
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="saleId" value={sale.id} />
-                  <Button size="sm" variant="ghost" type="submit">Void</Button>
+                  <ConfirmSubmit title="Void this sale?" body="The ticket is closed with nothing charged. The appointment stays as it is." confirmLabel="Void sale" variant="ghost">Void</ConfirmSubmit>
                 </form>
               ) : null}
             </div>
@@ -180,7 +191,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       <div className="flex items-center justify-between">
                         <span>
                           {p.method.replace("_", " ")}{p.cardBrand ? ` · ${p.cardBrand.toUpperCase()} •••• ${p.cardLast4}` : ""}
-                          <span className="ml-2 text-xs uppercase text-stone-500">{p.status.replace("_", " ")}</span>
+                          <StatusBadge status={p.status} className="ml-2" />
                           {p.note ? <span className="ml-2 text-xs text-stone-500">{p.note}</span> : null}
                         </span>
                         <span className="font-medium">{money(p.amountCents)}{p.refundedCents ? <span className="text-xs text-stone-500"> (−{money(p.refundedCents)})</span> : null}</span>

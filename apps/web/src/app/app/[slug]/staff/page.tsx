@@ -1,4 +1,8 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { ChevronRight, Mail, Plus } from "lucide-react";
+
+export const metadata: Metadata = { title: "Staff" };
 import { asc, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
@@ -18,8 +22,8 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
   return (
     <>
       <PageHeader title="Staff">
-        {can(role, "members.manage") ? <LinkButton href={`/app/${slug}/staff/invitations`}>Invitations</LinkButton> : null}
-        {can(role, "staff.manage") ? <LinkButton href={`/app/${slug}/staff/new`} variant="primary">+ New staff member</LinkButton> : null}
+        {can(role, "members.manage") ? <LinkButton href={`/app/${slug}/staff/invitations`}><Mail className="h-4 w-4" /> Invitations</LinkButton> : null}
+        {can(role, "staff.manage") ? <LinkButton href={`/app/${slug}/staff/new`} variant="primary"><Plus className="h-4 w-4" /> New staff member</LinkButton> : null}
       </PageHeader>
       <Card>
         <ul className="divide-y divide-stone-200">
@@ -35,7 +39,7 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
                       {[s.position, s.email ?? "no email", memberRole ? `${memberRole.replace("_", " ")} (has login)` : "no login yet"].filter(Boolean).join(" · ")}
                     </p>
                   </div>
-                  <span className="text-stone-300">›</span>
+                  <ChevronRight className="h-4 w-4 text-stone-300" />
                 </Link>
               </li>
             );

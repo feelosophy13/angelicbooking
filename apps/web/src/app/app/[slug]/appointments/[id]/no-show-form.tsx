@@ -1,7 +1,8 @@
 "use client";
 import { useActionState } from "react";
 import { chargeNoShowFee, type ActionState } from "./actions";
-import { Button, Input, Notice, Select } from "@/components/ui";
+import { Input, Notice, Select } from "@/components/ui";
+import { ConfirmSubmit } from "@/components/form";
 
 export function NoShowFeeForm(props: { slug: string; appointmentId: string; defaultAmount: string; cards: { id: string; brand: string; last4: string }[] }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(chargeNoShowFee, undefined);
@@ -15,7 +16,7 @@ export function NoShowFeeForm(props: { slug: string; appointmentId: string; defa
       </Select>
       <Input name="amount" inputMode="decimal" defaultValue={props.defaultAmount} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
-      <Button type="submit" size="sm" variant="danger" className="w-full" disabled={pending}>{pending ? "Charging…" : "Charge no-show fee"}</Button>
+      <ConfirmSubmit title="Charge the no-show fee?" body="The saved card is charged now and the appointment is marked as a no-show." confirmLabel="Charge card" variant="danger" className="w-full">{pending ? "Charging…" : "Charge no-show fee"}</ConfirmSubmit>
     </form>
   );
 }

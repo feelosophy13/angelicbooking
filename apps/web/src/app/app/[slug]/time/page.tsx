@@ -3,7 +3,13 @@ import { schema, withTenant } from "@angelic/db";
 import { can, instantToISODate } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { formatDateLong, formatTime, shiftISODate } from "@/lib/utils";
+import type { Metadata } from "next";
+import { Plus } from "lucide-react";
 import { Button, Card, Input, LinkButton, PageHeader, Empty } from "@/components/ui";
+import { ConfirmSubmit } from "@/components/form";
+import { dateShort, hours as fmtHours } from "@/lib/format";
+
+export const metadata: Metadata = { title: "Time clock" };
 import { clockToggle, deleteTimeEntry } from "./actions";
 
 export default async function TimePage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ from?: string; to?: string }> }) {
@@ -41,7 +47,7 @@ export default async function TimePage({ params, searchParams }: { params: Promi
           <Input type="date" name="to" defaultValue={to} className="w-40" />
           <Button type="submit" variant="secondary" size="sm">Show</Button>
         </form>
-        {manage ? <LinkButton href={`/app/${slug}/time/new`} variant="primary" size="sm">+ Add hours</LinkButton> : null}
+        {manage ? <LinkButton href={`/app/${slug}/time/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> Add hours</LinkButton> : null}
       </PageHeader>
       <div className="max-w-3xl">
         <div className="space-y-6">
@@ -65,18 +71,18 @@ export default async function TimePage({ params, searchParams }: { params: Promi
                 <tbody className="divide-y divide-stone-100">
                   {data.entries.map((e) => (
                     <tr key={e.id}>
-                      <td className="px-4 py-2">{e.date}</td>
+                      <td className="px-4 py-2">{dateShort(e.date)}</td>
                       <td className="px-4 py-2">{name.get(e.staffId)}</td>
                       <td className="px-4 py-2 text-stone-600">{e.clockInAt ? `${formatTime(e.clockInAt, tz)} – ${e.clockOutAt ? formatTime(e.clockOutAt, tz) : "…"}` : "manual"}</td>
-                      <td className="px-4 py-2 text-right">{(e.minutes / 60).toFixed(2)}</td>
+                      <td className="px-4 py-2 text-right">{fmtHours(e.minutes)}</td>
                       <td className="px-4 py-2 text-stone-600">{e.note ?? ""}</td>
-                      <td className="px-2 py-2 text-right">{manage ? <form action={deleteTimeEntry}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={e.id} /><button className="text-xs text-stone-400 hover:text-red-600">✕</button></form> : null}</td>
+                      <td className="px-2 py-2 text-right">{manage ? <form action={deleteTimeEntry}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={e.id} /><ConfirmSubmit title="Remove this time entry?" body="Payroll for this period will no longer include these hours." confirmLabel="Remove" variant="ghost" className="text-stone-500 hover:text-red-600">Remove</ConfirmSubmit></form> : null}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot className="text-sm font-medium">
                   {[...totals.entries()].map(([sid, min]) => (
-                    <tr key={sid}><td className="px-4 py-1" /><td className="px-4 py-1">{name.get(sid)}</td><td /><td className="px-4 py-1 text-right">{(min / 60).toFixed(2)}</td><td /><td /></tr>
+                    <tr key={sid}><td className="px-4 py-1" /><td className="px-4 py-1">{name.get(sid)}</td><td /><td className="px-4 py-1 text-right">{fmtHours(min)}</td><td /><td /></tr>
                   ))}
                 </tfoot>
               </table>

@@ -1,4 +1,8 @@
+import type { Metadata } from "next";
+import { Plus } from "lucide-react";
 import { can } from "@angelic/core";
+
+export const metadata: Metadata = { title: "Membership plans" };
 import { requireBusiness } from "@/lib/tenant";
 import { getOffersCatalog } from "@/server/offers";
 import { formatMoney } from "@/lib/utils";
@@ -14,7 +18,7 @@ export default async function MembershipsPage({ params }: { params: Promise<{ sl
   return (
     <>
       <PageHeader title="Membership plans">
-        {manage ? <LinkButton href={`/app/${slug}/memberships/new`} variant="primary">+ New plan</LinkButton> : null}
+        {manage ? <LinkButton href={`/app/${slug}/memberships/new`} variant="primary"><Plus className="h-4 w-4" /> New plan</LinkButton> : null}
       </PageHeader>
       <p className="mb-3 text-sm text-stone-600">Monthly plans sold at checkout and renewed by selling them again. Each includes sessions of a service and/or a discount. Automatic card billing arrives with Stripe subscriptions.</p>
       {plans.length === 0 ? <Empty title="No plans yet" /> : (

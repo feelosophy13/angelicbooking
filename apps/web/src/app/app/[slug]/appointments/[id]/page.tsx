@@ -1,4 +1,7 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+import { StatusBadge } from "@/components/status-badge";
+import { ConfirmSubmit } from "@/components/form";
 import { notFound } from "next/navigation";
 import { instantToISODate } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
@@ -25,6 +28,14 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 type SP = { addServiceId?: string; addStaffId?: string; addDate?: string; moveItemId?: string; moveStaffId?: string; moveDate?: string };
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string; id: string }> }): Promise<Metadata> {
+  const { slug, id } = await params;
+  const { business } = await requireAction(slug, "appointments.read.any");
+  const d = await getAppointmentDetail(business.id, id);
+  const name = d?.client ? `${d.client.firstName} ${d.client.lastName}`.trim() : "Walk-in";
+  return { title: d ? `${name} · Appointment` : "Appointment" };
+}
 
 export default async function AppointmentPage({
   params,
@@ -107,7 +118,7 @@ export default async function AppointmentPage({
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-sm text-stone-500">{formatDateLong(apptDate)}</p>
-                <p className="text-lg font-semibold">{STATUS_LABEL[appointment.status]}</p>
+                <StatusBadge status={appointment.status} className="mt-1 text-sm" />
               </div>
               <p className="text-lg font-semibold">{formatMoney(total, business.currency)}</p>
             </div>
@@ -135,7 +146,7 @@ export default async function AppointmentPage({
                           <input type="hidden" name="slug" value={slug} />
                           <input type="hidden" name="appointmentId" value={id} />
                           <input type="hidden" name="itemId" value={head.id} />
-                          <button className="rounded-md px-2 py-1 text-xs text-red-700 hover:bg-red-50">Remove</button>
+                          <ConfirmSubmit title={`Remove ${head.serviceName.replace(" (finish)", "")}?`} body="The time is freed on the calendar. If it was the only service, the appointment is cancelled." confirmLabel="Remove" variant="ghost" className="text-red-700">Remove</ConfirmSubmit>
                         </form>
                       </div>
                     ) : null}
@@ -238,9 +249,12 @@ export default async function AppointmentPage({
               {(["confirmed", "checked_in", "in_progress", "completed", "no_show"] as const)
                 .filter((s) => s !== appointment.status)
                 .map((s) => (
+                  s === "no_show" ? (
+                    <ConfirmSubmit key={s} name="status" value={s} title="Mark as no-show?" body="This counts against the client's history. Use the no-show fee card below to charge a saved card." confirmLabel="Mark no-show" variant="secondary">{STATUS_LABEL[s]}</ConfirmSubmit>
+                  ) : (
                   <Button key={s} name="status" value={s} size="sm" variant="secondary" type="submit" disabled={appointment.status === "cancelled"}>
                     {STATUS_LABEL[s]}
-                  </Button>
+                  </Button>)
                 ))}
             </form>
             {appointment.status !== "cancelled" ? (
@@ -249,7 +263,7 @@ export default async function AppointmentPage({
                 <input type="hidden" name="appointmentId" value={id} />
                 <input type="hidden" name="status" value="cancelled" />
                 <Input name="reason" placeholder="Cancellation reason (optional)" />
-                <Button size="sm" variant="danger" type="submit" className="w-full">Cancel appointment</Button>
+                <ConfirmSubmit title="Cancel this appointment?" body="The client is notified if they have messages turned on. The time becomes available again." confirmLabel="Cancel appointment" variant="danger" className="w-full">Cancel appointment</ConfirmSubmit>
               </form>
             ) : (
               <p className="mt-3 text-sm text-stone-500">
