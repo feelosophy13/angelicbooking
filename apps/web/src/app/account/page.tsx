@@ -9,7 +9,9 @@ import { relative } from "@/lib/format";
 import { Wordmark } from "@/components/brand";
 import { Button, Card, Input, PageHeader } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
-import { changePassword, resendVerification, revokeOtherSessions, revokeSession, updateName } from "./actions";
+import { changePassword, resendVerification, revokeOtherSessions, revokeSession, setPassword, updateName } from "./actions";
+import { ConnectedAccounts } from "./connected-accounts";
+import { googleEnabled } from "@/lib/auth-providers";
 import { TwoFactorCard } from "./two-factor-card";
 
 export const metadata: Metadata = { title: "Account" };
@@ -17,7 +19,9 @@ export const metadata: Metadata = { title: "Account" };
 export default async function AccountPage() {
   const session = await requireSession();
   const h = await headers();
-  const [sessions, mine] = await Promise.all([auth.api.listSessions({ headers: h }), listMyBusinesses(session.user.id)]);
+  const [sessions, mine, accounts] = await Promise.all([auth.api.listSessions({ headers: h }), listMyBusinesses(session.user.id), auth.api.listUserAccounts({ headers: h })]);
+  const hasPassword = accounts.some((a) => a.providerId === "credential");
+  const google = accounts.find((a) => a.providerId === "google");
   const user = session.user as typeof session.user & { twoFactorEnabled?: boolean | null };
   const back = mine[0] ? `/app/${mine[0].slug}` : "/";
   return (
@@ -45,14 +49,24 @@ export default async function AccountPage() {
               <form action={resendVerification} className="mt-3"><Button type="submit" variant="ghost" size="sm">Resend verification email</Button></form>
             ) : null}
           </Card>
+          <ConnectedAccounts googleEnabled={googleEnabled} googleLinked={!!google} hasPassword={hasPassword} googleAccountId={google?.accountId ?? null} />
           <Card className="p-5">
-            <h2 className="mb-3 font-medium">Change password</h2>
+            <h2 className="mb-3 font-medium">{hasPassword ? "Change password" : "Set a password"}</h2>
+            {hasPassword ? (
             <ActionForm action={changePassword}>
               <Field label="Current password" name="currentPassword" required><Input name="currentPassword" type="password" autoComplete="current-password" required /></Field>
               <Field label="New password" name="newPassword" required hint="At least 8 characters."><Input name="newPassword" type="password" autoComplete="new-password" required minLength={8} /></Field>
               <Field label="Confirm new password" name="confirm" required><Input name="confirm" type="password" autoComplete="new-password" required /></Field>
               <SubmitButton variant="secondary" pendingText="Changing…">Change password</SubmitButton>
             </ActionForm>
+            ) : (
+            <ActionForm action={setPassword}>
+              <p className="mb-3 text-sm text-stone-600">You signed up with Google. Add a password so you can also sign in with your email.</p>
+              <Field label="New password" name="newPassword" required hint="At least 8 characters."><Input name="newPassword" type="password" autoComplete="new-password" required minLength={8} /></Field>
+              <Field label="Confirm password" name="confirm" required><Input name="confirm" type="password" autoComplete="new-password" required /></Field>
+              <SubmitButton variant="secondary" pendingText="Saving…">Set password</SubmitButton>
+            </ActionForm>
+            )}
           </Card>
           <TwoFactorCard enabled={!!user.twoFactorEnabled} />
           <Card className="p-5">

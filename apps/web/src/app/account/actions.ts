@@ -48,3 +48,20 @@ export async function revokeOtherSessions() {
   await setFlash("All other devices signed out");
   revalidatePath("/account");
 }
+
+/** For accounts created with Google: add a password so email sign-in also works. */
+export const setPassword = formAction(
+  z.object({ newPassword: z.string().min(8, "At least 8 characters"), confirm: z.string() }).refine((d) => d.newPassword === d.confirm, { message: "Passwords don't match", path: ["confirm"] }),
+  async (d) => {
+    await auth.api.setPassword({ headers: await headers(), body: { newPassword: d.newPassword } });
+    revalidatePath("/account");
+    return "Password set. You can now sign in with your email and password too.";
+  },
+);
+
+export async function unlinkGoogle(formData: FormData) {
+  const accountId = z.string().min(1).parse(formData.get("accountId"));
+  await auth.api.unlinkAccount({ headers: await headers(), body: { accountId } });
+  await setFlash("Google disconnected");
+  revalidatePath("/account");
+}

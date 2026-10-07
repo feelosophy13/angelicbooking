@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, organization, twoFactor } from "better-auth/plugins";
+import { googleEnabled } from "./auth-providers";
 import { sendAuthEmail } from "@/lib/auth-email";
 import { createAccessControl } from "better-auth/plugins/access";
 import { adminAc, defaultStatements, memberAc, ownerAc } from "better-auth/plugins/organization/access";
@@ -56,6 +57,17 @@ export const auth = betterAuth({
       await sendAuthEmail({ to: user.email, subject: "Verify your email for Angelic Booking", heading: `Welcome, ${user.name.split(" ")[0]}`, body: "Please confirm this is your email address so we can send you account notices and password resets.", cta: { label: "Verify email", url } });
     },
   },
+  socialProviders: googleEnabled
+    ? {
+        google: {
+          clientId: process.env.GOOGLE_CLIENT_ID!,
+          clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+          prompt: "select_account",
+        },
+      }
+    : {},
+  // A Google sign-in with the same (verified) email attaches to the existing account instead of creating a duplicate.
+  account: { accountLinking: { enabled: true, trustedProviders: ["google"] } },
   user: { changeEmail: { enabled: false } },
   trustedOrigins: ["angelic://", "exp://", "http://localhost:8081"],
   session: {

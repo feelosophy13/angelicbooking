@@ -34,3 +34,9 @@ deployments. `next.config.ts` sets nosniff, frame, referrer, permissions and HST
 `scripts/backup.sh` takes a `pg_dump` custom-format backup and keeps 14 days. Schedule it
 nightly and sync the directory to object storage. Managed Postgres (Neon, DigitalOcean) also
 provides point-in-time recovery — enable it.
+
+## Google sign-in
+
+1. Google Cloud Console → APIs & Services → OAuth consent screen: external, app name "Angelic Booking", your support email, scopes `email`, `profile`, `openid`. Publish it (an unpublished app only allows test users).
+2. Credentials → Create credentials → OAuth client ID → Web application. Authorised JavaScript origin: your app URL. Authorised redirect URI: `https://<your-app>/api/auth/callback/google` (and the `http://localhost:3001/...` one for development).
+3. Put the client ID and secret in `.env` as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and restart. The button appears on sign-in and sign-up; existing accounts with the same verified email are linked automatically, and users can connect/disconnect Google under Account.
