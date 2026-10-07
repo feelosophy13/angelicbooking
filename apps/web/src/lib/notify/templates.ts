@@ -2,6 +2,8 @@ import { formatTime } from "@/lib/utils";
 
 export interface ApptContext {
   businessName: string;
+  logoUrl?: string | null;
+  brandColor?: string | null;
   businessPhone: string | null;
   address: string | null;
   timeZone: string;
@@ -22,12 +24,20 @@ function when(ctx: ApptContext) {
 }
 
 function shell(ctx: ApptContext, title: string, bodyHtml: string) {
-  return `<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:#faf9f7;padding:24px;color:#1c1917">
-<div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e7e5e4;border-radius:12px;padding:24px">
+  const brand = ctx.brandColor && /^#[0-9a-fA-F]{6}$/.test(ctx.brandColor) ? ctx.brandColor : "#6d28d9";
+  const header = ctx.logoUrl
+    ? `<img src="${ctx.logoUrl}" alt="${esc(ctx.businessName)}" height="40" style="height:40px;max-width:160px;object-fit:contain;display:block">`
+    : `<span style="font-size:16px;font-weight:600;color:#fff">${esc(ctx.businessName)}</span>`;
+  return `<!doctype html><html><body style="margin:0;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:#faf9f7;padding:24px;color:#1c1917">
+<div style="max-width:520px;margin:0 auto;background:#fff;border:1px solid #e7e5e4;border-radius:12px;overflow:hidden">
+<div style="background:${brand};padding:14px 24px">${header}</div>
+<div style="padding:24px">
 <h1 style="font-size:20px;margin:0 0 12px">${esc(title)}</h1>
-${bodyHtml}
+${bodyHtml.replace(/#6d28d9/g, brand)}
 <p style="font-size:12px;color:#78716c;margin-top:24px">${esc(ctx.businessName)}${ctx.address ? ` · ${esc(ctx.address)}` : ""}${ctx.businessPhone ? ` · ${esc(ctx.businessPhone)}` : ""}</p>
-</div></body></html>`;
+</div></div>
+<p style="max-width:520px;margin:12px auto 0;font-size:11px;color:#a8a29e;text-align:center">Sent by Angelic Booking on behalf of ${esc(ctx.businessName)}.</p>
+</body></html>`;
 }
 
 function details(ctx: ApptContext) {

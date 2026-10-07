@@ -382,6 +382,25 @@ pages rendering.
   (`@stripe/stripe-terminal-react-native`); push notifications; Inngest for durable jobs.
 - Running the Expo app on a simulator and a device; App Store / Play builds via EAS.
 
-**Deferred polish**
+**Polish pass (2026-10-06)** — after the user asked for the app to feel legitimate:
+- Design system: logo mark + wordmark, favicon, Inter, Lucide icons, grouped sidebar with a
+  user menu, page titles, 404 and loading skeletons.
+- Feedback: validated forms with field errors and pending buttons, confirm dialogs on every
+  destructive action, flash toasts after server actions.
+- Consistency: shared formatters and status badges, human durations, empty states with a
+  next action; separate pages for every create flow, categories, staff tabs, client detail.
+- Calendar: now-line, quarter-hour guides, one card per service with hatched processing gap,
+  month view, phone agenda view.
+- Booking page: business profile (logo, cover, brand colour, about, hours, links), Open Graph
+  tags for link previews, add-to-calendar (Google + .ics), branded emails.
+- Account & security: email verification, password reset, change password, 2FA (TOTP with
+  backup codes), signed-in devices with revoke.
+- Data: sortable paginated client table with last visit / spend / no-shows, CSV exports for
+  clients, sales and appointments, paginated audit log.
+- Operations: GitHub Actions CI (typecheck, tests against Postgres, build, Playwright smoke),
+  rate limits on auth/booking/API POSTs, security headers, webhook error reporting hook,
+  backup script, ops notes in docs-ops.md.
+
+**Deferred polish****Deferred polish**
 - Email delivery (Resend) for invitations and, in Phase 3, client notifications.
 - Mobile layout pass on the calendar; keyboard accessibility for drag-to-reschedule.

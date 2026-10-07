@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 const APP_HOSTS = new Set(
   [process.env.NEXT_PUBLIC_APP_URL, process.env.BETTER_AUTH_URL, "http://localhost:3001", "http://localhost:3000"]
@@ -13,6 +14,16 @@ const APP_HOSTS = new Set(
  * 2. Cheap optimistic redirect for signed-out visitors on protected paths.
  */
 export function proxy(request: NextRequest) {
+  // Rate limits: sign-in/up and other auth endpoints, public booking submits, webhook/jobs.
+  if (request.method === "POST") {
+    const ip = clientIp(request);
+    const path = request.nextUrl.pathname;
+    const rule = path.startsWith("/api/auth/") ? { limit: 20, windowMs: 60_000 } : path.startsWith("/book/") ? { limit: 30, windowMs: 60_000 } : path.startsWith("/api/") ? { limit: 120, windowMs: 60_000 } : null;
+    if (rule) {
+      const r = rateLimit(`${path.split("/").slice(0, 3).join("/")}:${ip}`, rule.limit, rule.windowMs);
+      if (!r.ok) return new NextResponse("Too many requests. Please wait a moment and try again.", { status: 429, headers: { "Retry-After": String(r.retryAfterSec) } });
+    }
+  }
   const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "").toLowerCase().split(":")[0]!;
   const { pathname } = request.nextUrl;
   const isAppHost = !host || APP_HOSTS.has(host) || [...APP_HOSTS].some((h) => h.split(":")[0] === host);
@@ -22,7 +33,7 @@ export function proxy(request: NextRequest) {
     return NextResponse.rewrite(url);
   }
   const cookie = getSessionCookie(request);
-  const protectedPath = pathname.startsWith("/app") || pathname.startsWith("/onboarding");
+  const protectedPath = pathname.startsWith("/app") || pathname.startsWith("/onboarding") || pathname.startsWith("/account");
   if (protectedPath && !cookie) {
     const url = new URL("/sign-in", request.url);
     url.searchParams.set("next", pathname);

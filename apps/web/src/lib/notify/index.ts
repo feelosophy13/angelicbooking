@@ -24,6 +24,8 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
   const client = appt.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, appt.clientId) }) : null;
   const ctx: ApptContext = {
     businessName: business.name,
+    logoUrl: business.logoUrl,
+    brandColor: business.brandColor,
     businessPhone: business.phone,
     address: business.addressLine,
     timeZone: business.timezone,

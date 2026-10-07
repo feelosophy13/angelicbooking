@@ -99,6 +99,27 @@
       "when": 1791326285882,
       "tag": "0013_product_categories_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791343559285,
+      "tag": "0014_business_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1791343939224,
+      "tag": "0015_two_factor",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1791344064038,
+      "tag": "0016_two_factor_lockout",
+      "breakpoints": true
     }
   ]
 }

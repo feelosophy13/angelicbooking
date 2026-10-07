@@ -7,11 +7,13 @@ import { db, schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { BackLink, Card, PageHeader, Empty } from "@/components/ui";
 
-export default async function AuditPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function AuditPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ page?: string }> }) {
   const { slug } = await params;
+  const page = Math.max(1, Number((await searchParams).page) || 1);
+  const PAGE = 100;
   const { business } = await requireAction(slug, "business.manage");
   const rows = await withTenant(business.id, (tx) =>
-    tx.select().from(schema.auditLog).orderBy(desc(schema.auditLog.at)).limit(200),
+    tx.select().from(schema.auditLog).orderBy(desc(schema.auditLog.at)).limit(PAGE + 1).offset((page - 1) * PAGE),
   );
   const userIds = [...new Set(rows.map((r) => r.actorUserId).filter((x): x is string => !!x))];
   const users = userIds.length
@@ -39,7 +41,7 @@ export default async function AuditPage({ params }: { params: Promise<{ slug: st
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-200">
-              {rows.map((r) => (
+              {rows.slice(0, PAGE).map((r) => (
                 <tr key={r.id} className="align-top">
                   <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmt.format(r.at)}</td>
                   <td className="whitespace-nowrap px-4 py-2">{r.actorUserId ? (nameById.get(r.actorUserId) ?? "unknown") : "system"}</td>
@@ -56,6 +58,10 @@ export default async function AuditPage({ params }: { params: Promise<{ slug: st
               ))}
             </tbody>
           </table>
+          <div className="flex items-center justify-between border-t border-stone-200 px-4 py-2 text-sm">
+            {page > 1 ? <Link href={`?page=${page - 1}`} className="text-brand-700 underline">Newer</Link> : <span />}
+            {rows.length > PAGE ? <Link href={`?page=${page + 1}`} className="text-brand-700 underline">Older</Link> : <span />}
+          </div>
         </Card>
       )}
     </>

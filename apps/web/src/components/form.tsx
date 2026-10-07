@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useActionState, useContext, useEffect, useRef, useState } from "react";
+import { Children, cloneElement, createContext, isValidElement, useActionState, useContext, useEffect, useId, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Loader2 } from "lucide-react";
 import type { FormState } from "@/lib/form";
@@ -36,15 +36,24 @@ export function useFormState() {
 /** Label + control + hint + error. Works inside or outside <ActionForm>. */
 export function Field({ label, name, hint, required, children, className }: { label: string; name?: string; hint?: string; required?: boolean; children: React.ReactNode; className?: string }) {
   const state = useContext(Ctx);
-  const error = name ? state?.fieldErrors?.[name] : undefined;
+  const auto = useId();
+  // Associate the label with the (single) control inside so screen readers and
+  // test tools can find inputs by label. Multi-control children keep a plain label.
+  const only = Children.count(children) === 1 ? Children.only(children) : null;
+  const child = only && isValidElement<{ id?: string; name?: string }>(only) ? only : null;
+  const fieldName = name ?? child?.props.name;
+  const id = child ? (child.props.id ?? `f-${fieldName ?? auto}`) : undefined;
+  const control = child ? cloneElement(child, { id }) : children;
+  const error = fieldName ? state?.fieldErrors?.[fieldName] : undefined;
+  const errId = `${id ?? auto}-error`;
   return (
     <div className={className}>
-      <label className="mb-1 block text-sm font-medium text-stone-700">
+      <label htmlFor={id} className="mb-1 block text-sm font-medium text-stone-700">
         {label}
         {required ? <span className="ml-0.5 text-red-500" aria-hidden>*</span> : null}
       </label>
-      <div className={cn(error && "[&_input]:border-red-400 [&_select]:border-red-400 [&_textarea]:border-red-400")}>{children}</div>
-      {error ? <p className="mt-1 text-xs text-red-600" role="alert">{error}</p> : hint ? <p className="mt-1 text-xs text-stone-500">{hint}</p> : null}
+      <div className={cn(error && "[&_input]:border-red-400 [&_select]:border-red-400 [&_textarea]:border-red-400")} aria-describedby={error ? errId : undefined}>{control}</div>
+      {error ? <p id={errId} className="mt-1 text-xs text-red-600" role="alert">{error}</p> : hint ? <p className="mt-1 text-xs text-stone-500">{hint}</p> : null}
     </div>
   );
 }

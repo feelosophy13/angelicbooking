@@ -2,6 +2,7 @@ import Link from "next/link";
 import { instantToISODate } from "@angelic/core";
 import { getAvailableDates, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots } from "@/server/public-booking";
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
+import { duration } from "@/lib/format";
 import { BookingForm, WaitlistForm } from "./forms";
 
 type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string };
@@ -61,7 +62,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
                   <Link href={q({ service: s.id })} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-stone-50">
                     <div>
                       <p className="font-medium">{s.name}</p>
-                      <p className="text-xs text-stone-500">{s.durationMin + s.gapMin + s.finishMin} min{s.description ? ` · ${s.description}` : ""}</p>
+                      <p className="text-xs text-stone-500">{duration(s.durationMin + s.gapMin + s.finishMin)}{s.description ? ` · ${s.description}` : ""}</p>
                     </div>
                     <span className="font-medium">{formatMoney(s.priceCents, business.currency)}</span>
                   </Link>
@@ -128,7 +129,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
                 const d = shiftISODate(monthStart, i);
                 const ok = available.has(d) && d <= maxDate;
                 return ok ? (
-                  <Link key={d} href={q({ date: d, month: sp.month })} className={cn("rounded-lg py-2 text-center text-sm font-medium hover:bg-brand-100", d === date ? "bg-brand-600 text-white hover:bg-brand-600" : "bg-brand-50 text-brand-800")}>{i + 1}</Link>
+                  <Link key={d} href={q({ date: d, month: sp.month })} className={cn("rounded-lg py-2 text-center text-sm font-medium", d === date ? "text-white" : "")} style={d === date ? { background: "var(--brand)" } : { background: "var(--brand-tint)", color: "var(--brand-dark)" }}>{i + 1}</Link>
                 ) : (
                   <div key={d} className="py-2 text-center text-sm text-stone-300">{i + 1}</div>
                 );
@@ -146,7 +147,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
                 <p className="mb-2 text-sm font-medium">{formatDateLong(date)}</p>
                 <div className="flex flex-wrap gap-2">
                   {slots.map((s) => (
-                    <Link key={s.at.toISOString()} href={q({ date, time: s.at.toISOString(), staff: staffChoice })} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm hover:border-brand-500 hover:bg-brand-50">
+                    <Link key={s.at.toISOString()} href={q({ date, time: s.at.toISOString(), staff: staffChoice })} className="rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm hover:border-[var(--brand)]" style={{}}>
                       {formatTime(s.at, tz)}{staffChoice === "any" ? <span className="block text-[11px] text-stone-500">{s.staffName}</span> : null}
                     </Link>
                   ))}
@@ -176,7 +177,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     <>
       <Step n={4} title="Your details" />
       {crumb}
-      <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50 p-4 text-sm">
+      <div className="mb-4 rounded-xl border p-4 text-sm" style={{ background: "var(--brand-tint)", borderColor: "var(--brand-ring)" }}>
         <p className="font-medium">{service.name} · {formatMoney(service.priceCents, business.currency)}</p>
         <p>{formatDateLong(date)} at {formatTime(startAt, tz)} with {slot.staffName}</p>
         {service.depositCents > 0 ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(service.depositCents, business.currency)} deposit may be required; the salon will confirm.</p> : null}
@@ -189,7 +190,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
 function Step({ n, title }: { n: number; title: string }) {
   return (
     <div className="mb-4 flex items-center gap-3">
-      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white">{n}</span>
+      <span className="flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold text-white" style={{ background: "var(--brand)" }}>{n}</span>
       <h1 className="text-xl font-semibold">{title}</h1>
     </div>
   );

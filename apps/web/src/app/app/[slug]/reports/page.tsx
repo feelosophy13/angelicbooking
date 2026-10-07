@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { StatusBadge } from "@/components/status-badge";
+import { Download } from "lucide-react";
 
 export const metadata: Metadata = { title: "Sales" };
 import { instantToISODate, zonedToInstant } from "@angelic/core";
@@ -40,6 +41,8 @@ export default async function ReportsPage({
         </form>
         <LinkButton href={`?from=${today}&to=${today}`} size="sm">Today</LinkButton>
         <LinkButton href={`?from=${shiftISODate(today, -6)}&to=${today}`} size="sm">Last 7 days</LinkButton>
+        <LinkButton href={`/app/${slug}/reports/export?kind=sales&from=${from}&to=${to}`} size="sm"><Download className="h-4 w-4" /> Sales CSV</LinkButton>
+        <LinkButton href={`/app/${slug}/reports/export?kind=appointments&from=${from}&to=${to}`} size="sm"><Download className="h-4 w-4" /> Appointments CSV</LinkButton>
       </PageHeader>
       <p className="mb-4 text-sm text-stone-600">{from === to ? formatDateLong(from) : `${formatDateLong(from)} – ${formatDateLong(to)}`}</p>
 

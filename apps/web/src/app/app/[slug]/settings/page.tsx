@@ -36,6 +36,11 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
           </ActionForm>
         </Card>
         <Card className="p-4">
+          <h2 className="mb-1 font-medium">Business profile</h2>
+          <p className="mb-3 text-sm text-stone-600">Logo, colours, about text, hours and links shown on your booking page and in messages.</p>
+          <Link href={`/app/${slug}/settings/profile`} className="text-sm text-brand-700 underline">Edit profile →</Link>
+        </Card>
+        <Card className="p-4">
           <h2 className="mb-1 font-medium">Payments</h2>
           <p className="mb-3 text-sm text-stone-600">
             Connect your own Stripe account to take card payments, save cards on file and charge no-show fees. Payments go

@@ -41,6 +41,10 @@ pnpm dev                                                           # http://loca
 live (non-cancelled) items that overlap in time, even under concurrent requests.
 Services with processing time create two items (active + finish) so the gap stays bookable.
 
+## Operations
+
+See [docs-ops.md](docs-ops.md) for CI, environments, monitoring, rate limits, and backups.
+
 ## Commands
 
 | Command | What |
@@ -51,4 +55,5 @@ Services with processing time create two items (active + finish) so the gap stay
 | `pnpm db:generate` | Generate a migration from schema changes |
 | `pnpm db:migrate` | Apply migrations |
 | `pnpm db:studio` | Drizzle Studio |
+| `pnpm --filter @angelic/web e2e` | Playwright smoke test (install browsers first: `pnpm --filter @angelic/web exec playwright install chromium`) |
 | `apps/web/scripts/payroll-check.mts` | Dev check: run payroll for a slug and period, write the workbook, print the Summary tab (see file header) |

@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { Button, Card, Field, Input, Notice } from "@/components/ui";
+import { Wordmark } from "@/components/brand";
 
 export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
   const router = useRouter();
@@ -27,13 +28,15 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
       setError(res.error.message ?? "Something went wrong");
       return;
     }
+    if ((res.data as { twoFactorRedirect?: boolean } | null)?.twoFactorRedirect) return; // plugin redirects to /two-factor
     router.push(params.get("next") ?? "/");
     router.refresh();
   }
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center p-6">
-      <h1 className="mb-6 text-center text-2xl font-semibold">
+      <div className="mb-6 flex justify-center"><Wordmark /></div>
+      <h1 className="mb-4 text-center text-xl font-semibold">
         {mode === "sign-up" ? "Create your account" : "Welcome back"}
       </h1>
       <Card className="p-6">
@@ -49,6 +52,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
           <Field label="Password">
             <Input name="password" type="password" required minLength={8} autoComplete={mode === "sign-up" ? "new-password" : "current-password"} />
           </Field>
+          {mode === "sign-in" ? <div className="-mt-2 text-right"><Link href="/forgot-password" className="text-xs text-brand-700 underline">Forgot password?</Link></div> : null}
           {error ? <Notice>{error}</Notice> : null}
           <Button type="submit" className="w-full" disabled={busy}>
             {busy ? "…" : mode === "sign-up" ? "Create account" : "Sign in"}

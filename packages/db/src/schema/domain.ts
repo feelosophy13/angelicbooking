@@ -78,6 +78,15 @@ export const businesses = pgTable("businesses", {
   addressLine: text("address_line"),
   // Optional custom hostname for the public booking page (e.g. book.angelicbeauty.com).
   customDomain: text("custom_domain").unique(),
+  // Public profile / branding shown on the booking page and in messages.
+  logoUrl: text("logo_url"),
+  coverUrl: text("cover_url"),
+  brandColor: text("brand_color"), // #rrggbb; null = default violet
+  tagline: text("tagline"),
+  about: text("about"),
+  website: text("website"),
+  instagram: text("instagram"),
+  hoursText: text("hours_text"), // free-form opening hours, one line per day
   // Platform billing
   plan: text("plan").notNull().default("trial"),
   createdAt: createdAt(),

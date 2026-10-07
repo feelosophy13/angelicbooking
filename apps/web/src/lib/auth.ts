@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { bearer, organization } from "better-auth/plugins";
+import { bearer, organization, twoFactor } from "better-auth/plugins";
+import { sendAuthEmail } from "@/lib/auth-email";
 import { createAccessControl } from "better-auth/plugins/access";
 import { adminAc, defaultStatements, memberAc, ownerAc } from "better-auth/plugins/organization/access";
 import { nextCookies } from "better-auth/next-js";
@@ -36,9 +37,24 @@ export const auth = betterAuth({
       organization: schema.organization,
       member: schema.member,
       invitation: schema.invitation,
+      twoFactor: schema.twoFactor,
     },
   }),
-  emailAndPassword: { enabled: true, minPasswordLength: 8 },
+  emailAndPassword: {
+    enabled: true,
+    minPasswordLength: 8,
+    sendResetPassword: async ({ user, url }) => {
+      await sendAuthEmail({ to: user.email, subject: "Reset your Angelic Booking password", heading: "Reset your password", body: "Someone (hopefully you) asked to reset the password for this account. The link expires in one hour.", cta: { label: "Choose a new password", url } });
+    },
+  },
+  emailVerification: {
+    sendOnSignUp: true,
+    autoSignInAfterVerification: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendAuthEmail({ to: user.email, subject: "Verify your email for Angelic Booking", heading: `Welcome, ${user.name.split(" ")[0]}`, body: "Please confirm this is your email address so we can send you account notices and password resets.", cta: { label: "Verify email", url } });
+    },
+  },
+  user: { changeEmail: { enabled: false } },
   trustedOrigins: ["angelic://", "exp://", "http://localhost:8081"],
   session: {
     cookieCache: { enabled: true, maxAge: 5 * 60 },
@@ -109,6 +125,7 @@ export const auth = betterAuth({
         },
       },
     }),
+    twoFactor({ issuer: "Angelic Booking" }),
     bearer(), // mobile: Authorization: Bearer <session token>
     nextCookies(), // must be last
   ],
