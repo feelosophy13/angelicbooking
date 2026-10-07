@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
@@ -19,6 +20,7 @@ export async function addAdjustment(formData: FormData) {
     tx.insert(schema.payrollAdjustments).values({ businessId: ctx.business.id, staffId: d.staffId, periodStart: d.start, periodEnd: d.end, label: d.label, amountCents: signed, createdByUserId: ctx.user.id }),
   );
   revalidatePath(`/app/${d.slug}/payroll`);
+  redirect(`/app/${d.slug}/payroll?start=${d.start}&end=${d.end}`);
 }
 
 export async function deleteAdjustment(formData: FormData) {

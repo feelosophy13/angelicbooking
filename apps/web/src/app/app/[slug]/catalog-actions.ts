@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
@@ -13,14 +14,15 @@ export async function createPackage(formData: FormData) {
   const priceCents = parseMoney(d.price);
   if (priceCents === null) throw new Error("Enter a price");
   await withTenant(ctx.business.id, (tx) => tx.insert(schema.packages).values({ businessId: ctx.business.id, name: d.name, serviceId: d.serviceId, sessions: d.sessions, priceCents, validDays: d.validDays ? Number(d.validDays) || null : null }));
-  revalidatePath(`/app/${d.slug}/offers`);
+  revalidatePath(`/app/${d.slug}/packages`);
+  redirect(`/app/${d.slug}/packages`);
 }
 
 export async function togglePackage(formData: FormData) {
   const d = z.object({ slug: z.string(), id: z.string().min(1), active: z.string() }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "services.manage");
   await withTenant(ctx.business.id, (tx) => tx.update(schema.packages).set({ active: d.active === "true" }).where(eq(schema.packages.id, d.id)));
-  revalidatePath(`/app/${d.slug}/offers`);
+  revalidatePath(`/app/${d.slug}/packages`);
 }
 
 export async function createPlan(formData: FormData) {
@@ -29,14 +31,15 @@ export async function createPlan(formData: FormData) {
   const priceCents = parseMoney(d.price);
   if (priceCents === null) throw new Error("Enter a monthly price");
   await withTenant(ctx.business.id, (tx) => tx.insert(schema.membershipPlans).values({ businessId: ctx.business.id, name: d.name, priceCents, includedServiceId: d.includedServiceId || null, includedSessions: d.includedSessions, discountBps: Math.round(d.discountPct * 100), description: d.description || null }));
-  revalidatePath(`/app/${d.slug}/offers`);
+  revalidatePath(`/app/${d.slug}/memberships`);
+  redirect(`/app/${d.slug}/memberships`);
 }
 
 export async function togglePlan(formData: FormData) {
   const d = z.object({ slug: z.string(), id: z.string().min(1), active: z.string() }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "services.manage");
   await withTenant(ctx.business.id, (tx) => tx.update(schema.membershipPlans).set({ active: d.active === "true" }).where(eq(schema.membershipPlans.id, d.id)));
-  revalidatePath(`/app/${d.slug}/offers`);
+  revalidatePath(`/app/${d.slug}/memberships`);
 }
 
 export async function issueGiftCard(formData: FormData) {
@@ -45,5 +48,6 @@ export async function issueGiftCard(formData: FormData) {
   const cents = parseMoney(d.amount);
   if (cents === null || cents < 100) throw new Error("Enter an amount of at least $1");
   await issueGiftCardManually({ businessId: ctx.business.id, amountCents: cents, recipientName: d.recipientName || null, actorUserId: ctx.user.id });
-  revalidatePath(`/app/${d.slug}/offers`);
+  revalidatePath(`/app/${d.slug}/gift-cards`);
+  redirect(`/app/${d.slug}/gift-cards`);
 }

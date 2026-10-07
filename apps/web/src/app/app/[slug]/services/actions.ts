@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
@@ -49,6 +50,7 @@ export async function createService(formData: FormData) {
     }),
   );
   revalidatePath(`/app/${slug}/services`);
+  redirect(`/app/${slug}/services`);
 }
 
 export async function updateService(formData: FormData) {

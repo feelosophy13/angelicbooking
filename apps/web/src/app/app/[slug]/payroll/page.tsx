@@ -3,8 +3,8 @@ import { instantToISODate, rateLabel } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { defaultPeriod, getFinalizedRun, listPayrollRuns, runPayroll } from "@/server/payroll";
 import { formatDateLong, formatMoney } from "@/lib/utils";
-import { Button, Card, Field, Input, LinkButton, PageHeader, Select, Empty, Notice } from "@/components/ui";
-import { addAdjustment, deleteAdjustment, finalize } from "./actions";
+import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice } from "@/components/ui";
+import { deleteAdjustment, finalize } from "./actions";
 
 export default async function PayrollPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ start?: string; end?: string; overtime?: string }> }) {
   const { slug } = await params;
@@ -149,21 +149,13 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
 
         <div className="space-y-6">
           <Card className="p-4">
-            <h2 className="mb-1 font-medium">Adjustments</h2>
-            <p className="mb-3 text-xs text-stone-500">One-off lines for this period: training pay, transfers, corrections. Negative subtracts.</p>
-            <form action={addAdjustment} className="space-y-2">
-              <input type="hidden" name="slug" value={slug} />
-              <input type="hidden" name="start" value={start} />
-              <input type="hidden" name="end" value={end} />
-              <Field label="Employee">
-                <Select name="staffId">{result.employees.map((e) => <option key={e.employee.staffId} value={e.employee.staffId}>{e.employee.name}</option>)}</Select>
-              </Field>
-              <Field label="Label"><Input name="label" placeholder="Missed Pay from Training" required /></Field>
-              <Field label="Amount"><Input name="amount" inputMode="decimal" placeholder="142.90" required /></Field>
-              <Button type="submit" size="sm" variant="secondary">Add</Button>
-            </form>
-            {result.adjustmentRows.length ? (
-              <ul className="mt-3 divide-y divide-stone-100 text-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="font-medium">Adjustments</h2>
+              <LinkButton href={`/app/${slug}/payroll/adjustments/new?start=${start}&end=${end}`} size="sm">+ Add</LinkButton>
+            </div>
+            <p className="mb-2 text-xs text-stone-500">One-off lines for this period: training pay, transfers, corrections.</p>
+            {result.adjustmentRows.length === 0 ? <p className="text-sm text-stone-500">None for this period.</p> : (
+              <ul className="divide-y divide-stone-100 text-sm">
                 {result.adjustmentRows.map((a) => (
                   <li key={a.id} className="flex items-center justify-between py-1.5">
                     <span>{result.employees.find((e) => e.employee.staffId === a.staffId)?.employee.name} · {a.label} · {money(a.amountCents)}</span>
@@ -171,7 +163,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                   </li>
                 ))}
               </ul>
-            ) : null}
+            )}
           </Card>
           <Card className="p-4">
             <h2 className="mb-1 font-medium">Finalized periods</h2>

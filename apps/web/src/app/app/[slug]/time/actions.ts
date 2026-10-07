@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
@@ -38,6 +39,7 @@ export async function addTimeEntry(formData: FormData) {
     tx.insert(schema.timeEntries).values({ businessId: ctx.business.id, staffId: d.staffId, date: d.date, minutes: Math.round(d.hours * 60), note: d.note || null, createdByUserId: ctx.user.id }),
   );
   revalidatePath(`/app/${d.slug}/time`);
+  redirect(`/app/${d.slug}/time`);
 }
 
 export async function deleteTimeEntry(formData: FormData) {

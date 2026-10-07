@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { headers } from "next/headers";
@@ -23,14 +24,39 @@ export async function createStaff(formData: FormData) {
   const slug = String(formData.get("slug"));
   const ctx = await requireAction(slug, "staff.manage");
   const data = createSchema.parse(Object.fromEntries(formData));
-  await withTenant(ctx.business.id, async (tx) => {
+  const id = await withTenant(ctx.business.id, async (tx) => {
     const [row] = await tx.insert(schema.staff).values({ businessId: ctx.business.id, ...data }).returning({ id: schema.staff.id });
     // Default schedule: Tue–Sat 9–5. Editable immediately after.
     await tx.insert(schema.staffSchedules).values(
       [2, 3, 4, 5, 6].map((weekday) => ({ businessId: ctx.business.id, staffId: row!.id, weekday, startTime: "09:00", endTime: "17:00" })),
     );
+    return row!.id;
   });
   revalidatePath(`/app/${slug}/staff`);
+  redirect(`/app/${slug}/staff/${id}/hours`);
+}
+
+export async function updateStaffProfile(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const staffId = String(formData.get("staffId"));
+  const ctx = await requireAction(slug, "staff.manage");
+  const data = createSchema.extend({ bookableOnline: z.string().optional(), active: z.string().optional(), locationId: z.string().optional() }).parse(Object.fromEntries(formData));
+  await withTenant(ctx.business.id, (tx) =>
+    tx
+      .update(schema.staff)
+      .set({
+        displayName: data.displayName,
+        email: data.email,
+        phone: data.phone,
+        color: data.color,
+        bookableOnline: data.bookableOnline === "on",
+        active: data.active === "on",
+        locationId: data.locationId || null,
+      })
+      .where(eq(schema.staff.id, staffId)),
+  );
+  revalidatePath(`/app/${slug}/staff`);
+  revalidatePath(`/app/${slug}/staff/${staffId}`);
 }
 
 export async function toggleStaffActive(formData: FormData) {
@@ -70,7 +96,7 @@ export async function saveSchedule(formData: FormData) {
     const values = rows.filter((r) => r.on).map((r) => ({ businessId: ctx.business.id, staffId, weekday: r.weekday, startTime: r.start, endTime: r.end }));
     if (values.length) await tx.insert(schema.staffSchedules).values(values);
   });
-  revalidatePath(`/app/${slug}/staff/${staffId}`);
+  revalidatePath(`/app/${slug}/staff/${staffId}/hours`);
 }
 
 export async function saveStaffServices(formData: FormData) {
@@ -84,7 +110,7 @@ export async function saveStaffServices(formData: FormData) {
       await tx.insert(schema.staffServices).values(serviceIds.map((serviceId) => ({ businessId: ctx.business.id, staffId, serviceId })));
     }
   });
-  revalidatePath(`/app/${slug}/staff/${staffId}`);
+  revalidatePath(`/app/${slug}/staff/${staffId}/services`);
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +153,7 @@ export async function addOverride(formData: FormData) {
         },
       }),
   );
-  revalidatePath(`/app/${slug}/staff/${staffId}`);
+  revalidatePath(`/app/${slug}/staff/${staffId}/time-off`);
 }
 
 export async function deleteOverride(formData: FormData) {
@@ -138,7 +164,7 @@ export async function deleteOverride(formData: FormData) {
   await withTenant(ctx.business.id, (tx) =>
     tx.delete(schema.staffScheduleOverrides).where(eq(schema.staffScheduleOverrides.id, overrideId)),
   );
-  revalidatePath(`/app/${slug}/staff/${staffId}`);
+  revalidatePath(`/app/${slug}/staff/${staffId}/time-off`);
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +208,7 @@ export async function inviteStaff(_prev: InviteState, formData: FormData): Promi
     });
     const mail = inviteEmail({ businessName: ctx.business.name, role: parsed.data.role, link: inviteLink(inv.id) });
     await queueOneOff(ctx.business.id, { channel: "email", template: "invite", recipient: parsed.data.email, subject: mail.subject, body: mail.html });
-    revalidatePath(`/app/${slug}/staff`);
+    revalidatePath(`/app/${slug}/staff/invitations`);
     return { ok: true, link: inviteLink(inv.id) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Could not create invitation" };
@@ -194,7 +220,7 @@ export async function cancelInvite(formData: FormData) {
   await requireAction(slug, "members.manage");
   const invitationId = String(formData.get("invitationId"));
   await auth.api.cancelInvitation({ headers: await headers(), body: { invitationId } });
-  revalidatePath(`/app/${slug}/staff`);
+  revalidatePath(`/app/${slug}/staff/invitations`);
 }
 
 export type InviteState = { error?: string; ok?: boolean; link?: string } | undefined;
@@ -245,7 +271,7 @@ export async function savePay(formData: FormData) {
       })
       .where(eq(schema.staff.id, staffId)),
   );
-  revalidatePath(`/app/${slug}/staff/${staffId}`);
+  revalidatePath(`/app/${slug}/staff/${staffId}/pay`);
 }
 
 export async function saveStaffLocation(formData: FormData) {

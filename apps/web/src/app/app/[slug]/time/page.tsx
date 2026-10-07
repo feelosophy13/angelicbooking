@@ -3,8 +3,8 @@ import { schema, withTenant } from "@angelic/db";
 import { can, instantToISODate } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { formatDateLong, formatTime, shiftISODate } from "@/lib/utils";
-import { Button, Card, Field, Input, PageHeader, Select, Empty } from "@/components/ui";
-import { addTimeEntry, clockToggle, deleteTimeEntry } from "./actions";
+import { Button, Card, Input, LinkButton, PageHeader, Empty } from "@/components/ui";
+import { clockToggle, deleteTimeEntry } from "./actions";
 
 export default async function TimePage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ from?: string; to?: string }> }) {
   const { slug } = await params;
@@ -41,8 +41,9 @@ export default async function TimePage({ params, searchParams }: { params: Promi
           <Input type="date" name="to" defaultValue={to} className="w-40" />
           <Button type="submit" variant="secondary" size="sm">Show</Button>
         </form>
+        {manage ? <LinkButton href={`/app/${slug}/time/new`} variant="primary" size="sm">+ Add hours</LinkButton> : null}
       </PageHeader>
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="max-w-3xl">
         <div className="space-y-6">
           {data.me ? (
             <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
@@ -82,19 +83,6 @@ export default async function TimePage({ params, searchParams }: { params: Promi
             )}
           </Card>
         </div>
-        {manage ? (
-          <Card className="p-4">
-            <h2 className="mb-3 font-medium">Add hours manually</h2>
-            <form action={addTimeEntry} className="space-y-2">
-              <input type="hidden" name="slug" value={slug} />
-              <Field label="Staff"><Select name="staffId">{data.staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}</Select></Field>
-              <Field label="Date"><Input type="date" name="date" defaultValue={today} required /></Field>
-              <Field label="Hours"><Input name="hours" type="number" step="0.25" min={0} max={24} required /></Field>
-              <Field label="Note"><Input name="note" placeholder="Optional" /></Field>
-              <Button type="submit" size="sm" variant="secondary">Add</Button>
-            </form>
-          </Card>
-        ) : null}
       </div>
     </>
   );

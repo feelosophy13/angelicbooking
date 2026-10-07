@@ -31,7 +31,10 @@ export function proxy(request: NextRequest) {
   if ((pathname === "/sign-in" || pathname === "/sign-up") && cookie) {
     return NextResponse.redirect(new URL("/", request.url));
   }
-  return NextResponse.next();
+  // Expose the pathname to server layouts (used for tab highlighting).
+  const reqHeaders = new Headers(request.headers);
+  reqHeaders.set("x-pathname", pathname);
+  return NextResponse.next({ request: { headers: reqHeaders } });
 }
 
 export const config = {

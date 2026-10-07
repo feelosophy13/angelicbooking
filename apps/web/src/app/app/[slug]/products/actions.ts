@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
@@ -32,6 +33,7 @@ export async function createProduct(formData: FormData) {
     tx.insert(schema.products).values({ businessId: ctx.business.id, categoryId, name: d.name, sku: d.sku || null, priceCents, taxable: d.taxable === "on" }),
   );
   revalidatePath(`/app/${slug}/products`);
+  redirect(`/app/${slug}/products`);
 }
 
 export async function updateProduct(formData: FormData) {

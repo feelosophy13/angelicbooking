@@ -53,9 +53,14 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
           <Link href={`/app/${slug}/settings/notifications`} className="text-sm text-brand-700 underline">Message log →</Link>
         </Card>
         <Card className="p-4">
-          <h2 className="mb-1 font-medium">Locations &amp; domain</h2>
-          <p className="mb-3 text-sm text-stone-600">Add locations, pick the default, and serve booking from your own hostname.</p>
-          <Link href={`/app/${slug}/settings/locations`} className="text-sm text-brand-700 underline">Locations &amp; domain →</Link>
+          <h2 className="mb-1 font-medium">Locations</h2>
+          <p className="mb-3 text-sm text-stone-600">Add locations and pick the default.</p>
+          <Link href={`/app/${slug}/settings/locations`} className="text-sm text-brand-700 underline">Locations →</Link>
+        </Card>
+        <Card className="p-4">
+          <h2 className="mb-1 font-medium">Custom domain</h2>
+          <p className="mb-3 text-sm text-stone-600">Serve the booking page from your own hostname.</p>
+          <Link href={`/app/${slug}/settings/domain`} className="text-sm text-brand-700 underline">Custom domain →</Link>
         </Card>
         <Card className="p-4">
           <h2 className="mb-1 font-medium">Import from Vagaro</h2>

@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema, withTenant } from "@angelic/db";
@@ -24,6 +25,7 @@ export async function createLocation(formData: FormData) {
     tx.insert(schema.locations).values({ businessId: ctx.business.id, name: d.name, addressLine1: d.addressLine1 || null, city: d.city || null, state: d.state || null, postalCode: d.postalCode || null, phone: d.phone || null, timezone: d.timezone && TIMEZONES.includes(d.timezone) ? d.timezone : null }),
   );
   revalidatePath(`/app/${slug}/settings/locations`);
+  redirect(`/app/${slug}/settings/locations`);
 }
 
 export async function setDefaultLocation(formData: FormData) {
@@ -55,5 +57,5 @@ export async function saveCustomDomain(formData: FormData) {
   const raw = String(formData.get("customDomain") ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
   if (raw && !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(raw)) throw new Error("Enter a hostname like book.yoursalon.com");
   await db.update(schema.businesses).set({ customDomain: raw || null }).where(eq(schema.businesses.id, ctx.business.id));
-  revalidatePath(`/app/${slug}/settings/locations`);
+  revalidatePath(`/app/${slug}/settings/domain`);
 }
