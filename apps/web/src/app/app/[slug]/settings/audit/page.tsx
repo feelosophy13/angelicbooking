@@ -30,7 +30,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
         <Empty title="Nothing yet" body="Bookings, reschedules and status changes will show up here." />
       ) : (
         <Card>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500">
               <tr>
                 <th className="px-4 py-2">When</th>
@@ -57,7 +57,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
           <div className="flex items-center justify-between border-t border-stone-200 px-4 py-2 text-sm">
             {page > 1 ? <Link href={`?page=${page - 1}`} className="text-brand-700 underline">Newer</Link> : <span />}
             {rows.length > PAGE ? <Link href={`?page=${page + 1}`} className="text-brand-700 underline">Older</Link> : <span />}

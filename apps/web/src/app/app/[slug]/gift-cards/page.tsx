@@ -21,7 +21,7 @@ export default async function GiftCardsPage({ params }: { params: Promise<{ slug
       <p className="mb-3 text-sm text-stone-600">Cards sold at checkout get their code when the sale is paid. Any card can be redeemed as a payment method at checkout.</p>
       {giftCards.length === 0 ? <Empty title="No gift cards yet" /> : (
         <Card>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-2">Code</th><th className="px-4 py-2">Recipient</th><th className="px-4 py-2 text-right">Initial</th><th className="px-4 py-2 text-right">Balance</th><th className="px-4 py-2">Issued</th></tr></thead>
             <tbody className="divide-y divide-stone-100">
               {giftCards.map((g) => (
@@ -30,7 +30,7 @@ export default async function GiftCardsPage({ params }: { params: Promise<{ slug
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </Card>
       )}
     </>

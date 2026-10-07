@@ -65,38 +65,38 @@ export default async function ReportsPage({
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By staff</h2>
           {byStaff.length === 0 ? <div className="p-4"><Empty title="No closed sales in this range" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Staff</th><th className="px-4 py-2 text-right">Services</th><th className="px-4 py-2 text-right">Products</th><th className="px-4 py-2 text-right">Tips</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {byStaff.map((r) => (
                   <tr key={r.staffId ?? "none"}><td className="px-4 py-2">{r.staffName ?? "Unassigned"}</td><td className="px-4 py-2 text-right">{money(r.services)}</td><td className="px-4 py-2 text-right">{money(r.products)}</td><td className="px-4 py-2 text-right">{money(r.tips)}</td></tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </Card>
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By payment method</h2>
           {byMethod.length === 0 ? <div className="p-4"><Empty title="No payments in this range" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Method</th><th className="px-4 py-2 text-right">Count</th><th className="px-4 py-2 text-right">Collected</th><th className="px-4 py-2 text-right">of which tips</th><th className="px-4 py-2 text-right">Refunded</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {byMethod.map((r) => (
                   <tr key={r.method}><td className="px-4 py-2 capitalize">{r.method.replace("_", " ")}</td><td className="px-4 py-2 text-right">{Number(r.count)}</td><td className="px-4 py-2 text-right">{money(r.amount)}</td><td className="px-4 py-2 text-right">{money(r.tips)}</td><td className="px-4 py-2 text-right">{money(r.refunded)}</td></tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </Card>
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Top services &amp; products</h2>
           {byService.length === 0 ? <div className="p-4"><Empty title="Nothing sold in this range" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Item</th><th className="px-4 py-2 text-right">Qty</th><th className="px-4 py-2 text-right">Revenue</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {byService.map((r) => <tr key={`${r.kind}:${r.name}`}><td className="px-4 py-2">{r.name} <span className="text-xs text-stone-400">{r.kind}</span></td><td className="px-4 py-2 text-right">{Number(r.count)}</td><td className="px-4 py-2 text-right">{money(r.amount)}</td></tr>)}
               </tbody>
-            </table>
+            </table></div>
           )}
         </Card>
         <Card>
@@ -107,19 +107,19 @@ export default async function ReportsPage({
             const online = appts.filter((a) => a.source === "online").reduce((s, a) => s + Number(a.count), 0);
             const rows: [string, number][] = [["Booked / confirmed", by("booked") + by("confirmed")], ["Completed", by("completed")], ["No-shows", by("no_show")], ["Cancelled", by("cancelled")], ["Booked online", online]];
             return total === 0 ? <div className="p-4"><Empty title="No appointments in this range" /></div> : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <tbody className="divide-y divide-stone-100">
                   {rows.map(([l, n]) => <tr key={l}><td className="px-4 py-2">{l}</td><td className="px-4 py-2 text-right">{n}</td><td className="px-4 py-2 text-right text-stone-500">{total ? Math.round((n / total) * 100) : 0}%</td></tr>)}
                   <tr className="font-medium"><td className="px-4 py-2">Total</td><td className="px-4 py-2 text-right">{total}</td><td /></tr>
                 </tbody>
-              </table>
+              </table></div>
             );
           })()}
         </Card>
         <Card className="lg:col-span-2">
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Closed sales</h2>
           {sales.length === 0 ? <div className="p-4"><Empty title="Nothing closed in this range" /></div> : (
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">#</th><th className="px-4 py-2">When</th><th className="px-4 py-2">Client</th><th className="px-4 py-2 text-right">Total</th><th className="px-4 py-2 text-right">Tips</th><th className="px-4 py-2">Status</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {sales.map((s) => (
@@ -133,7 +133,7 @@ export default async function ReportsPage({
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
         </Card>
       </div>

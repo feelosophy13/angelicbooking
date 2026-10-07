@@ -9,6 +9,8 @@ import { formatDateLong, shiftISODate } from "@/lib/utils";
 import { LinkButton, PageHeader, Empty } from "@/components/ui";
 import { CalendarGrid, type CalColumn, type CalItem } from "./calendar-grid";
 import { MonthGrid } from "./month-grid";
+import { SetupChecklist, type SetupStep } from "./setup-checklist";
+import { sql } from "drizzle-orm";
 import { can } from "@angelic/core";
 import { asc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
@@ -82,6 +84,24 @@ export default async function CalendarPage({
       groupKey: `${i.appointmentId}:${i.serviceName.replace(" (finish)", "")}:${i.staffId}:${instantToISODate(i.startAt, tz)}`,
     }));
 
+  let setup: SetupStep[] = [];
+  if (can(permissions, "business.manage")) {
+    const counts = await withTenant(business.id, async (tx) => {
+      const [svc] = await tx.select({ n: sql<number>`count(*)` }).from(schema.services);
+      const [st] = await tx.select({ n: sql<number>`count(*)` }).from(schema.staff);
+      const [ap] = await tx.select({ n: sql<number>`count(*)` }).from(schema.appointments);
+      const [cl] = await tx.select({ n: sql<number>`count(*)` }).from(schema.clients);
+      return { services: Number(svc?.n ?? 0), staff: Number(st?.n ?? 0), appointments: Number(ap?.n ?? 0), clients: Number(cl?.n ?? 0) };
+    });
+    setup = [
+      { key: "services", label: "Add your services", href: `/app/${slug}/services/new`, done: counts.services > 0, hint: "What clients can book." },
+      { key: "staff", label: "Add your team", href: `/app/${slug}/staff/new`, done: counts.staff > 1, hint: "Everyone gets a calendar column." },
+      { key: "profile", label: "Brand your booking page", href: `/app/${slug}/settings/profile`, done: !!(business.tagline || business.logoUrl || business.brandColor), hint: "Logo, colour and hours." },
+      { key: "stripe", label: "Connect Stripe", href: `/app/${slug}/settings/payments`, done: business.stripeChargesEnabled, hint: "Take cards and save cards on file." },
+      { key: "clients", label: "Import clients from Vagaro", href: `/app/${slug}/settings/import`, done: counts.clients > 3, hint: "CSV or Excel export." },
+      { key: "booking", label: "Share your booking link", href: `/app/${slug}/settings/booking`, done: counts.appointments > 0 && business.onlineBookingEnabled, hint: "Put it on Instagram and Google." },
+    ];
+  }
   const nav = (d: string) => `?view=${view}&date=${d}${staffFilter ? `&staff=${staffFilter}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}`;
   const step = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
   const title = view === "week" ? `Week of ${formatDateLong(from)}` : view === "month" ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(monthStart + "T00:00:00Z")) : formatDateLong(date);
@@ -126,6 +146,7 @@ export default async function CalendarPage({
         ) : null}
       </PageHeader>
 
+      {setup.length ? <SetupChecklist steps={setup} slug={slug} /> : null}
       {staff.length === 0 ? (
         <Empty title="No staff yet" body="Add a staff member before booking appointments." action={{ href: `/app/${slug}/staff/new`, label: "Add a staff member" }} />
       ) : view === "month" ? (

@@ -47,7 +47,7 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
         {r.rows.length === 0 ? (
           <div className="p-4"><Empty title={q ? "No matches" : "No clients yet"} body={q ? "Try a different name, phone or email." : "Clients are added when they book online, or you can add them here."} action={q ? undefined : { href: `/app/${slug}/clients/new`, label: "Add a client" }} /></div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500">
               <tr>
                 {SORTS.map((s) => (
@@ -77,7 +77,7 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
         {r.pages > 1 ? (
           <div className="flex items-center justify-between border-t border-stone-200 px-4 py-2 text-sm text-stone-600">

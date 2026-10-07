@@ -69,7 +69,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           </div>
         </div>
         {active.length === 0 ? <div className="p-4"><Empty title="No pay activity in this period" body="Closed sales, hours and adjustments drive payroll." /></div> : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500">
               <tr>{["Employee", "Position", "Pay type", "Rate", "Commission", "Wage", "Cash tip", "Card tip", "Card-tip fee", "Total", "Svc revenue", "Svc profit"].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr>
             </thead>
@@ -96,7 +96,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                 );
               })}
             </tbody>
-          </table>
+          </table></div>
         )}
       </Card>
 
@@ -135,7 +135,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                 {e.mainRows.length + e.miscRows.length + e.refundedRows.length > 0 ? (
                   <details className="mt-3 text-sm">
                     <summary className="cursor-pointer text-brand-700">{e.mainRows.length + e.miscRows.length} transactions{e.refundedRows.length ? ` · ${e.refundedRows.length} refunded` : ""}</summary>
-                    <table className="mt-2 w-full text-xs">
+                    <div className="overflow-x-auto"><table className="mt-2 w-full text-xs">
                       <thead className="text-left text-stone-500"><tr><th className="py-1 pr-2">Date</th><th className="py-1 pr-2">Customer</th><th className="py-1 pr-2">Item</th><th className="py-1 pr-2">Section</th><th className="py-1 pr-2 text-right">Cash</th><th className="py-1 pr-2 text-right">Cash tip</th><th className="py-1 pr-2 text-right">Card</th><th className="py-1 pr-2 text-right">CC tip</th><th className="py-1 pr-2 text-right">Disc</th><th className="py-1 text-right">Amt paid</th></tr></thead>
                       <tbody className="divide-y divide-stone-100">
                         {[...e.miscRows, ...e.mainRows, ...e.refundedRows].map((l, i) => (
@@ -145,7 +145,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                           </tr>
                         ))}
                       </tbody>
-                    </table>
+                    </table></div>
                   </details>
                 ) : null}
               </Card>

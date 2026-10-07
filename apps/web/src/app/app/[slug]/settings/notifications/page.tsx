@@ -28,7 +28,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
       ) : null}
       {rows.length === 0 ? <Empty title="No messages yet" body="Confirmations, reminders and cancellations will appear here." /> : (
         <Card>
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-2">Created</th><th className="px-4 py-2">Channel</th><th className="px-4 py-2">Type</th><th className="px-4 py-2">To</th><th className="px-4 py-2">Scheduled</th><th className="px-4 py-2">Status</th></tr></thead>
             <tbody className="divide-y divide-stone-200">
               {rows.map((n) => (
@@ -42,7 +42,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </Card>
       )}
     </>

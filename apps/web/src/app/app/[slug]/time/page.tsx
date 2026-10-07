@@ -66,7 +66,7 @@ export default async function TimePage({ params, searchParams }: { params: Promi
           <Card>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">{formatDateLong(from)} – {formatDateLong(to)}</h2>
             {data.entries.length === 0 ? <div className="p-4"><Empty title="No hours recorded" /></div> : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-2">Date</th><th className="px-4 py-2">Staff</th><th className="px-4 py-2">In / out</th><th className="px-4 py-2 text-right">Hours</th><th className="px-4 py-2">Note</th><th /></tr></thead>
                 <tbody className="divide-y divide-stone-100">
                   {data.entries.map((e) => (
@@ -85,7 +85,7 @@ export default async function TimePage({ params, searchParams }: { params: Promi
                     <tr key={sid}><td className="px-4 py-1" /><td className="px-4 py-1">{name.get(sid)}</td><td /><td className="px-4 py-1 text-right">{fmtHours(min)}</td><td /><td /></tr>
                   ))}
                 </tfoot>
-              </table>
+              </table></div>
             )}
           </Card>
         </div>
