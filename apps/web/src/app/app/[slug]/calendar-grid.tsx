@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { TZDate } from "@date-fns/tz";
 import { cn } from "@/lib/utils";
-import { moveAppointmentItem } from "./actions";
+import { moveAppointmentItem, quickStatus } from "./actions";
+import { Check, LogIn } from "lucide-react";
 
 export type CalColumn = { key: string; label: string; color?: string; date: string; staffId: string | null; isToday?: boolean };
 export type CalItem = {
@@ -232,7 +233,25 @@ export function CalendarGrid(props: {
           {columns.map((c) => {
             const showNow = nowMin != null && c.date === props.todayISO && nowMin >= DAY_START_H * 60 && nowMin <= DAY_END_H * 60;
             return (
-              <div key={c.key} className={cn("relative border-l border-stone-200", c.isToday && "bg-brand-50/30")} style={{ height: totalMin * PX_PER_MIN }}>
+              <div
+                key={c.key}
+                className={cn("relative border-l border-stone-200", c.isToday && "bg-brand-50/30", props.canEdit && "cursor-cell")}
+                style={{ height: totalMin * PX_PER_MIN }}
+                onClick={
+                  props.canEdit
+                    ? (e) => {
+                        if ((e.target as HTMLElement).closest("[data-card]")) return;
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        const min = DAY_START_H * 60 + Math.floor((e.clientY - rect.top) / PX_PER_MIN / slotIntervalMin) * slotIntervalMin;
+                        const hh = String(Math.floor(min / 60)).padStart(2, "0");
+                        const mm = String(min % 60).padStart(2, "0");
+                        const q = new URLSearchParams({ date: c.date, time: `${hh}:${mm}` });
+                        if (c.staffId) q.set("staffId", c.staffId);
+                        router.push(`/app/${props.slug}/appointments/new?${q.toString()}`);
+                      }
+                    : undefined
+                }
+              >
                 {quarterLines.map((m) => (
                   <div key={m} className={cn("absolute inset-x-0 border-t", m % 60 === 0 ? "border-stone-200" : m % 30 === 0 ? "border-stone-100" : "border-stone-50")} style={{ top: top(m) }} />
                 ))}
@@ -256,6 +275,7 @@ export function CalendarGrid(props: {
                       onClick={!draggable ? () => router.push(card.first.href) : undefined}
                       onKeyDown={(e) => e.key === "Enter" && router.push(card.first.href)}
                       title={`${card.first.title} · ${card.first.subtitle} · ${fmt(card.startMin)}–${fmt(card.endMin)}`}
+                      data-card
                       className={cn("group absolute inset-x-1 overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", dragging && "z-30 ring-2 ring-brand-500 shadow-lg")}
                       style={{ top: top(card.startMin), height, borderLeftColor: card.first.color, transform: dragging ? `translate(${drag.dx}px, ${dyMin * PX_PER_MIN}px)` : undefined }}
                     >
@@ -264,6 +284,42 @@ export function CalendarGrid(props: {
                           <span className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-wide opacity-60">processing</span>
                         </div>
                       ))}
+                      {props.canEdit && height > 30 && (card.first.status === "booked" || card.first.status === "confirmed" || card.first.status === "checked_in") ? (
+                        <div className="absolute right-1 top-1 hidden gap-1 group-hover:flex">
+                          {card.first.status !== "checked_in" ? (
+                            <button
+                              type="button"
+                              title="Check in" aria-label="Check in"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                startTransition(async () => {
+                                  await quickStatus({ slug: props.slug, appointmentId: card.first.appointmentId, status: "checked_in" });
+                                  router.refresh();
+                                });
+                              }}
+                              className="rounded bg-white/90 p-1 text-stone-700 shadow hover:bg-white"
+                            >
+                              <LogIn className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            title="Mark completed" aria-label="Mark completed"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startTransition(async () => {
+                                await quickStatus({ slug: props.slug, appointmentId: card.first.appointmentId, status: "completed" });
+                                router.refresh();
+                              });
+                            }}
+                            className="rounded bg-white/90 p-1 text-emerald-700 shadow hover:bg-white"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : null}
                       <div className="px-2 py-1 leading-tight">
                         <div className="truncate font-semibold">{card.first.title}</div>
                         <div className="truncate">{card.first.subtitle}</div>

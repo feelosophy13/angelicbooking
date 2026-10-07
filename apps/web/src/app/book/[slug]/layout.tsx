@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Globe, Instagram, MapPin, Phone } from "lucide-react";
@@ -57,7 +58,7 @@ export default async function BookLayout({ children, params }: { children: React
             {business.instagram ? <p className="flex items-center gap-1"><Instagram className="h-3.5 w-3.5" /><a href={`https://instagram.com/${business.instagram}`} target="_blank" rel="noreferrer" className="underline">@{business.instagram}</a></p> : null}
           </div>
         </div>
-        <p className="pt-2 text-center text-xs text-stone-400">Online booking by Angelic Booking</p>
+        <p className="pt-2 text-center text-xs text-stone-400">Online booking by Angelic Booking · <a href={appUrl("/privacy")} className="hover:text-stone-600">Privacy</a></p>
       </footer>
     </div>
   );

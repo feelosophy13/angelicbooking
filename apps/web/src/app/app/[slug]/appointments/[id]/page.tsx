@@ -10,7 +10,7 @@ import { getStaffAvailability, timingFor } from "@/server/availability";
 import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { addService, changeStatus, moveService, removeService, saveNotes, startCheckout } from "./actions";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
 import { NoShowFeeForm } from "./no-show-form";
@@ -51,6 +51,7 @@ export default async function AppointmentPage({
   if (!data) notFound();
   const { appointment, items, client, services, staff } = data;
   const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: eq(schema.sales.appointmentId, id) }));
+  const pinnedNotes = client ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
   const stripeReady = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled;
   const savedCards = stripeReady && client?.stripeCustomerId ? await listSavedCards(business.stripeAccountId!, client.stripeCustomerId).catch(() => []) : [];
   const tz = business.timezone;
@@ -288,6 +289,8 @@ export default async function AppointmentPage({
                 {client.phone ? <p className="text-stone-600">{client.phone}</p> : null}
                 {client.email ? <p className="text-stone-600">{client.email}</p> : null}
                 {client.notes ? <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">{client.notes}</p> : null}
+                {pinnedNotes.map((n) => <p key={n.id} className="mt-2 whitespace-pre-line rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">{n.body}</p>)}
+                <Link href={`/app/${slug}/clients/${client.id}`} className="mt-2 inline-block text-xs text-brand-700 underline">Open client</Link>
               </div>
             ) : (
               <p className="text-sm text-stone-500">No client attached.</p>

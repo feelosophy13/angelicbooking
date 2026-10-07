@@ -23,7 +23,9 @@ function when(ctx: ApptContext) {
   return `${d} at ${formatTime(ctx.startAt, ctx.timeZone)}`;
 }
 
-function shell(ctx: ApptContext, title: string, bodyHtml: string) {
+export type BrandCtx = Pick<ApptContext, "businessName" | "logoUrl" | "brandColor" | "businessPhone" | "address">;
+
+function shell(ctx: BrandCtx, title: string, bodyHtml: string) {
   const brand = ctx.brandColor && /^#[0-9a-fA-F]{6}$/.test(ctx.brandColor) ? ctx.brandColor : "#6d28d9";
   const header = ctx.logoUrl
     ? `<img src="${ctx.logoUrl}" alt="${esc(ctx.businessName)}" height="40" style="height:40px;max-width:160px;object-fit:contain;display:block">`
@@ -83,4 +85,44 @@ export function inviteEmail(input: { businessName: string; role: string; link: s
 <p><a href="${input.link}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Accept invitation</a></p>
 <p style="font-size:12px;color:#78716c">The link expires in 7 days.</p></body></html>`,
   };
+}
+
+/** Heads-up to the business when a client books or cancels online. */
+export function staffAlertEmail(ctx: ApptContext, kind: "booked" | "cancelled" | "rescheduled", clientName: string, appointmentUrl: string) {
+  const verb = kind === "booked" ? "booked online" : kind === "cancelled" ? "cancelled online" : "rescheduled online";
+  const subject = `${clientName} ${verb}: ${ctx.services} · ${when(ctx)}`;
+  const html = shell(ctx, `${clientName} ${verb}`, `${details(ctx)}
+<p style="margin-top:16px"><a href="${appointmentUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Open appointment</a></p>
+<p style="font-size:12px;color:#78716c">You receive these because online booking alerts go to your business email. Change it under Settings → Business profile.</p>`);
+  return { subject, html };
+}
+
+export interface ReceiptCtx extends BrandCtx {
+  number: number;
+  when: string;
+  clientName: string | null;
+  lines: { name: string; quantity: number; amount: string }[];
+  subtotal: string;
+  discount: string | null;
+  tax: string | null;
+  tip: string | null;
+  total: string;
+  payments: { label: string; amount: string }[];
+  refunded: string | null;
+}
+
+/** Itemised receipt for a closed sale. */
+export function receiptEmail(r: ReceiptCtx) {
+  const row = (l: string, v: string, bold = false) => `<tr><td style="padding:3px 0;${bold ? "font-weight:600" : ""}">${esc(l)}</td><td style="padding:3px 0;text-align:right;${bold ? "font-weight:600" : ""}">${esc(v)}</td></tr>`;
+  const body = `<p style="color:#78716c;margin:0 0 12px">Receipt #${r.number} · ${esc(r.when)}${r.clientName ? ` · ${esc(r.clientName)}` : ""}</p>
+<table style="width:100%;font-size:15px;border-collapse:collapse">
+${r.lines.map((l) => row(l.quantity > 1 ? `${l.name} × ${l.quantity}` : l.name, l.amount)).join("")}
+<tr><td colspan="2" style="border-top:1px solid #e7e5e4;padding-top:8px"></td></tr>
+${row("Subtotal", r.subtotal)}${r.discount ? row("Discount", `-${r.discount}`) : ""}${r.tax ? row("Tax", r.tax) : ""}${r.tip ? row("Tip", r.tip) : ""}
+${row("Total", r.total, true)}
+<tr><td colspan="2" style="border-top:1px solid #e7e5e4;padding-top:8px"></td></tr>
+${r.payments.map((p) => row(p.label, p.amount)).join("")}${r.refunded ? row("Refunded", `-${r.refunded}`) : ""}
+</table>
+<p style="margin-top:20px">Thank you for visiting!</p>`;
+  return { subject: `Your receipt from ${r.businessName} (#${r.number})`, html: shell(r, r.businessName, body) };
 }

@@ -11,6 +11,13 @@ import { requireBusiness } from "@/lib/tenant";
 import { formatMoney, formatTime } from "@/lib/utils";
 import { BackLink, Card, Input, LinkButton, PageHeader, Textarea, Empty } from "@/components/ui";
 import { updateClient } from "../actions";
+import { addNote, deleteNote, togglePin } from "./notes-actions";
+import { Pin, PinOff } from "lucide-react";
+import { db } from "@angelic/db";
+import { inArray } from "drizzle-orm";
+import { Textarea as NoteArea } from "@/components/ui";
+import { ConfirmSubmit, SubmitButton as NoteSubmit } from "@/components/form";
+import { relative } from "@/lib/format";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -26,6 +33,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
     if (!client) return null;
     const now = new Date();
+    const notes = await tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, clientId)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(100);
     const [visits, sales, packs, memberships] = await Promise.all([
       tx
         .select({ id: schema.appointments.id, status: schema.appointments.status, startAt: schema.appointmentItems.startAt, serviceName: schema.appointmentItems.serviceName, staffName: schema.staff.displayName })
@@ -48,10 +56,13 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
         .innerJoin(schema.membershipPlans, eq(schema.membershipPlans.id, schema.clientMemberships.planId))
         .where(eq(schema.clientMemberships.clientId, clientId)),
     ]);
-    return { client, visits, sales, packs, memberships };
+    return { client, visits, sales, packs, memberships, notes };
   });
   if (!data) notFound();
-  const { client, visits, sales, packs, memberships } = data;
+  const { client, visits, sales, packs, memberships, notes } = data;
+  const authorIds = [...new Set(notes.map((n) => n.authorUserId).filter((x): x is string => !!x))];
+  const authors = authorIds.length ? await db.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, authorIds)) : [];
+  const authorName = (id: string | null) => authors.find((a) => a.id === id)?.name ?? "Staff";
   const tz = business.timezone;
   const fmtDate = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: tz });
   const done = new Set(["cancelled", "completed", "no_show"]);
@@ -68,6 +79,46 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
       </PageHeader>
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
+          <Card>
+            <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Notes &amp; formulas</h2>
+            {notes.length === 0 ? <p className="px-4 py-3 text-sm text-stone-500">No notes yet. Formulas, allergies, how they take their coffee.</p> : (
+              <ul className="divide-y divide-stone-100">
+                {notes.map((n) => (
+                  <li key={n.id} className={`flex items-start gap-3 px-4 py-3 text-sm ${n.pinned ? "bg-amber-50/60" : ""}`}>
+                    <div className="min-w-0 flex-1">
+                      <p className="whitespace-pre-line">{n.body}</p>
+                      <p className="mt-1 text-xs text-stone-500">{authorName(n.authorUserId)} · {relative(n.createdAt)}{n.pinned ? " · pinned" : ""}</p>
+                    </div>
+                    {write ? (
+                      <div className="flex shrink-0 items-center gap-1">
+                        <form action={togglePin}>
+                          <input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="noteId" value={n.id} /><input type="hidden" name="pinned" value={n.pinned ? "false" : "true"} />
+                          <button className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700" title={n.pinned ? "Unpin" : "Pin to top"} aria-label={n.pinned ? "Unpin note" : "Pin note to top"}>{n.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}</button>
+                        </form>
+                        <form action={deleteNote}>
+                          <input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="noteId" value={n.id} />
+                          <ConfirmSubmit title="Delete this note?" confirmLabel="Delete" variant="ghost" className="text-stone-400 hover:text-red-600">Delete</ConfirmSubmit>
+                        </form>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {write ? (
+              <div className="border-t border-stone-200 p-4">
+                <ActionForm action={addNote} className="space-y-2">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="clientId" value={client.id} />
+                  <Field label="Add a note" name="body"><NoteArea name="body" rows={2} placeholder="e.g. 7N + 8.1 equal parts, 20 vol, 35 min" required /></Field>
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="pinned" className="h-4 w-4 accent-brand-600" /> Pin to top</label>
+                    <NoteSubmit size="sm" variant="secondary" pendingText="Saving…">Add note</NoteSubmit>
+                  </div>
+                </ActionForm>
+              </div>
+            ) : null}
+          </Card>
           <Card>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Upcoming</h2>
             {upcoming.length === 0 ? <div className="p-4"><Empty title="Nothing booked" /></div> : (

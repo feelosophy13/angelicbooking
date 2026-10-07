@@ -404,3 +404,17 @@ pages rendering.
 **Deferred polish****Deferred polish**
 - Email delivery (Resend) for invitations and, in Phase 3, client notifications.
 - Mobile layout pass on the calendar; keyboard accessibility for drag-to-reschedule.
+
+**Daily-use pass (2026-10-07)**
+- Calendar: day summary strip (appointments, unconfirmed, expected revenue, next up), click an
+  empty slot to book at that time with that provider, hover check-in / complete on cards,
+  grouped date nav and short "New" label on phones.
+- Clients: timestamped, attributed notes (formulas, allergies) with pin-to-top; pinned notes
+  show on the appointment page.
+- Sales: "Email receipt" on closed tickets (branded itemised email); reports compare every
+  KPI with the prior period of equal length, plus This month / Prior shortcuts.
+- Online booking: the business email gets an alert when a client books, cancels or
+  reschedules online, linking to the appointment.
+- Services can be reordered within a category.
+- Public Help, Privacy and Terms pages with footer links on landing, sign-in, booking page
+  and the user menu; optional `SUPPORT_EMAIL` shown as the contact.

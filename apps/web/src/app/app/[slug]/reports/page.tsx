@@ -25,9 +25,22 @@ export default async function ReportsPage({
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
   const from = isDate(sp.from) ? sp.from! : today;
   const to = isDate(sp.to) ? sp.to! : from;
-  const { sales, byStaff, byMethod, byService, appts } = await salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz));
+  const days = Math.max(1, Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1);
+  const prevFrom = shiftISODate(from, -days);
+  const prevTo = shiftISODate(from, -1);
+  const [{ sales, byStaff, byMethod, byService, appts }, prev] = await Promise.all([
+    salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
+    salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz)),
+  ]);
   const money = (c: number) => formatMoney(Number(c), business.currency);
-  const sum = (k: "subtotalCents" | "discountCents" | "taxCents" | "tipCents" | "totalCents" | "refundedCents") => sales.reduce((s, r) => s + r[k], 0);
+  type K = "subtotalCents" | "discountCents" | "taxCents" | "tipCents" | "totalCents" | "refundedCents";
+  const sum = (k: K, rows = sales) => rows.reduce((s, r) => s + r[k], 0);
+  const delta = (cur: number, before: number) => {
+    if (before === 0) return cur === 0 ? null : { pct: null, up: cur > 0 };
+    const pct = Math.round(((cur - before) / before) * 100);
+    return { pct, up: pct >= 0 };
+  };
+  const periodLabel = days === 1 ? "previous day" : `previous ${days} days`;
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: tz });
 
   return (
@@ -41,24 +54,39 @@ export default async function ReportsPage({
         </form>
         <LinkButton href={`?from=${today}&to=${today}`} size="sm">Today</LinkButton>
         <LinkButton href={`?from=${shiftISODate(today, -6)}&to=${today}`} size="sm">Last 7 days</LinkButton>
+        <LinkButton href={`?from=${today.slice(0, 8)}01&to=${today}`} size="sm">This month</LinkButton>
+        <LinkButton href={`?from=${prevFrom}&to=${prevTo}`} size="sm" aria-label="Previous period">‹ Prior</LinkButton>
         <LinkButton href={`/app/${slug}/reports/export?kind=sales&from=${from}&to=${to}`} size="sm"><Download className="h-4 w-4" /> Sales CSV</LinkButton>
         <LinkButton href={`/app/${slug}/reports/export?kind=appointments&from=${from}&to=${to}`} size="sm"><Download className="h-4 w-4" /> Appointments CSV</LinkButton>
       </PageHeader>
       <p className="mb-4 text-sm text-stone-600">{from === to ? formatDateLong(from) : `${formatDateLong(from)} – ${formatDateLong(to)}`}</p>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {[
-          ["Sales", sum("totalCents") - sum("tipCents")],
-          ["Tips", sum("tipCents")],
-          ["Discounts", sum("discountCents")],
-          ["Tax collected", sum("taxCents")],
-          ["Refunds", sum("refundedCents")],
-        ].map(([label, v]) => (
-          <Card key={String(label)} className="p-4">
-            <p className="text-xs uppercase tracking-wide text-stone-500">{label}</p>
-            <p className="text-xl font-semibold">{money(Number(v))}</p>
-          </Card>
-        ))}
+        {(
+          [
+            ["Sales", sum("totalCents") - sum("tipCents"), sum("totalCents", prev.sales) - sum("tipCents", prev.sales), true],
+            ["Tips", sum("tipCents"), sum("tipCents", prev.sales), true],
+            ["Discounts", sum("discountCents"), sum("discountCents", prev.sales), false],
+            ["Tax collected", sum("taxCents"), sum("taxCents", prev.sales), true],
+            ["Refunds", sum("refundedCents"), sum("refundedCents", prev.sales), false],
+          ] as [string, number, number, boolean][]
+        ).map(([label, v, before, goodUp]) => {
+          const d = delta(v, before);
+          const positive = d ? d.up === goodUp : null;
+          return (
+            <Card key={label} className="p-4">
+              <p className="text-xs uppercase tracking-wide text-stone-500">{label}</p>
+              <p className="text-xl font-semibold">{money(v)}</p>
+              {d ? (
+                <p className={`mt-1 text-xs ${positive ? "text-emerald-700" : "text-stone-500"}`} title={`${money(before)} in the ${periodLabel}`}>
+                  {d.pct === null ? "new" : `${d.pct > 0 ? "+" : ""}${d.pct}%`} vs {periodLabel}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-stone-400">no change vs {periodLabel}</p>
+              )}
+            </Card>
+          );
+        })}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

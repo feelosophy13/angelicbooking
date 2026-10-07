@@ -3,7 +3,7 @@ import { asc, eq } from "drizzle-orm";
 
 export const metadata: Metadata = { title: "New appointment" };
 import { schema, withTenant } from "@angelic/db";
-import { instantToISODate } from "@angelic/core";
+import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { getStaffAvailability, staffForService, timingFor } from "@/server/availability";
 import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { duration } from "@/lib/format";
 import { Button, Card, Field, Input, PageHeader, Select, Empty } from "@/components/ui";
 import { BookForm } from "./book-form";
 
-type SP = { date?: string; serviceId?: string; staffId?: string; clientId?: string };
+type SP = { date?: string; serviceId?: string; staffId?: string; clientId?: string; time?: string };
 
 export default async function NewAppointmentPage({
   params,
@@ -31,7 +31,8 @@ export default async function NewAppointmentPage({
     clients: await tx.select().from(schema.clients).orderBy(asc(schema.clients.lastName), asc(schema.clients.firstName)).limit(500),
   }));
 
-  const service = services.find((s) => s.id === sp.serviceId) ?? null;
+  const service = services.find((s) => s.id === sp.serviceId) ?? services[0] ?? null;
+  const preselectTime = /^\d{2}:\d{2}$/.test(sp.time ?? "") ? sp.time! : null;
   const eligibleStaff = service ? await staffForService(business.id, service.id) : [];
   const staffId = eligibleStaff.some((s) => s.id === sp.staffId) ? sp.staffId! : eligibleStaff[0]?.id;
   const slots =
@@ -96,6 +97,7 @@ export default async function NewAppointmentPage({
               staffId={staffId}
               dateLabel={formatDateLong(date)}
               slots={slots.map((d) => ({ iso: d.toISOString(), label: formatTime(d, tz) }))}
+              preselectIso={preselectTime ? (slots.find((d) => formatTime(d, tz) === formatTime(zonedToInstant(date, preselectTime, tz), tz))?.toISOString() ?? null) : null}
             />
           )}
         </div>

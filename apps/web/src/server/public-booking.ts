@@ -3,7 +3,9 @@ import { db, schema, withTenant } from "@angelic/db";
 import { canClientCancel, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
 import { getStaffAvailability, staffForService, timingFor } from "./availability";
 import { bookAppointment, BookingError, rescheduleService, setAppointmentStatus } from "./booking";
-import { notifyAppointment } from "@/lib/notify";
+import { appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify";
+import { staffAlertEmail } from "@/lib/notify/templates";
+import { appUrl } from "@/lib/stripe";
 import { shiftISODate } from "@/lib/utils";
 
 export type PublicBusiness = typeof schema.businesses.$inferSelect;
@@ -134,6 +136,7 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
   });
   const token = await withTenant(business.id, async (tx) => (await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId) }))!.manageToken);
   await notifyAppointment(business, appointmentId, "confirmation");
+  await alertBusiness(business, appointmentId, "booked");
   return { appointmentId, token };
 }
 
@@ -168,6 +171,7 @@ export async function cancelOnline(slug: string, token: string) {
   if (!m.canChange) throw new BookingError(`Online cancellation closes ${m.business.cancelWindowHours} hours before the appointment. Please call ${m.business.phone ?? "the salon"}.`);
   await setAppointmentStatus(m.business.id, m.appt.id, "cancelled", "client", "Cancelled online by client");
   await notifyAppointment(m.business, m.appt.id, "cancellation");
+  await alertBusiness(m.business, m.appt.id, "cancelled");
 }
 
 export async function rescheduleOnline(slug: string, token: string, newStartAt: Date) {
@@ -184,6 +188,7 @@ export async function rescheduleOnline(slug: string, token: string, newStartAt: 
   if (!slots.some((s) => s.at.getTime() === newStartAt.getTime())) throw new BookingError("That time was just taken. Please pick another.");
   await rescheduleService({ businessId: m.business.id, itemId: first.id, newStartAt, actorUserId: "client" });
   await notifyAppointment(m.business, m.appt.id, "rescheduled");
+  await alertBusiness(m.business, m.appt.id, "rescheduled");
 }
 
 export async function joinWaitlist(business: PublicBusiness, input: { serviceId: string; staffId: string | null; date: string; firstName: string; lastName: string; email: string | null; phone: string | null; notes: string | null }) {
@@ -212,3 +217,13 @@ export async function setWaitlistStatus(businessId: string, id: string, status: 
 
 // keep imports used
 void isNull; void lt; void inArray; void zonedToInstant;
+
+/** Email the business when a client books/cancels/reschedules online (goes to the business profile email). */
+async function alertBusiness(business: PublicBusiness, appointmentId: string, kind: "booked" | "cancelled" | "rescheduled") {
+  if (!business.email) return;
+  const built = await withTenant(business.id, (tx) => appointmentContext(tx, business, appointmentId));
+  if (!built) return;
+  const clientName = built.client ? `${built.client.firstName} ${built.client.lastName ?? ""}`.trim() : "A client";
+  const t = staffAlertEmail(built.ctx, kind, clientName, appUrl(`/app/${business.slug}/appointments/${appointmentId}`));
+  await queueOneOff(business.id, { channel: "email", template: `staff_${kind}`, recipient: business.email, subject: t.subject, body: t.html });
+}

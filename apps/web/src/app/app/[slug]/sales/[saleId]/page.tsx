@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, applyDiscount, applyTips, deleteLine, payManual, payWithGiftCard, payWithSavedCard, refund, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, applyDiscount, applyTips, deleteLine, emailReceipt, payManual, payWithGiftCard, payWithSavedCard, refund, useCredit, voidOpenSale } from "./actions";
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
 import { withTenant } from "@angelic/db";
 import { DiscountForm, GiftCardPayForm, ManualPayForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
@@ -51,6 +51,13 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
       <PageHeader title={`Sale #${sale.number}`}>
         {sale.appointmentId ? <Link href={`/app/${slug}/appointments/${sale.appointmentId}`} className="text-sm text-brand-700 underline">Appointment</Link> : null}
         <Link href={`/app/${slug}/sales/${sale.id}/receipt`} className="text-sm text-brand-700 underline">Receipt</Link>
+        {!open && client?.email ? (
+          <form action={emailReceipt}>
+            <input type="hidden" name="slug" value={slug} />
+            <input type="hidden" name="saleId" value={sale.id} />
+            <Button type="submit" size="sm" variant="secondary">Email receipt</Button>
+          </form>
+        ) : null}
       </PageHeader>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">

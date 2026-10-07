@@ -134,6 +134,20 @@
       "when": 1791345079961,
       "tag": "0018_roles_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791345828463,
+      "tag": "0019_client_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791345828833,
+      "tag": "0020_client_notes_rls",
+      "breakpoints": true
     }
   ]
 }

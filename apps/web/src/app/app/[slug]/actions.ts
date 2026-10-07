@@ -51,3 +51,13 @@ export async function moveAppointmentItem(input: {
   revalidatePath(`/app/${parsed.data.slug}`);
   return { ok: true };
 }
+
+/** Hover quick action on the calendar: check in / complete without opening the appointment. */
+export async function quickStatus(input: { slug: string; appointmentId: string; status: "checked_in" | "completed" | "confirmed" }): Promise<MoveResult> {
+  const parsed = z.object({ slug: z.string(), appointmentId: z.string().min(1), status: z.enum(["checked_in", "completed", "confirmed"]) }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid" };
+  const ctx = await requireAction(parsed.data.slug, "appointments.write.any");
+  await setAppointmentStatus(ctx.business.id, parsed.data.appointmentId, parsed.data.status, ctx.user.id);
+  revalidatePath(`/app/${parsed.data.slug}`);
+  return { ok: true };
+}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Plus } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus } from "lucide-react";
 
 export const metadata: Metadata = { title: "Services" };
 import { asc, eq } from "drizzle-orm";
@@ -10,7 +10,7 @@ import { requireBusiness } from "@/lib/tenant";
 import { formatMoney } from "@/lib/utils";
 import { duration } from "@/lib/format";
 import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
-import { toggleServiceActive } from "./actions";
+import { moveService, toggleServiceActive } from "./actions";
 
 export default async function ServicesPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -40,8 +40,14 @@ export default async function ServicesPage({ params }: { params: Promise<{ slug:
           <Card key={cat}>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">{cat}</h2>
             <ul className="divide-y divide-stone-200">
-              {list.map(({ s }) => (
+              {list.map(({ s }, idx) => (
                 <li key={s.id} className="flex items-center gap-3 px-4 py-3">
+                  {manage && list.length > 1 ? (
+                    <div className="flex flex-col -my-1">
+                      <form action={moveService}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="serviceId" value={s.id} /><input type="hidden" name="dir" value="up" /><button aria-label={`Move ${s.name} up`} disabled={idx === 0} className="rounded p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"><ChevronUp className="h-3.5 w-3.5" /></button></form>
+                      <form action={moveService}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="serviceId" value={s.id} /><input type="hidden" name="dir" value="down" /><button aria-label={`Move ${s.name} down`} disabled={idx === list.length - 1} className="rounded p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"><ChevronDown className="h-3.5 w-3.5" /></button></form>
+                    </div>
+                  ) : null}
                   <div className="min-w-0 flex-1">
                     {manage ? (
                       <Link href={`/app/${slug}/services/${s.id}`} className={`font-medium hover:underline ${s.active ? "" : "text-stone-400 line-through"}`}>{s.name}</Link>

@@ -20,6 +20,11 @@ import {
 } from "@/server/sales";
 import { stripe } from "@/lib/stripe";
 import { addOfferLine, redeemCredit, redeemGiftCard } from "@/server/offers";
+import { queueOneOff } from "@/lib/notify";
+import { receiptEmail } from "@/lib/notify/templates";
+import { setFlash } from "@/lib/flash";
+import { formatMoney } from "@/lib/utils";
+import { getSale } from "@/server/sales";
 
 export type SaleActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -210,5 +215,42 @@ export async function useCredit(formData: FormData) {
   const ctx = await ctxFor(d.slug);
   await redeemCredit({ businessId: ctx.business.id, saleId: d.saleId, lineId: d.lineId, source: d.source, sourceId: d.sourceId, actorUserId: ctx.user.id });
   await settleIfPaid(ctx.business.id, d.saleId, ctx.user.id, ctx.business.taxRateBps);
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+/** Email an itemised receipt for a closed sale to the client on the ticket. */
+export async function emailReceipt(formData: FormData) {
+  const d = z.object({ slug: z.string(), saleId: z.string() }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "checkout.take");
+  const data = await getSale(ctx.business.id, d.saleId);
+  if (!data || !data.client?.email || data.sale.status === "open") {
+    await setFlash("Receipt not sent: the client has no email on file.", "error");
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    return;
+  }
+  const { sale, lines, payments, client } = data;
+  const email = client.email!;
+  const b = ctx.business;
+  const m = (c: number) => formatMoney(c, b.currency);
+  const t = receiptEmail({
+    businessName: b.name,
+    logoUrl: b.logoUrl,
+    brandColor: b.brandColor,
+    businessPhone: b.phone,
+    address: b.addressLine,
+    number: sale.number,
+    when: new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: b.timezone }).format(sale.closedAt ?? sale.createdAt),
+    clientName: `${client.firstName} ${client.lastName ?? ""}`.trim(),
+    lines: lines.filter((l) => l.kind !== "tip").map((l) => ({ name: l.name, quantity: l.quantity, amount: m(l.amountCents) })),
+    subtotal: m(sale.subtotalCents),
+    discount: sale.discountCents ? m(sale.discountCents) : null,
+    tax: sale.taxCents ? m(sale.taxCents) : null,
+    tip: sale.tipCents ? m(sale.tipCents) : null,
+    total: m(sale.totalCents),
+    payments: payments.filter((p) => p.status !== "failed" && p.status !== "pending").map((p) => ({ label: `${p.method.replace("_", " ")}${p.cardLast4 ? ` ****${p.cardLast4}` : ""}`, amount: m(p.amountCents) })),
+    refunded: sale.refundedCents ? m(sale.refundedCents) : null,
+  });
+  await queueOneOff(b.id, { channel: "email", template: "receipt", recipient: email, subject: t.subject, body: t.html });
+  await setFlash(`Receipt emailed to ${email}`);
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }

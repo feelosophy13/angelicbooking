@@ -10,6 +10,8 @@ import { LinkButton, PageHeader, Empty } from "@/components/ui";
 import { CalendarGrid, type CalColumn, type CalItem } from "./calendar-grid";
 import { MonthGrid } from "./month-grid";
 import { SetupChecklist, type SetupStep } from "./setup-checklist";
+import { TodayStrip } from "./today-strip";
+import { money } from "@/lib/format";
 import { sql } from "drizzle-orm";
 import { can } from "@angelic/core";
 import { asc } from "drizzle-orm";
@@ -138,15 +140,39 @@ export default async function CalendarPage({
             <button className="h-8 rounded-lg border border-stone-300 bg-white px-3 text-sm">Go</button>
           </form>
         ) : null}
-        <LinkButton href={nav(shiftISODate(date, -step))} size="sm" aria-label="Previous"><ChevronLeft className="h-4 w-4" /></LinkButton>
-        <LinkButton href={nav(today)} size="sm" variant={date === today ? "ghost" : "secondary"}>Today</LinkButton>
-        <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label="Next"><ChevronRight className="h-4 w-4" /></LinkButton>
+        <div className="flex items-center gap-1">
+          <LinkButton href={nav(shiftISODate(date, -step))} size="sm" aria-label="Previous"><ChevronLeft className="h-4 w-4" /></LinkButton>
+          <LinkButton href={nav(today)} size="sm" variant={date === today ? "ghost" : "secondary"}>Today</LinkButton>
+          <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label="Next"><ChevronRight className="h-4 w-4" /></LinkButton>
+        </div>
         {can(permissions, "appointments.write.any") ? (
-          <LinkButton href={`/app/${slug}/appointments/new?date=${date}`} variant="primary" size="sm"><Plus className="h-4 w-4" /> New appointment</LinkButton>
+          <LinkButton href={`/app/${slug}/appointments/new?date=${date}`} variant="primary" size="sm"><Plus className="h-4 w-4" /> <span className="hidden sm:inline">New appointment</span><span className="sm:hidden">New</span></LinkButton>
         ) : null}
       </PageHeader>
 
       {setup.length ? <SetupChecklist steps={setup} slug={slug} /> : null}
+      {view === "day" ? (
+        <TodayStrip
+          date={date}
+          isToday={date === today}
+          stats={(() => {
+            const live = items.filter((i) => i.status !== "cancelled");
+            const byAppt = new Map<string, (typeof live)[number]>();
+            for (const i of live) if (!byAppt.has(i.appointmentId)) byAppt.set(i.appointmentId, i);
+            const appts = [...byAppt.values()];
+            return {
+              appointments: appts.length,
+              unconfirmed: appts.filter((a) => a.status === "booked").length,
+              completed: appts.filter((a) => a.status === "completed").length,
+              noShows: appts.filter((a) => a.status === "no_show").length,
+              expected: money(live.reduce((s, i) => s + i.priceCents, 0), business.currency),
+              nextUp: appts.filter((a) => a.startAt > new Date() && (a.status === "booked" || a.status === "confirmed")).sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0] ?? null,
+            };
+          })()}
+          tz={tz}
+          slug={slug}
+        />
+      ) : null}
       {staff.length === 0 ? (
         <Empty title="No staff yet" body="Add a staff member before booking appointments." action={{ href: `/app/${slug}/staff/new`, label: "Add a staff member" }} />
       ) : view === "month" ? (

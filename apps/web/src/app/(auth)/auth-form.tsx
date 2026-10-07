@@ -66,6 +66,9 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
           <>New here? <Link className="text-brand-600 underline" href="/sign-up">Create an account</Link></>
         )}
       </p>
+      <p className="mt-6 text-center text-xs text-stone-400">
+        <Link href="/help" className="hover:text-stone-600">Help</Link> · <Link href="/privacy" className="hover:text-stone-600">Privacy</Link> · <Link href="/terms" className="hover:text-stone-600">Terms</Link>
+      </p>
     </main>
   );
 }

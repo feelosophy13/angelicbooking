@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronsUpDown, LogOut, UserRound, Building2, Check } from "lucide-react";
+import { ChevronsUpDown, LogOut, UserRound, Building2, Check, CircleHelp } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -49,6 +49,7 @@ export function UserMenu({ user, businesses, currentSlug }: { user: { name: stri
             </div>
           ) : null}
           <Link href="/account" role="menuitem" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-stone-100"><UserRound className="h-4 w-4 text-stone-400" /> Account</Link>
+          <Link href="/help" role="menuitem" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-stone-100"><CircleHelp className="h-4 w-4 text-stone-400" /> Help</Link>
           <button
             role="menuitem"
             onClick={async () => {

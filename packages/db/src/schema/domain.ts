@@ -270,6 +270,23 @@ export const clients = pgTable(
   ],
 );
 
+// Timestamped, attributed notes on a client (formulas, allergies, preferences).
+export const clientNotes = pgTable(
+  "client_notes",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
+    body: text("body").notNull(),
+    pinned: boolean("pinned").notNull().default(false),
+    createdAt: createdAt(),
+  },
+  (t) => [index("client_notes_client_idx").on(t.businessId, t.clientId, t.createdAt)],
+);
+
 export const appointments = pgTable(
   "appointments",
   {
@@ -506,4 +523,5 @@ export const TENANT_TABLES = [
   "import_jobs",
   "product_categories",
   "roles",
+  "client_notes",
 ] as const;

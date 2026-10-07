@@ -11,9 +11,10 @@ export function BookForm(props: {
   staffId: string;
   dateLabel: string;
   slots: { iso: string; label: string }[];
+  preselectIso?: string | null;
 }) {
   const [state, action, pending] = useActionState(book, undefined);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(props.preselectIso ?? null);
   return (
     <Card className="p-4">
       <h2 className="mb-3 font-medium">{props.dateLabel}</h2>
