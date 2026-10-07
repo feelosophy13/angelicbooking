@@ -120,6 +120,20 @@
       "when": 1791344064038,
       "tag": "0016_two_factor_lockout",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791345079607,
+      "tag": "0017_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791345079961,
+      "tag": "0018_roles_rls",
+      "breakpoints": true
     }
   ]
 }

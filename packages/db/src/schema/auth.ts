@@ -132,3 +132,19 @@ export const invitation = pgTable(
     index("invitation_email_idx").on(t.email),
   ],
 );
+
+// Better Auth dynamic access control: custom roles per organization.
+export const organizationRole = pgTable(
+  "organization_role",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    permission: text("permission").notNull(), // JSON
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).$onUpdate(() => new Date()),
+  },
+  (t) => [index("organization_role_org_idx").on(t.organizationId)],
+);

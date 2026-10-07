@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function ClientPage({ params }: { params: Promise<{ slug: string; clientId: string }> }) {
   const { slug, clientId } = await params;
-  const { business, role } = await requireBusiness(slug);
+  const { business, permissions } = await requireBusiness(slug);
   const data = await withTenant(business.id, async (tx) => {
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
     if (!client) return null;
@@ -58,13 +58,13 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const upcoming = visits.filter((v) => v.startAt >= new Date() && !done.has(v.status));
   const past = visits.filter((v) => v.startAt < new Date() || done.has(v.status));
   const money = (c: number) => formatMoney(c, business.currency);
-  const write = can(role, "clients.write");
+  const write = can(permissions, "clients.write");
 
   return (
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/clients`}>Clients</BackLink></div>
       <PageHeader title={`${client.firstName} ${client.lastName}`.trim()}>
-        {can(role, "appointments.write.any") ? <LinkButton href={`/app/${slug}/appointments/new?clientId=${client.id}`} variant="primary"><Plus className="h-4 w-4" /> Book appointment</LinkButton> : null}
+        {can(permissions, "appointments.write.any") ? <LinkButton href={`/app/${slug}/appointments/new?clientId=${client.id}`} variant="primary"><Plus className="h-4 w-4" /> Book appointment</LinkButton> : null}
       </PageHeader>
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">

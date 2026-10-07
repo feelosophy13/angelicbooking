@@ -11,9 +11,9 @@ import { togglePackage } from "../catalog-actions";
 
 export default async function PackagesPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, role } = await requireBusiness(slug);
+  const { business, permissions } = await requireBusiness(slug);
   const { packages, services } = await getOffersCatalog(business.id);
-  const manage = can(role, "services.manage");
+  const manage = can(permissions, "services.manage");
   const svc = (id: string) => services.find((s) => s.id === id)?.name ?? "—";
   return (
     <>

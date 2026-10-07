@@ -8,7 +8,7 @@ import { NavLink } from "./nav-link";
 
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, user, role } = await requireBusiness(slug);
+  const { business, user, role, permissions } = await requireBusiness(slug);
   const mine = await listMyBusinesses(user.id);
   const base = `/app/${slug}`;
   type Item = { href: string; label: string; icon: React.ComponentType<{ className?: string }>; exact?: boolean };
@@ -30,10 +30,10 @@ export default async function AppLayout({ children, params }: { children: React.
       { href: `${base}/gift-cards`, label: "Gift cards", icon: Gift },
     ] },
     { title: "Money", items: [
-      ...(can(role, "reports.view") ? [{ href: `${base}/reports`, label: "Sales", icon: BarChart3 } as Item] : []),
-      ...(can(role, "payroll.view") ? [{ href: `${base}/payroll`, label: "Payroll", icon: Wallet } as Item] : []),
+      ...(can(permissions, "reports.view") ? [{ href: `${base}/reports`, label: "Sales", icon: BarChart3 } as Item] : []),
+      ...(can(permissions, "payroll.view") ? [{ href: `${base}/payroll`, label: "Payroll", icon: Wallet } as Item] : []),
     ] },
-    { title: "", items: can(role, "business.manage") ? [{ href: `${base}/settings`, label: "Settings", icon: Settings }] : [] },
+    { title: "", items: can(permissions, "business.manage") ? [{ href: `${base}/settings`, label: "Settings", icon: Settings }] : [] },
   ].filter((s) => s.items.length > 0);
   const flat = sections.flatMap((s) => s.items);
 

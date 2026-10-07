@@ -28,7 +28,7 @@ export default async function CalendarPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, role } = await requireBusiness(slug);
+  const { business, permissions } = await requireBusiness(slug);
   const tz = business.timezone;
   const today = instantToISODate(new Date(), tz);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : today;
@@ -121,7 +121,7 @@ export default async function CalendarPage({
         <LinkButton href={nav(shiftISODate(date, -step))} size="sm" aria-label="Previous"><ChevronLeft className="h-4 w-4" /></LinkButton>
         <LinkButton href={nav(today)} size="sm" variant={date === today ? "ghost" : "secondary"}>Today</LinkButton>
         <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label="Next"><ChevronRight className="h-4 w-4" /></LinkButton>
-        {can(role, "appointments.write.any") ? (
+        {can(permissions, "appointments.write.any") ? (
           <LinkButton href={`/app/${slug}/appointments/new?date=${date}`} variant="primary" size="sm"><Plus className="h-4 w-4" /> New appointment</LinkButton>
         ) : null}
       </PageHeader>
@@ -139,7 +139,7 @@ export default async function CalendarPage({
           columns={columns}
           items={calItems}
           slotIntervalMin={business.slotIntervalMin}
-          canEdit={can(role, "appointments.write.any")}
+          canEdit={can(permissions, "appointments.write.any")}
         />
       )}
     </>

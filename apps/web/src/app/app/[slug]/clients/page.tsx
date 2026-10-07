@@ -20,7 +20,7 @@ const SORTS: { key: ClientSort; label: string; align?: "right" }[] = [
 export default async function ClientsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ q?: string; sort?: string; dir?: string; page?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, role } = await requireBusiness(slug);
+  const { business, permissions } = await requireBusiness(slug);
   const q = sp.q ?? "";
   const sort = (SORTS.some((s) => s.key === sp.sort) ? sp.sort : "name") as ClientSort;
   const dir = sp.dir === "desc" ? "desc" : sp.dir === "asc" ? "asc" : sort === "name" || sort === "created" ? "asc" : "desc";
@@ -41,7 +41,7 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
           <Button type="submit" variant="secondary" aria-label="Search"><Search className="h-4 w-4" /></Button>
         </form>
         <LinkButton href={`/app/${slug}/clients/export${q ? `?q=${encodeURIComponent(q)}` : ""}`}><Download className="h-4 w-4" /> CSV</LinkButton>
-        {can(role, "clients.write") ? <LinkButton href={`/app/${slug}/clients/new`} variant="primary"><Plus className="h-4 w-4" /> New client</LinkButton> : null}
+        {can(permissions, "clients.write") ? <LinkButton href={`/app/${slug}/clients/new`} variant="primary"><Plus className="h-4 w-4" /> New client</LinkButton> : null}
       </PageHeader>
       <Card>
         {r.rows.length === 0 ? (

@@ -10,6 +10,7 @@ import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { queueOneOff } from "@/lib/notify";
+import { listRoles } from "@/server/roles";
 import { inviteEmail } from "@/lib/notify/templates";
 
 const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -172,16 +173,18 @@ export async function inviteStaff(_prev: InviteState, formData: FormData): Promi
   const parsed = z
     .object({
       email: z.string().trim().toLowerCase().email(),
-      role: z.enum(["manager", "provider", "front_desk"]),
+      role: z.string().min(1),
       staffId: z.string().optional(),
     })
     .safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: "Enter a valid email and role." };
+  const roles = await listRoles(ctx.business.id);
+  if (!roles.some((r) => r.key === parsed.data.role) || parsed.data.role === "owner") return { error: "Pick a role from the list." };
   const h = await headers();
   try {
     const inv = await auth.api.createInvitation({
       headers: h,
-      body: { email: parsed.data.email, role: parsed.data.role, organizationId: ctx.business.id, resend: true },
+      body: { email: parsed.data.email, role: parsed.data.role as "member", organizationId: ctx.business.id, resend: true },
     });
     // Pre-create / tag the staff row so the invitee lands on the calendar once they accept.
     await withTenant(ctx.business.id, async (tx) => {

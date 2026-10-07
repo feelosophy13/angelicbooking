@@ -10,13 +10,13 @@ import { Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 
 export default async function GiftCardsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, role } = await requireBusiness(slug);
+  const { business, permissions } = await requireBusiness(slug);
   const { giftCards } = await getOffersCatalog(business.id);
   const money = (c: number) => formatMoney(c, business.currency);
   return (
     <>
       <PageHeader title="Gift cards">
-        {can(role, "checkout.take") ? <LinkButton href={`/app/${slug}/gift-cards/new`} variant="primary"><Plus className="h-4 w-4" /> Issue gift card</LinkButton> : null}
+        {can(permissions, "checkout.take") ? <LinkButton href={`/app/${slug}/gift-cards/new`} variant="primary"><Plus className="h-4 w-4" /> Issue gift card</LinkButton> : null}
       </PageHeader>
       <p className="mb-3 text-sm text-stone-600">Cards sold at checkout get their code when the sale is paid. Any card can be redeemed as a payment method at checkout.</p>
       {giftCards.length === 0 ? <Empty title="No gift cards yet" /> : (

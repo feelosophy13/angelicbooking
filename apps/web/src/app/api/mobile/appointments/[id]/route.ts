@@ -25,7 +25,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!body.success) return NextResponse.json({ error: "bad request" }, { status: 400 });
   const c = await mobileContext(req, body.data.slug);
   if ("error" in c) return c.error;
-  if (!c.business || !can(c.role, "appointments.write.any")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!c.business || !can(c.permissions, "appointments.write.any")) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   await setAppointmentStatus(c.business.id, id, body.data.status, c.session.user.id);
   if (body.data.status === "cancelled") await notifyAppointment(c.business, id, "cancellation");
   return NextResponse.json({ ok: true });

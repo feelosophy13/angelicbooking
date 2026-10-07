@@ -7,23 +7,26 @@ import { asc, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
+import { listRoles } from "@/server/roles";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
 
 export default async function StaffPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, role } = await requireBusiness(slug);
+  const { business, permissions } = await requireBusiness(slug);
   const [rows, members] = await Promise.all([
     withTenant(business.id, (tx) =>
       tx.select().from(schema.staff).orderBy(asc(schema.staff.active), asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
     ),
     db.select({ userId: schema.member.userId, role: schema.member.role }).from(schema.member).where(eq(schema.member.organizationId, business.id)),
   ]);
+  const roles = await listRoles(business.id);
+  const roleName = (key: string) => roles.find((r) => r.key === key)?.name ?? key;
   const roleByUser = new Map(members.map((m) => [m.userId, m.role]));
   return (
     <>
       <PageHeader title="Staff">
-        {can(role, "members.manage") ? <LinkButton href={`/app/${slug}/staff/invitations`}><Mail className="h-4 w-4" /> Invitations</LinkButton> : null}
-        {can(role, "staff.manage") ? <LinkButton href={`/app/${slug}/staff/new`} variant="primary"><Plus className="h-4 w-4" /> New staff member</LinkButton> : null}
+        {can(permissions, "members.manage") ? <LinkButton href={`/app/${slug}/staff/invitations`}><Mail className="h-4 w-4" /> Invitations</LinkButton> : null}
+        {can(permissions, "staff.manage") ? <LinkButton href={`/app/${slug}/staff/new`} variant="primary"><Plus className="h-4 w-4" /> New staff member</LinkButton> : null}
       </PageHeader>
       <Card>
         <ul className="divide-y divide-stone-200">
@@ -36,7 +39,7 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
                   <div className="min-w-0 flex-1">
                     <p className={`font-medium ${s.active ? "" : "text-stone-400"}`}>{s.displayName}{s.active ? "" : " · inactive"}</p>
                     <p className="truncate text-xs text-stone-500">
-                      {[s.position, s.email ?? "no email", memberRole ? `${memberRole.replace("_", " ")} (has login)` : "no login yet"].filter(Boolean).join(" · ")}
+                      {[s.position, s.email ?? "no email", memberRole ? `${roleName(memberRole)} (has login)` : "no login yet"].filter(Boolean).join(" · ")}
                     </p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-stone-300" />

@@ -4,14 +4,17 @@ export const metadata: Metadata = { title: "Staff invitations" };
 import { and, asc, eq, gt } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
+import { listRoles } from "@/server/roles";
 import { BackLink, Card, PageHeader, Empty } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
 import { cancelInvite } from "../actions";
 import { InviteForm } from "../invite-form";
 
-export default async function InvitationsPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function InvitationsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ email?: string }> }) {
   const { slug } = await params;
+  const { email } = await searchParams;
   const { business } = await requireAction(slug, "members.manage");
+  const roles = await listRoles(business.id);
   const invites = await db
     .select()
     .from(schema.invitation)
@@ -30,7 +33,7 @@ export default async function InvitationsPage({ params }: { params: Promise<{ sl
                 <li key={inv.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">{inv.email}</p>
-                    <p className="text-xs text-stone-500">{inv.role?.replace("_", " ")} · expires {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(inv.expiresAt)}</p>
+                    <p className="text-xs text-stone-500">{roles.find((r) => r.key === inv.role)?.name ?? inv.role} · expires {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(inv.expiresAt)}</p>
                   </div>
                   <input readOnly value={`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${inv.id}`} className="w-72 rounded border border-stone-300 bg-stone-50 px-2 py-1 text-xs" />
                   <form action={cancelInvite}>
@@ -46,7 +49,7 @@ export default async function InvitationsPage({ params }: { params: Promise<{ sl
         <Card className="p-4">
           <h2 className="mb-1 font-medium">Invite someone to sign in</h2>
           <p className="mb-3 text-xs text-stone-500">They get a link to create their login. If a staff member with that email already exists, the login is attached to them.</p>
-          <InviteForm slug={slug} />
+          <InviteForm slug={slug} roles={roles} defaultEmail={email} />
         </Card>
       </div>
     </>

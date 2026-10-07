@@ -2,12 +2,15 @@ import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { db, schema } from "@angelic/db";
-import { can, type Action, type Role } from "@angelic/core";
+import { can, type Action, type Permissions, type Role } from "@angelic/core";
+import { permissionsForRole } from "@/server/roles";
 import { requireSession } from "./session";
 
 export type TenantContext = {
   business: typeof schema.businesses.$inferSelect;
   role: Role | string;
+  /** Resolved from the business's roles table; use with can(). */
+  permissions: Permissions;
   user: { id: string; name: string; email: string };
 };
 
@@ -24,12 +27,13 @@ export const requireBusiness = cache(async (slug: string): Promise<TenantContext
     where: and(eq(schema.member.organizationId, business.id), eq(schema.member.userId, session.user.id)),
   });
   if (!membership) notFound();
-  return { business, role: membership.role, user: session.user };
+  const permissions = await permissionsForRole(business.id, membership.role);
+  return { business, role: membership.role, permissions, user: session.user };
 });
 
 export async function requireAction(slug: string, action: Action): Promise<TenantContext> {
   const ctx = await requireBusiness(slug);
-  if (!can(ctx.role, action)) throw new Error("You don't have permission to do that.");
+  if (!can(ctx.permissions, action)) throw new Error("You don't have permission to do that.");
   return ctx;
 }
 

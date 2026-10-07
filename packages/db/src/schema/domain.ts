@@ -441,6 +441,25 @@ export const appointmentItems = pgTable(
   ],
 );
 
+// Roles a business can assign to logins. `key` is stored in Better Auth's member.role.
+// Built-in roles are seeded per business and can be edited; "owner" is locked.
+export const roles = pgTable(
+  "roles",
+  {
+    id: id(),
+    businessId: businessId(),
+    key: text("key").notNull(), // e.g. owner, manager, provider, front_desk, senior_stylist
+    name: text("name").notNull(),
+    description: text("description"),
+    permissions: text("permissions").array().notNull().default(sql`'{}'::text[]`),
+    isSystem: boolean("is_system").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("roles_business_key_uq").on(t.businessId, t.key)],
+);
+
 export const auditLog = pgTable(
   "audit_log",
   {
@@ -486,4 +505,5 @@ export const TENANT_TABLES = [
   "client_memberships",
   "import_jobs",
   "product_categories",
+  "roles",
 ] as const;

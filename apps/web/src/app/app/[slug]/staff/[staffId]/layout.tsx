@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function StaffDetailLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string; staffId: string }> }) {
   const { slug, staffId } = await params;
-  const { business, role } = await requireAction(slug, "staff.manage");
+  const { business, permissions } = await requireAction(slug, "staff.manage");
   const person = await withTenant(business.id, (tx) => tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId) }));
   if (!person) notFound();
   const base = `/app/${slug}/staff/${staffId}`;
@@ -25,7 +25,7 @@ export default async function StaffDetailLayout({ children, params }: { children
     { href: `${base}/hours`, label: "Weekly hours" },
     { href: `${base}/time-off`, label: "Time off" },
     { href: `${base}/services`, label: "Services" },
-    ...(can(role, "members.manage") ? [{ href: `${base}/pay`, label: "Pay" }] : []),
+    ...(can(permissions, "members.manage") ? [{ href: `${base}/pay`, label: "Pay" }, { href: `${base}/access`, label: "Access" }] : []),
   ];
   const h = await headers();
   const current = h.get("x-pathname") ?? "";

@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db, schema } from "@angelic/db";
 import { auth } from "@/lib/auth";
+import { permissionsForRole } from "@/server/roles";
 
 /**
  * Mobile requests authenticate with the Better Auth session token as a Bearer
@@ -18,5 +19,6 @@ export async function mobileContext(req: Request, slug: string | null) {
   const business = slug ? memberships.find((m) => m.slug === slug) : memberships[0];
   if (slug && !business) return { error: NextResponse.json({ error: "not a member" }, { status: 404 }) } as const;
   const bizRow = business ? await db.query.businesses.findFirst({ where: and(eq(schema.businesses.id, business.id)) }) : null;
-  return { session, memberships, business: bizRow ?? null, role: business?.role ?? null } as const;
+  const permissions = business ? await permissionsForRole(business.id, business.role) : new Set<never>();
+  return { session, memberships, business: bizRow ?? null, role: business?.role ?? null, permissions } as const;
 }

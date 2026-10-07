@@ -26,7 +26,7 @@ import { CardPayment } from "./card-payment";
 
 export default async function SalePage({ params }: { params: Promise<{ slug: string; saleId: string }> }) {
   const { slug, saleId } = await params;
-  const { business, role } = await requireAction(slug, "checkout.take");
+  const { business, permissions } = await requireAction(slug, "checkout.take");
   const data = await getSale(business.id, saleId);
   if (!data) notFound();
   const { sale, lines, payments, refunds, client, staff, products } = data;
@@ -199,7 +199,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       {refunds.filter((r) => r.paymentId === p.id).map((r) => (
                         <p key={r.id} className="text-xs text-stone-500">Refunded {money(r.amountCents)}{r.reason ? ` · ${r.reason}` : ""}</p>
                       ))}
-                      {p.status !== "pending" && p.status !== "failed" && refundable > 0 && can(role, "reports.view") ? (
+                      {p.status !== "pending" && p.status !== "failed" && refundable > 0 && can(permissions, "reports.view") ? (
                         <RefundForm action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} />
                       ) : null}
                     </li>
@@ -230,7 +230,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       <h3 className="mb-1 text-sm font-medium text-stone-700">Card</h3>
                       {!stripeReady ? (
                         <p className="text-sm text-stone-500">
-                          {can(role, "business.manage") ? <>Connect Stripe under <Link className="underline" href={`/app/${slug}/settings/payments`}>Settings → Payments</Link> to take cards.</> : "Card payments aren't set up yet."}
+                          {can(permissions, "business.manage") ? <>Connect Stripe under <Link className="underline" href={`/app/${slug}/settings/payments`}>Settings → Payments</Link> to take cards.</> : "Card payments aren't set up yet."}
                         </p>
                       ) : (
                         <div className="space-y-4">

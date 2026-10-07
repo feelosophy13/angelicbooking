@@ -6,6 +6,7 @@ import { createAccessControl } from "better-auth/plugins/access";
 import { adminAc, defaultStatements, memberAc, ownerAc } from "better-auth/plugins/organization/access";
 import { nextCookies } from "better-auth/next-js";
 import { eq, and, isNull } from "drizzle-orm";
+import { DEFAULT_ROLE_META, DEFAULT_ROLE_PERMISSIONS } from "@angelic/core";
 import { sql } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
 
@@ -38,6 +39,7 @@ export const auth = betterAuth({
       member: schema.member,
       invitation: schema.invitation,
       twoFactor: schema.twoFactor,
+      organizationRole: schema.organizationRole,
     },
   }),
   emailAndPassword: {
@@ -65,6 +67,8 @@ export const auth = betterAuth({
       roles: orgRoles,
       creatorRole: "owner",
       organizationLimit: 5,
+      // Custom roles per business live in organization_role (Better Auth) + roles (ours).
+      dynamicAccessControl: { enabled: true, maximumRolesPerOrganization: 30 },
       invitationExpiresIn: 60 * 60 * 24 * 7,
       organizationHooks: {
         // When an invitee joins, attach them to the staff row created for their
@@ -111,6 +115,17 @@ export const auth = betterAuth({
               .insert(schema.staff)
               .values({ businessId: org.id, userId: user.id, displayName: user.name, email: user.email })
               .returning({ id: schema.staff.id });
+            await tx.insert(schema.roles).values(
+              (["owner", "manager", "provider", "front_desk"] as const).map((key, i) => ({
+                businessId: org.id,
+                key,
+                name: DEFAULT_ROLE_META[key].name,
+                description: DEFAULT_ROLE_META[key].description,
+                permissions: [...DEFAULT_ROLE_PERMISSIONS[key]],
+                isSystem: true,
+                sortOrder: i,
+              })),
+            );
             // Default hours Tue–Sat 9–5 so the owner is bookable immediately; editable under Staff.
             await tx.insert(schema.staffSchedules).values(
               [2, 3, 4, 5, 6].map((weekday) => ({

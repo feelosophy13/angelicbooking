@@ -15,13 +15,13 @@ import { clockToggle, deleteTimeEntry } from "./actions";
 export default async function TimePage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ from?: string; to?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, role, user } = await requireBusiness(slug);
+  const { business, permissions, user } = await requireBusiness(slug);
   const tz = business.timezone;
   const today = instantToISODate(new Date(), tz);
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
   const from = isDate(sp.from) ? sp.from! : shiftISODate(today, -13);
   const to = isDate(sp.to) ? sp.to! : today;
-  const manage = can(role, "staff.manage");
+  const manage = can(permissions, "staff.manage");
 
   const data = await withTenant(business.id, async (tx) => {
     const staff = await tx.select().from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName));

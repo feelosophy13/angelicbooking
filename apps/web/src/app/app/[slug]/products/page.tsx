@@ -13,7 +13,7 @@ import { toggleProductActive } from "./actions";
 
 export default async function ProductsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, role } = await requireBusiness(slug);
+  const { business, permissions } = await requireBusiness(slug);
   const rows = await withTenant(business.id, (tx) =>
     tx
       .select({ p: schema.products, category: schema.productCategories.name })
@@ -21,7 +21,7 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
       .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
       .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name)),
   );
-  const manage = can(role, "services.manage");
+  const manage = can(permissions, "services.manage");
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
     const k = r.category ?? "Uncategorised";

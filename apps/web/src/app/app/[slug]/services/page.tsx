@@ -14,7 +14,7 @@ import { toggleServiceActive } from "./actions";
 
 export default async function ServicesPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, role } = await requireBusiness(slug);
+  const { business, permissions } = await requireBusiness(slug);
   const rows = await withTenant(business.id, (tx) =>
     tx
       .select({ s: schema.services, category: schema.serviceCategories.name })
@@ -22,7 +22,7 @@ export default async function ServicesPage({ params }: { params: Promise<{ slug:
       .leftJoin(schema.serviceCategories, eq(schema.serviceCategories.id, schema.services.categoryId))
       .orderBy(asc(schema.serviceCategories.sortOrder), asc(schema.serviceCategories.name), asc(schema.services.sortOrder), asc(schema.services.name)),
   );
-  const manage = can(role, "services.manage");
+  const manage = can(permissions, "services.manage");
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
     const k = r.category ?? "Uncategorised";
