@@ -42,3 +42,22 @@ provides point-in-time recovery — enable it.
 Current state (2026-10-07): the client "Angelic Booking (web)" lives in Google Cloud project `primeval-voyage-384504` under tunityventure@gmail.com. It already has `http://localhost:3001` and `https://angelicbooking.com` as origins with the matching `/api/auth/callback/google` redirect URIs, the consent screen is published to production with angelicbooking.com as the authorised domain, and its home, privacy and terms links point at `https://angelicbooking.com`, `/privacy` and `/terms`. Add a new origin + redirect pair to that client if the app ever moves to another host (for example a staging subdomain).
 
 3. Put the client ID and secret in `.env` as `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` and restart. The button appears on sign-in and sign-up; existing accounts with the same verified email are linked automatically, and users can connect/disconnect Google under Account.
+
+## Render deployment
+
+Production runs on Render (workspace "My Workspace", region Virginia):
+
+- Web service `angelic-booking` (srv-db3eqnqj9qps73fba1rg), Node 22, deployed from `main` of github.com/feelosophy13/angelicbooking.
+  Build: `npm install -g pnpm@12 && pnpm install --frozen-lockfile && pnpm --filter @angelic/web build`.
+  Pre-deploy: `pnpm db:migrate` (runs Drizzle migrations with `DATABASE_ADMIN_URL`). Start: `pnpm --filter @angelic/web start`.
+- Postgres `angelic-booking-prod-database` (dpg-db25eu0m7kps73dic8i0-a). The app connects as the `angelic_app` role
+  (created by hand from `packages/db/sql/roles.sql` with a generated password); migrations use the database owner.
+  External connections from a laptop need `?sslmode=require` on the URL; the internal URL used by the service does not.
+- Environment variables live in the Render dashboard: `DATABASE_URL`, `DATABASE_ADMIN_URL`, `BETTER_AUTH_SECRET`,
+  `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, `JOBS_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `PLATFORM_FEE_BPS`.
+  Stripe, Resend and Twilio keys are not set yet; add them there when ready.
+- Custom domains `angelicbooking.com` (apex) and `www.angelicbooking.com` (redirects to apex) are attached to the service.
+  Once DNS resolves, change `BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL` to `https://angelicbooking.com` and redeploy.
+- Reminder delivery: nothing calls `POST /api/jobs/notifications` yet in production. Add a Render Cron Job
+  (every 5 minutes, `curl -X POST -H "Authorization: Bearer $JOBS_SECRET" https://angelicbooking.com/api/jobs/notifications`)
+  or any external scheduler.
