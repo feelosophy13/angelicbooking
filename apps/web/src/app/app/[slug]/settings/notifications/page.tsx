@@ -21,7 +21,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
         <div className="mb-4">
           <Notice>
             {!emailConfigured() ? "Email sending is off (set RESEND_API_KEY and EMAIL_FROM). " : ""}
-            {!smsConfigured() ? "SMS sending is off (set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM). " : ""}
+            {!smsConfigured() ? "Text messaging is not set up on this platform yet. " : ""}
             Messages are still recorded here as “skipped”.
           </Notice>
         </div>

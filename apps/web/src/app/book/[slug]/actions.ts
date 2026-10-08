@@ -13,6 +13,7 @@ const contact = z.object({
   email: z.string().trim().email("Enter a valid email").or(z.literal("")).transform((v) => v || null),
   phone: z.string().trim().max(30).transform((v) => v || null),
   notes: z.string().trim().max(1000).transform((v) => v || null),
+  smsConsent: z.string().optional().transform((v) => v === "on"),
 });
 
 export async function bookOnline(_prev: PublicState, formData: FormData): Promise<PublicState> {

@@ -324,6 +324,50 @@ function randomToken(): string {
 export const notificationChannel = pgEnum("notification_channel", ["email", "sms"]);
 export const notificationStatus = pgEnum("notification_status", ["queued", "sending", "sent", "failed", "skipped", "cancelled"]);
 
+// A business's own SMS sender number (toll-free, bought through the platform's
+// Twilio account). One active (unreleased) number per business. Messages go out
+// from it once carrier verification is approved; until then SMS is skipped.
+export const messagingNumberStatus = pgEnum("messaging_number_status", [
+  "unverified", // bought, verification not yet submitted
+  "pending_review", // submitted to Twilio/carriers
+  "in_review",
+  "verified",
+  "rejected",
+  "released",
+]);
+
+export const messagingNumbers = pgTable(
+  "messaging_numbers",
+  {
+    id: id(),
+    businessId: businessId(),
+    phoneNumber: text("phone_number").notNull(), // E.164
+    providerSid: text("provider_sid").notNull().unique(), // Twilio IncomingPhoneNumber SID (PN…)
+    numberType: text("number_type").notNull().default("toll_free"),
+    status: messagingNumberStatus("status").notNull().default("unverified"),
+    verificationSid: text("verification_sid"), // Twilio Tollfree Verification SID (HH…)
+    verificationSubmittedAt: timestamp("verification_submitted_at", { withTimezone: true }),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    rejectionReason: text("rejection_reason"),
+    rejectionDetails: jsonb("rejection_details").$type<unknown[]>(),
+    editAllowed: boolean("edit_allowed").notNull().default(false),
+    // Snapshot of the submitted verification form, so it can be edited and resubmitted.
+    verification: jsonb("verification").$type<Record<string, string>>(),
+    // Billing hook: the monthly add-on price at purchase time and when billing should
+    // start. Charged by the platform subscription once Stripe billing is enabled.
+    monthlyFeeCents: integer("monthly_fee_cents").notNull().default(0),
+    billingStartsAt: timestamp("billing_starts_at", { withTimezone: true }),
+    purchasedAt: timestamp("purchased_at", { withTimezone: true }).defaultNow().notNull(),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("messaging_numbers_active_idx").on(t.businessId).where(sql`released_at is null`),
+    index("messaging_numbers_status_idx").on(t.status),
+  ],
+);
+
 // Outbound messages to clients and staff. Rows are created immediately and
 // delivered either right away (after the response) or by the jobs route.
 export const notifications = pgTable(

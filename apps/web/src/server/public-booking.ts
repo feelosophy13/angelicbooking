@@ -92,6 +92,8 @@ export interface OnlineBookingInput {
   email: string | null;
   phone: string | null;
   notes: string | null;
+  /** Client ticked the SMS consent box on the public form. */
+  smsConsent?: boolean;
 }
 
 /** Find a client by phone or email, else create one. Runs inside the tenant tx. */
@@ -106,13 +108,13 @@ async function findOrCreateClient(businessId: string, input: OnlineBookingInput)
       // Fill in gaps without overwriting what the business already has.
       await tx
         .update(schema.clients)
-        .set({ email: existing.email ?? input.email, phone: existing.phone ?? phone })
+        .set({ email: existing.email ?? input.email, phone: existing.phone ?? phone, ...(input.smsConsent ? { smsOptIn: true } : {}) })
         .where(eq(schema.clients.id, existing.id));
       return existing.id;
     }
     const [row] = await tx
       .insert(schema.clients)
-      .values({ businessId, firstName: input.firstName, lastName: input.lastName, email: input.email, phone })
+      .values({ businessId, firstName: input.firstName, lastName: input.lastName, email: input.email, phone, smsOptIn: input.smsConsent === true })
       .returning({ id: schema.clients.id });
     return row!.id;
   });
@@ -191,7 +193,7 @@ export async function rescheduleOnline(slug: string, token: string, newStartAt: 
   await alertBusiness(m.business, m.appt.id, "rescheduled");
 }
 
-export async function joinWaitlist(business: PublicBusiness, input: { serviceId: string; staffId: string | null; date: string; firstName: string; lastName: string; email: string | null; phone: string | null; notes: string | null }) {
+export async function joinWaitlist(business: PublicBusiness, input: { serviceId: string; staffId: string | null; date: string; firstName: string; lastName: string; email: string | null; phone: string | null; notes: string | null; smsConsent?: boolean }) {
   const clientId = await findOrCreateClient(business.id, { ...input, startAt: new Date(), staffId: input.staffId ?? "" });
   await withTenant(business.id, (tx) =>
     tx.insert(schema.waitlist).values({ businessId: business.id, clientId, serviceId: input.serviceId, staffId: input.staffId, date: input.date, notes: input.notes }),

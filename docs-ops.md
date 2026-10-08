@@ -100,15 +100,35 @@ Environment). Saving in the dashboard offers "Save, rebuild, and deploy"; take i
 5. Test: Settings → Notifications in the app no longer says "Email sending is off"; book an
    appointment with your own email and confirm the receipt arrives.
 
-### 3. Twilio (SMS reminders)
-1. twilio.com → upgrade from trial (trial accounts only text verified numbers).
-2. Buy a number. For US clients, **A2P 10DLC registration is mandatory**: register a Brand and a
-   Campaign (Messaging → Regulatory Compliance). Approval takes days to weeks; carriers block
-   unregistered traffic. Alternative: a toll-free number with toll-free verification (also days).
-3. Put the number in a Messaging Service (Messaging → Services) and attach the campaign to it.
-4. Render env: `TWILIO_ACCOUNT_SID=AC…`, `TWILIO_AUTH_TOKEN=…`, and either
-   `TWILIO_MESSAGING_SERVICE_SID=MG…` (preferred) or `TWILIO_FROM=+1…`.
-5. Test with your own phone once the campaign is approved.
+### 3. Twilio (SMS) — per-business toll-free numbers
+The platform owns one Twilio account; each business buys its own toll-free number from inside the app
+(Settings → Text messaging), submits carrier verification there, and texts go out from that number once
+verified. Until then SMS rows are skipped with "No verified text number yet" and clients still get email.
+
+Platform setup:
+1. twilio.com → upgrade the account (trial accounts can only text verified numbers and cannot buy numbers
+   for customers). The API returns `account … with status 4 is not active` until the account is activated.
+2. Render env + local `.env`: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `SMS_NUMBER_MONTHLY_FEE_CENTS`
+   (price shown to businesses; stored on each number for billing once Stripe billing exists).
+   Optional `TWILIO_FROM` or `TWILIO_MESSAGING_SERVICE_SID`: a platform-wide fallback sender for businesses
+   without a verified number (needs its own verification).
+3. The opt-in screenshot attached to every verification is `apps/web/public/tollfree/opt-in.png`, rendered
+   from `/tollfree/opt-in` (the booking form's consent step). Regenerate it if the consent wording changes
+   (command in `apps/web/src/app/tollfree/opt-in/page.tsx`).
+
+Per business (what the owner does in the app):
+1. Settings → Text messaging → Choose a number (search by digits/letters, one click to buy). Twilio charges
+   the platform ≈$2.15/month per toll-free number plus per-message fees.
+2. Submit verification: prefilled from the profile (legal name, website or booking URL, business type/EIN,
+   address, contact, use-case summary, sample messages). Twilio reviews within 1–3 weeks; status is polled
+   every cron run (`refreshPendingVerifications`) and can be refreshed by hand. Rejections show the carrier
+   feedback and allow a resubmit when Twilio permits edits.
+3. Clients opt in via the unticked consent checkbox on the public booking/waitlist form (stored as
+   `clients.sms_opt_in`); STOP/HELP are handled by Twilio. Inbound texts hit `/api/twilio/inbound`
+   (signature-validated, empty TwiML).
+
+Code: `apps/web/src/lib/twilio.ts` (fetch client), `apps/web/src/server/messaging.ts` (buy/verify/release/poll),
+`settings/messaging/*` pages, table `messaging_numbers` (RLS + `jobs_read`).
 
 ### 4. Reminder scheduler (done)
 Reminders are queued in the database with a future `scheduled_at`; receipts, confirmations and alerts are sent

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deliverDue } from "@/lib/notify";
+import { refreshPendingVerifications } from "@/server/messaging";
 
 /**
  * Deliver due reminders. Called every 5 minutes by the Render cron job
@@ -14,9 +15,10 @@ export async function POST(req: Request) {
   }
   const started = Date.now();
   const r = await deliverDue();
+  const v = await refreshPendingVerifications().catch((e) => ({ checked: 0, changed: 0, error: (e as Error).message }));
   const ms = Date.now() - started;
-  console.log(`[jobs/notifications] processed=${r.processed} sent=${r.sent} failed=${r.failed} skipped=${r.skipped} in ${ms}ms`);
-  return NextResponse.json({ ...r, ms });
+  console.log(`[jobs/notifications] processed=${r.processed} sent=${r.sent} failed=${r.failed} skipped=${r.skipped} verifications=${v.checked}/${v.changed} in ${ms}ms`);
+  return NextResponse.json({ ...r, verifications: v, ms });
 }
 
 export const GET = POST;

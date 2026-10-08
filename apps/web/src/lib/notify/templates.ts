@@ -57,7 +57,7 @@ export const templates = {
   confirmation: (ctx: ApptContext) => ({
     subject: `Confirmed: ${ctx.services} at ${ctx.businessName}`,
     html: shell(ctx, `You're booked, ${ctx.clientFirstName}!`, details(ctx) + manage(ctx)),
-    sms: `${ctx.businessName}: you're booked for ${ctx.services} with ${ctx.staffName} on ${when(ctx)}. Manage: ${ctx.manageUrl}`,
+    sms: `${ctx.businessName}: you're booked for ${ctx.services} with ${ctx.staffName} on ${when(ctx)}. Manage: ${ctx.manageUrl} Reply STOP to opt out.`,
   }),
   reminder: (ctx: ApptContext) => ({
     subject: `Reminder: ${ctx.services} ${when(ctx)}`,

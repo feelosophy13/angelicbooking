@@ -155,6 +155,13 @@
       "when": 1791433557277,
       "tag": "0021_notifications_claim",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791434729364,
+      "tag": "0022_messaging_numbers",
+      "breakpoints": true
     }
   ]
 }

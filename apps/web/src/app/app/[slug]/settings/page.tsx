@@ -62,6 +62,11 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
           <Link href={`/app/${slug}/settings/booking`} className="text-sm text-brand-700 underline">Booking settings →</Link>
         </Card>
         <Card className="p-4">
+          <h2 className="mb-1 font-medium">Text messaging</h2>
+          <p className="mb-3 text-sm text-stone-600">Get your own toll-free number so confirmations and reminders come from your salon.</p>
+          <Link href={`/app/${slug}/settings/messaging`} className="text-sm text-brand-700 underline">Text number →</Link>
+        </Card>
+        <Card className="p-4">
           <h2 className="mb-1 font-medium">Messages</h2>
           <p className="mb-3 text-sm text-stone-600">Every confirmation, reminder and cancellation sent to clients, with delivery status.</p>
           <Link href={`/app/${slug}/settings/notifications`} className="text-sm text-brand-700 underline">Message log →</Link>

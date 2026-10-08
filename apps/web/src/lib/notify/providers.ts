@@ -1,15 +1,14 @@
 /** Thin fetch-based clients for Resend (email) and Twilio (SMS). No SDKs needed. */
+import { sendMessage, twilioConfigured } from "@/lib/twilio";
 
 export function emailConfigured(): boolean {
   const k = process.env.RESEND_API_KEY;
   return !!k && !k.endsWith("...") && !!process.env.EMAIL_FROM;
 }
 
+/** Twilio credentials are present. Whether a given business can send depends on its verified number (see server/messaging.ts). */
 export function smsConfigured(): boolean {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const tok = process.env.TWILIO_AUTH_TOKEN;
-  const from = process.env.TWILIO_FROM ?? process.env.TWILIO_MESSAGING_SERVICE_SID;
-  return !!sid && !!tok && !!from && !sid.endsWith("...");
+  return twilioConfigured();
 }
 
 export async function sendEmail(input: { to: string; subject: string; html: string; text?: string; replyTo?: string }): Promise<{ id: string }> {
@@ -30,20 +29,9 @@ export async function sendEmail(input: { to: string; subject: string; html: stri
   return { id: json.id ?? "" };
 }
 
-export async function sendSms(input: { to: string; body: string }): Promise<{ id: string }> {
-  const sid = process.env.TWILIO_ACCOUNT_SID!;
-  const params = new URLSearchParams({ To: input.to, Body: input.body });
-  if (process.env.TWILIO_MESSAGING_SERVICE_SID) params.set("MessagingServiceSid", process.env.TWILIO_MESSAGING_SERVICE_SID);
-  else params.set("From", process.env.TWILIO_FROM!);
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${sid}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: params,
-  });
-  const json = (await res.json().catch(() => ({}))) as { sid?: string; message?: string };
-  if (!res.ok) throw new Error(json.message ?? `Twilio error ${res.status}`);
-  return { id: json.sid ?? "" };
+export type SmsSender = { from?: string; messagingServiceSid?: string };
+
+export async function sendSms(input: { to: string; body: string; sender: SmsSender }): Promise<{ id: string }> {
+  const r = await sendMessage({ to: input.to, body: input.body, ...input.sender });
+  return { id: r.sid };
 }

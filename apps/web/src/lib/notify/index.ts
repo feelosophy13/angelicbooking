@@ -3,7 +3,9 @@ import { after } from "next/server";
 import { schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
-import { emailConfigured, sendEmail, sendSms, smsConfigured } from "./providers";
+import { emailConfigured, sendEmail, sendSms, smsConfigured, type SmsSender } from "./providers";
+import { platformSmsSender } from "@/lib/twilio";
+import { activeNumber } from "@/server/messaging";
 import { templates, type ApptContext, type TemplateName } from "./templates";
 
 type Row = typeof schema.notifications.$inferSelect;
@@ -117,6 +119,25 @@ const CONCURRENCY = 8;
  * stale "sending" rows. The UPDATE is the lock, so two concurrent runs (cron +
  * after-response delivery, or overlapping deploys) can never both send a row.
  */
+type Claimed = { row: Row; sender: SmsSender | null };
+
+/**
+ * The sender a business texts from: its own verified toll-free number, else the
+ * platform fallback (TWILIO_FROM / TWILIO_MESSAGING_SERVICE_SID), else nothing.
+ */
+async function smsSenderFor(tx: TenantDb): Promise<SmsSender | null> {
+  const own = await activeNumber(tx);
+  if (own?.status === "verified") return { from: own.phoneNumber };
+  return platformSmsSender();
+}
+
+async function claimWithSender(tx: TenantDb, opts: { ids?: string[]; limit: number }): Promise<Claimed[]> {
+  const rows = await claim(tx, opts);
+  if (!rows.length) return [];
+  const sender = rows.some((r) => r.channel === "sms") ? await smsSenderFor(tx) : null;
+  return rows.map((row) => ({ row, sender }));
+}
+
 async function claim(tx: TenantDb, opts: { ids?: string[]; limit: number }): Promise<Row[]> {
   const stale = new Date(Date.now() - STALE_CLAIM_MS);
   const due = or(
@@ -138,11 +159,12 @@ async function claim(tx: TenantDb, opts: { ids?: string[]; limit: number }): Pro
     .returning();
 }
 
-async function send(n: Row): Promise<Outcome> {
+async function send({ row: n, sender }: Claimed): Promise<Outcome> {
   const configured = n.channel === "email" ? emailConfigured() : smsConfigured();
   if (!configured) return { id: n.id, status: "skipped", error: `${n.channel} provider not configured` };
+  if (n.channel === "sms" && !sender) return { id: n.id, status: "skipped", error: "No verified text number yet (Settings → Text messaging)" };
   try {
-    const r = n.channel === "email" ? await sendEmail({ to: n.recipient, subject: n.subject ?? "", html: n.body }) : await sendSms({ to: n.recipient, body: n.body });
+    const r = n.channel === "email" ? await sendEmail({ to: n.recipient, subject: n.subject ?? "", html: n.body }) : await sendSms({ to: n.recipient, body: n.body, sender: sender! });
     return { id: n.id, status: "sent", providerId: r.id };
   } catch (e) {
     return { id: n.id, status: "failed", error: (e as Error).message };
@@ -165,15 +187,15 @@ async function pooled<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>)
 }
 
 /** Send claimed rows (outside any transaction) and record the outcomes per business. */
-async function deliverClaimed(rows: Row[]): Promise<Summary> {
-  const summary: Summary = { processed: rows.length, sent: 0, failed: 0, skipped: 0 };
-  if (!rows.length) return summary;
-  const outcomes = await pooled(rows, CONCURRENCY, send);
+async function deliverClaimed(claimed: Claimed[]): Promise<Summary> {
+  const summary: Summary = { processed: claimed.length, sent: 0, failed: 0, skipped: 0 };
+  if (!claimed.length) return summary;
+  const outcomes = await pooled(claimed, CONCURRENCY, send);
   const byBusiness = new Map<string, Outcome[]>();
-  rows.forEach((r, i) => {
+  claimed.forEach((c, i) => {
     const o = outcomes[i]!;
     summary[o.status]++;
-    byBusiness.set(r.businessId, [...(byBusiness.get(r.businessId) ?? []), o]);
+    byBusiness.set(c.row.businessId, [...(byBusiness.get(c.row.businessId) ?? []), o]);
   });
   for (const [businessId, list] of byBusiness) {
     await withTenant(businessId, async (tx) => {
@@ -193,8 +215,8 @@ export type Summary = { processed: number; sent: number; failed: number; skipped
 /** Deliver specific rows now (used right after a response). Rows not yet due are left queued. */
 export async function deliverMany(businessId: string, ids: string[]): Promise<Summary> {
   if (!ids.length) return { processed: 0, sent: 0, failed: 0, skipped: 0 };
-  const rows = await withTenant(businessId, (tx) => claim(tx, { ids, limit: ids.length }));
-  return deliverClaimed(rows);
+  const claimed = await withTenant(businessId, (tx) => claimWithSender(tx, { ids, limit: ids.length }));
+  return deliverClaimed(claimed);
 }
 
 /**
@@ -216,9 +238,9 @@ export async function deliverDue(limitPerBusiness = 200): Promise<Summary> {
       )
       .limit(500),
   );
-  const claimed: Row[] = [];
+  const claimed: Claimed[] = [];
   for (const { businessId } of due) {
-    claimed.push(...(await withTenant(businessId, (tx) => claim(tx, { limit: limitPerBusiness }))));
+    claimed.push(...(await withTenant(businessId, (tx) => claimWithSender(tx, { limit: limitPerBusiness }))));
   }
   return deliverClaimed(claimed);
 }

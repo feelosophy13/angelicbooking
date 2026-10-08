@@ -16,8 +16,9 @@ export function BookingForm(props: { slug: string; serviceId: string; staffId: s
         <Field label="First name"><Input name="firstName" required autoComplete="given-name" /></Field>
         <Field label="Last name"><Input name="lastName" autoComplete="family-name" /></Field>
       </div>
-      <Field label="Mobile number" hint="For text confirmations and reminders."><Input name="phone" type="tel" autoComplete="tel" /></Field>
+      <Field label="Mobile number"><Input name="phone" type="tel" autoComplete="tel" /></Field>
       <Field label="Email"><Input name="email" type="email" autoComplete="email" /></Field>
+      <SmsConsent />
       <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Booking…">Confirm booking</SubmitButton>
@@ -42,9 +43,25 @@ export function WaitlistForm(props: { slug: string; serviceId: string; staffId: 
       </div>
       <Field label="Mobile number"><Input name="phone" type="tel" /></Field>
       <Field label="Email"><Input name="email" type="email" /></Field>
+      <SmsConsent />
       <Field label="Preferred times"><Input name="notes" placeholder="Afternoons, after 3pm…" /></Field>
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton variant="secondary" className="w-full" pendingText="Joining…">Join waitlist</SubmitButton>
     </form>
+  );
+}
+
+/**
+ * Explicit SMS opt-in (unchecked by default), worded the way US carriers expect
+ * for toll-free verification. The checkbox state becomes the client's smsOptIn.
+ */
+export function SmsConsent() {
+  return (
+    <label className="flex items-start gap-2 text-xs text-stone-600">
+      <input type="checkbox" name="smsConsent" className="mt-0.5 h-4 w-4 shrink-0 accent-brand-600" />
+      <span>
+        Text me appointment confirmations and reminders at this mobile number. Message frequency varies by appointment. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help.
+      </span>
+    </label>
   );
 }
