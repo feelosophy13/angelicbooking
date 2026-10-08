@@ -1,6 +1,6 @@
-import { and, asc, eq, lte, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, or } from "drizzle-orm";
 import { after } from "next/server";
-import { db, schema, withTenant, type TenantDb } from "@angelic/db";
+import { schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { emailConfigured, sendEmail, sendSms, smsConfigured } from "./providers";
@@ -105,48 +105,120 @@ export async function queueOneOff(businessId: string, input: { channel: "email" 
   if (row) after(() => deliverMany(businessId, [row.id]));
 }
 
-async function deliverOne(tx: TenantDb, n: Row) {
+type Outcome = { id: string; status: "sent" | "failed" | "skipped"; providerId?: string; error?: string };
+
+/** Rows left in "sending" longer than this are assumed orphaned (process died mid-run) and retried. */
+const STALE_CLAIM_MS = 10 * 60_000;
+/** Parallel provider calls per delivery run. Resend and Twilio both tolerate this comfortably. */
+const CONCURRENCY = 8;
+
+/**
+ * Atomically claim due rows for one business: queued rows that are due, plus
+ * stale "sending" rows. The UPDATE is the lock, so two concurrent runs (cron +
+ * after-response delivery, or overlapping deploys) can never both send a row.
+ */
+async function claim(tx: TenantDb, opts: { ids?: string[]; limit: number }): Promise<Row[]> {
+  const stale = new Date(Date.now() - STALE_CLAIM_MS);
+  const due = or(
+    and(eq(schema.notifications.status, "queued"), lte(schema.notifications.scheduledAt, new Date())),
+    and(eq(schema.notifications.status, "sending"), lte(schema.notifications.claimedAt, stale)),
+  );
+  const where = opts.ids ? and(due, inArray(schema.notifications.id, opts.ids)) : due;
+  const candidates = tx
+    .select({ id: schema.notifications.id })
+    .from(schema.notifications)
+    .where(where)
+    .orderBy(asc(schema.notifications.scheduledAt))
+    .limit(opts.limit)
+    .for("update", { skipLocked: true });
+  return tx
+    .update(schema.notifications)
+    .set({ status: "sending", claimedAt: new Date() })
+    .where(inArray(schema.notifications.id, candidates))
+    .returning();
+}
+
+async function send(n: Row): Promise<Outcome> {
   const configured = n.channel === "email" ? emailConfigured() : smsConfigured();
-  if (!configured) {
-    await tx.update(schema.notifications).set({ status: "skipped", error: `${n.channel} provider not configured` }).where(eq(schema.notifications.id, n.id));
-    return;
-  }
+  if (!configured) return { id: n.id, status: "skipped", error: `${n.channel} provider not configured` };
   try {
     const r = n.channel === "email" ? await sendEmail({ to: n.recipient, subject: n.subject ?? "", html: n.body }) : await sendSms({ to: n.recipient, body: n.body });
-    await tx.update(schema.notifications).set({ status: "sent", sentAt: new Date(), providerId: r.id }).where(eq(schema.notifications.id, n.id));
+    return { id: n.id, status: "sent", providerId: r.id };
   } catch (e) {
-    await tx.update(schema.notifications).set({ status: "failed", error: (e as Error).message }).where(eq(schema.notifications.id, n.id));
+    return { id: n.id, status: "failed", error: (e as Error).message };
   }
 }
 
-export async function deliverMany(businessId: string, ids: string[]) {
-  await withTenant(businessId, async (tx) => {
-    for (const id of ids) {
-      const n = await tx.query.notifications.findFirst({ where: and(eq(schema.notifications.id, id), eq(schema.notifications.status, "queued")) });
-      if (n && n.scheduledAt <= new Date()) await deliverOne(tx, n);
-    }
-  });
-}
-
-/** Cron entry point: deliver everything due across all tenants. */
-export async function deliverDue(limit = 200): Promise<{ processed: number }> {
-  // Not tenant-scoped: find due rows via the admin-free path (RLS blocks the app role),
-  // so we enumerate businesses with due work first.
-  const due = await db.execute<{ business_id: string; n: number }>(
-    sql`select business_id, count(*)::int as n from notifications where status = 'queued' and scheduled_at <= now() group by business_id limit 100`,
+/** Run `fn` over `items` with at most `limit` in flight. */
+async function pooled<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i]!);
+      }
+    }),
   );
-  let processed = 0;
-  for (const row of due) {
-    const ids = await withTenant(row.business_id, (tx) =>
-      tx
-        .select({ id: schema.notifications.id })
-        .from(schema.notifications)
-        .where(and(eq(schema.notifications.status, "queued"), lte(schema.notifications.scheduledAt, new Date())))
-        .orderBy(asc(schema.notifications.scheduledAt))
-        .limit(limit),
-    );
-    await deliverMany(row.business_id, ids.map((i) => i.id));
-    processed += ids.length;
+  return out;
+}
+
+/** Send claimed rows (outside any transaction) and record the outcomes per business. */
+async function deliverClaimed(rows: Row[]): Promise<Summary> {
+  const summary: Summary = { processed: rows.length, sent: 0, failed: 0, skipped: 0 };
+  if (!rows.length) return summary;
+  const outcomes = await pooled(rows, CONCURRENCY, send);
+  const byBusiness = new Map<string, Outcome[]>();
+  rows.forEach((r, i) => {
+    const o = outcomes[i]!;
+    summary[o.status]++;
+    byBusiness.set(r.businessId, [...(byBusiness.get(r.businessId) ?? []), o]);
+  });
+  for (const [businessId, list] of byBusiness) {
+    await withTenant(businessId, async (tx) => {
+      for (const o of list) {
+        await tx
+          .update(schema.notifications)
+          .set(o.status === "sent" ? { status: "sent", sentAt: new Date(), providerId: o.providerId, error: null } : { status: o.status, error: o.error })
+          .where(and(eq(schema.notifications.id, o.id), eq(schema.notifications.status, "sending")));
+      }
+    });
   }
-  return { processed };
+  return summary;
+}
+
+export type Summary = { processed: number; sent: number; failed: number; skipped: number };
+
+/** Deliver specific rows now (used right after a response). Rows not yet due are left queued. */
+export async function deliverMany(businessId: string, ids: string[]): Promise<Summary> {
+  if (!ids.length) return { processed: 0, sent: 0, failed: 0, skipped: 0 };
+  const rows = await withTenant(businessId, (tx) => claim(tx, { ids, limit: ids.length }));
+  return deliverClaimed(rows);
+}
+
+/**
+ * Cron entry point: deliver everything due across all tenants.
+ * Finding the work needs a cross-tenant read, which RLS only allows inside
+ * `withJobs`; claiming and writing back stay tenant-scoped.
+ */
+export async function deliverDue(limitPerBusiness = 200): Promise<Summary> {
+  const stale = new Date(Date.now() - STALE_CLAIM_MS);
+  const due = await withJobs((tx) =>
+    tx
+      .selectDistinct({ businessId: schema.notifications.businessId })
+      .from(schema.notifications)
+      .where(
+        or(
+          and(eq(schema.notifications.status, "queued"), lte(schema.notifications.scheduledAt, new Date())),
+          and(eq(schema.notifications.status, "sending"), lte(schema.notifications.claimedAt, stale)),
+        ),
+      )
+      .limit(500),
+  );
+  const claimed: Row[] = [];
+  for (const { businessId } of due) {
+    claimed.push(...(await withTenant(businessId, (tx) => claim(tx, { limit: limitPerBusiness }))));
+  }
+  return deliverClaimed(claimed);
 }

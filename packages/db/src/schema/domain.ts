@@ -322,7 +322,7 @@ function randomToken(): string {
 }
 
 export const notificationChannel = pgEnum("notification_channel", ["email", "sms"]);
-export const notificationStatus = pgEnum("notification_status", ["queued", "sent", "failed", "skipped", "cancelled"]);
+export const notificationStatus = pgEnum("notification_status", ["queued", "sending", "sent", "failed", "skipped", "cancelled"]);
 
 // Outbound messages to clients and staff. Rows are created immediately and
 // delivered either right away (after the response) or by the jobs route.
@@ -339,6 +339,9 @@ export const notifications = pgTable(
     subject: text("subject"),
     body: text("body").notNull(), // rendered text (sms) or html (email)
     scheduledAt: timestamp("scheduled_at", { withTimezone: true }).defaultNow().notNull(),
+    // Set when a delivery run claims the row (status -> "sending"). Rows stuck in
+    // "sending" past a timeout are reclaimed by the next run.
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     status: notificationStatus("status").notNull().default("queued"),
     providerId: text("provider_id"),

@@ -18,3 +18,16 @@ export async function withTenant<T>(businessId: string, fn: (tx: TenantDb) => Pr
     return fn(tx);
   });
 }
+
+/**
+ * Run `fn` inside a transaction flagged for background jobs. Tables that opt in
+ * (currently `notifications`, via a `jobs_read` SELECT policy) become readable
+ * across every tenant so a scheduler can find due work. Writes are still
+ * tenant-scoped: do them through `withTenant` for each business found.
+ */
+export async function withJobs<T>(fn: (tx: TenantDb) => Promise<T>): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select set_config('app.jobs', 'on', true)`);
+    return fn(tx);
+  });
+}

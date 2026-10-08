@@ -7,7 +7,7 @@ import "../env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, getSql, schema } from "../index";
-import { withTenant } from "../tenant";
+import { withJobs, withTenant } from "../tenant";
 
 const A = `test_a_${crypto.randomUUID().slice(0, 8)}`;
 const B = `test_b_${crypto.randomUUID().slice(0, 8)}`;
@@ -70,6 +70,21 @@ describe.skipIf(!reachable)("tenant isolation (RLS)", () => {
     expect(updated).toHaveLength(0);
     expect(deleted).toHaveLength(0);
     expect(bob.map((c) => c.firstName)).toEqual(["Bob"]);
+  });
+
+  it("notifications are hidden without a tenant but readable (not writable) inside withJobs", async () => {
+    const base = { channel: "email" as const, template: "reminder", recipient: "x@example.com", body: "hi" };
+    await withTenant(A, (tx) => tx.insert(schema.notifications).values({ ...base, businessId: A }));
+    await withTenant(B, (tx) => tx.insert(schema.notifications).values({ ...base, businessId: B }));
+    const none = await db.select().from(schema.notifications).where(eq(schema.notifications.recipient, base.recipient));
+    const jobs = await withJobs((tx) => tx.select().from(schema.notifications).where(eq(schema.notifications.recipient, base.recipient)));
+    expect(none).toHaveLength(0);
+    expect(new Set(jobs.map((n) => n.businessId))).toEqual(new Set([A, B]));
+    const updated = await withJobs((tx) =>
+      tx.update(schema.notifications).set({ status: "sending" }).where(eq(schema.notifications.recipient, base.recipient)).returning(),
+    );
+    expect(updated).toHaveLength(0);
+    await expect(withJobs((tx) => tx.insert(schema.notifications).values({ ...base, businessId: A }))).rejects.toThrow(/row-level security|Failed query/);
   });
 
   it("double booking is rejected by the database", async () => {

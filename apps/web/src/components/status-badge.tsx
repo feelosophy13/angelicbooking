@@ -15,6 +15,7 @@ const TONE: Record<string, string> = {
   open: "bg-brand-50 text-brand-700 ring-brand-200",
   pending: "bg-amber-50 text-amber-800 ring-amber-200",
   queued: "bg-amber-50 text-amber-800 ring-amber-200",
+  sending: "bg-sky-50 text-sky-800 ring-sky-200",
   skipped: "bg-amber-50 text-amber-800 ring-amber-200",
   partially_refunded: "bg-amber-50 text-amber-800 ring-amber-200",
   paused: "bg-amber-50 text-amber-800 ring-amber-200",

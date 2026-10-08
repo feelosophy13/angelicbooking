@@ -4,7 +4,7 @@ import * as schema from "./schema";
 
 export * as schema from "./schema";
 export * from "./schema";
-export { withTenant, type TenantDb } from "./tenant";
+export { withTenant, withJobs, type TenantDb } from "./tenant";
 
 const globalForDb = globalThis as unknown as { __angelicSql?: ReturnType<typeof postgres> };
 

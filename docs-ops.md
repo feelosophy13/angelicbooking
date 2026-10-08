@@ -56,8 +56,74 @@ Production runs on Render (workspace "My Workspace", region Virginia):
 - Environment variables live in the Render dashboard: `DATABASE_URL`, `DATABASE_ADMIN_URL`, `BETTER_AUTH_SECRET`,
   `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, `JOBS_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `PLATFORM_FEE_BPS`.
   Stripe, Resend and Twilio keys are not set yet; add them there when ready.
-- Custom domains `angelicbooking.com` (apex) and `www.angelicbooking.com` (redirects to apex) are attached to the service.
-  Once DNS resolves, change `BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL` to `https://angelicbooking.com` and redeploy.
-- Reminder delivery: nothing calls `POST /api/jobs/notifications` yet in production. Add a Render Cron Job
-  (every 5 minutes, `curl -X POST -H "Authorization: Bearer $JOBS_SECRET" https://angelicbooking.com/api/jobs/notifications`)
-  or any external scheduler.
+- Custom domains `angelicbooking.com` (apex) and `www.angelicbooking.com` (redirects to apex) are attached to the service
+  and verified. DNS is on Cloudflare (DNS only, not proxied): `A @ 216.24.57.1` and `CNAME www angelic-booking.onrender.com`.
+  `BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL` point at `https://angelicbooking.com`, so the onrender.com hostname now
+  returns 404 at `/` (the proxy treats any non-app host as a tenant booking domain). That is expected.
+- Changing an env var through the API does not trigger a deploy; POST `/v1/services/<id>/deploys` afterwards.
+- Reminder delivery: the Render Cron Job `angelic-booking-reminders` (crn-db3hnf6i0phs73a81qcg, same repo, build
+  command `echo no build needed`) runs every 5 minutes:
+  `curl -fsS -X POST -H "Authorization: Bearer $JOBS_SECRET" https://angelicbooking.com/api/jobs/notifications`.
+  It has its own `JOBS_SECRET` env var (same value as the web service; update both if it is rotated). Each run's
+  output is JSON `{processed, sent, failed, skipped, ms}`; see the cron job's Runs tab or Logs.
+
+## Go-live checklist (remaining as of 2026-10-07)
+
+Every item below is an environment variable on the Render web service (Dashboard → angelic-booking →
+Environment). Saving in the dashboard offers "Save, rebuild, and deploy"; take it, because the
+`NEXT_PUBLIC_*` values are baked in at build time. Through the API, POST a deploy afterwards.
+
+### 1. Stripe (card payments)
+1. Finish activating the platform account at dashboard.stripe.com (business details, bank account, identity).
+2. Settings → Connect → Get started. Choose **Standard** accounts, fill in the platform profile
+   (the app creates Standard accounts and, with `PLATFORM_FEE_BPS`, charges application fees).
+3. Developers → API keys (live mode): copy the secret key and the publishable key.
+4. Developers → Webhooks → Add endpoint. Tick **"Listen to events on Connected accounts"** (not
+   "your account"). URL `https://angelicbooking.com/api/stripe/webhook`. Events:
+   `account.updated`, `payment_intent.succeeded`, `payment_intent.payment_failed`,
+   `charge.refunded`, `charge.dispute.created`. Copy the signing secret.
+5. Render env: `STRIPE_SECRET_KEY=sk_live_…`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_…`,
+   `STRIPE_WEBHOOK_SECRET=whsec_…`. Deploy.
+6. In the app, each business connects its own account: Settings → Payments → Connect Stripe,
+   which sends the owner through Stripe's onboarding and returns to `/settings/payments/return`.
+7. Test: book and check out a real card for a small amount, then refund it from the sale page.
+   The webhook should flip the sale to paid within seconds; Developers → Webhooks shows 2xx responses.
+
+### 2. Resend (email: receipts, reminders, owner alerts)
+1. resend.com → create an account, then Domains → Add domain `angelicbooking.com`
+   (or a subdomain such as `mail.angelicbooking.com` to keep the apex clean).
+2. Resend lists DNS records (DKIM TXT, SPF TXT, MX for bounces). Add them in Cloudflare → DNS,
+   proxy off. Click Verify in Resend; it usually passes within minutes.
+3. API Keys → Create (sending access only).
+4. Render env: `RESEND_API_KEY=re_…`, `EMAIL_FROM="Angelic Booking <bookings@angelicbooking.com>"`
+   (address must be on the verified domain). Optional: `SUPPORT_EMAIL=` for the help/legal pages.
+5. Test: Settings → Notifications in the app no longer says "Email sending is off"; book an
+   appointment with your own email and confirm the receipt arrives.
+
+### 3. Twilio (SMS reminders)
+1. twilio.com → upgrade from trial (trial accounts only text verified numbers).
+2. Buy a number. For US clients, **A2P 10DLC registration is mandatory**: register a Brand and a
+   Campaign (Messaging → Regulatory Compliance). Approval takes days to weeks; carriers block
+   unregistered traffic. Alternative: a toll-free number with toll-free verification (also days).
+3. Put the number in a Messaging Service (Messaging → Services) and attach the campaign to it.
+4. Render env: `TWILIO_ACCOUNT_SID=AC…`, `TWILIO_AUTH_TOKEN=…`, and either
+   `TWILIO_MESSAGING_SERVICE_SID=MG…` (preferred) or `TWILIO_FROM=+1…`.
+5. Test with your own phone once the campaign is approved.
+
+### 4. Reminder scheduler (done)
+Reminders are queued in the database with a future `scheduled_at`; receipts, confirmations and alerts are sent
+right after the request that created them. The cron job above wakes the app every 5 minutes to send whatever is due.
+
+How delivery works (`apps/web/src/lib/notify/index.ts`):
+- `deliverDue` finds businesses with due rows through `withJobs`, which sets `app.jobs=on` so the `jobs_read`
+  RLS policy lets it read `notifications` across tenants (the app role otherwise sees nothing outside a tenant).
+- Rows are claimed per business with an atomic `UPDATE ... SET status='sending'` over a `FOR UPDATE SKIP LOCKED`
+  subquery, so overlapping runs (cron + after-response sends, or two deploys) never send the same row twice.
+- Sends run 8 at a time; outcomes are written back per tenant. Rows stuck in `sending` for 10 minutes
+  (process died mid-run) are reclaimed by the next run.
+
+### 5. Optional
+- Google consent screen logo: adding one triggers Google's brand verification review; skip until
+  a logo exists.
+- `ERROR_WEBHOOK_URL`: a Slack or Discord incoming webhook to get notified of unhandled errors.
+- Enable point-in-time recovery on the Render Postgres instance (paid plans).

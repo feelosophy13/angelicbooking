@@ -148,6 +148,13 @@
       "when": 1791345828833,
       "tag": "0020_client_notes_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791433557277,
+      "tag": "0021_notifications_claim",
+      "breakpoints": true
     }
   ]
 }
