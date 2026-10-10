@@ -5,7 +5,10 @@ let client: Stripe | null = null;
 /** True when a platform secret key is configured. UI degrades gracefully otherwise. */
 export function isStripeConfigured(): boolean {
   const k = process.env.STRIPE_SECRET_KEY;
-  return !!k && /^sk_(test|live)_/.test(k) && !k.endsWith("...");
+  // Secret (sk_) or restricted (rk_) keys; a restricted key needs write access to Customers,
+  // PaymentIntents, SetupIntents, Refunds, Checkout, Subscriptions, Products/Prices, Billing meters,
+  // Webhook endpoints and Connect accounts.
+  return !!k && /^[sr]k_(test|live)_/.test(k) && !k.endsWith("...");
 }
 
 export function stripe(): Stripe {

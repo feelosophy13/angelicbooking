@@ -13,12 +13,18 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] ~~Put Stripe **test** keys in local `.env`~~ (`STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) so the
       billing, Connect and checkout flows can be run end to end with Stripe test cards.
 - [ ] Activate the platform Stripe account (business details, bank, identity) and complete the Connect
-      platform profile for Standard accounts.
+      platform profile for Standard accounts. As of 2026-10-10 the live account `acct_1UP3plPmYAh2Q7ir` reports
+      charges_enabled=false, details_submitted=false. The restricted live key must have write access to Customers,
+      PaymentIntents, SetupIntents, Refunds, Checkout, Subscriptions, Products/Prices, Billing meters, Webhook
+      endpoints and Connect accounts (or use a full secret key).
 - [x] Webhooks created 2026-10-10 **in the sandbox** (`we_1UP6MGBapD9TuxcNtawam0qF` Connect, `we_1UP6MGBapD9TuxcNrI58f7K2` account)
       with secrets in `.env` and on Render, plus the sandbox `STRIPE_SECRET_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
       on Render, via `apps/web/scripts/stripe-production-setup.ts`. Production runs in Stripe **test mode** after the
-      next deploy. For live: activate the account, put live keys in `.env`, rerun the script with `--recreate --deploy`
-      (one Render call at a time if the auto-mode classifier objects).
+      next deploy. Live endpoints also exist (`we_1UP6XoPmYAh2Q7irQvL8Ixgh` Connect, `we_1UP6XoPmYAh2Q7ireZildnrP`
+      account) from the restricted live key `STRIPE_SECRET_LIVE_KEY`; their secrets are in `.env` as
+      `STRIPE_WEBHOOK_LIVE_SECRET` / `STRIPE_BILLING_WEBHOOK_LIVE_SECRET`. Switch Render to live once the account is
+      activated and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_LIVE_KEY` is in `.env`: run the script with `--live` (Render
+      copies one variable per call if the classifier objects) and deploy.
 - [ ] Put **live** keys on Render and in `.env`; redeploy; verify a real card payment + refund from the sale page.
 - [ ] Save the Customer Portal configuration once in the Stripe dashboard (branding, cancellation copy).
 - [ ] Decide pricing: base plan (`BILLING_BASE_CENTS`, now 0), trial (`BILLING_TRIAL_DAYS`, now 0),

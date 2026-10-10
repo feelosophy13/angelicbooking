@@ -6,7 +6,9 @@
  * reused endpoint keeps the secret already stored unless --recreate is given).
  *
  * Usage (from apps/web):
- *   pnpm exec tsx --env-file=../../.env scripts/stripe-production-setup.ts [--recreate] [--deploy] [--stripe-only]
+ *   pnpm exec tsx --env-file=../../.env scripts/stripe-production-setup.ts [--live] [--recreate] [--deploy] [--stripe-only]
+ * --live reads STRIPE_SECRET_LIVE_KEY / NEXT_PUBLIC_STRIPE_PUBLISHABLE_LIVE_KEY and stores the live webhook secrets as
+ * STRIPE_WEBHOOK_LIVE_SECRET / STRIPE_BILLING_WEBHOOK_LIVE_SECRET locally; Render always gets the unsuffixed names.
  * Needs STRIPE_SECRET_KEY + NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY in .env and RENDER_API_KEY in the shell.
  * Works with sandbox/test keys (production then runs in Stripe test mode) or live keys.
  */
@@ -37,6 +39,7 @@ const BILLING_EVENTS: Stripe.WebhookEndpointCreateParams.EnabledEvent[] = [
   "invoice.payment_failed",
 ];
 
+const live = process.argv.includes("--live"); // use STRIPE_SECRET_LIVE_KEY / NEXT_PUBLIC_STRIPE_PUBLISHABLE_LIVE_KEY from .env
 const recreate = process.argv.includes("--recreate");
 const stripeOnly = process.argv.includes("--stripe-only"); // create endpoints + update .env, leave Render alone
 const deploy = process.argv.includes("--deploy");
@@ -48,10 +51,11 @@ function need(name: string): string {
   return v;
 }
 
-const secretKey = need("STRIPE_SECRET_KEY");
-const publishableKey = need("NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY");
+const secretKey = need(live ? "STRIPE_SECRET_LIVE_KEY" : "STRIPE_SECRET_KEY");
+const publishableKey = process.env[live ? "NEXT_PUBLIC_STRIPE_PUBLISHABLE_LIVE_KEY" : "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"] ?? "";
 const renderKey = process.env.RENDER_API_KEY ?? "";
-const mode = secretKey.startsWith("sk_live_") ? "LIVE" : "TEST";
+const mode = /^[sr]k_live_/.test(secretKey) ? "LIVE" : "TEST";
+const envSuffix = live ? "_LIVE" : "";
 const stripe = new Stripe(secretKey, { typescript: true });
 
 async function ensureEndpoint(url: string, events: Stripe.WebhookEndpointCreateParams.EnabledEvent[], connect: boolean, existingSecretEnv: string): Promise<string | null> {
@@ -95,19 +99,21 @@ function upsertEnvFile(updates: Record<string, string>) {
 
 async function main() {
   console.log(`Stripe mode: ${mode} (${mask(secretKey)})`);
-  const acct = await stripe.accounts.retrieve();
+  const acct = await stripe.accounts.retrieve(null);
   console.log(`Platform account: ${acct.id} charges_enabled=${acct.charges_enabled} details_submitted=${acct.details_submitted}`);
-  const connectSecret = await ensureEndpoint(`${APP_URL}/api/stripe/webhook`, CONNECT_EVENTS, true, "STRIPE_WEBHOOK_SECRET");
-  const billingSecret = await ensureEndpoint(`${APP_URL}/api/stripe/billing`, BILLING_EVENTS, false, "STRIPE_BILLING_WEBHOOK_SECRET");
+  if (mode === "LIVE" && !(acct.charges_enabled && acct.details_submitted)) console.log("WARNING: the live account is not activated yet; card payments will fail until Stripe finishes activation.");
+  const connectSecret = await ensureEndpoint(`${APP_URL}/api/stripe/webhook`, CONNECT_EVENTS, true, `STRIPE_WEBHOOK${envSuffix}_SECRET`);
+  const billingSecret = await ensureEndpoint(`${APP_URL}/api/stripe/billing`, BILLING_EVENTS, false, `STRIPE_BILLING_WEBHOOK${envSuffix}_SECRET`);
   if (!connectSecret || !billingSecret) throw new Error("No signing secret available for an existing endpoint; rerun with --recreate");
 
   const env: Record<string, string> = {
     STRIPE_SECRET_KEY: secretKey,
-    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: publishableKey,
     STRIPE_WEBHOOK_SECRET: connectSecret,
     STRIPE_BILLING_WEBHOOK_SECRET: billingSecret,
+    ...(publishableKey ? { NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: publishableKey } : {}),
   };
-  upsertEnvFile({ STRIPE_WEBHOOK_SECRET: connectSecret, STRIPE_BILLING_WEBHOOK_SECRET: billingSecret });
+  if (!publishableKey) console.log(`WARNING: no publishable key in .env (${live ? "NEXT_PUBLIC_STRIPE_PUBLISHABLE_LIVE_KEY" : "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"}); the browser card forms need it.`);
+  upsertEnvFile({ [`STRIPE_WEBHOOK${envSuffix}_SECRET`]: connectSecret, [`STRIPE_BILLING_WEBHOOK${envSuffix}_SECRET`]: billingSecret });
   if (stripeOnly) {
     console.log("Stripe side done. Copy STRIPE_SECRET_KEY, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_BILLING_WEBHOOK_SECRET from .env to Render, then deploy.");
     return;
