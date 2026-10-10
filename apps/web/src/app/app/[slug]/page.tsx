@@ -11,6 +11,7 @@ import { CalendarGrid, type CalColumn, type CalItem } from "./calendar-grid";
 import { MonthGrid } from "./month-grid";
 import { SetupChecklist, type SetupStep } from "./setup-checklist";
 import { TodayStrip } from "./today-strip";
+import { LocationPills } from "./location-pills";
 import { money } from "@/lib/format";
 import { sql } from "drizzle-orm";
 import { can } from "@angelic/core";
@@ -119,15 +120,7 @@ export default async function CalendarPage({
           <a href={`?view=month&date=${date}`} className={`rounded-md px-3 py-1 ${view === "month" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Month</a>
         </div>
         {locations.length > 1 ? (
-          <form className="contents">
-            <input type="hidden" name="view" value={view} />
-            <input type="hidden" name="date" value={date} />
-            <select name="location" aria-label="Location" defaultValue={locationFilter ?? ""} className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-sm">
-              <option value="">All locations</option>
-              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-            <button className="h-8 rounded-lg border border-stone-300 bg-white px-3 text-sm">Go</button>
-          </form>
+          <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffFilter ? `&staff=${staffFilter}` : ""}`} />
         ) : null}
         {view === "week" ? (
           <form className="contents">
