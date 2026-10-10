@@ -21,8 +21,16 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
             <Field label="Tagline" name="tagline" hint="One line under your name on the booking page."><Input name="tagline" defaultValue={business.tagline ?? ""} placeholder="Lashes, brows and skin in Sterling, VA" /></Field>
             <Field label="About" name="about" hint="Shown on the booking page."><Textarea name="about" rows={4} defaultValue={business.about ?? ""} /></Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Logo URL" name="logoUrl" hint="Square image works best. Upload support arrives with file storage."><Input name="logoUrl" defaultValue={business.logoUrl ?? ""} placeholder="https://…/logo.png" /></Field>
-              <Field label="Cover photo URL" name="coverUrl" hint="Wide image for the top of the booking page."><Input name="coverUrl" defaultValue={business.coverUrl ?? ""} placeholder="https://…/cover.jpg" /></Field>
+              <div>
+                <Field label="Logo" name="logoFile" hint="Square image, PNG/JPEG/WebP/SVG up to 2 MB."><input type="file" name="logoFile" accept="image/*" className="block w-full text-sm" /></Field>
+                {business.logoUrl ? <div className="mt-2 flex items-center gap-3"><img src={business.logoUrl} alt="" className="h-14 w-14 rounded-xl border border-stone-200 object-cover" /><label className="flex items-center gap-1 text-xs text-stone-600"><input type="checkbox" name="removeLogo" className="h-3.5 w-3.5" /> Remove</label></div> : null}
+                <details className="mt-1 text-xs text-stone-500"><summary className="cursor-pointer">…or paste an image URL</summary><Input name="logoUrl" defaultValue={business.logoUrl ?? ""} placeholder="https://…/logo.png" className="mt-1" /></details>
+              </div>
+              <div>
+                <Field label="Cover photo" name="coverFile" hint="Wide image for the top of the booking page."><input type="file" name="coverFile" accept="image/*" className="block w-full text-sm" /></Field>
+                {business.coverUrl ? <div className="mt-2 flex items-center gap-3"><img src={business.coverUrl} alt="" className="h-14 w-28 rounded-lg border border-stone-200 object-cover" /><label className="flex items-center gap-1 text-xs text-stone-600"><input type="checkbox" name="removeCover" className="h-3.5 w-3.5" /> Remove</label></div> : null}
+                <details className="mt-1 text-xs text-stone-500"><summary className="cursor-pointer">…or paste an image URL</summary><Input name="coverUrl" defaultValue={business.coverUrl ?? ""} placeholder="https://…/cover.jpg" className="mt-1" /></details>
+              </div>
             </div>
             <Field label="Brand colour" name="brandColor" hint="Buttons and highlights on the booking page and in emails."><Input name="brandColor" type="color" defaultValue={business.brandColor ?? "#6d28d9"} className="h-10 w-24 p-1" /></Field>
             <div className="grid gap-4 sm:grid-cols-2">

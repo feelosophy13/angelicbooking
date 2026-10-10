@@ -16,6 +16,7 @@ import {
   primaryKey,
   check,
   jsonb,
+  customType,
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
 
@@ -90,6 +91,13 @@ export const businesses = pgTable("businesses", {
   referralFriendBonusPoints: integer("referral_friend_bonus_points").notNull().default(0), // to the new client
   // Client accounts on the booking site (passwordless codes by email/SMS)
   clientAccountsEnabled: boolean("client_accounts_enabled").notNull().default(true),
+  // Online store on the booking site
+  storeEnabled: boolean("store_enabled").notNull().default(false),
+  giftCardsOnline: boolean("gift_cards_online").notNull().default(true),
+  shippingFlatCents: integer("shipping_flat_cents").notNull().default(0), // 0 = pickup only
+  // Per-business wording for text messages; keys are template names, values use
+  // {first_name} {business} {service} {staff} {when} {manage_url} {review_url} placeholders.
+  smsTemplates: jsonb("sms_templates").$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),
   // Optional custom hostname for the public booking page (e.g. book.angelicbeauty.com).
   customDomain: text("custom_domain").unique(),
   // Public profile / branding shown on the booking page and in messages.
@@ -331,6 +339,8 @@ export const clients = pgTable(
     referredByClientId: text("referred_by_client_id"),
     referralRewardedAt: timestamp("referral_rewarded_at", { withTimezone: true }),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    // When the "Reply STOP to opt out" notice was first sent, so later texts can omit it.
+    smsStopNoticeAt: timestamp("sms_stop_notice_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -540,6 +550,8 @@ export const appointments = pgTable(
     depositCardLabel: text("deposit_card_label"), // "VISA •••• 4242"
     // SetupIntent that saved a card on file at booking (no money moved).
     cardSetupIntentId: text("card_setup_intent_id"),
+    // Promo code entered online; applied as the discount when checkout opens.
+    promoCodeId: text("promo_code_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -629,6 +641,7 @@ export const notifications = pgTable(
     status: notificationStatus("status").notNull().default("queued"),
     providerId: text("provider_id"),
     error: text("error"),
+    campaignId: text("campaign_id"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -782,6 +795,138 @@ export const auditLog = pgTable(
   (t) => [index("audit_log_business_idx").on(t.businessId, t.at)],
 );
 
+// ---------------------------------------------------------------------------
+// Marketing: campaigns, automations, promo codes
+// ---------------------------------------------------------------------------
+export interface CampaignAudience {
+  /** Visited within the last N days */
+  visitedWithinDays?: number | null;
+  /** Last visit at least N days ago (lapsed) */
+  lapsedDays?: number | null;
+  /** Has had this service */
+  serviceId?: string | null;
+  /** Has seen this staff member */
+  staffId?: string | null;
+  /** Has this tag */
+  tag?: string | null;
+  /** Never completed a visit */
+  neverVisited?: boolean | null;
+}
+
+export const campaigns = pgTable(
+  "campaigns",
+  {
+    id: id(),
+    businessId: businessId(),
+    name: text("name").notNull(),
+    channel: notificationChannel("channel").notNull(),
+    subject: text("subject"),
+    body: text("body").notNull(),
+    audience: jsonb("audience").$type<CampaignAudience>().notNull().default(sql`'{}'::jsonb`),
+    status: text("status").notNull().default("draft"), // draft | sent
+    recipientCount: integer("recipient_count").notNull().default(0),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("campaigns_business_idx").on(t.businessId, t.createdAt)],
+);
+
+export const automationKind = pgEnum("automation_kind", ["birthday", "win_back", "rebook"]);
+
+// Automated messages: birthday, "we miss you" after N days, rebook reminder N days after a visit.
+export const automations = pgTable(
+  "automations",
+  {
+    id: id(),
+    businessId: businessId(),
+    kind: automationKind("kind").notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    channel: text("channel").notNull().default("email"), // email | sms | both
+    days: integer("days").notNull().default(60), // win_back: days since last visit; rebook: days after visit
+    subject: text("subject"),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("automations_business_kind_uq").on(t.businessId, t.kind)],
+);
+
+export const automationSends = pgTable(
+  "automation_sends",
+  {
+    id: id(),
+    businessId: businessId(),
+    automationId: text("automation_id")
+      .notNull()
+      .references(() => automations.id, { onDelete: "cascade" }),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    periodKey: text("period_key").notNull(), // birthday: year; win_back/rebook: appointment id
+    sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("automation_sends_uq").on(t.automationId, t.clientId, t.periodKey)],
+);
+
+export const promoCodes = pgTable(
+  "promo_codes",
+  {
+    id: id(),
+    businessId: businessId(),
+    code: text("code").notNull(), // stored upper-case
+    type: text("type").notNull(), // percent | amount
+    value: integer("value").notNull(), // percent (10) or cents (1000)
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    maxUses: integer("max_uses"),
+    usesCount: integer("uses_count").notNull().default(0),
+    serviceIds: text("service_ids").array().notNull().default(sql`'{}'::text[]`), // empty = any service
+    minSubtotalCents: integer("min_subtotal_cents").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("promo_codes_business_code_uq").on(t.businessId, t.code)],
+);
+
+// ---------------------------------------------------------------------------
+// Inbound text messages (replies to the business's number)
+// ---------------------------------------------------------------------------
+export const inboundMessages = pgTable(
+  "inbound_messages",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+    fromNumber: text("from_number").notNull(),
+    toNumber: text("to_number").notNull(),
+    body: text("body").notNull(),
+    providerSid: text("provider_sid").unique(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+  },
+  (t) => [index("inbound_messages_business_idx").on(t.businessId, t.receivedAt), index("inbound_messages_client_idx").on(t.clientId)],
+);
+
+// ---------------------------------------------------------------------------
+// Uploaded files (logos, cover photos, product images). Served by id from
+// /api/files/<id>; ids are unguessable so no RLS is applied on reads.
+// ---------------------------------------------------------------------------
+export const files = pgTable(
+  "files",
+  {
+    id: id(),
+    businessId: businessId(),
+    kind: text("kind").notNull(), // logo | cover | product
+    contentType: text("content_type").notNull(),
+    size: integer("size").notNull(),
+    data: customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" })("data").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("files_business_idx").on(t.businessId)],
+);
+
 /** Names of every table guarded by tenant RLS. Used by the RLS migration and tests. */
 export const TENANT_TABLES = [
   "locations",
@@ -821,4 +966,10 @@ export const TENANT_TABLES = [
   "reviews",
   "loyalty_ledger",
   "client_login_codes",
+  "campaigns",
+  "automations",
+  "automation_sends",
+  "promo_codes",
+  "inbound_messages",
+  "stock_movements",
 ] as const;

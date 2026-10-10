@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
 import { syncConnectAccount } from "./stripe-connect";
 import { markCardPaymentFailed, markCardPaymentSucceeded } from "./sales";
+import { handleRenewalFailed, handleRenewalInvoice, handleSubscriptionDeleted } from "./membership-billing";
 
 /**
  * Process one Stripe Connect event. Idempotent: the event id is recorded in
@@ -56,6 +57,18 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<"processed
           await markCardPaymentFailed(business.id, pi.id, pi.last_payment_error?.message ?? null);
           outcome = "processed";
         }
+        break;
+      }
+      case "invoice.paid": {
+        if (business) outcome = (await handleRenewalInvoice(business, event.data.object)) ? "processed" : "ignored";
+        break;
+      }
+      case "invoice.payment_failed": {
+        if (business) outcome = (await handleRenewalFailed(business, event.data.object)) ? "processed" : "ignored";
+        break;
+      }
+      case "customer.subscription.deleted": {
+        if (business) outcome = (await handleSubscriptionDeleted(business, event.data.object)) ? "processed" : "ignored";
         break;
       }
       case "charge.refunded":

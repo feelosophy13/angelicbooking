@@ -89,7 +89,8 @@ Environment). Saving in the dashboard offers "Save, rebuild, and deploy"; take i
 4. Developers → Webhooks → Add endpoint. Tick **"Listen to events on Connected accounts"** (not
    "your account"). URL `https://app.angelicbooking.com/api/stripe/webhook`. Events:
    `account.updated`, `payment_intent.succeeded`, `payment_intent.payment_failed`,
-   `charge.refunded`, `charge.dispute.created`. Copy the signing secret.
+   `charge.refunded`, `charge.dispute.created`, and for membership auto-renewal
+   `invoice.paid`, `invoice.payment_failed`, `customer.subscription.deleted`. Copy the signing secret.
 5. Add a SECOND endpoint for your own account (leave "Connected accounts" unticked) at
    `https://app.angelicbooking.com/api/stripe/billing` with events `checkout.session.completed`,
    `customer.subscription.created/updated/deleted/paused/resumed`, `invoice.paid`, `invoice.payment_failed`.
@@ -183,3 +184,19 @@ Customer with one subscription:
   a logo exists.
 - `ERROR_WEBHOOK_URL`: a Slack or Discord incoming webhook to get notified of unhandled errors.
 - Enable point-in-time recovery on the Render Postgres instance (paid plans).
+
+## Features that depend on external services (added 2026-10-10)
+
+- **Online deposits / card on file, online store, gift cards, membership auto-renew** all run on the
+  business's Connect account and need `STRIPE_SECRET_KEY` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` plus the
+  business connected under Settings → Payments. Pages degrade to a "being set up" notice until then.
+- **Inbound texts** (`/api/twilio/inbound`) are stored per business by matching the `To` number to the
+  business's toll-free number; STOP/START keywords update the client's text opt-in. The Twilio number's
+  messaging webhook is set at purchase time (`smsUrl`), so nothing extra is needed.
+- **Automations** (birthday / we-miss-you / rebook) and **campaigns** are queued into `notifications` by the
+  same cron job (`POST /api/jobs/notifications`); the job output now includes `automations: {businesses, queued}`.
+- **Client sign-in codes** go by email (Resend) or text (the business's verified number). In development
+  with no Resend key the code is printed to the server log.
+- **Uploaded images** (logo, cover, product photos) are stored in Postgres (`files`, max 2 MB each) and
+  served from `/api/files/<id>` with immutable caching. Move to object storage if they grow past a few hundred MB.
+- **Provider calendar feeds** are public by secret token (`/api/calendar/<token>.ics`); reset from the staff profile.

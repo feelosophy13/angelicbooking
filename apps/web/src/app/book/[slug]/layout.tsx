@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Globe, Instagram, MapPin, Phone, UserCircle } from "lucide-react";
+import { Gift, Globe, Instagram, MapPin, Phone, ShoppingBag, UserCircle } from "lucide-react";
 import { getPublicBusiness } from "@/server/public-booking";
 import { appUrl } from "@/lib/stripe";
 import { brandVars } from "@/lib/brand";
@@ -44,6 +44,7 @@ export default async function BookLayout({ children, params }: { children: React
             {business.tagline ? <p className="truncate text-sm text-stone-600">{business.tagline}</p> : business.addressLine ? <p className="truncate text-xs text-stone-500">{business.addressLine}</p> : null}
           </div>
           {business.phone ? <a href={`tel:${business.phone}`} className="hidden items-center gap-1 text-sm sm:inline-flex" style={{ color: "var(--brand)" }}><Phone className="h-4 w-4" />{business.phone}</a> : null}
+          {business.storeEnabled ? <Link href={`/book/${business.slug}/shop`} className="hidden items-center gap-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-sm text-stone-700 hover:bg-stone-50 sm:inline-flex"><ShoppingBag className="h-4 w-4" /> Shop</Link> : business.giftCardsOnline ? <Link href={`/book/${business.slug}/gift`} className="hidden items-center gap-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-sm text-stone-700 hover:bg-stone-50 sm:inline-flex"><Gift className="h-4 w-4" /> Gift cards</Link> : null}
           {business.clientAccountsEnabled ? <Link href={`/book/${business.slug}/account`} className="inline-flex items-center gap-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-sm text-stone-700 hover:bg-stone-50"><UserCircle className="h-4 w-4" /><span className="hidden sm:inline">My account</span></Link> : null}
         </div>
       </header>
@@ -59,6 +60,7 @@ export default async function BookLayout({ children, params }: { children: React
             {business.instagram ? <p className="flex items-center gap-1"><Instagram className="h-3.5 w-3.5" /><a href={`https://instagram.com/${business.instagram}`} target="_blank" rel="noreferrer" className="underline">@{business.instagram}</a></p> : null}
           </div>
         </div>
+        {business.giftCardsOnline || business.storeEnabled ? <p className="text-center text-xs"><Link href={`/book/${business.slug}/gift`} className="underline">Gift cards</Link>{business.storeEnabled ? <> · <Link href={`/book/${business.slug}/shop`} className="underline">Shop</Link></> : null}</p> : null}
         <p className="pt-2 text-center text-xs text-stone-400">Online booking by Angelic Booking · <a href={appUrl("/privacy")} className="hover:text-stone-600">Privacy</a></p>
       </footer>
     </div>

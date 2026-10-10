@@ -5,6 +5,7 @@ import { getStaffAvailability, staffForService, timingFor } from "./availability
 import { bookAppointment, BookingError, rescheduleService, setAppointmentStatus } from "./booking";
 import { refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
 import { findReferrer } from "./loyalty";
+import { validatePromo, PromoError } from "./promos";
 import { appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify";
 import { staffAlertEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
@@ -102,6 +103,8 @@ export interface OnlineBookingInput {
   referralCode?: string | null;
   /** Birthday from the booking form, YYYY-MM-DD. */
   birthday?: string | null;
+  /** Promo code typed on the booking form; validated against the service. */
+  promoCode?: string | null;
 }
 
 /** Find a client by phone or email, else create one. Runs inside the tenant tx. */
@@ -147,6 +150,16 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
     }
   }
   const clientId = paid?.meta.clientId ?? (await findOrCreateClient(business.id, input));
+  let promoCodeId: string | null = null;
+  if (input.promoCode) {
+    try {
+      promoCodeId = (await withTenant(business.id, (tx) => validatePromo(tx, input.promoCode!, { serviceIds: [input.serviceId] }))).id;
+    } catch (e) {
+      await undoPayment(business, paid);
+      if (e instanceof PromoError) throw new BookingError(e.message);
+      throw e;
+    }
+  }
   let appointmentId: string;
   try {
     ({ appointmentId } = await bookAppointment({
@@ -161,6 +174,7 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
       deposit: paid?.kind === "deposit" ? { paymentIntentId: paid.paymentIntentId, cents: paid.cents, cardLabel: paid.cardLabel } : null,
       cardSetupIntentId: paid?.kind === "card" ? paid.setupIntentId : null,
       classSessionId: input.classSessionId ?? null,
+      promoCodeId,
     }));
   } catch (e) {
     await undoPayment(business, paid);

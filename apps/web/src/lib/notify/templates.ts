@@ -69,7 +69,7 @@ export const templates = {
   confirmation: (ctx: ApptContext) => ({
     subject: `Confirmed: ${ctx.services} at ${ctx.businessName}`,
     html: shell(ctx, `You're booked, ${ctx.clientFirstName}!`, details(ctx) + manage(ctx)),
-    sms: `${ctx.businessName}: you're booked for ${ctx.services} with ${ctx.staffName} on ${when(ctx)}.${ctx.depositPaid ? ` Deposit paid: ${ctx.depositPaid}.` : ""}${ctx.formsUrl ? ` Please complete your forms: ${ctx.formsUrl}` : ""} Manage: ${ctx.manageUrl} Reply STOP to opt out.`,
+    sms: `${ctx.businessName}: you're booked for ${ctx.services} with ${ctx.staffName} on ${when(ctx)}.${ctx.depositPaid ? ` Deposit paid: ${ctx.depositPaid}.` : ""}${ctx.formsUrl ? ` Please complete your forms: ${ctx.formsUrl}` : ""} Manage: ${ctx.manageUrl}`,
   }),
   reminder: (ctx: ApptContext) => ({
     subject: `Reminder: ${ctx.services} ${when(ctx)}`,
@@ -117,6 +117,44 @@ export function staffAlertEmail(ctx: ApptContext, kind: "booked" | "cancelled" |
 <p style="margin-top:16px"><a href="${appointmentUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Open appointment</a></p>
 <p style="font-size:12px;color:#78716c">You receive these because online booking alerts go to your business email. Change it under Settings → Business profile.</p>`);
   return { subject, html };
+}
+
+/** Branded wrapper for one-off emails (campaigns, automations, store). */
+export function brandedEmail(ctx: BrandCtx, title: string, bodyHtml: string) {
+  return shell(ctx, title, bodyHtml);
+}
+
+/** Plain text (with blank lines) → paragraphs, escaped. */
+export function textToHtml(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((p) => `<p style="margin:0 0 12px;font-size:15px;line-height:1.5">${esc(p).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+/** Marketing email: body paragraphs + optional button + unsubscribe line. */
+export function marketingEmail(ctx: BrandCtx, input: { subject: string; text: string; ctaLabel?: string | null; ctaUrl?: string | null; unsubscribeUrl: string }) {
+  const cta = input.ctaUrl ? `<p style="margin-top:16px"><a href="${input.ctaUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">${esc(input.ctaLabel ?? "Book now")}</a></p>` : "";
+  const html = shell(ctx, input.subject, `${textToHtml(input.text)}${cta}<p style="font-size:11px;color:#a8a29e;margin-top:24px"><a href="${input.unsubscribeUrl}" style="color:#a8a29e">Unsubscribe from emails like this</a></p>`);
+  return { subject: input.subject, html };
+}
+
+/** Gift card bought online, sent to the recipient. */
+export function giftCardEmail(ctx: BrandCtx, input: { code: string; amount: string; from: string | null; message: string | null; bookingUrl: string }) {
+  const body = `<p style="font-size:15px">${input.from ? `${esc(input.from)} sent you a gift card` : "You've received a gift card"} for <b>${esc(ctx.businessName)}</b>.</p>
+<div style="margin:16px 0;padding:16px;border:2px dashed #6d28d9;border-radius:12px;text-align:center"><p style="margin:0;font-size:13px;color:#78716c">Gift card</p><p style="margin:4px 0;font-size:28px;font-weight:700">${esc(input.amount)}</p><p style="margin:0;font-family:monospace;font-size:18px;letter-spacing:2px">${esc(input.code)}</p></div>
+${input.message ? `<p style="font-style:italic;color:#44403c">“${esc(input.message)}”</p>` : ""}
+<p style="font-size:14px">Give the code at checkout, or mention it when you book. It never expires unless the salon says otherwise.</p>
+<p style="margin-top:16px"><a href="${input.bookingUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Book an appointment</a></p>`;
+  return { subject: `A ${input.amount} gift card for ${ctx.businessName}`, html: shell(ctx, "You've got a gift card!", body) };
+}
+
+/** Order confirmation for an online store purchase. */
+export function orderEmail(ctx: BrandCtx, input: { number: number; lines: { name: string; quantity: number; amount: string }[]; total: string; method: "pickup" | "ship"; address: string | null }) {
+  const rows = input.lines.map((l) => `<tr><td style="padding:3px 0">${esc(l.quantity > 1 ? `${l.name} × ${l.quantity}` : l.name)}</td><td style="padding:3px 0;text-align:right">${esc(l.amount)}</td></tr>`).join("");
+  const body = `<p style="color:#78716c;margin:0 0 12px">Order #${input.number}</p><table style="width:100%;font-size:15px;border-collapse:collapse">${rows}<tr><td style="padding-top:8px;border-top:1px solid #e7e5e4;font-weight:600">Total</td><td style="padding-top:8px;border-top:1px solid #e7e5e4;text-align:right;font-weight:600">${esc(input.total)}</td></tr></table>
+<p style="margin-top:16px;font-size:14px">${input.method === "pickup" ? `We'll have it ready for pickup${ctx.address ? ` at ${esc(ctx.address)}` : ""}. We'll let you know when it's ready.` : `We'll ship it to:<br>${esc(input.address ?? "")}`}</p>`;
+  return { subject: `Thanks for your order from ${ctx.businessName} (#${input.number})`, html: shell(ctx, "Order received", body) };
 }
 
 export interface ReceiptCtx extends BrandCtx {

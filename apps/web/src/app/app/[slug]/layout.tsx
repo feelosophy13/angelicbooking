@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star } from "lucide-react";
+import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone } from "lucide-react";
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
@@ -10,7 +10,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { NavLink } from "./nav-link";
 import { MobileNav, type NavSection } from "./mobile-nav";
 
-const ICON = { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star } as const;
+const ICON = { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone } as const;
 type IconName = keyof typeof ICON;
 
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
@@ -42,7 +42,7 @@ export default async function AppLayout({ children, params }: { children: React.
       it(`${base}/gift-cards`, "Gift cards", "Gift"),
     ] },
     { title: "Money", items: [
-      ...(can(permissions, "reports.view") ? [it(`${base}/reports`, "Sales", "BarChart3")] : []),
+      ...(can(permissions, "reports.view") ? [it(`${base}/reports`, "Sales", "BarChart3"), it(`${base}/marketing`, "Marketing", "Megaphone")] : []),
       ...(can(permissions, "payroll.view") ? [it(`${base}/payroll`, "Payroll", "Wallet")] : []),
     ] },
     { title: "", items: can(permissions, "business.manage") ? [it(`${base}/settings`, "Settings", "Settings")] : [] },

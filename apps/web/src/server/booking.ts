@@ -78,13 +78,15 @@ export interface BookAppointmentInput {
   cardSetupIntentId?: string | null;
   /** Book a seat in this class session instead of a one-to-one slot. */
   classSessionId?: string | null;
+  /** Promo code to apply when checkout opens. */
+  promoCodeId?: string | null;
 }
 
 export async function bookAppointment(input: BookAppointmentInput): Promise<{ appointmentId: string }> {
   if (input.classSessionId) {
     const { insertSeat } = await import("./classes");
     return withTenant(input.businessId, async (tx) => {
-      const r = await insertSeat(tx, { businessId: input.businessId, sessionId: input.classSessionId!, clientId: input.clientId, notes: input.notes ?? null, source: input.source ?? "staff", createdByUserId: input.createdByUserId ?? null, deposit: input.deposit, cardSetupIntentId: input.cardSetupIntentId });
+      const r = await insertSeat(tx, { businessId: input.businessId, sessionId: input.classSessionId!, clientId: input.clientId, notes: input.notes ?? null, source: input.source ?? "staff", createdByUserId: input.createdByUserId ?? null, deposit: input.deposit, cardSetupIntentId: input.cardSetupIntentId, promoCodeId: input.promoCodeId });
       return { appointmentId: r.appointmentId };
     });
   }
@@ -106,6 +108,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
             ? { depositCents: input.deposit.cents, depositStatus: "paid" as const, depositPaymentIntentId: input.deposit.paymentIntentId, depositCardLabel: input.deposit.cardLabel }
             : {}),
           cardSetupIntentId: input.cardSetupIntentId ?? null,
+          promoCodeId: input.promoCodeId ?? null,
         })
         .returning({ id: schema.appointments.id });
       await insertServiceItems(tx, { ...input, appointmentId: appt!.id, sortOrderBase: 0 });

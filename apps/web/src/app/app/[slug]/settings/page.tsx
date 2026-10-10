@@ -62,6 +62,11 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
           <Link href={`/app/${slug}/settings/booking`} className="text-sm text-brand-700 underline">Booking settings →</Link>
         </Card>
         <Card className="p-4">
+          <h2 className="mb-1 font-medium">Online store</h2>
+          <p className="mb-3 text-sm text-stone-600">Sell gift cards and products from your booking page, for pickup or flat-rate shipping.</p>
+          <Link href={`/app/${slug}/settings/store`} className="text-sm text-brand-700 underline">Store settings →</Link>
+        </Card>
+        <Card className="p-4">
           <h2 className="mb-1 font-medium">Forms</h2>
           <p className="mb-3 text-sm text-stone-600">Intake questionnaires and consent waivers clients sign before their visit.</p>
           <Link href={`/app/${slug}/settings/forms`} className="text-sm text-brand-700 underline">Forms →</Link>

@@ -8,6 +8,8 @@ import { ensureStripeCustomer } from "./stripe-connect";
 import { fulfilOfferLines } from "./offers";
 import { awardPointsForSale } from "./loyalty";
 import { queueReviewRequest } from "./reviews";
+import { decrementStockForSale } from "./inventory";
+import { countPromoUse, promoDiscount, validatePromo, PromoError } from "./promos";
 
 export class SaleError extends Error {}
 
@@ -120,7 +122,21 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
       });
       await tx.update(schema.appointments).set({ depositStatus: "applied" }).where(eq(schema.appointments.id, appt.id));
     }
-    await recompute(tx, sale!.id, input.taxRateBps, null);
+    // A promo code typed at online booking becomes the ticket's discount (if it still applies).
+    let discount: Discount | null = null;
+    if (appt.promoCodeId) {
+      const promo = await tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.id, appt.promoCodeId) });
+      if (promo) {
+        try {
+          await validatePromo(tx, promo.code, { serviceIds: serviceItems.map((i) => i.serviceId) });
+          discount = promoDiscount(promo);
+          await tx.update(schema.sales).set({ promoCodeId: promo.id, discountNote: `Code ${promo.code}` }).where(eq(schema.sales.id, sale!.id));
+        } catch (e) {
+          if (!(e instanceof PromoError)) throw e;
+        }
+      }
+    }
+    await recompute(tx, sale!.id, input.taxRateBps, discount);
     await audit(tx, input.businessId, input.actorUserId, "sale.open", sale!.id, { appointmentId: appt.id });
     return sale!.id;
   });
@@ -270,6 +286,8 @@ async function closeIfPaid(tx: TenantDb, saleId: string, taxRateBps: number, act
         .where(and(eq(schema.appointmentItems.appointmentId, sale.appointmentId), sql`${schema.appointmentItems.status} <> 'cancelled'`));
     }
     await fulfilOfferLines(tx, businessId, saleId);
+    await decrementStockForSale(tx, businessId, saleId);
+    if (sale.promoCodeId) await countPromoUse(tx, sale.promoCodeId);
     const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
     if (business) {
       await awardPointsForSale(tx, business, { ...sale, ...t, status: "paid" });
@@ -605,5 +623,20 @@ export async function salesReport(businessId: string, from: Date, to: Date) {
         .groupBy(schema.appointments.status, schema.appointments.source),
     ]);
     return { sales, byStaff, byMethod, byService, appts };
+  });
+}
+
+/** Redeem a promo code on an open ticket: becomes the sale discount. */
+export async function applyPromoToSale(input: { businessId: string; saleId: string; code: string; taxRateBps: number; actorUserId: string }) {
+  return withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+    if (!sale) throw new SaleError("Sale not found.");
+    assertOpen(sale);
+    const lines = await tx.select().from(schema.saleLines).where(eq(schema.saleLines.saleId, sale.id));
+    const promo = await validatePromo(tx, input.code, { serviceIds: lines.filter((l) => l.kind === "service").map((l) => l.serviceId), subtotalCents: sale.subtotalCents });
+    await tx.update(schema.sales).set({ promoCodeId: promo.id }).where(eq(schema.sales.id, sale.id));
+    await recompute(tx, sale.id, input.taxRateBps, promoDiscount(promo), `Code ${promo.code}`);
+    await audit(tx, input.businessId, input.actorUserId, "sale.promo", sale.id, { code: promo.code });
+    return promo;
   });
 }

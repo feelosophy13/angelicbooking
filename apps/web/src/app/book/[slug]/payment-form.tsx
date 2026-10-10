@@ -27,6 +27,7 @@ export function PaidBookingForm(props: {
   classSessionId?: string | null;
   referrals?: boolean;
   defaults?: BookingDefaults;
+  promos?: boolean;
 }) {
   const d = props.defaults;
   const [fields, setFields] = useState<Record<string, string> | null>(null);
@@ -70,6 +71,7 @@ export function PaidBookingForm(props: {
         {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
         <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
         {props.referrals && !d ? <Field label="Referral code (optional)"><Input name="referralCode" placeholder="From a friend who comes here" className="uppercase" /></Field> : null}
+      {props.promos ? <Field label="Promo code (optional)"><Input name="promoCode" placeholder="Code" className="uppercase" /></Field> : null}
         {error ? <Notice>{error}</Notice> : null}
         <button type="submit" disabled={pending} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: props.brand }}>
           {pending ? "One moment…" : props.mode === "deposit" ? `Continue to pay ${props.amountLabel} deposit` : "Continue to add a card"}

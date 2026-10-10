@@ -7,6 +7,7 @@ export const metadata: Metadata = { title: "Sales" };
 import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { salesReport } from "@/server/sales";
+import { stockReport } from "@/server/inventory";
 import { formatDateLong, formatMoney, shiftISODate } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Empty, LinkButton } from "@/components/ui";
 
@@ -28,6 +29,7 @@ export default async function ReportsPage({
   const days = Math.max(1, Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1);
   const prevFrom = shiftISODate(from, -days);
   const prevTo = shiftISODate(from, -1);
+  const stock = await stockReport(business.id);
   const [{ sales, byStaff, byMethod, byService, appts }, prev] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz)),
@@ -165,6 +167,24 @@ export default async function ReportsPage({
           )}
         </Card>
       </div>
+      {stock.items.length ? (
+        <Card className="mt-6">
+          <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2"><h2 className="text-sm font-semibold text-stone-600">Stock on hand</h2><span className="text-xs text-stone-500">{stock.lowCount ? `${stock.lowCount} low · ` : ""}value at cost {money(stock.totalValueCents)} · retail {money(stock.totalRetailCents)}</span></div>
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-2">Product</th><th className="px-4 py-2 text-right">On hand</th><th className="px-4 py-2 text-right">Cost value</th><th className="px-4 py-2 text-right">Retail value</th></tr></thead>
+            <tbody className="divide-y divide-stone-100">
+              {stock.items.map((i) => (
+                <tr key={i.id} className={i.low ? "bg-amber-50/60" : ""}>
+                  <td className="px-4 py-2"><Link href={`/app/${slug}/products/${i.id}`} className="hover:underline">{i.name}</Link>{i.category ? <span className="ml-1 text-xs text-stone-500">· {i.category}</span> : null}{i.low ? <span className="ml-2 text-xs font-medium text-amber-700">Low</span> : null}</td>
+                  <td className="px-4 py-2 text-right">{i.stockQty}</td>
+                  <td className="px-4 py-2 text-right">{money(i.valueCents)}</td>
+                  <td className="px-4 py-2 text-right">{money(i.retailCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      ) : null}
     </>
   );
 }

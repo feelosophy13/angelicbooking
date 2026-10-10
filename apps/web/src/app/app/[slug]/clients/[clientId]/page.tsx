@@ -22,6 +22,11 @@ import { listSubmissionsForClient } from "@/server/forms";
 import { getClientLoyalty } from "@/server/loyalty";
 import { reviewsForClient } from "@/server/reviews";
 import { adjustClientPoints, createReferralCode } from "./loyalty-actions";
+import { turnOffAutoRenew, turnOnAutoRenew } from "./membership-actions";
+import { replyToClient } from "./messages-actions";
+import { clientThread } from "@/server/inbound";
+import { listSavedCards } from "@/server/stripe-connect";
+import { isStripeConfigured } from "@/lib/stripe";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -55,7 +60,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
         .where(and(eq(schema.clientPackages.clientId, clientId), or(isNull(schema.clientPackages.expiresAt), gt(schema.clientPackages.expiresAt, now))))
         .orderBy(asc(schema.packages.name)),
       tx
-        .select({ id: schema.clientMemberships.id, name: schema.membershipPlans.name, status: schema.clientMemberships.status, creditsRemaining: schema.clientMemberships.creditsRemaining, currentPeriodEnd: schema.clientMemberships.currentPeriodEnd })
+        .select({ id: schema.clientMemberships.id, name: schema.membershipPlans.name, status: schema.clientMemberships.status, creditsRemaining: schema.clientMemberships.creditsRemaining, currentPeriodEnd: schema.clientMemberships.currentPeriodEnd, autoRenew: schema.clientMemberships.autoRenew, paymentFailedAt: schema.clientMemberships.paymentFailedAt })
         .from(schema.clientMemberships)
         .innerJoin(schema.membershipPlans, eq(schema.membershipPlans.id, schema.clientMemberships.planId))
         .where(eq(schema.clientMemberships.clientId, clientId)),
@@ -64,7 +69,9 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   });
   if (!data) notFound();
   const { client, visits, sales, packs, memberships, notes } = data;
-  const [submissions, loyalty, reviews] = await Promise.all([listSubmissionsForClient(business.id, clientId), business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null), reviewsForClient(business.id, clientId)]);
+  const [submissions, loyalty, reviews, thread] = await Promise.all([listSubmissionsForClient(business.id, clientId), business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null), reviewsForClient(business.id, clientId), clientThread(business.id, clientId)]);
+  const stripeReady = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled;
+  const savedCards = stripeReady && client.stripeCustomerId ? await listSavedCards(business.stripeAccountId!, client.stripeCustomerId).catch(() => []) : [];
   const authorIds = [...new Set(notes.map((n) => n.authorUserId).filter((x): x is string => !!x))];
   const authors = authorIds.length ? await db.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, authorIds)) : [];
   const authorName = (id: string | null) => authors.find((a) => a.id === id)?.name ?? "Staff";
@@ -212,6 +219,27 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             </Card>
           ) : null}
           <Card className="p-4 text-sm">
+            <h2 className="mb-2 font-medium">Text messages</h2>
+            {thread.length === 0 ? <p className="text-stone-500">No texts yet.</p> : (
+              <ul className="max-h-64 space-y-1.5 overflow-y-auto">
+                {thread.map((m) => (
+                  <li key={`${m.dir}${m.id}`} className={m.dir === "in" ? "mr-6" : "ml-6 text-right"}>
+                    <span className={`inline-block rounded-lg px-2 py-1 text-left text-xs ${m.dir === "in" ? "bg-stone-100 text-stone-800" : "bg-brand-50 text-brand-900"}`}>{m.body}</span>
+                    <span className="block text-[10px] text-stone-400">{fmtDate.format(m.at)} · {m.dir === "in" ? "client" : m.status}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {write && client.phone ? (
+              <ActionForm action={replyToClient} className="mt-2">
+                <input type="hidden" name="slug" value={slug} />
+                <input type="hidden" name="clientId" value={client.id} />
+                <Field label="" name="body"><Textarea name="body" rows={2} placeholder={client.smsOptIn ? "Reply by text…" : "Client opted out of texts"} disabled={!client.smsOptIn} /></Field>
+                <SubmitButton size="sm" variant="secondary" pendingText="Sending…" disabled={!client.smsOptIn}>Send text</SubmitButton>
+              </ActionForm>
+            ) : null}
+          </Card>
+          <Card className="p-4 text-sm">
             <h2 className="mb-2 font-medium">Forms</h2>
             {submissions.length === 0 ? <p className="text-stone-500">Nothing signed yet.</p> : (
               <ul className="space-y-1">
@@ -231,7 +259,27 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             <h2 className="mb-2 font-medium">Packages &amp; memberships</h2>
             {packs.length === 0 && memberships.length === 0 ? <p className="text-stone-500">None.</p> : null}
             {packs.map((p) => <p key={p.id}>{p.name} · {p.remaining} session{p.remaining === 1 ? "" : "s"} left{p.expiresAt ? ` · expires ${fmtDate.format(p.expiresAt)}` : ""}</p>)}
-            {memberships.map((m) => <p key={m.id}>{m.name} · {m.status}{m.status === "active" ? ` · ${m.creditsRemaining} credit${m.creditsRemaining === 1 ? "" : "s"} · renews ${fmtDate.format(m.currentPeriodEnd)}` : ""}</p>)}
+            {memberships.map((m) => (
+              <div key={m.id} className="mt-1 rounded-lg border border-stone-200 p-2">
+                <p>{m.name} · {m.status}{m.status === "active" || m.status === "paused" ? ` · ${m.creditsRemaining} credit${m.creditsRemaining === 1 ? "" : "s"} · ${m.autoRenew ? "renews automatically" : "period ends"} ${fmtDate.format(m.currentPeriodEnd)}` : ""}</p>
+                {m.paymentFailedAt ? <p className="text-xs text-red-700">Last renewal payment failed {fmtDate.format(m.paymentFailedAt)}. Update the card and turn auto-renew on again.</p> : null}
+                {write && m.status !== "cancelled" ? (
+                  m.autoRenew ? (
+                    <form action={turnOffAutoRenew} className="mt-1 flex gap-2">
+                      <input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="membershipId" value={m.id} />
+                      <button className="text-xs underline">Turn off auto-renew</button>
+                      <ConfirmSubmit name="cancel" value="1" title="Cancel this membership?" body="Stops the renewal charges and ends the membership now." confirmLabel="Cancel membership" variant="ghost" className="text-xs">Cancel membership</ConfirmSubmit>
+                    </form>
+                  ) : stripeReady && savedCards.length ? (
+                    <form action={turnOnAutoRenew} className="mt-1 flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="membershipId" value={m.id} />
+                      <select name="paymentMethodId" className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-xs">{savedCards.map((c) => <option key={c.id} value={c.id}>{c.brand.toUpperCase()} •••• {c.last4}</option>)}</select>
+                      <button className="rounded-lg border border-stone-300 bg-white px-2 py-1 text-xs hover:bg-stone-50">Auto-renew with this card</button>
+                    </form>
+                  ) : <p className="text-xs text-stone-500">{stripeReady ? "Save a card at checkout to turn on auto-renew." : "Connect Stripe to auto-renew memberships."}</p>
+                ) : null}
+              </div>
+            ))}
           </Card>
           <p className="text-xs text-stone-400">Client since {fmtDate.format(client.createdAt)}{client.tags.length ? ` · ${client.tags.join(", ")}` : ""}</p>
         </div>

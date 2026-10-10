@@ -44,10 +44,38 @@ export const products = pgTable(
     priceCents: integer("price_cents").notNull(),
     taxable: boolean("taxable").notNull().default(true),
     active: boolean("active").notNull().default(true),
+    // Online store
+    sellOnline: boolean("sell_online").notNull().default(false),
+    description: text("description"),
+    imageUrl: text("image_url"),
+    // Inventory
+    trackStock: boolean("track_stock").notNull().default(false),
+    stockQty: integer("stock_qty").notNull().default(0),
+    lowStockThreshold: integer("low_stock_threshold").notNull().default(3),
+    costCents: integer("cost_cents").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [index("products_business_idx").on(t.businessId, t.name)],
+);
+
+// Every change to on-hand stock: received, sold, adjusted, returned.
+export const stockMovements = pgTable(
+  "stock_movements",
+  {
+    id: id(),
+    businessId: businessId(),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    delta: integer("delta").notNull(),
+    reason: text("reason").notNull(), // received | sale | adjust | refund
+    saleId: text("sale_id"),
+    note: text("note"),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("stock_movements_product_idx").on(t.businessId, t.productId, t.createdAt), uniqueIndex("stock_movements_sale_product_uq").on(t.saleId, t.productId, t.reason)],
 );
 
 export const sales = pgTable(
@@ -69,6 +97,11 @@ export const sales = pgTable(
     paidCents: integer("paid_cents").notNull().default(0),
     refundedCents: integer("refunded_cents").notNull().default(0),
     discountNote: text("discount_note"),
+    promoCodeId: text("promo_code_id"),
+    // pos (staff checkout) | online (store / gift card purchase on the booking site) | membership (auto-renewal)
+    source: text("source").notNull().default("pos"),
+    // Online orders: how the goods reach the client.
+    fulfillment: jsonb("fulfillment").$type<{ method: "pickup" | "ship"; name?: string; email?: string; phone?: string; address?: string; message?: string; status?: "pending" | "ready" | "done" }>(),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     createdAt: createdAt(),
@@ -242,6 +275,8 @@ export const membershipPlans = pgTable(
     discountBps: integer("discount_bps").notNull().default(0), // off other services
     description: text("description"),
     active: boolean("active").notNull().default(true),
+    // Stripe price on the BUSINESS's connected account, created on first auto-renew setup.
+    stripePriceId: text("stripe_price_id"),
     createdAt: createdAt(),
   },
   (t) => [index("membership_plans_business_idx").on(t.businessId)],
@@ -265,10 +300,13 @@ export const clientMemberships = pgTable(
     currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull(),
     creditsRemaining: integer("credits_remaining").notNull().default(0),
     stripeSubscriptionId: text("stripe_subscription_id"),
+    autoRenew: boolean("auto_renew").notNull().default(false),
+    lastInvoiceId: text("last_invoice_id"),
+    paymentFailedAt: timestamp("payment_failed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [index("client_memberships_client_idx").on(t.businessId, t.clientId)],
+  (t) => [index("client_memberships_client_idx").on(t.businessId, t.clientId), uniqueIndex("client_memberships_sub_uq").on(t.stripeSubscriptionId)],
 );
 
 // Data imports (Vagaro CSV / XLSX).

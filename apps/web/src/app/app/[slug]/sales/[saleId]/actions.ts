@@ -21,6 +21,10 @@ import {
 import { stripe } from "@/lib/stripe";
 import { addOfferLine, redeemCredit, redeemGiftCard } from "@/server/offers";
 import { LoyaltyError, redeemPoints } from "@/server/loyalty";
+import { PromoError } from "@/server/promos";
+import { applyPromoToSale } from "@/server/sales";
+import { schema as dbSchema, withTenant } from "@angelic/db";
+import { eq } from "drizzle-orm";
 import { queueOneOff } from "@/lib/notify";
 import { receiptEmail } from "@/lib/notify/templates";
 import { setFlash } from "@/lib/flash";
@@ -270,4 +274,30 @@ export async function payWithPoints(_prev: SaleActionState, formData: FormData):
   revalidatePath(`/app/${d.data.slug}/sales/${d.data.saleId}`);
   revalidatePath(`/app/${d.data.slug}`);
   return { ok: true };
+}
+
+export async function applyPromo(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
+  const d = base.extend({ code: z.string().trim().min(1, "Enter a code") }).safeParse(Object.fromEntries(formData));
+  if (!d.success) return { error: "Enter a promo code." };
+  const ctx = await ctxFor(d.data.slug);
+  try {
+    await applyPromoToSale({ businessId: ctx.business.id, saleId: d.data.saleId, code: d.data.code, taxRateBps: ctx.business.taxRateBps, actorUserId: ctx.user.id });
+  } catch (e) {
+    if (e instanceof PromoError) return { error: e.message };
+    return friendly(e);
+  }
+  revalidatePath(`/app/${d.data.slug}/sales/${d.data.saleId}`);
+  return { ok: true };
+}
+
+/** Online orders: move pickup/shipping status along. */
+export async function setFulfillment(formData: FormData) {
+  const d = base.extend({ status: z.enum(["pending", "ready", "done"]) }).parse(Object.fromEntries(formData));
+  const ctx = await ctxFor(d.slug);
+  await withTenant(ctx.business.id, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(dbSchema.sales.id, d.saleId) });
+    if (!sale?.fulfillment) return;
+    await tx.update(dbSchema.sales).set({ fulfillment: { ...sale.fulfillment, status: d.status } }).where(eq(dbSchema.sales.id, d.saleId));
+  });
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }

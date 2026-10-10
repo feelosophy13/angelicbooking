@@ -218,6 +218,20 @@
       "when": 1791659554567,
       "tag": "0030_clients_forms_reviews_loyalty_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791660551132,
+      "tag": "0031_marketing_store_inventory",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791660551590,
+      "tag": "0032_marketing_store_inventory_rls",
+      "breakpoints": true
     }
   ]
 }

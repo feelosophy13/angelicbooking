@@ -6,7 +6,7 @@ import { SubmitButton } from "@/components/form";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean } | null;
 
-export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults }) {
+export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
   const d = props.defaults;
   return (
@@ -26,6 +26,7 @@ export function BookingForm(props: { slug: string; serviceId: string; staffId: s
       {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
       <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
       {props.referrals && !d ? <Field label="Referral code (optional)"><Input name="referralCode" placeholder="From a friend who comes here" className="uppercase" /></Field> : null}
+      {props.promos ? <Field label="Promo code (optional)"><Input name="promoCode" placeholder="Code" className="uppercase" /></Field> : null}
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Booking…">Confirm booking</SubmitButton>
       <p className="text-xs text-stone-500">You can cancel or reschedule online up to {props.cancelWindowHours} hours before.{props.policy ? ` ${props.policy}` : ""}</p>

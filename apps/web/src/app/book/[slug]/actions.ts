@@ -19,6 +19,7 @@ const contact = z.object({
   notes: z.string().trim().max(1000).transform((v) => v || null),
   smsConsent: z.string().optional().transform((v) => v === "on"),
   referralCode: z.string().trim().max(40).optional().transform((v) => v || null),
+  promoCode: z.string().trim().max(40).optional().transform((v) => v || null),
 });
 
 const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null) });

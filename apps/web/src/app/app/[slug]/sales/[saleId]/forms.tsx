@@ -132,3 +132,16 @@ export function PointsPayForm({ action, slug, saleId, balance, pointValueCents, 
     </form>
   );
 }
+
+export function PromoForm({ action, slug, saleId }: { action: Action; slug: string; saleId: string }) {
+  const [state, act, pending] = useActionState(action, undefined);
+  return (
+    <form action={act} className="space-y-2">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="saleId" value={saleId} />
+      <Input name="code" placeholder="Promo code" className="font-mono uppercase" required />
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+      <Button type="submit" size="sm" variant="secondary" disabled={pending}>{pending ? "…" : "Apply code"}</Button>
+    </form>
+  );
+}

@@ -1,0 +1,156 @@
+/**
+ * Online store on the booking site: gift cards (delivered by email) and
+ * retail products for pickup or flat-rate shipping. An order is a normal sale
+ * (source "online") paid with a PaymentIntent on the business's Stripe
+ * account; closing it issues the gift card and emails the buyer.
+ */
+import { after } from "next/server";
+import { and, asc, eq, sql } from "drizzle-orm";
+import { schema, withTenant } from "@angelic/db";
+import { normalizePhone } from "@angelic/core";
+import { isStripeConfigured, platformFeeBps, stripe, appUrl } from "@/lib/stripe";
+import { ensureStripeCustomer } from "./stripe-connect";
+import { findOrCreateClient, type PublicBusiness } from "./public-booking";
+import { markCardPaymentSucceeded } from "./sales";
+import { queueOneOff } from "@/lib/notify";
+import { giftCardEmail, orderEmail } from "@/lib/notify/templates";
+import { formatMoney } from "@/lib/utils";
+
+export class StoreError extends Error {}
+
+export const GIFT_PRESETS_CENTS = [2500, 5000, 7500, 10000, 15000, 20000];
+
+export function storeReady(business: PublicBusiness): boolean {
+  return isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+}
+
+export async function storeProducts(businessId: string) {
+  return withTenant(businessId, (tx) =>
+    tx
+      .select({ p: schema.products, category: schema.productCategories.name })
+      .from(schema.products)
+      .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
+      .where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true)))
+      .orderBy(asc(schema.productCategories.sortOrder), asc(schema.products.name)),
+  );
+}
+
+export interface OrderInput {
+  items: { productId: string; quantity: number }[];
+  giftCard: { amountCents: number; recipientName: string | null; recipientEmail: string | null; message: string | null } | null;
+  buyer: { firstName: string; lastName: string; email: string; phone: string | null };
+  fulfillment: { method: "pickup" | "ship"; address: string | null };
+}
+
+/** Create the open sale and the PaymentIntent the browser confirms. */
+export async function startOrder(business: PublicBusiness, input: OrderInput) {
+  if (!storeReady(business)) throw new StoreError("Online payments aren't set up yet.");
+  if (!input.items.length && !input.giftCard) throw new StoreError("Your cart is empty.");
+  if (input.giftCard && (input.giftCard.amountCents < 500 || input.giftCard.amountCents > 100000)) throw new StoreError("Gift cards are between $5 and $1,000.");
+  if (input.fulfillment.method === "ship" && (!business.shippingFlatCents || !input.fulfillment.address)) throw new StoreError("Enter a shipping address.");
+  const clientId = await findOrCreateClient(business.id, { ...input.buyer, phone: input.buyer.phone, notes: null, serviceId: "", staffId: "", startAt: new Date(), email: input.buyer.email });
+  const accountId = business.stripeAccountId!;
+  return withTenant(business.id, async (tx) => {
+    const products = input.items.length ? await tx.select().from(schema.products).where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true), sql`${schema.products.id} in ${input.items.map((i) => i.productId)}`)) : [];
+    const lines: (typeof schema.saleLines.$inferInsert)[] = [];
+    let subtotal = 0;
+    let taxable = 0;
+    for (const it of input.items) {
+      const p = products.find((x) => x.id === it.productId);
+      if (!p) throw new StoreError("One of the products is no longer available.");
+      const qty = Math.max(1, Math.min(20, Math.floor(it.quantity)));
+      if (p.trackStock && p.stockQty < qty) throw new StoreError(`Only ${p.stockQty} of ${p.name} left.`);
+      const amount = p.priceCents * qty;
+      subtotal += amount;
+      if (p.taxable) taxable += amount;
+      lines.push({ businessId: business.id, kind: "product", productId: p.id, name: p.name, quantity: qty, unitCents: p.priceCents, amountCents: amount, taxable: p.taxable, sortOrder: lines.length, saleId: "" });
+    }
+    if (input.giftCard) {
+      const g = input.giftCard;
+      subtotal += g.amountCents;
+      lines.push({ businessId: business.id, kind: "gift_card", name: `Gift card${g.recipientName ? ` for ${g.recipientName}` : ""}`, quantity: 1, unitCents: g.amountCents, amountCents: g.amountCents, taxable: false, sortOrder: 100, saleId: "" });
+    }
+    const shipping = input.fulfillment.method === "ship" ? business.shippingFlatCents : 0;
+    if (shipping) {
+      subtotal += shipping;
+      lines.push({ businessId: business.id, kind: "fee", name: "Shipping", quantity: 1, unitCents: shipping, amountCents: shipping, taxable: false, sortOrder: 200, saleId: "" });
+    }
+    const tax = Math.round((taxable * business.taxRateBps) / 10_000);
+    const total = subtotal + tax;
+    if (total < 50) throw new StoreError("Order total must be at least $0.50.");
+    const rows = await tx.execute<{ n: number }>(sql`select next_sale_number(${business.id}) as n`);
+    const [sale] = await tx
+      .insert(schema.sales)
+      .values({
+        businessId: business.id,
+        number: Number(rows[0]?.n ?? 1001),
+        clientId,
+        currency: business.currency,
+        source: "online",
+        subtotalCents: subtotal,
+        taxCents: tax,
+        totalCents: total,
+        fulfillment: { method: input.fulfillment.method, name: `${input.buyer.firstName} ${input.buyer.lastName}`.trim(), email: input.buyer.email, phone: input.buyer.phone ?? undefined, address: input.fulfillment.address ?? undefined, message: input.giftCard?.message ?? undefined, status: "pending" },
+      })
+      .returning();
+    await tx.insert(schema.saleLines).values(lines.map((l) => ({ ...l, saleId: sale!.id })));
+    if (input.giftCard?.recipientEmail) {
+      // Remember where to send the card; read back when the sale closes.
+      await tx.update(schema.sales).set({ discountNote: null, fulfillment: { ...sale!.fulfillment!, giftRecipientEmail: input.giftCard.recipientEmail, giftRecipientName: input.giftCard.recipientName ?? undefined } as never }).where(eq(schema.sales.id, sale!.id));
+    }
+    const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
+    const customer = client ? await ensureStripeCustomer({ accountId, businessId: business.id, client, tx }) : undefined;
+    const [pending] = await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card", status: "pending", amountCents: total, tipCents: 0 }).returning();
+    const fee = Math.round((total * platformFeeBps()) / 10_000);
+    const pi = await stripe().paymentIntents.create(
+      { amount: total, currency: business.currency, customer, allowed_payment_method_types: ["card"], description: `Order #${sale!.number} · ${business.name}`, receipt_email: input.buyer.email, metadata: { businessId: business.id, saleId: sale!.id, paymentId: pending!.id, kind: "order" }, ...(fee > 0 ? { application_fee_amount: fee } : {}) },
+      { stripeAccount: accountId, idempotencyKey: `order_${pending!.id}` },
+    );
+    await tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending!.id));
+    return { saleId: sale!.id, clientSecret: pi.client_secret!, accountId, totalCents: total };
+  });
+}
+
+/** The browser confirmed the PaymentIntent: verify with Stripe, close the sale, email the buyer (and gift recipient). */
+export async function finishOrder(business: PublicBusiness, saleId: string, paymentIntentId: string) {
+  const accountId = business.stripeAccountId;
+  if (!accountId) throw new StoreError("Payments aren't set up.");
+  const pi = await stripe().paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] }, { stripeAccount: accountId });
+  if (pi.metadata.saleId !== saleId || pi.metadata.businessId !== business.id) throw new StoreError("That payment doesn't match this order.");
+  if (pi.status !== "succeeded") throw new StoreError(`Payment ${pi.status.replace(/_/g, " ")}.`);
+  const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
+  await markCardPaymentSucceeded({ businessId: business.id, paymentIntentId: pi.id, chargeId: charge?.id ?? null, card: { brand: charge?.payment_method_details?.card?.brand ?? null, last4: charge?.payment_method_details?.card?.last4 ?? null }, taxRateBps: business.taxRateBps });
+  after(() => sendOrderEmails(business, saleId).catch((e) => console.error("[store] order emails failed", saleId, (e as Error).message)));
+  return getOrder(business.id, saleId);
+}
+
+export async function getOrder(businessId: string, saleId: string) {
+  return withTenant(businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, saleId) });
+    if (!sale) return null;
+    const lines = await tx.select().from(schema.saleLines).where(eq(schema.saleLines.saleId, saleId)).orderBy(asc(schema.saleLines.sortOrder));
+    const cards = await tx.select().from(schema.giftCards).where(eq(schema.giftCards.saleId, saleId));
+    return { sale, lines, giftCards: cards };
+  });
+}
+
+async function sendOrderEmails(business: PublicBusiness, saleId: string) {
+  const o = await getOrder(business.id, saleId);
+  if (!o || o.sale.status !== "paid") return;
+  const f = (o.sale.fulfillment ?? {}) as { method?: "pickup" | "ship"; name?: string; email?: string; address?: string; message?: string; giftRecipientEmail?: string; giftRecipientName?: string };
+  const brand = { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address: business.addressLine };
+  const money = (c: number) => formatMoney(c, business.currency);
+  if (f.email) {
+    const t = orderEmail(brand, { number: o.sale.number, lines: o.lines.map((l) => ({ name: l.name, quantity: l.quantity, amount: money(l.amountCents) })), total: money(o.sale.totalCents), method: f.method ?? "pickup", address: f.address ?? null });
+    await queueOneOff(business.id, { channel: "email", template: "order", recipient: f.email, subject: t.subject, body: t.html, clientId: o.sale.clientId });
+  }
+  for (const g of o.giftCards) {
+    const to = f.giftRecipientEmail ?? f.email;
+    if (!to) continue;
+    const t = giftCardEmail(brand, { code: g.code, amount: money(g.initialCents), from: f.name ?? null, message: f.message ?? null, bookingUrl: appUrl(`/book/${business.slug}`) });
+    await queueOneOff(business.id, { channel: "email", template: "gift_card", recipient: to, subject: t.subject, body: t.html, clientId: o.sale.clientId });
+  }
+}
+
+// keep normalizePhone referenced for callers that pre-validate
+void normalizePhone;

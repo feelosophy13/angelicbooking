@@ -47,7 +47,7 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
                     ) : (
                       <p className={p.active ? "font-medium" : "font-medium text-stone-400 line-through"}>{p.name}</p>
                     )}
-                    <p className="text-xs text-stone-500">{[p.sku, p.taxable ? "taxable" : "tax-free"].filter(Boolean).join(" · ")}</p>
+                    <p className="text-xs text-stone-500">{[p.sku, p.taxable ? "taxable" : "tax-free", p.sellOnline ? "online" : null].filter(Boolean).join(" · ")}{p.trackStock ? <span className={`ml-2 rounded px-1.5 py-0.5 text-[11px] font-medium ${p.stockQty <= 0 ? "bg-red-50 text-red-700" : p.stockQty <= p.lowStockThreshold ? "bg-amber-50 text-amber-800" : "bg-stone-100 text-stone-600"}`}>{p.stockQty <= 0 ? "Out of stock" : `${p.stockQty} in stock`}</span> : null}</p>
                   </div>
                   <span className="font-medium">{formatMoney(p.priceCents, business.currency)}</span>
                   {manage ? (

@@ -10,6 +10,7 @@ import { platformSmsSender } from "@/lib/twilio";
 import { activeNumber } from "@/server/messaging";
 import { reportSmsUsage } from "@/server/billing";
 import { templates, type ApptContext, type TemplateName } from "./templates";
+import { smsBody, smsWithStopNotice } from "./sms";
 
 type Row = typeof schema.notifications.$inferSelect;
 
@@ -64,7 +65,7 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
       rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "email", template, recipient: client.email, subject: t.subject, body: t.html });
     }
     if (client.smsOptIn && phone) {
-      rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "sms", template, recipient: phone, body: t.sms });
+      rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "sms", template, recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, template, ctx)) });
     }
     if (template === "cancellation") {
       // Drop any pending reminder for this appointment.
@@ -110,12 +111,12 @@ async function scheduleReminder(
   const t = templates.reminder(ctx);
   const rows: (typeof schema.notifications.$inferInsert)[] = [];
   if (client.emailOptIn && client.email) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "email", template: "reminder", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: at });
-  if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "sms", template: "reminder", recipient: phone, body: t.sms, scheduledAt: at });
+  if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", ctx)), scheduledAt: at });
   if (rows.length) await tx.insert(schema.notifications).values(rows);
 }
 
 /** Queue a one-off message (e.g. staff invitation) and send it after the response. */
-export async function queueOneOff(businessId: string, input: { channel: "email" | "sms"; template: string; recipient: string; subject?: string; body: string }) {
+export async function queueOneOff(businessId: string, input: { channel: "email" | "sms"; template: string; recipient: string; subject?: string; body: string; clientId?: string | null }) {
   const [row] = await withTenant(businessId, (tx) =>
     tx.insert(schema.notifications).values({ businessId, ...input }).returning({ id: schema.notifications.id }),
   );

@@ -9,6 +9,8 @@ import { onlinePaymentRequirement } from "@/server/online-payments";
 import { publicSessions } from "@/server/classes";
 import { brandHex } from "@/lib/brand";
 import { currentClient } from "@/server/client-auth";
+import { schema, withTenant } from "@angelic/db";
+import { eq } from "drizzle-orm";
 
 type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string };
 
@@ -37,6 +39,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   }
   const { services, categories, staff } = await getPublicMenu(business.id, locations.length > 1 ? location?.id : null);
   const me = business.clientAccountsEnabled ? await currentClient(business) : null;
+  const hasPromos = await withTenant(business.id, async (tx) => !!(await tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.active, true) })));
   const defaults = me ? { firstName: me.firstName, lastName: me.lastName, phone: me.phone, email: me.email, smsOptIn: me.smsOptIn } : null;
   const tz = business.timezone;
   const today = instantToISODate(new Date(), tz);
@@ -139,9 +142,9 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           {pay.mode === "deposit" ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(pay.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : pay.mode === "card" ? <p className="mt-1 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
         </div>
         {pay.mode === "none" ? (
-          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} />
+          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} />
         ) : (
-          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} mode={pay.mode} amountLabel={formatMoney(pay.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} />
+          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} mode={pay.mode} amountLabel={formatMoney(pay.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} />
         )}
       </>
     );
@@ -247,7 +250,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         {pay.mode === "deposit" ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(pay.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : pay.mode === "card" ? <p className="mt-1 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : service.depositCents > 0 ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(service.depositCents, business.currency)} deposit may be required; the salon will confirm.</p> : null}
       </div>
       {pay.mode === "none" ? (
-        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} referrals={business.loyaltyEnabled} defaults={defaults} />
+        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} />
       ) : (
         <PaidBookingForm
           slug={slug}
@@ -262,6 +265,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           brand={brandHex(business.brandColor)}
           referrals={business.loyaltyEnabled}
           defaults={defaults}
+          promos={hasPromos}
         />
       )}
     </>

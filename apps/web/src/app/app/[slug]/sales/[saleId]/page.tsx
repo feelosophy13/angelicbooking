@@ -18,10 +18,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, applyDiscount, applyTips, deleteLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, applyDiscount, applyPromo, applyTips, deleteLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, setFulfillment, useCredit, voidOpenSale } from "./actions";
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
 import { withTenant } from "@angelic/db";
-import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
+import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
 import { pointsBalance } from "@/server/loyalty";
 import { CardPayment } from "./card-payment";
 
@@ -156,6 +156,9 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               <Card className="p-4">
                 <h2 className="mb-2 font-medium">Discount</h2>
                 <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}`} action={applyDiscount} slug={slug} saleId={sale.id} currentCents={sale.discountCents} note={sale.discountNote} />
+                <div className="mt-3 border-t border-stone-200 pt-3">
+                  <PromoForm key={`promo${sale.promoCodeId ?? ""}`} action={applyPromo} slug={slug} saleId={sale.id} />
+                </div>
               </Card>
               <Card className="p-4 md:col-span-2">
                 <h2 className="mb-2 font-medium">Sell a gift card, package or membership</h2>
@@ -266,6 +269,21 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               {sale.closedAt ? <p className="text-sm text-stone-500">{fmt.format(sale.closedAt)}</p> : null}
             </Card>
           )}
+          {sale.fulfillment ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Online order · {sale.fulfillment.method === "ship" ? "shipping" : "pickup"}</h2>
+              {sale.fulfillment.address ? <p className="whitespace-pre-line text-stone-600">{sale.fulfillment.address}</p> : null}
+              {sale.fulfillment.message ? <p className="mt-1 italic text-stone-600">“{sale.fulfillment.message}”</p> : null}
+              <p className="mt-1">Status: <b>{sale.fulfillment.status ?? "pending"}</b></p>
+              {sale.status === "paid" ? (
+                <form action={setFulfillment} className="mt-2 flex gap-1">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="saleId" value={sale.id} />
+                  {(["pending", "ready", "done"] as const).filter((s) => s !== (sale.fulfillment?.status ?? "pending")).map((s) => <Button key={s} name="status" value={s} size="sm" variant="secondary" type="submit">{s === "ready" ? (sale.fulfillment?.method === "ship" ? "Mark shipped" : "Mark ready") : s === "done" ? "Mark collected" : "Back to pending"}</Button>)}
+                </form>
+              ) : null}
+            </Card>
+          ) : null}
           {client ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-1 font-medium">Client</h2>

@@ -8,6 +8,7 @@ import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appointmentContext } from "@/lib/notify";
 import { reviewRequestTemplate } from "@/lib/notify/templates";
+import { smsBody, smsWithStopNotice } from "@/lib/notify/sms";
 import { appUrl } from "@/lib/stripe";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -29,7 +30,7 @@ export async function queueReviewRequest(business: Business, appointmentId: stri
     const phone = normalizePhone(client.phone);
     const rows: (typeof schema.notifications.$inferInsert)[] = [];
     if (client.emailOptIn && client.email) rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "email", template: "review_request", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: at });
-    else if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "sms", template: "review_request", recipient: phone, body: t.sms, scheduledAt: at });
+    else if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "sms", template: "review_request", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "review_request", ctx, { review_url: url })), scheduledAt: at });
     if (rows.length) await tx.insert(schema.notifications).values(rows);
   });
 }

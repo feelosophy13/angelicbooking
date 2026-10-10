@@ -6,12 +6,19 @@ import { desc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { emailConfigured, smsConfigured } from "@/lib/notify/providers";
-import { BackLink, Card, PageHeader, Empty, Notice } from "@/components/ui";
+import { BackLink, Card, PageHeader, Empty, Notice, Textarea } from "@/components/ui";
+import { ActionForm, Field, SubmitButton } from "@/components/form";
+import { SMS_DEFAULTS, SMS_PLACEHOLDERS, SMS_TEMPLATE_KEYS } from "@/lib/notify/sms";
+import { listInbox } from "@/server/inbound";
+import { saveSmsTemplates } from "./actions";
+import Link from "next/link";
 
 export default async function NotificationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "business.manage");
   const rows = await withTenant(business.id, (tx) => tx.select().from(schema.notifications).orderBy(desc(schema.notifications.createdAt)).limit(200));
+  const inbox = await listInbox(business.id, 50);
+  const LABEL: Record<string, string> = { confirmation: "Confirmation", reminder: "Reminder", rescheduled: "Rescheduled", cancellation: "Cancellation", review_request: "Review request" };
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: business.timezone });
   return (
     <>
@@ -26,6 +33,35 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
           </Notice>
         </div>
       ) : null}
+      <div className="mb-6 grid gap-6 lg:grid-cols-2">
+        <Card className="p-4">
+          <h2 className="mb-1 font-medium">Text wording</h2>
+          <p className="mb-3 text-xs text-stone-500">Leave a box empty to use the default. Placeholders: {SMS_PLACEHOLDERS.join(" ")}. “Reply STOP to opt out” is added automatically to a client&apos;s first text and to every marketing text.</p>
+          <ActionForm action={saveSmsTemplates}>
+            <input type="hidden" name="slug" value={slug} />
+            {SMS_TEMPLATE_KEYS.map((k) => (
+              <Field key={k} label={LABEL[k] ?? k} name={`t_${k}`} hint={`Default: ${SMS_DEFAULTS[k]}`}><Textarea name={`t_${k}`} rows={2} defaultValue={business.smsTemplates?.[k] ?? ""} placeholder={SMS_DEFAULTS[k]} /></Field>
+            ))}
+            <SubmitButton size="sm" pendingText="Saving…">Save wording</SubmitButton>
+          </ActionForm>
+        </Card>
+        <Card>
+          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Inbox · replies from clients</h2>
+          {inbox.length === 0 ? <p className="p-4 text-sm text-stone-500">No replies yet. Texts clients send to your number land here and on their client page.</p> : (
+            <ul className="max-h-96 divide-y divide-stone-100 overflow-y-auto text-sm">
+              {inbox.map(({ m, firstName, lastName }) => (
+                <li key={m.id} className="px-4 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    {m.clientId ? <Link href={`/app/${slug}/clients/${m.clientId}`} className="font-medium hover:underline">{firstName} {lastName}</Link> : <span className="font-medium">{m.fromNumber}</span>}
+                    <span className="text-xs text-stone-500">{fmt.format(m.receivedAt)}</span>
+                  </div>
+                  <p className="text-stone-700">{m.body}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
       {rows.length === 0 ? <Empty title="No messages yet" body="Confirmations, reminders and cancellations will appear here." /> : (
         <Card>
           <div className="overflow-x-auto"><table className="w-full text-sm">
