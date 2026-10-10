@@ -11,6 +11,8 @@ import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { addService, cancelSeries, changeStatus, moveService, refundDepositAction, removeService, saveNotes, startCheckout } from "./actions";
 import { getSeriesForAppointment } from "@/server/series";
+import { formsForAppointment } from "@/server/forms";
+import { appUrl } from "@/lib/stripe";
 import { can } from "@angelic/core";
 import { desc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
@@ -55,6 +57,7 @@ export default async function AppointmentPage({
   const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: eq(schema.sales.appointmentId, id) }));
   const pinnedNotes = client ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
   const series = appointment.seriesId ? await getSeriesForAppointment(business.id, id) : null;
+  const forms = await withTenant(business.id, (tx) => formsForAppointment(tx, id));
   const stripeReady = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled;
   const savedCards = stripeReady && client?.stripeCustomerId ? await listSavedCards(business.stripeAccountId!, client.stripeCustomerId).catch(() => []) : [];
   const tz = business.timezone;
@@ -275,6 +278,21 @@ export default async function AppointmentPage({
               </p>
             )}
           </Card>
+
+          {forms.length ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Forms · {forms.filter((f) => f.current).length}/{forms.length} complete</h2>
+              <ul className="space-y-1">
+                {forms.map((f) => (
+                  <li key={f.form.id} className="flex items-center justify-between gap-2">
+                    <span>{f.current ? "✓" : "○"} {f.form.name}</span>
+                    {f.submission ? <Link href={`/app/${slug}/settings/forms/submissions/${f.submission.id}`} className="text-xs text-brand-700 underline">{f.current ? "View" : "Expired · view"}</Link> : <span className="text-xs text-stone-400">not yet</span>}
+                  </li>
+                ))}
+              </ul>
+              {forms.some((f) => !f.current) ? <p className="mt-2 text-xs text-stone-500">Client link: <a className="underline" href={appUrl(`/book/${business.slug}/manage/${appointment.manageToken}/forms`)} target="_blank" rel="noreferrer">open forms page</a> (also in their confirmation and reminder).</p> : null}
+            </Card>
+          ) : null}
 
           {series ? (
             <Card className="p-4 text-sm">

@@ -20,6 +20,7 @@ import {
 } from "@/server/sales";
 import { stripe } from "@/lib/stripe";
 import { addOfferLine, redeemCredit, redeemGiftCard } from "@/server/offers";
+import { LoyaltyError, redeemPoints } from "@/server/loyalty";
 import { queueOneOff } from "@/lib/notify";
 import { receiptEmail } from "@/lib/notify/templates";
 import { setFlash } from "@/lib/flash";
@@ -253,4 +254,20 @@ export async function emailReceipt(formData: FormData) {
   await queueOneOff(b.id, { channel: "email", template: "receipt", recipient: email, subject: t.subject, body: t.html });
   await setFlash(`Receipt emailed to ${email}`);
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+export async function payWithPoints(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
+  const d = base.extend({ points: z.coerce.number().int().min(1) }).safeParse(Object.fromEntries(formData));
+  if (!d.success) return { error: "Enter how many points to redeem." };
+  const ctx = await ctxFor(d.data.slug);
+  try {
+    await redeemPoints({ business: ctx.business, saleId: d.data.saleId, points: d.data.points, actorUserId: ctx.user.id });
+    await settleIfPaid(ctx.business.id, d.data.saleId, ctx.user.id, ctx.business.taxRateBps);
+  } catch (e) {
+    if (e instanceof LoyaltyError) return { error: e.message };
+    return friendly(e);
+  }
+  revalidatePath(`/app/${d.data.slug}/sales/${d.data.saleId}`);
+  revalidatePath(`/app/${d.data.slug}`);
+  return { ok: true };
 }

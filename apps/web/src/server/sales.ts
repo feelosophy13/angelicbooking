@@ -1,9 +1,13 @@
 import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { allocateProportionally, computeTotals, type Discount } from "@angelic/core";
+import { after } from "next/server";
+import { db } from "@angelic/db";
 import { platformFeeBps, stripe } from "@/lib/stripe";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { fulfilOfferLines } from "./offers";
+import { awardPointsForSale } from "./loyalty";
+import { queueReviewRequest } from "./reviews";
 
 export class SaleError extends Error {}
 
@@ -266,6 +270,14 @@ async function closeIfPaid(tx: TenantDb, saleId: string, taxRateBps: number, act
         .where(and(eq(schema.appointmentItems.appointmentId, sale.appointmentId), sql`${schema.appointmentItems.status} <> 'cancelled'`));
     }
     await fulfilOfferLines(tx, businessId, saleId);
+    const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
+    if (business) {
+      await awardPointsForSale(tx, business, { ...sale, ...t, status: "paid" });
+      if (sale.appointmentId) {
+        const apptId = sale.appointmentId;
+        after(() => queueReviewRequest(business, apptId).catch((e) => console.error("[reviews] queue failed", apptId, (e as Error).message)));
+      }
+    }
     await audit(tx, businessId, actorUserId, "sale.paid", saleId, { total: t.totalCents });
   }
 }
@@ -496,6 +508,12 @@ export async function refundPayment(input: {
       .set({ refundedCents: newRefunded, status: newRefunded >= p.amountCents ? "refunded" : "partially_refunded" })
       .where(eq(schema.payments.id, p.id));
     const sale = (await tx.query.sales.findFirst({ where: eq(schema.sales.id, p.saleId) }))!;
+    // Refunding a points payment gives the points back.
+    if (p.method === "loyalty" && sale.clientId) {
+      const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { loyaltyPointValueCents: true } });
+      const points = Math.round(amount / Math.max(1, biz?.loyaltyPointValueCents ?? 1));
+      if (points > 0) await tx.insert(schema.loyaltyLedger).values({ businessId: input.businessId, clientId: sale.clientId, delta: points, reason: "adjust", saleId: sale.id, note: `Refund on sale #${sale.number}`, createdByUserId: input.actorUserId }).onConflictDoNothing();
+    }
     const t = await recompute(tx, sale.id, input.taxRateBps, currentDiscount(sale));
     if (t.refundedCents >= t.paidCents && t.paidCents > 0) {
       await tx.update(schema.sales).set({ status: "refunded" }).where(eq(schema.sales.id, sale.id));

@@ -5,6 +5,7 @@ import { schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { BookingError, rescheduleService, setAppointmentStatus } from "@/server/booking";
 import { notifyAppointment } from "@/lib/notify";
+import { queueReviewRequest } from "@/server/reviews";
 import { schema as dbSchema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 
@@ -58,6 +59,7 @@ export async function quickStatus(input: { slug: string; appointmentId: string; 
   if (!parsed.success) return { ok: false, error: "Invalid" };
   const ctx = await requireAction(parsed.data.slug, "appointments.write.any");
   await setAppointmentStatus(ctx.business.id, parsed.data.appointmentId, parsed.data.status, ctx.user.id);
+  if (parsed.data.status === "completed") await queueReviewRequest(ctx.business, parsed.data.appointmentId);
   revalidatePath(`/app/${parsed.data.slug}`);
   return { ok: true };
 }

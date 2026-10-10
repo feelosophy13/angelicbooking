@@ -117,3 +117,18 @@ export function GiftCardPayForm({ action, slug, saleId, dueCents }: { action: Ac
     </form>
   );
 }
+
+export function PointsPayForm({ action, slug, saleId, balance, pointValueCents, dueCents, minPoints }: { action: Action; slug: string; saleId: string; balance: number; pointValueCents: number; dueCents: number; minPoints: number }) {
+  const [state, act, pending] = useActionState(action, undefined);
+  const max = Math.min(balance, Math.floor(dueCents / Math.max(1, pointValueCents)));
+  return (
+    <form action={act} className="space-y-2">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="saleId" value={saleId} />
+      <p className="text-xs text-stone-500">{balance.toLocaleString()} points available · 1 point = {(pointValueCents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })} · minimum {minPoints}</p>
+      <Input name="points" type="number" min={minPoints} max={max} defaultValue={max >= minPoints ? max : minPoints} />
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+      <Button type="submit" size="sm" variant="secondary" disabled={pending || max < minPoints}>{pending ? "…" : "Redeem points"}</Button>
+    </form>
+  );
+}

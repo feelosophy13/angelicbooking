@@ -18,10 +18,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, applyDiscount, applyTips, deleteLine, emailReceipt, payManual, payWithGiftCard, payWithSavedCard, refund, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, applyDiscount, applyTips, deleteLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, useCredit, voidOpenSale } from "./actions";
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
 import { withTenant } from "@angelic/db";
-import { DiscountForm, GiftCardPayForm, ManualPayForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
+import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
+import { pointsBalance } from "@/server/loyalty";
 import { CardPayment } from "./card-payment";
 
 export default async function SalePage({ params }: { params: Promise<{ slug: string; saleId: string }> }) {
@@ -44,6 +45,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const goods = lines.filter((l) => l.kind !== "tip");
   const catalog = open ? await getOffersCatalog(business.id) : null;
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
+  const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
 
   return (
@@ -233,6 +235,12 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       <h3 className="mb-1 text-sm font-medium text-stone-700">Gift card</h3>
                       <GiftCardPayForm key={`gc${due}`} action={payWithGiftCard} slug={slug} saleId={sale.id} dueCents={due} />
                     </div>
+                    {business.loyaltyEnabled && client && points > 0 ? (
+                      <div className="border-t border-stone-200 pt-4">
+                        <h3 className="mb-1 text-sm font-medium text-stone-700">Loyalty points</h3>
+                        <PointsPayForm key={`pt${due}`} action={payWithPoints} slug={slug} saleId={sale.id} balance={points} pointValueCents={business.loyaltyPointValueCents} dueCents={due} minPoints={business.loyaltyMinRedeemPoints} />
+                      </div>
+                    ) : null}
                     <div className="border-t border-stone-200 pt-4">
                       <h3 className="mb-1 text-sm font-medium text-stone-700">Card</h3>
                       {!stripeReady ? (

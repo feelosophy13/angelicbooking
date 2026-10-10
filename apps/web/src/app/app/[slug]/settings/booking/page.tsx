@@ -34,6 +34,10 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <input type="checkbox" name="requireCardOnline" defaultChecked={business.requireCardOnline} className="h-4 w-4 accent-brand-600" />
               Require a card on file to book online <span className="text-xs text-stone-500">(needs Stripe connected; nothing is charged at booking, the card is kept for no-show fees)</span>
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="clientAccountsEnabled" defaultChecked={business.clientAccountsEnabled} className="h-4 w-4 accent-brand-600" />
+              Client accounts on the booking page <span className="text-xs text-stone-500">(sign in with a code by email or text: upcoming visits, rebook, saved cards, points)</span>
+            </label>
             <Field label="Address (shown on booking page and messages)" name="addressLine"><Input name="addressLine" defaultValue={business.addressLine ?? ""} placeholder="123 Main St, Springfield" /></Field>
             <Field label="Booking policy" name="bookingPolicy" hint="Shown to clients when they book."><Textarea name="bookingPolicy" rows={3} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
             <SubmitButton pendingText="Saving…">Save</SubmitButton>

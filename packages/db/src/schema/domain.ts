@@ -76,6 +76,20 @@ export const businesses = pgTable("businesses", {
   bookingPolicy: text("booking_policy"),
   reminderHours: integer("reminder_hours").notNull().default(24),
   addressLine: text("address_line"),
+  // Review requests after a completed visit
+  reviewRequestEnabled: boolean("review_request_enabled").notNull().default(true),
+  reviewRequestDelayHours: integer("review_request_delay_hours").notNull().default(2),
+  googleReviewUrl: text("google_review_url"),
+  // Loyalty points and referrals (see loyaltyLedger)
+  loyaltyEnabled: boolean("loyalty_enabled").notNull().default(false),
+  loyaltyPointsPerDollar: integer("loyalty_points_per_dollar").notNull().default(1),
+  loyaltyPointsPerVisit: integer("loyalty_points_per_visit").notNull().default(0),
+  loyaltyPointValueCents: integer("loyalty_point_value_cents").notNull().default(1), // 1 point = 1¢ when redeemed
+  loyaltyMinRedeemPoints: integer("loyalty_min_redeem_points").notNull().default(500),
+  referralBonusPoints: integer("referral_bonus_points").notNull().default(0), // to the referrer after the friend's first paid visit
+  referralFriendBonusPoints: integer("referral_friend_bonus_points").notNull().default(0), // to the new client
+  // Client accounts on the booking site (passwordless codes by email/SMS)
+  clientAccountsEnabled: boolean("client_accounts_enabled").notNull().default(true),
   // Optional custom hostname for the public booking page (e.g. book.angelicbeauty.com).
   customDomain: text("custom_domain").unique(),
   // Public profile / branding shown on the booking page and in messages.
@@ -310,6 +324,13 @@ export const clients = pgTable(
     stripeCustomerId: text("stripe_customer_id"),
     smsOptIn: boolean("sms_opt_in").notNull().default(true),
     emailOptIn: boolean("email_opt_in").notNull().default(true),
+    birthday: date("birthday"), // for birthday messages; year may be 1900 when unknown
+    reviewOptOut: boolean("review_opt_out").notNull().default(false),
+    // Referral programme: this client's shareable code, and who referred them.
+    referralCode: text("referral_code"),
+    referredByClientId: text("referred_by_client_id"),
+    referralRewardedAt: timestamp("referral_rewarded_at", { withTimezone: true }),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -317,7 +338,137 @@ export const clients = pgTable(
     index("clients_business_idx").on(t.businessId),
     index("clients_business_phone_idx").on(t.businessId, t.phone),
     index("clients_business_name_idx").on(t.businessId, t.lastName, t.firstName),
+    uniqueIndex("clients_referral_code_uq").on(t.businessId, t.referralCode),
+    index("clients_birthday_idx").on(t.businessId, t.birthday),
   ],
+);
+
+// ---------------------------------------------------------------------------
+// Intake / consent forms
+// ---------------------------------------------------------------------------
+export type FormFieldType = "text" | "textarea" | "checkbox" | "select" | "date" | "statement";
+export interface FormFieldDef {
+  id: string;
+  type: FormFieldType;
+  label: string;
+  required?: boolean;
+  options?: string[]; // select
+}
+
+export const forms = pgTable(
+  "forms",
+  {
+    id: id(),
+    businessId: businessId(),
+    name: text("name").notNull(),
+    kind: text("kind").notNull().default("intake"), // intake | consent
+    description: text("description"),
+    fields: jsonb("fields").$type<FormFieldDef[]>().notNull().default(sql`'[]'::jsonb`),
+    requireSignature: boolean("require_signature").notNull().default(true),
+    applyToAll: boolean("apply_to_all").notNull().default(false), // required before every visit
+    serviceIds: text("service_ids").array().notNull().default(sql`'{}'::text[]`), // or only these services
+    // How often a client must sign it again: null = once ever, N = every N days.
+    renewDays: integer("renew_days"),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("forms_business_idx").on(t.businessId)],
+);
+
+export const formSubmissions = pgTable(
+  "form_submissions",
+  {
+    id: id(),
+    businessId: businessId(),
+    formId: text("form_id")
+      .notNull()
+      .references(() => forms.id, { onDelete: "cascade" }),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
+    answers: jsonb("answers").$type<Record<string, string | boolean>>().notNull().default(sql`'{}'::jsonb`),
+    signatureName: text("signature_name"),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    ipAddress: text("ip_address"),
+    // Snapshot of the form as it was signed, so later edits don't change the record.
+    formSnapshot: jsonb("form_snapshot").$type<{ name: string; fields: FormFieldDef[]; description: string | null }>(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("form_submissions_client_idx").on(t.businessId, t.clientId, t.createdAt), index("form_submissions_appointment_idx").on(t.appointmentId)],
+);
+
+// ---------------------------------------------------------------------------
+// Reviews requested after a visit
+// ---------------------------------------------------------------------------
+export const reviews = pgTable(
+  "reviews",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+    appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
+    staffId: text("staff_id").references(() => staff.id, { onDelete: "set null" }),
+    token: text("token")
+      .notNull()
+      .default(sql`encode(gen_random_bytes(18), 'hex')`)
+      .$defaultFn(() => randomToken()),
+    rating: smallint("rating"), // 1..5, null until submitted
+    comment: text("comment"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex("reviews_token_uq").on(t.token),
+    uniqueIndex("reviews_appointment_uq").on(t.appointmentId),
+    index("reviews_business_idx").on(t.businessId, t.submittedAt),
+    check("reviews_rating_ck", sql`${t.rating} is null or (${t.rating} between 1 and 5)`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Loyalty points ledger (balance = sum of deltas)
+// ---------------------------------------------------------------------------
+export const loyaltyLedger = pgTable(
+  "loyalty_ledger",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    delta: integer("delta").notNull(),
+    reason: text("reason").notNull(), // earn | redeem | adjust | referral | referral_friend
+    saleId: text("sale_id"),
+    note: text("note"),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("loyalty_ledger_client_idx").on(t.businessId, t.clientId, t.createdAt), uniqueIndex("loyalty_ledger_sale_reason_uq").on(t.saleId, t.reason)],
+);
+
+// ---------------------------------------------------------------------------
+// Client sign-in codes for the booking-site account (passwordless)
+// ---------------------------------------------------------------------------
+export const clientLoginCodes = pgTable(
+  "client_login_codes",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    channel: text("channel").notNull(), // email | sms
+    destination: text("destination").notNull(),
+    codeHash: text("code_hash").notNull(),
+    attempts: smallint("attempts").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("client_login_codes_client_idx").on(t.businessId, t.clientId, t.createdAt)],
 );
 
 // Timestamped, attributed notes on a client (formulas, allergies, preferences).
@@ -665,4 +816,9 @@ export const TENANT_TABLES = [
   "client_notes",
   "appointment_series",
   "class_sessions",
+  "forms",
+  "form_submissions",
+  "reviews",
+  "loyalty_ledger",
+  "client_login_codes",
 ] as const;

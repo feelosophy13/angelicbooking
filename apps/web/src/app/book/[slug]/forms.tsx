@@ -4,8 +4,11 @@ import { bookOnline, joinWaitlistAction, type PublicState } from "./actions";
 import { Field, Input, Notice, Textarea } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
 
-export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; classSessionId?: string | null }) {
+export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean } | null;
+
+export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
+  const d = props.defaults;
   return (
     <form action={action} className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
       <input type="hidden" name="slug" value={props.slug} />
@@ -13,14 +16,16 @@ export function BookingForm(props: { slug: string; serviceId: string; staffId: s
       <input type="hidden" name="serviceId" value={props.serviceId} />
       <input type="hidden" name="staffId" value={props.staffId} />
       <input type="hidden" name="startAt" value={props.startAt} />
+      {d ? <p className="text-sm text-stone-600">Booking as <b>{d.firstName} {d.lastName}</b>.</p> : null}
       <div className="grid grid-cols-2 gap-3">
-        <Field label="First name"><Input name="firstName" required autoComplete="given-name" /></Field>
-        <Field label="Last name"><Input name="lastName" autoComplete="family-name" /></Field>
+        <Field label="First name"><Input name="firstName" required autoComplete="given-name" defaultValue={d?.firstName} /></Field>
+        <Field label="Last name"><Input name="lastName" autoComplete="family-name" defaultValue={d?.lastName} /></Field>
       </div>
-      <Field label="Mobile number"><Input name="phone" type="tel" autoComplete="tel" /></Field>
-      <Field label="Email"><Input name="email" type="email" autoComplete="email" /></Field>
-      <SmsConsent />
+      <Field label="Mobile number"><Input name="phone" type="tel" autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
+      <Field label="Email"><Input name="email" type="email" autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
+      {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
       <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
+      {props.referrals && !d ? <Field label="Referral code (optional)"><Input name="referralCode" placeholder="From a friend who comes here" className="uppercase" /></Field> : null}
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Booking…">Confirm booking</SubmitButton>
       <p className="text-xs text-stone-500">You can cancel or reschedule online up to {props.cancelWindowHours} hours before.{props.policy ? ` ${props.policy}` : ""}</p>

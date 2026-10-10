@@ -11,6 +11,7 @@ export const saveBookingSettings = formAction(
     slug: z.string(),
     onlineBookingEnabled: f.checkbox(),
     requireCardOnline: f.checkbox(),
+    clientAccountsEnabled: f.checkbox(),
     minNoticeMin: f.int(0, 7 * 24 * 60),
     maxAdvanceDays: f.int(1, 365),
     cancelWindowHours: f.int(0, 168),
@@ -26,6 +27,7 @@ export const saveBookingSettings = formAction(
       .set({
         onlineBookingEnabled: d.onlineBookingEnabled,
         requireCardOnline: d.requireCardOnline,
+        clientAccountsEnabled: d.clientAccountsEnabled,
         minNoticeMin: d.minNoticeMin,
         maxAdvanceDays: d.maxAdvanceDays,
         cancelWindowHours: d.cancelWindowHours,

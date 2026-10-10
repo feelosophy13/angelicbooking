@@ -4,6 +4,7 @@ import { canClientCancel, isWithinBookingWindow, normalizePhone, onlineBookingWi
 import { getStaffAvailability, staffForService, timingFor } from "./availability";
 import { bookAppointment, BookingError, rescheduleService, setAppointmentStatus } from "./booking";
 import { refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
+import { findReferrer } from "./loyalty";
 import { appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify";
 import { staffAlertEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
@@ -97,6 +98,10 @@ export interface OnlineBookingInput {
   smsConsent?: boolean;
   /** Joining a class: the session id (staffId/startAt then come from the session). */
   classSessionId?: string | null;
+  /** Friend's referral code typed on the booking form (new clients only). */
+  referralCode?: string | null;
+  /** Birthday from the booking form, YYYY-MM-DD. */
+  birthday?: string | null;
 }
 
 /** Find a client by phone or email, else create one. Runs inside the tenant tx. */
@@ -115,9 +120,10 @@ export async function findOrCreateClient(businessId: string, input: OnlineBookin
         .where(eq(schema.clients.id, existing.id));
       return existing.id;
     }
+    const referrer = await findReferrer(tx, input.referralCode);
     const [row] = await tx
       .insert(schema.clients)
-      .values({ businessId, firstName: input.firstName, lastName: input.lastName, email: input.email, phone, smsOptIn: input.smsConsent === true })
+      .values({ businessId, firstName: input.firstName, lastName: input.lastName, email: input.email, phone, smsOptIn: input.smsConsent === true, referredByClientId: referrer?.id ?? null, birthday: input.birthday ?? null })
       .returning({ id: schema.clients.id });
     return row!.id;
   });

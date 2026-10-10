@@ -18,6 +18,8 @@ export interface ApptContext {
   depositPaid?: string | null;
   /** True when a card was saved at booking (nothing charged). */
   cardOnFile?: boolean;
+  /** Link to outstanding intake/consent forms for this visit; null when none are due. */
+  formsUrl?: string | null;
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -54,8 +56,12 @@ function details(ctx: ApptContext) {
   }</table>`;
 }
 
+function formsNote(ctx: ApptContext) {
+  return ctx.formsUrl ? `<p style="margin-top:16px;padding:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:14px">Please complete your forms before your visit: <a href="${ctx.formsUrl}" style="color:#6d28d9">Complete forms</a></p>` : "";
+}
+
 function manage(ctx: ApptContext) {
-  return `<p style="margin-top:16px"><a href="${ctx.manageUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Manage appointment</a></p>
+  return `${formsNote(ctx)}<p style="margin-top:16px"><a href="${ctx.manageUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Manage appointment</a></p>
 <p style="font-size:13px;color:#78716c">You can cancel or reschedule online up to ${ctx.cancelWindowHours} hours before your appointment.${ctx.policy ? ` ${esc(ctx.policy)}` : ""}</p>`;
 }
 
@@ -63,12 +69,12 @@ export const templates = {
   confirmation: (ctx: ApptContext) => ({
     subject: `Confirmed: ${ctx.services} at ${ctx.businessName}`,
     html: shell(ctx, `You're booked, ${ctx.clientFirstName}!`, details(ctx) + manage(ctx)),
-    sms: `${ctx.businessName}: you're booked for ${ctx.services} with ${ctx.staffName} on ${when(ctx)}.${ctx.depositPaid ? ` Deposit paid: ${ctx.depositPaid}.` : ""} Manage: ${ctx.manageUrl} Reply STOP to opt out.`,
+    sms: `${ctx.businessName}: you're booked for ${ctx.services} with ${ctx.staffName} on ${when(ctx)}.${ctx.depositPaid ? ` Deposit paid: ${ctx.depositPaid}.` : ""}${ctx.formsUrl ? ` Please complete your forms: ${ctx.formsUrl}` : ""} Manage: ${ctx.manageUrl} Reply STOP to opt out.`,
   }),
   reminder: (ctx: ApptContext) => ({
     subject: `Reminder: ${ctx.services} ${when(ctx)}`,
     html: shell(ctx, `See you soon, ${ctx.clientFirstName}`, details(ctx) + manage(ctx)),
-    sms: `${ctx.businessName} reminder: ${ctx.services} with ${ctx.staffName} ${when(ctx)}. Manage: ${ctx.manageUrl}`,
+    sms: `${ctx.businessName} reminder: ${ctx.services} with ${ctx.staffName} ${when(ctx)}.${ctx.formsUrl ? ` Forms: ${ctx.formsUrl}` : ""} Manage: ${ctx.manageUrl}`,
   }),
   rescheduled: (ctx: ApptContext) => ({
     subject: `Updated: ${ctx.services} at ${ctx.businessName}`,
@@ -82,6 +88,16 @@ export const templates = {
   }),
 };
 export type TemplateName = keyof typeof templates;
+
+/** "How did we do?" sent a little while after a completed visit. */
+export function reviewRequestTemplate(ctx: ApptContext, reviewUrl: string) {
+  const stars = [1, 2, 3, 4, 5].map((n) => `<a href="${reviewUrl}?rating=${n}" style="display:inline-block;width:40px;height:40px;line-height:40px;text-align:center;font-size:24px;text-decoration:none;color:#f59e0b" title="${n} star${n === 1 ? "" : "s"}">★</a>`).join("");
+  return {
+    subject: `How was your visit to ${ctx.businessName}?`,
+    html: shell(ctx, `Thanks for coming in, ${ctx.clientFirstName}!`, `<p>How was your ${esc(ctx.services)} with ${esc(ctx.staffName)}? Tap a star:</p><p style="margin:12px 0">${stars}</p><p style="font-size:13px;color:#78716c">It takes ten seconds and helps ${esc(ctx.businessName)} a lot.</p><p style="font-size:12px;color:#a8a29e;margin-top:16px"><a href="${reviewUrl}?optout=1" style="color:#a8a29e">Don't ask me again</a></p>`),
+    sms: `${ctx.businessName}: thanks for coming in! How was your visit? Rate us in 10 seconds: ${reviewUrl}`,
+  };
+}
 
 export function inviteEmail(input: { businessName: string; role: string; link: string }) {
   return {

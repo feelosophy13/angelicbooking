@@ -18,6 +18,10 @@ import { inArray } from "drizzle-orm";
 import { Textarea as NoteArea } from "@/components/ui";
 import { ConfirmSubmit, SubmitButton as NoteSubmit } from "@/components/form";
 import { relative } from "@/lib/format";
+import { listSubmissionsForClient } from "@/server/forms";
+import { getClientLoyalty } from "@/server/loyalty";
+import { reviewsForClient } from "@/server/reviews";
+import { adjustClientPoints, createReferralCode } from "./loyalty-actions";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -60,6 +64,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   });
   if (!data) notFound();
   const { client, visits, sales, packs, memberships, notes } = data;
+  const [submissions, loyalty, reviews] = await Promise.all([listSubmissionsForClient(business.id, clientId), business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null), reviewsForClient(business.id, clientId)]);
   const authorIds = [...new Set(notes.map((n) => n.authorUserId).filter((x): x is string => !!x))];
   const authors = authorIds.length ? await db.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, authorIds)) : [];
   const authorName = (id: string | null) => authors.find((a) => a.id === id)?.name ?? "Staff";
@@ -163,6 +168,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 </div>
                 <Field label="Mobile phone" name="phone"><Input name="phone" type="tel" defaultValue={client.phone ?? ""} /></Field>
                 <Field label="Email" name="email"><Input name="email" type="email" defaultValue={client.email ?? ""} /></Field>
+                <Field label="Birthday" name="birthday" hint="For birthday messages."><Input name="birthday" type="date" defaultValue={client.birthday ?? ""} /></Field>
                 <Field label="Notes" name="notes"><Textarea name="notes" rows={4} defaultValue={client.notes ?? ""} /></Field>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="smsOptIn" defaultChecked={client.smsOptIn} className="h-4 w-4 accent-brand-600" /> Text messages</label>
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="emailOptIn" defaultChecked={client.emailOptIn} className="h-4 w-4 accent-brand-600" /> Emails</label>
@@ -176,6 +182,51 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               </div>
             )}
           </Card>
+          {loyalty ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Loyalty points</h2>
+              <p className="text-2xl font-semibold">{loyalty.balance.toLocaleString()} <span className="text-sm font-normal text-stone-500">≈ {money(loyalty.balance * business.loyaltyPointValueCents)}</span></p>
+              {loyalty.history.length ? (
+                <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto text-xs text-stone-600">
+                  {loyalty.history.slice(0, 10).map((h) => <li key={h.id}>{fmtDate.format(h.createdAt)} · <span className={h.delta >= 0 ? "text-emerald-700" : "text-red-700"}>{h.delta > 0 ? "+" : ""}{h.delta}</span> · {h.reason}{h.note ? ` · ${h.note}` : ""}</li>)}
+                </ul>
+              ) : null}
+              {write ? (
+                <ActionForm action={adjustClientPoints} className="mt-3 border-t border-stone-200 pt-3">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="clientId" value={client.id} />
+                  <div className="grid grid-cols-[6rem_1fr] gap-2">
+                    <Field label="Adjust" name="delta"><Input name="delta" inputMode="numeric" placeholder="+50" /></Field>
+                    <Field label="Reason" name="note"><Input name="note" placeholder="Birthday bonus" /></Field>
+                  </div>
+                  <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Apply</SubmitButton>
+                </ActionForm>
+              ) : null}
+              <div className="mt-3 border-t border-stone-200 pt-3">
+                <p className="text-xs text-stone-500">Referral code</p>
+                {client.referralCode ? <p className="font-mono text-sm">{client.referralCode}</p> : write ? (
+                  <form action={createReferralCode}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><button className="text-xs text-brand-700 underline">Create a referral code</button></form>
+                ) : <p className="text-xs text-stone-400">None yet</p>}
+                {client.referredByClientId ? <p className="mt-1 text-xs text-stone-500">Referred by <Link href={`/app/${slug}/clients/${client.referredByClientId}`} className="underline">another client</Link>{client.referralRewardedAt ? " · bonus paid" : " · bonus after first paid visit"}</p> : null}
+              </div>
+            </Card>
+          ) : null}
+          <Card className="p-4 text-sm">
+            <h2 className="mb-2 font-medium">Forms</h2>
+            {submissions.length === 0 ? <p className="text-stone-500">Nothing signed yet.</p> : (
+              <ul className="space-y-1">
+                {submissions.map(({ s: sub, formName }) => <li key={sub.id}><Link href={`/app/${slug}/settings/forms/submissions/${sub.id}`} className="hover:underline">{formName}</Link> <span className="text-xs text-stone-500">· {fmtDate.format(sub.createdAt)}{sub.signatureName ? " · signed" : ""}</span></li>)}
+              </ul>
+            )}
+          </Card>
+          {reviews.length ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-2 font-medium">Ratings</h2>
+              <ul className="space-y-1">
+                {reviews.map((r) => <li key={r.id}><span className="text-amber-400">{"★".repeat(r.rating ?? 0)}</span> <span className="text-xs text-stone-500">{r.submittedAt ? fmtDate.format(r.submittedAt) : ""}</span>{r.comment ? <p className="text-xs text-stone-700">{r.comment}</p> : null}</li>)}
+              </ul>
+            </Card>
+          ) : null}
           <Card className="p-4 text-sm">
             <h2 className="mb-2 font-medium">Packages &amp; memberships</h2>
             {packs.length === 0 && memberships.length === 0 ? <p className="text-stone-500">None.</p> : null}

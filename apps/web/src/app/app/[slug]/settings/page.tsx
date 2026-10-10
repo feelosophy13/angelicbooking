@@ -62,6 +62,21 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
           <Link href={`/app/${slug}/settings/booking`} className="text-sm text-brand-700 underline">Booking settings →</Link>
         </Card>
         <Card className="p-4">
+          <h2 className="mb-1 font-medium">Forms</h2>
+          <p className="mb-3 text-sm text-stone-600">Intake questionnaires and consent waivers clients sign before their visit.</p>
+          <Link href={`/app/${slug}/settings/forms`} className="text-sm text-brand-700 underline">Forms →</Link>
+        </Card>
+        <Card className="p-4">
+          <h2 className="mb-1 font-medium">Review requests</h2>
+          <p className="mb-3 text-sm text-stone-600">Ask for a star rating after each visit and send happy clients to Google.</p>
+          <Link href={`/app/${slug}/settings/reviews`} className="text-sm text-brand-700 underline">Review settings →</Link>
+        </Card>
+        <Card className="p-4">
+          <h2 className="mb-1 font-medium">Loyalty &amp; referrals</h2>
+          <p className="mb-3 text-sm text-stone-600">Points per dollar, redemption value and referral bonuses.</p>
+          <Link href={`/app/${slug}/settings/loyalty`} className="text-sm text-brand-700 underline">Loyalty settings →</Link>
+        </Card>
+        <Card className="p-4">
           <h2 className="mb-1 font-medium">Billing</h2>
           <p className="mb-3 text-sm text-stone-600">Your plan, card on file, add-ons and this month's usage.</p>
           <Link href={`/app/${slug}/settings/billing`} className="text-sm text-brand-700 underline">Billing →</Link>

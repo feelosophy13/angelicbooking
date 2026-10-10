@@ -4,6 +4,7 @@ import { schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { formatMoney } from "@/lib/utils";
+import { formsForAppointment } from "@/server/forms";
 import { emailConfigured, sendEmail, sendSms, smsConfigured, type SmsSender } from "./providers";
 import { platformSmsSender } from "@/lib/twilio";
 import { activeNumber } from "@/server/messaging";
@@ -42,6 +43,7 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
     cancelWindowHours: business.cancelWindowHours,
     depositPaid: appt.depositStatus === "paid" || appt.depositStatus === "applied" ? formatMoney(appt.depositCents, business.currency) : null,
     cardOnFile: !!appt.cardSetupIntentId,
+    formsUrl: (await formsForAppointment(tx, appt.id)).some((f) => !f.current) ? appUrl(`/book/${business.slug}/manage/${appt.manageToken}/forms`) : null,
   };
   return { appt, client, ctx };
 }

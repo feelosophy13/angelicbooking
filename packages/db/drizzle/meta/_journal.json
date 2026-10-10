@@ -204,6 +204,20 @@
       "when": 1791659052527,
       "tag": "0028_class_sessions_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791659554139,
+      "tag": "0029_clients_forms_reviews_loyalty",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791659554567,
+      "tag": "0030_clients_forms_reviews_loyalty_rls",
+      "breakpoints": true
     }
   ]
 }

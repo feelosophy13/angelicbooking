@@ -3,7 +3,7 @@ import { useMemo, useState, useTransition } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { Field, Input, Notice, Textarea } from "@/components/ui";
-import { SmsConsent } from "./forms";
+import { SmsConsent, type BookingDefaults } from "./forms";
 import { finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
 
 type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string };
@@ -25,7 +25,10 @@ export function PaidBookingForm(props: {
   publishableKey: string;
   brand: string;
   classSessionId?: string | null;
+  referrals?: boolean;
+  defaults?: BookingDefaults;
 }) {
+  const d = props.defaults;
   const [fields, setFields] = useState<Record<string, string> | null>(null);
   const [intent, setIntent] = useState<Intent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,14 +60,16 @@ export function PaidBookingForm(props: {
         <input type="hidden" name="staffId" value={props.staffId} />
         <input type="hidden" name="startAt" value={props.startAt} />
         {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
+        {d ? <p className="text-sm text-stone-600">Booking as <b>{d.firstName} {d.lastName}</b>.</p> : null}
         <div className="grid grid-cols-2 gap-3">
-          <Field label="First name"><Input name="firstName" required autoComplete="given-name" /></Field>
-          <Field label="Last name"><Input name="lastName" autoComplete="family-name" /></Field>
+          <Field label="First name"><Input name="firstName" required autoComplete="given-name" defaultValue={d?.firstName} /></Field>
+          <Field label="Last name"><Input name="lastName" autoComplete="family-name" defaultValue={d?.lastName} /></Field>
         </div>
-        <Field label="Mobile number"><Input name="phone" type="tel" autoComplete="tel" /></Field>
-        <Field label="Email"><Input name="email" type="email" autoComplete="email" /></Field>
-        <SmsConsent />
+        <Field label="Mobile number"><Input name="phone" type="tel" autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
+        <Field label="Email"><Input name="email" type="email" autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
+        {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
         <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
+        {props.referrals && !d ? <Field label="Referral code (optional)"><Input name="referralCode" placeholder="From a friend who comes here" className="uppercase" /></Field> : null}
         {error ? <Notice>{error}</Notice> : null}
         <button type="submit" disabled={pending} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: props.brand }}>
           {pending ? "One moment…" : props.mode === "deposit" ? `Continue to pay ${props.amountLabel} deposit` : "Continue to add a card"}

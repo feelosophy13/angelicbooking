@@ -17,6 +17,7 @@ const fields = z.object({
   email: f.email(),
   phone: z.string().trim().max(30).transform((v) => (v ? (normalizePhone(v) ?? v) : null)),
   notes: f.optional(2000),
+  birthday: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Pick a date").transform((v) => v || null).optional(),
   smsOptIn: f.checkbox(),
   emailOptIn: f.checkbox(),
 });
@@ -27,7 +28,7 @@ export const createClient = formAction(fields, async (d) => {
   const [row] = await withTenant(ctx.business.id, (tx) =>
     tx
       .insert(schema.clients)
-      .values({ businessId: ctx.business.id, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, smsOptIn: true, emailOptIn: true })
+      .values({ businessId: ctx.business.id, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, smsOptIn: true, emailOptIn: true })
       .returning({ id: schema.clients.id }),
   );
   await setFlash(`${d.firstName} ${d.lastName}`.trim() + " added");
@@ -41,7 +42,7 @@ export const updateClient = formAction(fields, async (d) => {
   await withTenant(ctx.business.id, (tx) =>
     tx
       .update(schema.clients)
-      .set({ firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, smsOptIn: d.smsOptIn, emailOptIn: d.emailOptIn })
+      .set({ firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, smsOptIn: d.smsOptIn, emailOptIn: d.emailOptIn })
       .where(eq(schema.clients.id, d.clientId ?? "")),
   );
   revalidatePath(`/app/${d.slug}/clients`);

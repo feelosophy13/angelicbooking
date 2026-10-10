@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Globe, Instagram, MapPin, Phone } from "lucide-react";
+import { Globe, Instagram, MapPin, Phone, UserCircle } from "lucide-react";
 import { getPublicBusiness } from "@/server/public-booking";
 import { appUrl } from "@/lib/stripe";
 import { brandVars } from "@/lib/brand";
@@ -44,6 +44,7 @@ export default async function BookLayout({ children, params }: { children: React
             {business.tagline ? <p className="truncate text-sm text-stone-600">{business.tagline}</p> : business.addressLine ? <p className="truncate text-xs text-stone-500">{business.addressLine}</p> : null}
           </div>
           {business.phone ? <a href={`tel:${business.phone}`} className="hidden items-center gap-1 text-sm sm:inline-flex" style={{ color: "var(--brand)" }}><Phone className="h-4 w-4" />{business.phone}</a> : null}
+          {business.clientAccountsEnabled ? <Link href={`/book/${business.slug}/account`} className="inline-flex items-center gap-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-sm text-stone-700 hover:bg-stone-50"><UserCircle className="h-4 w-4" /><span className="hidden sm:inline">My account</span></Link> : null}
         </div>
       </header>
       <main className="mx-auto max-w-2xl px-4 py-6">{children}</main>
