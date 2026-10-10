@@ -28,7 +28,7 @@ export default async function PackagesPage({ params }: { params: Promise<{ slug:
               <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className={p.active ? "" : "text-stone-400 line-through"}>
                   <p className="font-medium">{p.name}</p>
-                  <p className="text-xs text-stone-500">{p.sessions}× {svc(p.serviceId)}{p.validDays ? ` · valid ${p.validDays} days` : ""}</p>
+                  <p className="text-xs text-stone-500">{p.sessions}× {p.serviceId ? svc(p.serviceId) : "any service"}{p.validDays ? ` · valid ${p.validDays} days` : ""}</p>
                 </div>
                 <span className="font-medium">{formatMoney(p.priceCents, business.currency)}</span>
                 {manage ? <form action={togglePackage}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={p.id} /><input type="hidden" name="active" value={p.active ? "false" : "true"} /><Button size="sm" variant="ghost" type="submit">{p.active ? "Hide" : "Show"}</Button></form> : null}

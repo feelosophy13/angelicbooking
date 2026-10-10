@@ -130,7 +130,7 @@ export async function redeemCredit(input: { businessId: string; saleId: string; 
     if (input.source === "package") {
       const cp = await tx.query.clientPackages.findFirst({ where: and(eq(schema.clientPackages.id, input.sourceId), eq(schema.clientPackages.clientId, sale.clientId ?? "")) });
       if (!cp || cp.remaining <= 0) throw new SaleError("No sessions left on that package.");
-      if (line.serviceId && cp.serviceId !== line.serviceId) throw new SaleError("That package is for a different service.");
+      if (cp.serviceId && line.serviceId && cp.serviceId !== line.serviceId) throw new SaleError("That package is for a different service.");
       await tx.update(schema.clientPackages).set({ remaining: cp.remaining - 1 }).where(eq(schema.clientPackages.id, cp.id));
     } else {
       const m = await tx.query.clientMemberships.findFirst({ where: and(eq(schema.clientMemberships.id, input.sourceId), eq(schema.clientMemberships.clientId, sale.clientId ?? ""), eq(schema.clientMemberships.status, "active")) });

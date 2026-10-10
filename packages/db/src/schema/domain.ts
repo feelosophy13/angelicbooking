@@ -751,6 +751,9 @@ export const appointmentItems = pgTable(
     // Set for a seat in a class session; such items share the session's time
     // and are excluded from the staff double-booking constraint.
     classSessionId: text("class_session_id").references(() => classSessions.id, { onDelete: "set null" }),
+    // Imported history (and deliberately double-booked imports) may overlap; also
+    // exempt from the constraint. Never set by the app's own booking paths.
+    allowOverlap: boolean("allow_overlap").notNull().default(false),
   },
   (t) => [
     index("appointment_items_staff_time_idx").on(t.businessId, t.staffId, t.startAt),

@@ -185,6 +185,14 @@ Customer with one subscription:
 - `ERROR_WEBHOOK_URL`: a Slack or Discord incoming webhook to get notified of unhandled errors.
 - Enable point-in-time recovery on the Render Postgres instance (paid plans).
 
+## Vagaro full import
+
+`apps/web/scripts/import-vagaro.ts --business <slug> [--dir data/vagaro-export] [--dry-run]` loads the whole
+Vagaro export (not just the three CSVs the in-app importer takes). Re-runnable: rows are matched on phone/email/
+name, service names, staff names and appointment time+staff+service. Past appointments are inserted with
+`allow_overlap` (Vagaro allowed double booking); future clashes are kept and listed. Run from apps/web with the
+db package's tsx and `--env-file=../../.env`; point `DATABASE_URL` at production to load there.
+
 ## Stripe webhook setup script
 
 `apps/web/scripts/stripe-production-setup.ts` (run with `packages/db/node_modules/.bin/tsx --env-file=../../.env` from

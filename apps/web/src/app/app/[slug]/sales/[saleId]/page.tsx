@@ -90,7 +90,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       {money(l.amountCents)}
                       {open && l.kind === "service" && l.amountCents > 0 ? (
                         <div className="mt-1 flex flex-wrap justify-end gap-1">
-                          {credits.packages.filter((p) => p.serviceId === l.serviceId).map((p) => (
+                          {credits.packages.filter((p) => !p.serviceId || p.serviceId === l.serviceId).map((p) => (
                             <form key={p.id} action={useCredit}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="lineId" value={l.id} /><input type="hidden" name="source" value="package" /><input type="hidden" name="sourceId" value={p.id} /><button className="rounded border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-[11px] text-brand-800">Use package ({p.remaining} left)</button></form>
                           ))}
                           {credits.memberships.filter((m) => m.creditsRemaining > 0 && (!m.includedServiceId || m.includedServiceId === l.serviceId)).map((m) => (

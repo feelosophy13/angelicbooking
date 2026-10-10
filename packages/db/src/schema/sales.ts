@@ -225,14 +225,14 @@ export const giftCards = pgTable(
   (t) => [uniqueIndex("gift_cards_business_code_uq").on(t.businessId, t.code), check("gift_cards_balance_ck", sql`${t.balanceCents} >= 0`)],
 );
 
-// A prepaid bundle of sessions of one service.
+// A prepaid bundle of sessions; serviceId null = usable on any service.
 export const packages = pgTable(
   "packages",
   {
     id: id(),
     businessId: businessId(),
     name: text("name").notNull(),
-    serviceId: text("service_id").notNull(),
+    serviceId: text("service_id"),
     sessions: integer("sessions").notNull(),
     priceCents: integer("price_cents").notNull(),
     validDays: integer("valid_days"), // null = never expires
@@ -253,7 +253,7 @@ export const clientPackages = pgTable(
     packageId: text("package_id")
       .notNull()
       .references(() => packages.id, { onDelete: "restrict" }),
-    serviceId: text("service_id").notNull(),
+    serviceId: text("service_id"), // null = any service
     remaining: integer("remaining").notNull(),
     saleId: text("sale_id").references(() => sales.id, { onDelete: "set null" }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),

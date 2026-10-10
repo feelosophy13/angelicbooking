@@ -16,7 +16,7 @@ export default async function NewPackagePage({ params }: { params: Promise<{ slu
       <ActionForm action={createPackage}>
         <input type="hidden" name="slug" value={slug} />
         <Field label="Name" name="name" required><Input name="name" required placeholder="5 Lash Fills" autoFocus /></Field>
-        <Field label="Service" name="serviceId" required><Select name="serviceId" required>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
+        <Field label="Service" name="serviceId" hint="Choose one service, or let sessions be used on any service (e.g. a mixed facial bundle)."><Select name="serviceId" defaultValue=""><option value="">Any service</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Sessions" name="sessions" required><Input name="sessions" type="number" min={1} defaultValue={5} required /></Field>
           <Field label="Price" name="price" required><Input name="price" inputMode="decimal" required placeholder="275" /></Field>

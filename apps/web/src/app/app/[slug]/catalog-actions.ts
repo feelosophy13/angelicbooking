@@ -10,7 +10,7 @@ import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 
 export const createPackage = formAction(
-  z.object({ slug: z.string(), name: f.text(1, 80), serviceId: f.id(), sessions: f.int(1, 100), price: f.money("price"), validDays: z.string().trim().optional() }),
+  z.object({ slug: z.string(), name: f.text(1, 80), serviceId: z.string().optional().transform((v) => v || null), sessions: f.int(1, 100), price: f.money("price"), validDays: z.string().trim().optional() }),
   async (d) => {
     const ctx = await requireAction(d.slug, "services.manage");
     const validDays = d.validDays ? Number(d.validDays) : null;

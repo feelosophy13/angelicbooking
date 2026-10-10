@@ -64,7 +64,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       the notification claim logic is already safe for multiple instances.
 - [ ] Google consent screen: add a logo (triggers Google brand verification) once a logo exists.
 - [x] Logo upload (profile currently takes URLs only). Done 2026-10-10: stored in Postgres, served from `/api/files/<id>`.
-- [ ] Migrate Angelic Beauty's real data from Vagaro (Settings → Import) and switch the public booking link.
+- [ ] Migrate Angelic Beauty's real data from Vagaro and switch the public booking link. 2026-10-10: the full
+      export (`data/vagaro-export`, git-ignored) loads with `apps/web/scripts/import-vagaro.ts` (staff + hours +
+      services performed, 125 services + add-ons + classes, 9.5k clients, 4.5k appointments incl. 152 upcoming,
+      future blocked time, 188 products with stock, packages + 56 client packages, 10 plans + 113 live memberships,
+      120 gift cards, 1 promo code). Done locally; run it against production once the pending deploy is out
+      (`DATABASE_URL=<prod, sslmode=require>`), then assign staff to locations and enable the imported classes.
 - [ ] Write a short privacy/terms review with a lawyer before accepting other businesses.
 
 ## 3. Product backlog
