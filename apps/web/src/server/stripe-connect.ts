@@ -3,43 +3,60 @@ import { db, schema } from "@angelic/db";
 import { appUrl, stripe } from "@/lib/stripe";
 
 /**
- * Each business connects its OWN Stripe account (Standard). They keep their
- * dashboard, payouts and liability; we create direct charges on their account.
+ * Each business connects its OWN Stripe account, created with the Accounts v2
+ * API in the SaaS configuration: full Stripe Dashboard, Stripe collects its own
+ * fees from the account and carries negative-balance liability, and we create
+ * direct charges on the account (the business is the merchant of record).
+ * Stripe no longer allows `accounts.create({ type: "standard" })` for new
+ * Connect integrations; v2 account ids still work with every v1 endpoint via
+ * the Stripe-Account header, so the payment code is unchanged.
  */
 export async function startConnectOnboarding(business: typeof schema.businesses.$inferSelect, slug: string) {
   const s = stripe();
   let accountId = business.stripeAccountId;
   if (!accountId) {
-    const acct = await s.accounts.create({
-      type: "standard",
-      email: business.email ?? undefined,
-      business_profile: { name: business.name, mcc: "7230" }, // 7230 = beauty & barber shops
-      metadata: { businessId: business.id },
+    const acct = await s.v2.core.accounts.create({
+      display_name: business.name,
+      contact_email: business.email ?? undefined,
+      dashboard: "full",
+      identity: { country: "us" },
+      configuration: { merchant: { capabilities: { card_payments: { requested: true } } } },
+      defaults: { currency: "usd", responsibilities: { fees_collector: "stripe", losses_collector: "stripe" }, locales: ["en-US"] },
+      metadata: { businessId: business.id, slug },
     });
     accountId = acct.id;
     await db.update(schema.businesses).set({ stripeAccountId: accountId }).where(eq(schema.businesses.id, business.id));
   }
-  const link = await s.accountLinks.create({
+  const link = await s.v2.core.accountLinks.create({
     account: accountId,
-    type: "account_onboarding",
-    refresh_url: appUrl(`/app/${slug}/settings/payments?refresh=1`),
-    return_url: appUrl(`/app/${slug}/settings/payments/return`),
+    use_case: {
+      type: "account_onboarding",
+      account_onboarding: {
+        refresh_url: appUrl(`/app/${slug}/settings/payments?refresh=1`),
+        return_url: appUrl(`/app/${slug}/settings/payments/return`),
+      },
+    },
   });
   return link.url;
 }
 
-/** Pull the latest account capabilities from Stripe into our row. */
+/**
+ * Pull the account's readiness from Stripe into our row.
+ * - chargesEnabled: the merchant card_payments capability is active (v2 status path).
+ * - detailsSubmitted: nothing is currently or past due from the user, i.e. onboarding
+ *   is complete even if Stripe is still verifying.
+ */
 export async function syncConnectAccount(businessId: string, accountId: string) {
-  const acct = await stripe().accounts.retrieve(accountId);
+  const acct = await stripe().v2.core.accounts.retrieve(accountId, { include: ["configuration.merchant", "requirements"] });
+  const chargesEnabled = acct.configuration?.merchant?.capabilities?.card_payments?.status === "active";
+  const entries = acct.requirements?.entries ?? [];
+  const outstanding = entries.some((e) => e.awaiting_action_from === "user" && (e.minimum_deadline.status === "currently_due" || e.minimum_deadline.status === "past_due"));
+  const detailsSubmitted = chargesEnabled || (entries.length > 0 ? !outstanding : false);
   await db
     .update(schema.businesses)
-    .set({
-      stripeChargesEnabled: !!acct.charges_enabled,
-      stripeDetailsSubmitted: !!acct.details_submitted,
-      stripeAccountId: accountId,
-    })
+    .set({ stripeChargesEnabled: chargesEnabled, stripeDetailsSubmitted: detailsSubmitted, stripeAccountId: accountId })
     .where(eq(schema.businesses.id, businessId));
-  return { chargesEnabled: !!acct.charges_enabled, detailsSubmitted: !!acct.details_submitted };
+  return { chargesEnabled, detailsSubmitted };
 }
 
 export async function disconnectConnectAccount(businessId: string) {

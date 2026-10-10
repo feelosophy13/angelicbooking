@@ -7,7 +7,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 ## 1. Launch blockers (nothing charges or texts until these are done)
 
 ### Stripe
-- [ ] Put Stripe **test** keys in local `.env` (`STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) so the
+- [x] Stripe sandbox test keys are in local `.env` (2026-10-10); Billing, Customer Portal, number add-on, usage meter and
+      the billing webhook were verified against the sandbox with `apps/web/scripts/billing-*.ts`.
+- [x] Connect account creation migrated to Accounts v2 (Stripe refuses v1 Standard accounts for new platforms).
+- [ ] ~~Put Stripe **test** keys in local `.env`~~ (`STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) so the
       billing, Connect and checkout flows can be run end to end with Stripe test cards.
 - [ ] Activate the platform Stripe account (business details, bank, identity) and complete the Connect
       platform profile for Standard accounts.
