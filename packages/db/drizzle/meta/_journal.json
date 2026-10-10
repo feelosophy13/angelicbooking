@@ -253,6 +253,13 @@
       "when": 1791668709957,
       "tag": "0035_items_allow_overlap",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791668969576,
+      "tag": "0036_staff_takes_appointments",
+      "breakpoints": true
     }
   ]
 }

@@ -156,6 +156,9 @@ export const staff = pgTable(
     color: text("color").notNull().default("#6366f1"),
     locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }), // primary location
     bookableOnline: boolean("bookable_online").notNull().default(true),
+    // Has a calendar column and can be booked by staff. Off for receptionists, managers
+    // and owner logins who don't take clients themselves.
+    takesAppointments: boolean("takes_appointments").notNull().default(true),
     active: boolean("active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
     // ---- Pay configuration (see packages/core/payroll.ts). Percentages in basis points.

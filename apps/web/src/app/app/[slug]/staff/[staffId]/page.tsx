@@ -38,6 +38,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
             </Select>
           </Field>
         ) : null}
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="takesAppointments" defaultChecked={person.takesAppointments} className="h-4 w-4 accent-brand-600" /> Takes appointments <span className="text-xs text-stone-500">(has a calendar column; untick for front desk, managers or an owner login that doesn't see clients)</span></label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="bookableOnline" defaultChecked={person.bookableOnline} className="h-4 w-4 accent-brand-600" /> Bookable online</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={person.active} className="h-4 w-4 accent-brand-600" /> Active (shown on the calendar)</label>
         <SubmitButton pendingText="Saving…">Save profile</SubmitButton>

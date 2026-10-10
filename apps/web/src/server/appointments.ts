@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 
 export async function getAppointmentDetail(businessId: string, appointmentId: string) {
@@ -26,7 +26,7 @@ export async function getAppointmentDetail(businessId: string, appointmentId: st
         .orderBy(asc(schema.appointmentItems.sortOrder), asc(schema.appointmentItems.startAt)),
       appt.clientId ? tx.query.clients.findFirst({ where: eq(schema.clients.id, appt.clientId) }) : Promise.resolve(null),
       tx.select().from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
-      tx.select().from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)),
+      tx.select().from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.displayName)),
     ]);
     return { appointment: appt, items, client: client ?? null, services, staff };
   });

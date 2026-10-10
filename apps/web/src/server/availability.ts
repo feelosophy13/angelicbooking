@@ -91,8 +91,8 @@ export async function staffForService(businessId: string, serviceId: string) {
       .from(schema.staffServices)
       .where(eq(schema.staffServices.serviceId, serviceId));
     const where = mapped.length
-      ? and(eq(schema.staff.active, true), inArray(schema.staff.id, mapped.map((m) => m.staffId)))
-      : eq(schema.staff.active, true);
+      ? and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true), inArray(schema.staff.id, mapped.map((m) => m.staffId)))
+      : and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true));
     return tx.select().from(schema.staff).where(where).orderBy(schema.staff.sortOrder, schema.staff.displayName);
   });
 }

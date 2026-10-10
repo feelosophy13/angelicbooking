@@ -106,6 +106,7 @@ export const auth = betterAuth({
                   displayName: user.name,
                   email: user.email,
                   bookableOnline: invitation.role === "provider",
+                  takesAppointments: invitation.role !== "front_desk",
                 });
               }
             }

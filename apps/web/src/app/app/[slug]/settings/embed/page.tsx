@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { appUrl } from "@/lib/stripe";
@@ -14,7 +14,7 @@ export default async function EmbedSettingsPage({ params }: { params: Promise<{ 
   const { business } = await requireAction(slug, "business.manage");
   const [services, staff, locations] = await withTenant(business.id, async (tx) => [
     await tx.select({ id: schema.services.id, name: schema.services.name }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
-    await tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)),
+    await tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.displayName)),
     await tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations).orderBy(asc(schema.locations.name)),
   ]);
   return (

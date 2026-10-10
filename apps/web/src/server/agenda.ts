@@ -24,7 +24,7 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
   const rangeEnd = zonedToInstant(shiftISODate(fromDate, days), "00:00", timeZone);
   return withTenant(businessId, async (tx) => {
     const [staffRows, items, sessions] = await Promise.all([
-      tx.select().from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
+      tx.select().from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
       tx
         .select({
           id: schema.appointmentItems.id,

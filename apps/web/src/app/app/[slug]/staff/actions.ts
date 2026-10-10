@@ -23,6 +23,7 @@ const profileSchema = z.object({
   phone: f.optional(30),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Pick a colour"),
   bookableOnline: f.checkbox(),
+  takesAppointments: f.checkbox(),
   active: f.checkbox(),
   locationId: z.string().optional(),
 });
@@ -51,7 +52,7 @@ export const updateStaffProfile = formAction(profileSchema, async (d) => {
   await withTenant(ctx.business.id, (tx) =>
     tx
       .update(schema.staff)
-      .set({ displayName: d.displayName, email: d.email, phone: d.phone, color: d.color, bookableOnline: d.bookableOnline, active: d.active, locationId: d.locationId || null })
+      .set({ displayName: d.displayName, email: d.email, phone: d.phone, color: d.color, bookableOnline: d.bookableOnline && d.takesAppointments, takesAppointments: d.takesAppointments, active: d.active, locationId: d.locationId || null })
       .where(eq(schema.staff.id, d.staffId!)),
   );
   revalidatePath(`/app/${d.slug}/staff`);
@@ -197,6 +198,7 @@ export async function inviteStaff(_prev: InviteState, formData: FormData): Promi
             displayName: parsed.data.email.split("@")[0]!,
             email: parsed.data.email,
             bookableOnline: parsed.data.role === "provider",
+            takesAppointments: parsed.data.role !== "front_desk",
           })
           .returning({ id: schema.staff.id });
         // Default hours so they are bookable as soon as they accept; editable under Staff.

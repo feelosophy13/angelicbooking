@@ -35,7 +35,7 @@ export async function getPublicMenu(businessId: string, locationId?: string | nu
       tx
         .select({ id: schema.staff.id, displayName: schema.staff.displayName, color: schema.staff.color })
         .from(schema.staff)
-        .where(and(eq(schema.staff.active, true), eq(schema.staff.bookableOnline, true)))
+        .where(and(eq(schema.staff.active, true), eq(schema.staff.bookableOnline, true), eq(schema.staff.takesAppointments, true)))
         .orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
     ]);
     const staffLoc = locationId
