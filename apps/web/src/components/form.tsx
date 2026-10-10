@@ -39,7 +39,14 @@ export function Field({ label, name, hint, required, children, className }: { la
   const auto = useId();
   // Associate the label with the (single) control inside so screen readers and
   // test tools can find inputs by label. Multi-control children keep a plain label.
-  const only = Children.count(children) === 1 ? Children.only(children) : null;
+  // A server component passed as the child (e.g. <CategoryPicker/>) arrives as a
+  // lazy element that Children.only rejects; treat it like a multi-control child.
+  let only: React.ReactNode = null;
+  try {
+    only = Children.count(children) === 1 ? Children.only(children) : null;
+  } catch {
+    only = null;
+  }
   const child = only && isValidElement<{ id?: string; name?: string }>(only) ? only : null;
   const fieldName = name ?? child?.props.name;
   const id = child ? (child.props.id ?? `f-${fieldName ?? auto}`) : undefined;
