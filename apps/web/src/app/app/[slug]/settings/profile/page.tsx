@@ -37,7 +37,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
               <Field label="Website" name="website"><Input name="website" defaultValue={business.website ?? ""} placeholder="https://yoursalon.com" /></Field>
               <Field label="Instagram" name="instagram"><Input name="instagram" defaultValue={business.instagram ?? ""} placeholder="@yoursalon" /></Field>
             </div>
-            <Field label="Opening hours" name="hoursText" hint="One line per day, shown on the booking page."><Textarea name="hoursText" rows={4} defaultValue={business.hoursText ?? ""} placeholder={"Mon–Fri 9am–7pm\nSat 9am–5pm\nSun closed"} /></Field>
+            <Field label="Opening hours (free text)" name="hoursText" hint="Only used when no location has opening hours set. Set real hours under Settings → Locations; they also cap online booking times."><Textarea name="hoursText" rows={4} defaultValue={business.hoursText ?? ""} placeholder={"Mon–Fri 9am–7pm\nSat 9am–5pm\nSun closed"} /></Field>
             <SubmitButton pendingText="Saving…">Save profile</SubmitButton>
           </ActionForm>
         </Card>

@@ -9,6 +9,7 @@ import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { BackLink, Button, Card, LinkButton, PageHeader } from "@/components/ui";
 import { deleteLocation, setDefaultLocation } from "./actions";
+import { describeHours } from "@/lib/hours";
 
 export default async function LocationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -27,6 +28,7 @@ export default async function LocationsPage({ params }: { params: Promise<{ slug
               <div className="min-w-0 flex-1">
                 <p className="font-medium"><Link href={`/app/${slug}/settings/locations/${l.id}`} className="hover:underline">{l.name}</Link>{l.isDefault ? <span className="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-xs text-brand-800">default</span> : null}</p>
                 <p className="text-xs text-stone-500">{[l.addressLine1, l.city, l.state, l.postalCode].filter(Boolean).join(", ") || "No address"}{l.phone ? ` · ${l.phone}` : ""}{l.timezone ? ` · ${l.timezone}` : ""}</p>
+                <p className="text-xs text-stone-500">{l.hours ? describeHours(l.hours).join(" · ") : "No opening hours set"}</p>
               </div>
               <LinkButton href={`/app/${slug}/settings/locations/${l.id}`} size="sm">Edit</LinkButton>
               {!l.isDefault ? (

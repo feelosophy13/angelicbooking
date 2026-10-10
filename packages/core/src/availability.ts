@@ -135,3 +135,23 @@ export function computeAvailableSlots(input: AvailabilityInput): Date[] {
   }
   return out.sort((a, b) => a.getTime() - b.getTime());
 }
+
+/** Opening hours for one day; null = closed. Keys of a WeeklyHours map are weekday numbers 0 (Sunday) to 6. */
+export interface OpenHours {
+  open: LocalTime;
+  close: LocalTime;
+}
+export type WeeklyHours = Record<string, OpenHours | null>;
+
+/**
+ * Keep only the part of a provider's working blocks that falls inside the
+ * location's opening hours. `open` undefined = the location has no hours set
+ * (no limit); null = closed that day.
+ */
+export function clampToOpenHours(blocks: LocalBlock[], open: OpenHours | null | undefined): LocalBlock[] {
+  if (open === undefined) return blocks;
+  if (open === null) return [];
+  return blocks
+    .map((b) => ({ start: b.start > open.open ? b.start : open.open, end: b.end < open.close ? b.end : open.close }))
+    .filter((b) => b.start < b.end);
+}

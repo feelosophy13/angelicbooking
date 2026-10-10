@@ -3,6 +3,7 @@ import { TIMEZONES } from "@/lib/utils";
 import type { Metadata } from "next";
 import { FormPage, Input, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
+import { HoursEditor } from "@/components/hours-editor";
 
 export const metadata: Metadata = { title: "New location" };
 import { createLocation } from "../actions";
@@ -21,6 +22,11 @@ export default async function NewLocationPage({ params }: { params: Promise<{ sl
         <Field label="State"><Input name="state" /></Field>
         <Field label="ZIP"><Input name="postalCode" /></Field>
         <Field label="Timezone (if different)"><Select name="timezone" defaultValue=""><option value="">Same as business</option>{TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}</Select></Field>
+        <div className="sm:col-span-2">
+          <p className="mb-1 text-sm font-medium text-stone-700">Opening hours</p>
+          <p className="mb-2 text-xs text-stone-500">Shown on the booking page and used as the outer limit for online bookings at this location.</p>
+          <HoursEditor initial={null} />
+        </div>
         <div className="flex items-end"><SubmitButton pendingText="Creating…">Create location</SubmitButton></div>
       </ActionForm>
     </FormPage>

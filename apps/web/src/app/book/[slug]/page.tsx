@@ -9,6 +9,7 @@ import { PaidBookingForm } from "./payment-form";
 import { onlinePaymentRequirement } from "@/server/online-payments";
 import { publicSessions } from "@/server/classes";
 import { brandHex } from "@/lib/brand";
+import { describeHours } from "@/lib/hours";
 import { currentClient } from "@/server/client-auth";
 import { schema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
@@ -33,6 +34,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
               <Link href={`?location=${l.id}`} className="block px-4 py-3 hover:bg-stone-50">
                 <p className="font-medium">{l.name}</p>
                 <p className="text-xs text-stone-500">{[l.addressLine1, l.city, l.state].filter(Boolean).join(", ")}</p>
+                {l.hours ? <p className="text-xs text-stone-500">{describeHours(l.hours).join(" · ")}</p> : null}
               </Link>
             </li>
           ))}

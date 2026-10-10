@@ -136,6 +136,9 @@ export const locations = pgTable(
     country: text("country").default("US"),
     timezone: text("timezone"), // null => inherit business timezone
     phone: text("phone"),
+    // Opening hours by weekday ("0" Sunday … "6" Saturday): {open, close} or null when closed.
+    // Null overall = no hours set (staff schedules alone decide availability).
+    hours: jsonb("hours").$type<Record<string, { open: string; close: string } | null>>(),
     isDefault: boolean("is_default").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

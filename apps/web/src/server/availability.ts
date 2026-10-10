@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, lt, notInArray } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import {
+  clampToOpenHours,
   computeAvailableSlots,
   resolveWorkingBlocks,
   weekdayOf,
@@ -38,7 +39,7 @@ export async function getStaffAvailability(opts: {
   const windowEnd = zonedToInstant(shiftISODate(date, 2), "00:00", timeZone);
 
   return withTenant(businessId, async (tx) => {
-    const [weekly, override, items, sessions] = await Promise.all([
+    const [weekly, override, items, sessions, person, locations] = await Promise.all([
       tx
         .select({ weekday: schema.staffSchedules.weekday, start: schema.staffSchedules.startTime, end: schema.staffSchedules.endTime })
         .from(schema.staffSchedules)
@@ -62,13 +63,16 @@ export async function getStaffAvailability(opts: {
         .select({ start: schema.classSessions.startAt, end: schema.classSessions.endAt })
         .from(schema.classSessions)
         .where(and(eq(schema.classSessions.staffId, staffId), eq(schema.classSessions.status, "scheduled"), gte(schema.classSessions.startAt, windowStart), lt(schema.classSessions.startAt, windowEnd))),
+      tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true } }),
+      tx.select({ id: schema.locations.id, isDefault: schema.locations.isDefault, hours: schema.locations.hours }).from(schema.locations),
     ]);
+    // The provider's location (or the default one) caps availability with its opening hours.
+    const location = locations.find((l) => l.id === person?.locationId) ?? locations.find((l) => l.isDefault) ?? null;
+    const open = location?.hours ? (location.hours[String(weekday)] ?? null) : undefined;
 
-    const workingBlocks = resolveWorkingBlocks(
-      date,
-      weekday,
-      weekly,
-      override ? { date: override.date, isOff: override.isOff, start: override.startTime, end: override.endTime } : null,
+    const workingBlocks = clampToOpenHours(
+      resolveWorkingBlocks(date, weekday, weekly, override ? { date: override.date, isOff: override.isOff, start: override.startTime, end: override.endTime } : null),
+      open,
     );
     const busy: Interval[] = [...items, ...sessions].map((i) => ({ start: i.start, end: i.end }));
     return computeAvailableSlots({

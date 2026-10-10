@@ -6,6 +6,7 @@ import { requireAction } from "@/lib/tenant";
 import { TIMEZONES } from "@/lib/utils";
 import { FormPage, Input, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
+import { HoursEditor } from "@/components/hours-editor";
 import { updateLocation } from "../actions";
 
 export const metadata: Metadata = { title: "Edit location" };
@@ -27,6 +28,11 @@ export default async function EditLocationPage({ params }: { params: Promise<{ s
         <Field label="State" name="state"><Input name="state" defaultValue={l.state ?? ""} /></Field>
         <Field label="ZIP" name="postalCode"><Input name="postalCode" defaultValue={l.postalCode ?? ""} /></Field>
         <Field label="Timezone (if different)" name="timezone"><Select name="timezone" defaultValue={l.timezone ?? ""}><option value="">Same as business</option>{TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}</Select></Field>
+        <div className="sm:col-span-2">
+          <p className="mb-1 text-sm font-medium text-stone-700">Opening hours</p>
+          <p className="mb-2 text-xs text-stone-500">Shown on the booking page. Online bookings for staff at this location stay inside these hours even if a provider&apos;s own schedule runs longer.</p>
+          <HoursEditor initial={l.hours ?? null} />
+        </div>
         <div className="flex items-end"><SubmitButton pendingText="Saving…">Save location</SubmitButton></div>
       </ActionForm>
     </FormPage>

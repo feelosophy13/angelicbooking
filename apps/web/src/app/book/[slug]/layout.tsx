@@ -5,6 +5,8 @@ import { Gift, Globe, Instagram, MapPin, Phone, ShoppingBag, UserCircle } from "
 import { getPublicBusiness } from "@/server/public-booking";
 import { appUrl } from "@/lib/stripe";
 import { brandVars } from "@/lib/brand";
+import { describeHours } from "@/lib/hours";
+import { getPublicLocations } from "@/server/public-booking";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -25,6 +27,8 @@ export default async function BookLayout({ children, params }: { children: React
   const { slug } = await params;
   const business = await getPublicBusiness(slug);
   if (!business) notFound();
+  const locations = await getPublicLocations(business.id);
+  const withHours = locations.filter((l) => l.hours);
   return (
     <div className="min-h-screen bg-stone-50" style={brandVars(business.brandColor)}>
       {business.coverUrl ? (
@@ -52,7 +56,14 @@ export default async function BookLayout({ children, params }: { children: React
       <footer className="mx-auto max-w-2xl space-y-4 px-4 pb-10 pt-4 text-sm text-stone-600">
         {business.about ? <p className="whitespace-pre-line">{business.about}</p> : null}
         <div className="grid gap-4 sm:grid-cols-2">
-          {business.hoursText ? <div><p className="mb-1 font-medium text-stone-800">Hours</p><p className="whitespace-pre-line text-xs">{business.hoursText}</p></div> : null}
+          {withHours.length ? (
+            <div>
+              <p className="mb-1 font-medium text-stone-800">Hours</p>
+              {withHours.map((l) => (
+                <div key={l.id} className="mb-2 text-xs">{withHours.length > 1 ? <p className="font-medium text-stone-700">{l.name}</p> : null}{describeHours(l.hours).map((line) => <p key={line}>{line}</p>)}</div>
+              ))}
+            </div>
+          ) : business.hoursText ? <div><p className="mb-1 font-medium text-stone-800">Hours</p><p className="whitespace-pre-line text-xs">{business.hoursText}</p></div> : null}
           <div className="space-y-1 text-xs">
             {business.addressLine ? <p className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{business.addressLine}</p> : null}
             {business.phone ? <p className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" /><a href={`tel:${business.phone}`}>{business.phone}</a></p> : null}
