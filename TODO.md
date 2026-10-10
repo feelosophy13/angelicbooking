@@ -14,9 +14,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       billing, Connect and checkout flows can be run end to end with Stripe test cards.
 - [ ] Activate the platform Stripe account (business details, bank, identity) and complete the Connect
       platform profile for Standard accounts.
-- [ ] Create both webhooks in live mode and set their secrets on Render **and** in `.env`:
-      Connect endpoint `/api/stripe/webhook` → `STRIPE_WEBHOOK_SECRET`;
-      account endpoint `/api/stripe/billing` → `STRIPE_BILLING_WEBHOOK_SECRET`. Events listed in `docs-ops.md`.
+- [x] Webhooks created 2026-10-10 **in the sandbox** (`we_1UP6MGBapD9TuxcNtawam0qF` Connect, `we_1UP6MGBapD9TuxcNrI58f7K2` account)
+      with secrets in `.env` and on Render, plus the sandbox `STRIPE_SECRET_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
+      on Render, via `apps/web/scripts/stripe-production-setup.ts`. Production runs in Stripe **test mode** after the
+      next deploy. For live: activate the account, put live keys in `.env`, rerun the script with `--recreate --deploy`
+      (one Render call at a time if the auto-mode classifier objects).
 - [ ] Put **live** keys on Render and in `.env`; redeploy; verify a real card payment + refund from the sale page.
 - [ ] Save the Customer Portal configuration once in the Stripe dashboard (branding, cancellation copy).
 - [ ] Decide pricing: base plan (`BILLING_BASE_CENTS`, now 0), trial (`BILLING_TRIAL_DAYS`, now 0),
@@ -25,14 +27,15 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ### Twilio
 - [ ] Buy the first toll-free number for Angelic Beauty in production (Settings → Text messaging) and submit
-      carrier verification. Needs EIN (or sole proprietor), address, contact. Approval takes 1–3 weeks;
+      carrier verification. Needs the owner signed in on app.angelicbooking.com; buy it **before** the deploy that
+      turns Stripe on (billing then requires an active subscription to buy a number) or set up billing first. Needs EIN (or sole proprietor), address, contact. Approval takes 1–3 weeks;
       status is polled every 5 minutes.
 - [ ] Decide whether a platform-wide fallback sender is wanted for businesses without a verified number
       (`TWILIO_FROM` / `TWILIO_MESSAGING_SERVICE_SID`). It would need its own toll-free verification.
 - [ ] Keep an eye on the Twilio balance (≈$197 on 2026-10-08) and enable auto-recharge.
 
 ### Email
-- [ ] Add a DMARC record in Cloudflare: `TXT _dmarc.mail1  v=DMARC1; p=none;` (improves Gmail/Yahoo delivery).
+- [x] Add a DMARC record in Cloudflare: `TXT _dmarc.mail1  v=DMARC1; p=none;` (improves Gmail/Yahoo delivery). Done 2026-10-10.
 - [ ] Set `SUPPORT_EMAIL` on Render and in `.env` so Help/Privacy/Terms show a contact address.
 
 ### Domain move to app.angelicbooking.com (done 2026-10-10)

@@ -185,6 +185,14 @@ Customer with one subscription:
 - `ERROR_WEBHOOK_URL`: a Slack or Discord incoming webhook to get notified of unhandled errors.
 - Enable point-in-time recovery on the Render Postgres instance (paid plans).
 
+## Stripe webhook setup script
+
+`apps/web/scripts/stripe-production-setup.ts` (run with `packages/db/node_modules/.bin/tsx --env-file=../../.env` from
+apps/web) creates or updates both webhook endpoints for app.angelicbooking.com from the keys in `.env`, writes the
+signing secrets back to `.env`, and with `RENDER_API_KEY` copies the four Stripe variables to the Render service
+(`--stripe-only` skips Render, `--recreate` rotates secrets, `--deploy` triggers a deploy). Secrets are never printed.
+Current state (2026-10-10): sandbox endpoints exist and the sandbox keys are on Render.
+
 ## Features that depend on external services (added 2026-10-10)
 
 - **Online deposits / card on file, online store, gift cards, membership auto-renew** all run on the
