@@ -28,6 +28,7 @@ export function PaidBookingForm(props: {
   referrals?: boolean;
   defaults?: BookingDefaults;
   promos?: boolean;
+  locationId?: string | null;
   embed?: boolean;
 }) {
   const d = props.defaults;
@@ -63,6 +64,7 @@ export function PaidBookingForm(props: {
         <input type="hidden" name="staffId" value={props.staffId} />
         <input type="hidden" name="startAt" value={props.startAt} />
         {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
+        {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}
         {d ? <p className="text-sm text-stone-600">Booking as <b>{d.firstName} {d.lastName}</b>.</p> : null}
         <div className="grid grid-cols-2 gap-3">
           <Field label="First name"><Input name="firstName" required autoComplete="given-name" defaultValue={d?.firstName} /></Field>

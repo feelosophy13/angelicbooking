@@ -11,8 +11,9 @@ import { queueOneOff } from "@/lib/notify";
 import { emailConfigured } from "@/lib/notify/providers";
 import { getActiveNumber } from "./messaging";
 import { getClientSessionId } from "@/lib/client-session";
-import { listSavedCards } from "./stripe-connect";
-import { isStripeConfigured, stripe } from "@/lib/stripe";
+import { customerIdFor, savedCardsFor } from "./stripe-connect";
+import { paymentContextFor } from "./locations";
+import { stripe } from "@/lib/stripe";
 import { pointsBalance, ensureReferralCode } from "./loyalty";
 import type { PublicBusiness } from "./public-booking";
 
@@ -123,8 +124,9 @@ export async function clientAccountData(business: PublicBusiness, clientId: stri
     return { client, visits, packs, memberships, points, referralCode, giftCards };
   });
   if (!data) return null;
-  const stripeReady = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled;
-  const cards = stripeReady && data.client.stripeCustomerId ? await listSavedCards(business.stripeAccountId!, data.client.stripeCustomerId).catch(() => []) : [];
+  // Cards live on the client's home location's account (else the default site's).
+  const pay = await paymentContextFor(business, data.client.homeLocationId);
+  const cards = await savedCardsFor(business.id, pay, clientId);
   const done = new Set(["cancelled", "completed", "no_show"]);
   return {
     ...data,
@@ -137,10 +139,13 @@ export async function clientAccountData(business: PublicBusiness, clientId: stri
 /** Remove a saved card, after checking it belongs to this client's Stripe customer. */
 export async function removeSavedCard(business: PublicBusiness, clientId: string, paymentMethodId: string) {
   const client = await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) }));
-  if (!client?.stripeCustomerId || !business.stripeAccountId) throw new ClientAuthError("No saved cards.");
-  const pm = await stripe().paymentMethods.retrieve(paymentMethodId, {}, { stripeAccount: business.stripeAccountId });
-  if ((typeof pm.customer === "string" ? pm.customer : pm.customer?.id) !== client.stripeCustomerId) throw new ClientAuthError("That card isn't yours.");
-  await stripe().paymentMethods.detach(paymentMethodId, {}, { stripeAccount: business.stripeAccountId });
+  if (!client) throw new ClientAuthError("No saved cards.");
+  const pay = await paymentContextFor(business, client.homeLocationId);
+  const customerId = pay.accountId ? await withTenant(business.id, (tx) => customerIdFor(tx, clientId, pay.accountId)) : null;
+  if (!customerId || !pay.accountId) throw new ClientAuthError("No saved cards.");
+  const pm = await stripe().paymentMethods.retrieve(paymentMethodId, {}, { stripeAccount: pay.accountId });
+  if ((typeof pm.customer === "string" ? pm.customer : pm.customer?.id) !== customerId) throw new ClientAuthError("That card isn't yours.");
+  await stripe().paymentMethods.detach(paymentMethodId, {}, { stripeAccount: pay.accountId });
 }
 
 export async function updateClientProfile(business: PublicBusiness, clientId: string, input: { firstName: string; lastName: string; email: string | null; phone: string | null; birthday: string | null; smsOptIn: boolean; emailOptIn: boolean }) {

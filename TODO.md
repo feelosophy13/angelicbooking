@@ -136,20 +136,36 @@ sites. Model: ONE tenant, and the location is the money boundary (own Stripe acc
 everything else shared. Clients are never siloed per location inside a tenant; owners who must keep client data
 apart use separate tenants.
 
-**Phase 1 (unblocks Sterling + Fairfax)**
-- [ ] Staff schedules per location: each weekly-hours row carries a location (column exists, unused); the hours
-      editor gets a location picker per day; availability and the calendar filter use the day's location, so
-      "unassigned shows everywhere" goes away. Day-off overrides stay per staff.
-- [ ] Location on every sale (from the appointment's location, else the staff member's location that day, else
-      default); Sales report, CSV exports and payroll grouped/filterable by location.
-- [ ] Per-location booking link and QR on Settings → Online booking / Embed (`?location=` deep link already works).
-- [ ] Services "offered at": a set of locations per service (default all); the booking page and staff pickers
-      hide services not offered at the chosen location. No per-location pricing (not needed).
-- [ ] Per-location Stripe account (optional; falls back to the business account), own tax rate and receipt
-      name/address: Settings → Payments shows one Connect row per location; checkout, online deposits, refunds,
-      saved cards, membership renewals and the Connect webhook route by the sale's location. Cross-location gift
-      card / package redemptions get their own line on the Sales report for the accountant.
-- [ ] Clients: a derived "home location" (most recent visit) for the client list, reports and campaign audiences.
+**Phase 1 (unblocks Sterling + Fairfax) — built 2026-10-10, migrations 0038/0039**
+- [x] Staff schedules per location: each weekly-hours row carries a location (Staff → Weekly hours shows a
+      picker per day when the business has more than one site). Availability caps each block with that site's
+      opening hours; the calendar's location pills show who works there that weekday (day view) or on any day
+      (week/month) plus anyone with a visit booked there. A row without a location means the staff member's
+      primary site, else the default site, so "unassigned shows everywhere" is gone. Day-off overrides stay per staff.
+- [x] Location on every sale: from the appointment's location (itself from the provider's schedule that weekday,
+      else their primary site, else the default), online orders and gift cards at the default site, membership
+      renewals at the site that sold the membership. Sales report, CSV exports and payroll take `?location=`;
+      the report has a "By location" table. Payroll filtered by location can't be finalized (hours and
+      adjustments are per person, not per site).
+- [x] Per-location booking link and QR on Settings → Online booking (`?location=` deep link).
+- [x] Services "offered at": tick boxes on the service page (none/all = everywhere); the booking page, the
+      staff-side New appointment page and `bookAppointment` itself honour it. The services list shows
+      "Sterling only" style markers. No per-location pricing.
+- [x] Per-location Stripe account: Settings → Payments lists each location with "Connect its own Stripe
+      account" / "Use main account"; a location without its own account uses the business's main account.
+      Checkout, saved cards (one Stripe Customer per client per account: `client_stripe_customers`), online
+      deposits/card-on-file, refunds, deposit refunds, membership auto-renew and the Connect webhook all route
+      by the sale's / appointment's location. Own sales-tax rate per location (blank = business default).
+      Receipts and Stripe descriptors name the location when it has its own account. The Sales report shows
+      "Redeemed here, sold elsewhere" lines for gift cards, package sessions and membership credits that
+      crossed sites (gift cards, packages and memberships now remember where they were sold; sale lines
+      covered by a credit remember which package/membership and how much).
+- [x] Clients: derived "home location" (last non-cancelled appointment) on the client list (filter + badge),
+      CSV export and campaign audiences ("Usually visits").
+- [ ] Follow-ups: the client's own account page shows saved cards for their home site's account only (a card
+      saved at the other site's account isn't listed); the online shop and gift cards always sell at the
+      default site; `clients.stripe_customer_id` is legacy (copied into `client_stripe_customers`, drop later);
+      `import-vagaro.ts` still assigns appointment locations from the staff's primary site.
 
 **Phase 2**
 - [ ] Optional per-location text number and reply-to phone; per-location tax rate override; apply the location

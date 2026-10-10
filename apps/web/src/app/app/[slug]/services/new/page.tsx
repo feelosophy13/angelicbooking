@@ -5,13 +5,15 @@ import { FormPage, Input, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { CategoryPicker } from "@/components/categories";
 import { createService } from "../actions";
+import { OfferedAt } from "@/components/offered-at";
+import { listLocations } from "@/server/locations";
 
 export const metadata: Metadata = { title: "New service" };
 
 export default async function NewServicePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "services.manage");
-  const categories = await listCategories(business.id, "service");
+  const [categories, locations] = await Promise.all([listCategories(business.id, "service"), listLocations(business.id)]);
   return (
     <FormPage title="New service" backHref={`/app/${slug}/services`} backLabel="Services">
       <ActionForm action={createService}>
@@ -32,6 +34,7 @@ export default async function NewServicePage({ params }: { params: Promise<{ slu
         <Field label="Deposit" name="deposit" hint="Charged when booking online (Stripe must be connected); comes off the bill at checkout and is refunded on cancellations inside the policy window."><Input name="deposit" inputMode="decimal" defaultValue="" placeholder="0" /></Field>
         <Field label="Group size" name="capacity" hint="1 = one client at a time. Higher numbers make this a class: you schedule sessions under Classes and several clients book the same one."><Input name="capacity" type="number" min={1} max={500} defaultValue={1} /></Field>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="bookableOnline" defaultChecked className="h-4 w-4 accent-brand-600" /> Bookable online</label>
+        <OfferedAt locations={locations} selected={[]} />
         <SubmitButton pendingText="Saving…">Create service</SubmitButton>
       </ActionForm>
     </FormPage>

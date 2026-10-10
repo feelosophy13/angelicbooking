@@ -8,12 +8,16 @@ import { ActionForm, Field, SubmitButton } from "@/components/form";
 export const metadata: Metadata = { title: "Online booking" };
 import { saveBookingSettings } from "./actions";
 import QRCode from "qrcode";
+import { listLocations } from "@/server/locations";
 
 export default async function BookingSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "business.manage");
   const url = business.customDomain ? `https://${business.customDomain}` : appUrl(`/book/${business.slug}`);
   const qr = await QRCode.toDataURL(url, { margin: 1, width: 220, color: { dark: "#1c1917" } });
+  // One deep link per location: clients land on that site's services and providers.
+  const locations = await listLocations(business.id);
+  const perLocation = locations.length > 1 ? await Promise.all(locations.map(async (l) => ({ id: l.id, name: l.name, url: `${url}?location=${l.id}`, qr: await QRCode.toDataURL(`${url}?location=${l.id}`, { margin: 1, width: 180, color: { dark: "#1c1917" } }) }))) : [];
   const embed = `<a href="${url}" target="_blank" rel="noopener" style="display:inline-block;background:${business.brandColor ?? "#6d28d9"};color:#fff;padding:12px 20px;border-radius:8px;font:600 15px system-ui,sans-serif;text-decoration:none">Book now</a>`;
   return (
     <>
@@ -54,6 +58,22 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
           <p className="mt-3 text-xs text-stone-500">Put this link on your website, Instagram bio and Google Business profile.</p>
           <img src={qr} alt="QR code for your booking link" className="mt-3 h-40 w-40 rounded-lg border border-stone-200" />
           <a href={qr} download={`book-${business.slug}.png`} className="mt-1 block text-xs text-brand-700 underline">Download QR code</a>
+          {perLocation.length ? (
+            <div className="mt-4 space-y-3 border-t border-stone-200 pt-3">
+              <p className="text-sm font-medium">Per-location links</p>
+              <p className="text-xs text-stone-500">Skips the &ldquo;choose a location&rdquo; step. Use the right one on each site&apos;s Google listing, signage and social accounts.</p>
+              {perLocation.map((l) => (
+                <div key={l.id} className="flex items-start gap-3">
+                  <img src={l.qr} alt={`QR code for ${l.name}`} className="h-20 w-20 rounded border border-stone-200" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{l.name}</p>
+                    <input readOnly value={l.url} className="mt-1 w-full rounded border border-stone-300 bg-stone-50 px-2 py-1 text-xs" />
+                    <a href={l.qr} download={`book-${business.slug}-${l.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.png`} className="text-xs text-brand-700 underline">Download QR code</a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="mt-4 space-y-2 border-t border-stone-200 pt-3 text-xs text-stone-600">
             <p><b>Instagram:</b> Edit profile → Links → add the link. Business accounts: Edit profile → Action buttons → Book now → “Other” → paste the link.</p>
             <p><b>Facebook page:</b> Add action button → Book now → Link to website → paste the link.</p>

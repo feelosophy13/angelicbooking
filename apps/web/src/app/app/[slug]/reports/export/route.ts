@@ -18,22 +18,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const to = isDate(url.searchParams.get("to")) ? url.searchParams.get("to")! : from;
   const start = zonedToInstant(from, "00:00", tz);
   const end = zonedToInstant(shiftISODate(to, 1), "00:00", tz);
+  const locationId = url.searchParams.get("location") || null;
   const fmt = (d: Date | null) => (d ? new Intl.DateTimeFormat("en-CA", { timeZone: tz, dateStyle: "short", timeStyle: "short", hour12: false }).format(d) : "");
   const $ = (c: number) => (c / 100).toFixed(2);
 
   if (url.searchParams.get("kind") === "appointments") {
     const rows = await withTenant(business.id, (tx) =>
       tx
-        .select({ start: schema.appointmentItems.startAt, end: schema.appointmentItems.endAt, service: schema.appointmentItems.serviceName, staff: schema.staff.displayName, status: schema.appointments.status, source: schema.appointments.source, first: schema.clients.firstName, last: schema.clients.lastName, phone: schema.clients.phone, price: schema.appointmentItems.priceCents, notes: schema.appointments.notes })
+        .select({ start: schema.appointmentItems.startAt, end: schema.appointmentItems.endAt, service: schema.appointmentItems.serviceName, staff: schema.staff.displayName, location: schema.locations.name, status: schema.appointments.status, source: schema.appointments.source, first: schema.clients.firstName, last: schema.clients.lastName, phone: schema.clients.phone, price: schema.appointmentItems.priceCents, notes: schema.appointments.notes })
         .from(schema.appointmentItems)
         .innerJoin(schema.appointments, eq(schema.appointments.id, schema.appointmentItems.appointmentId))
         .innerJoin(schema.staff, eq(schema.staff.id, schema.appointmentItems.staffId))
         .leftJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
-        .where(and(gte(schema.appointmentItems.startAt, start), lt(schema.appointmentItems.startAt, end)))
+        .leftJoin(schema.locations, eq(schema.locations.id, schema.appointments.locationId))
+        .where(and(gte(schema.appointmentItems.startAt, start), lt(schema.appointmentItems.startAt, end), ...(locationId ? [eq(schema.appointments.locationId, locationId)] : [])))
         .orderBy(asc(schema.appointmentItems.startAt)),
     );
-    return csvResponse(`appointments-${from}-${to}.csv`, ["Start", "End", "Client", "Phone", "Service", "Staff", "Status", "Source", "Price", "Notes"], rows.map((r) => [fmt(r.start), fmt(r.end), `${r.first ?? ""} ${r.last ?? ""}`.trim(), r.phone, r.service, r.staff, r.status, r.source, $(r.price), r.notes]));
+    return csvResponse(`appointments-${from}-${to}.csv`, ["Start", "End", "Client", "Phone", "Service", "Staff", "Location", "Status", "Source", "Price", "Notes"], rows.map((r) => [fmt(r.start), fmt(r.end), `${r.first ?? ""} ${r.last ?? ""}`.trim(), r.phone, r.service, r.staff, r.location, r.status, r.source, $(r.price), r.notes]));
   }
-  const { sales } = await salesReport(business.id, start, end);
-  return csvResponse(`sales-${from}-${to}.csv`, ["Sale #", "Closed", "Client", "Status", "Subtotal", "Discount", "Tax", "Tips", "Total", "Refunded"], sales.map((s) => [s.number, fmt(s.closedAt), s.clientFirst ? `${s.clientFirst} ${s.clientLast ?? ""}`.trim() : "Walk-in", s.status, $(s.subtotalCents), $(s.discountCents), $(s.taxCents), $(s.tipCents), $(s.totalCents), $(s.refundedCents)]));
+  const { sales } = await salesReport(business.id, start, end, locationId);
+  return csvResponse(`sales-${from}-${to}.csv`, ["Sale #", "Closed", "Location", "Client", "Status", "Subtotal", "Discount", "Tax", "Tips", "Total", "Refunded"], sales.map((s) => [s.number, fmt(s.closedAt), s.locationName, s.clientFirst ? `${s.clientFirst} ${s.clientLast ?? ""}`.trim() : "Walk-in", s.status, $(s.subtotalCents), $(s.discountCents), $(s.taxCents), $(s.tipCents), $(s.totalCents), $(s.refundedCents)]));
 }

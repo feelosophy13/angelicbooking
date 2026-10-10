@@ -25,6 +25,7 @@ export interface CreateSeriesInput {
   occurrences: number;
   notes: string | null;
   createdByUserId: string;
+  locationId?: string | null;
 }
 
 export interface CreateSeriesResult {
@@ -64,6 +65,7 @@ export async function createSeries(input: CreateSeriesInput): Promise<CreateSeri
       staffId: input.staffId,
       date: instantToISODate(startAt, input.timeZone),
       service: timingFor(service),
+      locationId: input.locationId,
     });
     if (!slots.some((s) => s.getTime() === startAt.getTime())) {
       result.skipped.push({ startAt, reason: "not available" });

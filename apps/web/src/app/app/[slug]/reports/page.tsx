@@ -10,17 +10,23 @@ import { salesReport } from "@/server/sales";
 import { stockReport } from "@/server/inventory";
 import { formatDateLong, formatMoney, shiftISODate } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Empty, LinkButton } from "@/components/ui";
+import { LocationFilter } from "@/components/location-filter";
+import { listLocations } from "@/server/locations";
 
 export default async function ReportsPage({
   params,
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; location?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
   const { business } = await requireAction(slug, "reports.view");
+  const locations = await listLocations(business.id);
+  const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
+  const locName = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "Unknown") : "No location");
+  const lq = locationFilter ? `&location=${locationFilter}` : "";
   const tz = business.timezone;
   const today = instantToISODate(new Date(), tz);
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -30,9 +36,9 @@ export default async function ReportsPage({
   const prevFrom = shiftISODate(from, -days);
   const prevTo = shiftISODate(from, -1);
   const stock = await stockReport(business.id);
-  const [{ sales, byStaff, byMethod, byService, appts }, prev] = await Promise.all([
-    salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
-    salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz)),
+  const [{ sales, byStaff, byMethod, byService, appts, byLocation, crossLocation }, prev] = await Promise.all([
+    salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter),
+    salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter),
   ]);
   const money = (c: number) => formatMoney(Number(c), business.currency);
   type K = "subtotalCents" | "discountCents" | "taxCents" | "tipCents" | "totalCents" | "refundedCents";
@@ -52,16 +58,18 @@ export default async function ReportsPage({
           <Input type="date" name="from" defaultValue={from} className="w-40" />
           <span className="text-sm text-stone-500">to</span>
           <Input type="date" name="to" defaultValue={to} className="w-40" />
+          {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
           <Button type="submit" variant="secondary" size="sm">Show</Button>
         </form>
-        <LinkButton href={`?from=${today}&to=${today}`} size="sm">Today</LinkButton>
-        <LinkButton href={`?from=${shiftISODate(today, -6)}&to=${today}`} size="sm">Last 7 days</LinkButton>
-        <LinkButton href={`?from=${today.slice(0, 8)}01&to=${today}`} size="sm">This month</LinkButton>
-        <LinkButton href={`?from=${prevFrom}&to=${prevTo}`} size="sm" aria-label="Previous period">‹ Prior</LinkButton>
-        <LinkButton href={`/app/${slug}/reports/export?kind=sales&from=${from}&to=${to}`} size="sm"><Download className="h-4 w-4" /> Sales CSV</LinkButton>
-        <LinkButton href={`/app/${slug}/reports/export?kind=appointments&from=${from}&to=${to}`} size="sm"><Download className="h-4 w-4" /> Appointments CSV</LinkButton>
+        <LocationFilter locations={locations} current={locationFilter} query={`from=${from}&to=${to}`} allLabel="All" />
+        <LinkButton href={`?from=${today}&to=${today}${lq}`} size="sm">Today</LinkButton>
+        <LinkButton href={`?from=${shiftISODate(today, -6)}&to=${today}${lq}`} size="sm">Last 7 days</LinkButton>
+        <LinkButton href={`?from=${today.slice(0, 8)}01&to=${today}${lq}`} size="sm">This month</LinkButton>
+        <LinkButton href={`?from=${prevFrom}&to=${prevTo}${lq}`} size="sm" aria-label="Previous period">‹ Prior</LinkButton>
+        <LinkButton href={`/app/${slug}/reports/export?kind=sales&from=${from}&to=${to}${lq}`} size="sm"><Download className="h-4 w-4" /> Sales CSV</LinkButton>
+        <LinkButton href={`/app/${slug}/reports/export?kind=appointments&from=${from}&to=${to}${lq}`} size="sm"><Download className="h-4 w-4" /> Appointments CSV</LinkButton>
       </PageHeader>
-      <p className="mb-4 text-sm text-stone-600">{from === to ? formatDateLong(from) : `${formatDateLong(from)} – ${formatDateLong(to)}`}</p>
+      <p className="mb-4 text-sm text-stone-600">{from === to ? formatDateLong(from) : `${formatDateLong(from)} – ${formatDateLong(to)}`}{locationFilter ? ` · ${locName(locationFilter)}` : ""}</p>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {(
@@ -92,6 +100,35 @@ export default async function ReportsPage({
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        {locations.length > 1 ? (
+          <Card className="lg:col-span-2">
+            <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By location</h2>
+            {byLocation.length === 0 ? <div className="p-4"><Empty title="No closed sales in this range" /></div> : (
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Location</th><th className="px-4 py-2 text-right">Sales</th><th className="px-4 py-2 text-right">Tips</th><th className="px-4 py-2 text-right">Tax</th><th className="px-4 py-2 text-right">Refunded</th><th className="px-4 py-2 text-right">Tickets</th></tr></thead>
+                <tbody className="divide-y divide-stone-100">
+                  {byLocation.map((r) => (
+                    <tr key={r.locationId ?? "none"} className={r.locationId === locationFilter ? "bg-brand-50/40" : ""}>
+                      <td className="px-4 py-2"><Link href={`?from=${from}&to=${to}&location=${r.locationId ?? ""}`} className="hover:underline">{r.locationName ?? "No location"}</Link></td>
+                      <td className="px-4 py-2 text-right">{money(r.sales)}</td><td className="px-4 py-2 text-right">{money(r.tips)}</td><td className="px-4 py-2 text-right">{money(r.tax)}</td><td className="px-4 py-2 text-right">{money(r.refunded)}</td><td className="px-4 py-2 text-right">{Number(r.count)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table></div>
+            )}
+            {crossLocation.length ? (
+              <div className="border-t border-stone-200 px-4 py-3 text-sm">
+                <p className="mb-1 font-medium text-stone-700">Redeemed here, sold elsewhere</p>
+                <p className="mb-2 text-xs text-stone-500">Gift cards, package sessions and membership credits bought at one location and used at another. The selling location owes the redeeming one.</p>
+                <ul className="space-y-1">
+                  {crossLocation.map((r, i) => (
+                    <li key={i} className="flex justify-between gap-3"><span>{r.kind === "gift_card" ? "Gift cards" : r.kind === "package" ? "Package sessions" : "Membership credits"} sold at <b>{locName(r.soldAt)}</b>, used at <b>{locName(r.redeemedAt)}</b> <span className="text-xs text-stone-500">× {r.count}</span></span><span className="font-medium">{money(r.amount)}</span></li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </Card>
+        ) : null}
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By staff</h2>
           {byStaff.length === 0 ? <div className="p-4"><Empty title="No closed sales in this range" /></div> : (
@@ -150,12 +187,13 @@ export default async function ReportsPage({
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Closed sales</h2>
           {sales.length === 0 ? <div className="p-4"><Empty title="Nothing closed in this range" /></div> : (
             <div className="overflow-x-auto"><table className="w-full text-sm">
-              <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">#</th><th className="px-4 py-2">When</th><th className="px-4 py-2">Client</th><th className="px-4 py-2 text-right">Total</th><th className="px-4 py-2 text-right">Tips</th><th className="px-4 py-2">Status</th></tr></thead>
+              <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">#</th><th className="px-4 py-2">When</th>{locations.length > 1 ? <th className="px-4 py-2">Location</th> : null}<th className="px-4 py-2">Client</th><th className="px-4 py-2 text-right">Total</th><th className="px-4 py-2 text-right">Tips</th><th className="px-4 py-2">Status</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {sales.map((s) => (
                   <tr key={s.id}>
                     <td className="px-4 py-2"><Link href={`/app/${slug}/sales/${s.id}`} className="text-brand-700 underline">{s.number}</Link></td>
                     <td className="px-4 py-2">{s.closedAt ? fmt.format(s.closedAt) : ""}</td>
+                    {locations.length > 1 ? <td className="px-4 py-2 text-stone-600">{s.locationName ?? ""}</td> : null}
                     <td className="px-4 py-2">{s.clientFirst ? `${s.clientFirst} ${s.clientLast ?? ""}` : "Walk-in"}</td>
                     <td className="px-4 py-2 text-right">{money(s.totalCents)}</td>
                     <td className="px-4 py-2 text-right">{money(s.tipCents)}</td>

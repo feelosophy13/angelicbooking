@@ -10,8 +10,9 @@ import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
 import { duration } from "@/lib/format";
 import { Button, Card, Field, Input, PageHeader, Select, Empty } from "@/components/ui";
 import { BookForm } from "./book-form";
+import { listLocations, servicesHiddenAt } from "@/server/locations";
 
-type SP = { date?: string; serviceId?: string; staffId?: string; clientId?: string; time?: string };
+type SP = { date?: string; serviceId?: string; staffId?: string; clientId?: string; time?: string; location?: string };
 
 export default async function NewAppointmentPage({
   params,
@@ -26,14 +27,21 @@ export default async function NewAppointmentPage({
   const tz = business.timezone;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : instantToISODate(new Date(), tz);
 
-  const { services, clients } = await withTenant(business.id, async (tx) => ({
-    services: await tx.select().from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
-    clients: await tx.select().from(schema.clients).orderBy(asc(schema.clients.lastName), asc(schema.clients.firstName)).limit(500),
-  }));
+  const locations = await listLocations(business.id);
+  const multi = locations.length > 1;
+  // Multi-site businesses pick the location first; it filters services, providers and open times.
+  const location = multi ? (locations.find((l) => l.id === sp.location) ?? locations.find((l) => l.isDefault) ?? locations[0] ?? null) : null;
+  const { services, clients } = await withTenant(business.id, async (tx) => {
+    const hidden = await servicesHiddenAt(tx, location?.id);
+    return {
+      services: (await tx.select().from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name))).filter((s) => !hidden.has(s.id)),
+      clients: await tx.select().from(schema.clients).orderBy(asc(schema.clients.lastName), asc(schema.clients.firstName)).limit(500),
+    };
+  });
 
   const service = services.find((s) => s.id === sp.serviceId) ?? services[0] ?? null;
   const preselectTime = /^\d{2}:\d{2}$/.test(sp.time ?? "") ? sp.time! : null;
-  const eligibleStaff = service ? await staffForService(business.id, service.id) : [];
+  const eligibleStaff = service ? await staffForService(business.id, service.id, location?.id) : [];
   const staffId = eligibleStaff.some((s) => s.id === sp.staffId) ? sp.staffId! : eligibleStaff[0]?.id;
   const slots =
     service && staffId
@@ -45,6 +53,7 @@ export default async function NewAppointmentPage({
           date,
           service: timingFor(service),
           notBefore: new Date(),
+          locationId: location?.id,
         })
       : [];
 
@@ -54,6 +63,13 @@ export default async function NewAppointmentPage({
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <Card className="p-4">
           <form className="space-y-3">
+            {multi ? (
+              <Field label="Location">
+                <Select name="location" defaultValue={location?.id ?? ""}>
+                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </Select>
+              </Field>
+            ) : null}
             <Field label="Client">
               <Select name="clientId" defaultValue={sp.clientId ?? ""}>
                 <option value="">Walk-in / no client</option>
@@ -95,6 +111,7 @@ export default async function NewAppointmentPage({
               clientId={sp.clientId ?? ""}
               serviceId={service.id}
               staffId={staffId}
+              locationId={location?.id ?? null}
               dateLabel={formatDateLong(date)}
               slots={slots.map((d) => ({ iso: d.toISOString(), label: formatTime(d, tz) }))}
               preselectIso={preselectTime ? (slots.find((d) => formatTime(d, tz) === formatTime(zonedToInstant(date, preselectTime, tz), tz))?.toISOString() ?? null) : null}

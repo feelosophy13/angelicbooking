@@ -7,8 +7,8 @@ import { notFound } from "next/navigation";
 import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { getSale } from "@/server/sales";
-import { listSavedCards } from "@/server/stripe-connect";
-import { isStripeConfigured } from "@/lib/stripe";
+import { savedCardsFor } from "@/server/stripe-connect";
+import { paymentContextForSale } from "@/server/locations";
 import { formatMoney } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
 
@@ -35,8 +35,9 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const money = (c: number) => formatMoney(c, cur);
   const due = sale.totalCents - sale.paidCents;
   const open = sale.status === "open";
-  const stripeReady = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled;
-  const savedCards = stripeReady && client?.stripeCustomerId ? await listSavedCards(business.stripeAccountId!, client.stripeCustomerId).catch(() => []) : [];
+  const pay = await paymentContextForSale(business, sale.id);
+  const stripeReady = pay.ready;
+  const savedCards = await savedCardsFor(business.id, pay, client?.id);
   const staffOnTicket = [...new Set(lines.filter((l) => l.kind === "service").map((l) => l.staffId).filter((x): x is string => !!x))]
     .map((id) => staff.find((s) => s.id === id))
     .filter((s): s is NonNullable<typeof s> => !!s)
@@ -115,7 +116,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               <tfoot className="text-sm">
                 <tr><td className="pt-3 text-stone-500">Subtotal</td><td className="pt-3 text-right">{money(sale.subtotalCents)}</td><td /></tr>
                 {sale.discountCents > 0 ? <tr><td className="text-stone-500">Discount{sale.discountNote ? ` (${sale.discountNote})` : ""}</td><td className="text-right">−{money(sale.discountCents)}</td><td /></tr> : null}
-                {sale.taxCents > 0 ? <tr><td className="text-stone-500">Tax ({(business.taxRateBps / 100).toFixed(2)}%)</td><td className="text-right">{money(sale.taxCents)}</td><td /></tr> : null}
+                {sale.taxCents > 0 ? <tr><td className="text-stone-500">Tax ({(pay.taxRateBps / 100).toFixed(2)}%)</td><td className="text-right">{money(sale.taxCents)}</td><td /></tr> : null}
                 {sale.tipCents > 0 ? <tr><td className="text-stone-500">Tips</td><td className="text-right">{money(sale.tipCents)}</td><td /></tr> : null}
                 <tr className="text-base font-semibold"><td className="pt-2">Total</td><td className="pt-2 text-right">{money(sale.totalCents)}</td><td /></tr>
                 {sale.paidCents > 0 ? <tr><td className="text-stone-500">Paid</td><td className="text-right">{money(sale.paidCents)}</td><td /></tr> : null}

@@ -6,7 +6,7 @@ import { SubmitButton } from "@/components/form";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean } | null;
 
-export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean }) {
+export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
   const d = props.defaults;
   return (
@@ -14,6 +14,7 @@ export function BookingForm(props: { slug: string; serviceId: string; staffId: s
       <input type="hidden" name="slug" value={props.slug} />
       {props.embed ? <input type="hidden" name="embed" value="1" /> : null}
       {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
+      {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}
       <input type="hidden" name="serviceId" value={props.serviceId} />
       <input type="hidden" name="staffId" value={props.staffId} />
       <input type="hidden" name="startAt" value={props.startAt} />

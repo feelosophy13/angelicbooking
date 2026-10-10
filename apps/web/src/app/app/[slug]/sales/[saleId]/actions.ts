@@ -30,6 +30,7 @@ import { receiptEmail } from "@/lib/notify/templates";
 import { setFlash } from "@/lib/flash";
 import { formatMoney } from "@/lib/utils";
 import { getSale } from "@/server/sales";
+import { paymentContextForSale } from "@/server/locations";
 
 export type SaleActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -122,9 +123,10 @@ export async function payWithSavedCard(_prev: SaleActionState, formData: FormDat
   const ctx = await ctxFor(d.slug);
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
-  if (!ctx.business.stripeAccountId || !ctx.business.stripeChargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
+  const pay = await paymentContextForSale(ctx.business, d.saleId);
+  if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
   try {
-    await chargeCardOnFile({ businessId: ctx.business.id, accountId: ctx.business.stripeAccountId, saleId: d.saleId, paymentMethodId: d.paymentMethodId, amountCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    await chargeCardOnFile({ businessId: ctx.business.id, accountId: pay.accountId, saleId: d.saleId, paymentMethodId: d.paymentMethodId, amountCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
   } catch (e) {
     return friendly(e);
   }
@@ -140,10 +142,11 @@ export async function startCardPayment(input: { slug: string; saleId: string; am
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
   if (!isStripeConfigured()) return { error: "Stripe is not configured on the server." };
-  if (!ctx.business.stripeAccountId || !ctx.business.stripeChargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
+  const pay = await paymentContextForSale(ctx.business, d.saleId);
+  if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
   try {
-    const r = await createCardPaymentIntent({ businessId: ctx.business.id, accountId: ctx.business.stripeAccountId, saleId: d.saleId, amountCents: cents, saveCard: d.saveCard, actorUserId: ctx.user.id });
-    return { clientSecret: r.clientSecret, accountId: ctx.business.stripeAccountId, amount: r.amount };
+    const r = await createCardPaymentIntent({ businessId: ctx.business.id, accountId: pay.accountId, saleId: d.saleId, amountCents: cents, saveCard: d.saveCard, actorUserId: ctx.user.id });
+    return { clientSecret: r.clientSecret, accountId: pay.accountId, amount: r.amount };
   } catch (e) {
     const f = friendly(e);
     return { error: f?.error ?? "Could not start payment" };
@@ -154,8 +157,9 @@ export async function startCardPayment(input: { slug: string; saleId: string; am
 export async function finishCardPayment(input: { slug: string; saleId: string; paymentIntentId: string }): Promise<SaleActionState> {
   const d = base.extend({ paymentIntentId: z.string().min(1) }).parse(input);
   const ctx = await ctxFor(d.slug);
-  if (!ctx.business.stripeAccountId) return { error: "Stripe not connected." };
-  const pi = await stripe().paymentIntents.retrieve(d.paymentIntentId, { expand: ["latest_charge"] }, { stripeAccount: ctx.business.stripeAccountId });
+  const pay = await paymentContextForSale(ctx.business, d.saleId);
+  if (!pay.accountId) return { error: "Stripe not connected." };
+  const pi = await stripe().paymentIntents.retrieve(d.paymentIntentId, { expand: ["latest_charge"] }, { stripeAccount: pay.accountId });
   if (pi.metadata.saleId !== d.saleId) return { error: "Payment does not belong to this sale." };
   if (pi.status !== "succeeded") return { error: `Payment status: ${pi.status}` };
   const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
@@ -177,7 +181,8 @@ export async function refund(_prev: SaleActionState, formData: FormData): Promis
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter a refund amount." };
   try {
-    await refundPayment({ businessId: ctx.business.id, accountId: ctx.business.stripeAccountId, paymentId: d.paymentId, amountCents: cents, reason: d.reason?.trim() || null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    const pay = await paymentContextForSale(ctx.business, d.saleId);
+    await refundPayment({ businessId: ctx.business.id, accountId: pay.accountId, paymentId: d.paymentId, amountCents: cents, reason: d.reason?.trim() || null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
   } catch (e) {
     return friendly(e);
   }
@@ -236,13 +241,15 @@ export async function emailReceipt(formData: FormData) {
   const { sale, lines, payments, client } = data;
   const email = client.email!;
   const b = ctx.business;
+  // The receipt names the merchant that took the money: the location when it has its own Stripe account.
+  const pay = await paymentContextForSale(b, sale.id);
   const m = (c: number) => formatMoney(c, b.currency);
   const t = receiptEmail({
-    businessName: b.name,
+    businessName: pay.name,
     logoUrl: b.logoUrl,
     brandColor: b.brandColor,
-    businessPhone: b.phone,
-    address: b.addressLine,
+    businessPhone: pay.phone,
+    address: pay.addressLine,
     number: sale.number,
     when: new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: b.timezone }).format(sale.closedAt ?? sale.createdAt),
     clientName: `${client.firstName} ${client.lastName ?? ""}`.trim(),

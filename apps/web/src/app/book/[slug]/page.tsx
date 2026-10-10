@@ -7,6 +7,7 @@ import { duration } from "@/lib/format";
 import { BookingForm, WaitlistForm } from "./forms";
 import { PaidBookingForm } from "./payment-form";
 import { onlinePaymentRequirement } from "@/server/online-payments";
+import { paymentContextFor } from "@/server/locations";
 import { publicSessions } from "@/server/classes";
 import { brandHex } from "@/lib/brand";
 import { describeHours } from "@/lib/hours";
@@ -43,6 +44,9 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     );
   }
   const { services, categories, staff } = await getPublicMenu(business.id, locations.length > 1 ? location?.id : null);
+  // Money for this booking goes to the chosen location's account (deposits, card on file).
+  const pay = await paymentContextFor(business, location?.id);
+  const locId = locations.length > 1 ? (location?.id ?? null) : null;
   const me = business.clientAccountsEnabled ? await currentClient(business) : null;
   const hasPromos = await withTenant(business.id, async (tx) => !!(await tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.active, true) })));
   const defaults = me ? { firstName: me.firstName, lastName: me.lastName, phone: me.phone, email: me.email, smsOptIn: me.smsOptIn } : null;
@@ -135,7 +139,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         </>
       );
     }
-    const pay = onlinePaymentRequirement(business, service);
+    const req = onlinePaymentRequirement(business, service, pay);
     const sessionDate = instantToISODate(chosen.startAt, tz);
     return (
       <>
@@ -144,12 +148,12 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <div className="mb-4 rounded-xl border p-4 text-sm" style={{ background: "var(--brand-tint)", borderColor: "var(--brand-ring)" }}>
           <p className="font-medium">{service.name} · {formatMoney(service.priceCents, business.currency)} per person</p>
           <p>{formatDateLong(sessionDate)} at {formatTime(chosen.startAt, tz)} with {chosen.staffName} · {chosen.seatsLeft} {chosen.seatsLeft === 1 ? "seat" : "seats"} left</p>
-          {pay.mode === "deposit" ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(pay.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : pay.mode === "card" ? <p className="mt-1 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
+          {req.mode === "deposit" ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : req.mode === "card" ? <p className="mt-1 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
         </div>
-        {pay.mode === "none" ? (
-          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} />
+        {req.mode === "none" ? (
+          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         ) : (
-          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} mode={pay.mode} amountLabel={formatMoney(pay.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} />
+          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} mode={req.mode} amountLabel={formatMoney(req.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         )}
       </>
     );
@@ -177,8 +181,8 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const daysInMonth = new Date(Date.UTC(Number(monthStart.slice(0, 4)), Number(monthStart.slice(5, 7)), 0)).getUTCDate();
     const firstDow = new Date(monthStart + "T00:00:00Z").getUTCDay();
     const maxDate = shiftISODate(today, business.maxAdvanceDays);
-    const available = new Set(await getAvailableDates(business, service.id, staffChoice as "any" | string, monthStart < today ? today : monthStart, daysInMonth));
-    const slots = date ? await getPublicSlots(business, service.id, staffChoice as "any" | string, date) : [];
+    const available = new Set(await getAvailableDates(business, service.id, staffChoice as "any" | string, monthStart < today ? today : monthStart, daysInMonth, locId));
+    const slots = date ? await getPublicSlots(business, service.id, staffChoice as "any" | string, date, new Date(), locId) : [];
     const prevMonth = shiftISODate(monthStart, -1).slice(0, 7);
     const nextMonth = shiftISODate(monthStart, daysInMonth).slice(0, 7);
     const monthLabel = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(monthStart + "T00:00:00Z"));
@@ -233,7 +237,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
 
   // ---- Step 4: details + confirm
   const startAt = new Date(sp.time);
-  const slots = await getPublicSlots(business, service.id, staffChoice as "any" | string, date);
+  const slots = await getPublicSlots(business, service.id, staffChoice as "any" | string, date, new Date(), locId);
   const slot = slots.find((s) => s.at.getTime() === startAt.getTime());
   if (!slot) {
     return (
@@ -244,7 +248,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       </>
     );
   }
-  const pay = onlinePaymentRequirement(business, service);
+  const req = onlinePaymentRequirement(business, service, pay);
   return (
     <>
       <Step n={4} title="Your details" />
@@ -252,10 +256,10 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       <div className="mb-4 rounded-xl border p-4 text-sm" style={{ background: "var(--brand-tint)", borderColor: "var(--brand-ring)" }}>
         <p className="font-medium">{service.name} · {formatMoney(service.priceCents, business.currency)}</p>
         <p>{formatDateLong(date)} at {formatTime(startAt, tz)} with {slot.staffName}</p>
-        {pay.mode === "deposit" ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(pay.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : pay.mode === "card" ? <p className="mt-1 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : service.depositCents > 0 ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(service.depositCents, business.currency)} deposit may be required; the salon will confirm.</p> : null}
+        {req.mode === "deposit" ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : req.mode === "card" ? <p className="mt-1 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : service.depositCents > 0 ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(service.depositCents, business.currency)} deposit may be required; the salon will confirm.</p> : null}
       </div>
-      {pay.mode === "none" ? (
-        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} />
+      {req.mode === "none" ? (
+        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
       ) : (
         <PaidBookingForm
           slug={slug}
@@ -264,14 +268,15 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           startAt={startAt.toISOString()}
           policy={business.bookingPolicy}
           cancelWindowHours={business.cancelWindowHours}
-          mode={pay.mode}
-          amountLabel={formatMoney(pay.amountCents, business.currency)}
+          mode={req.mode}
+          amountLabel={formatMoney(req.amountCents, business.currency)}
           publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!}
           brand={brandHex(business.brandColor)}
           referrals={business.loyaltyEnabled}
           defaults={defaults}
           promos={hasPromos}
           embed={embed}
+          locationId={locId}
         />
       )}
     </>

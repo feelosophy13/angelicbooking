@@ -8,6 +8,7 @@ import { requireAction } from "@/lib/tenant";
 import { ensureCategory } from "@/server/categories";
 import { f, formAction } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
+import { setServiceLocations } from "@/server/locations";
 
 const fields = z.object({
   slug: z.string(),
@@ -31,11 +32,16 @@ async function resolveCategory(businessId: string, d: { categoryId?: string; cat
   return d.categoryId || null;
 }
 
-export const createService = formAction(fields, async (d) => {
+/** `loc_<id>` checkboxes → the "offered at" set (none/all ticked = everywhere). */
+function pickedLocations(raw: FormData): string[] {
+  return [...raw.keys()].filter((k) => k.startsWith("loc_")).map((k) => k.slice(4));
+}
+
+export const createService = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "services.manage");
   const categoryId = await resolveCategory(ctx.business.id, d);
-  await withTenant(ctx.business.id, (tx) =>
-    tx.insert(schema.services).values({
+  await withTenant(ctx.business.id, async (tx) => {
+    const [row] = await tx.insert(schema.services).values({
       businessId: ctx.business.id,
       categoryId,
       name: d.name,
@@ -48,18 +54,20 @@ export const createService = formAction(fields, async (d) => {
       depositCents: d.deposit,
       capacity: d.capacity,
       bookableOnline: d.bookableOnline,
-    }),
-  );
+    }).returning({ id: schema.services.id });
+    if (raw.has("hasLocations")) await setServiceLocations(tx, ctx.business.id, row!.id, pickedLocations(raw));
+  });
   await setFlash(`${d.name} added`);
   revalidatePath(`/app/${d.slug}/services`);
   redirect(`/app/${d.slug}/services`);
 });
 
-export const updateService = formAction(fields, async (d) => {
+export const updateService = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "services.manage");
   const categoryId = await resolveCategory(ctx.business.id, d);
-  await withTenant(ctx.business.id, (tx) =>
-    tx
+  await withTenant(ctx.business.id, async (tx) => {
+    if (raw.has("hasLocations")) await setServiceLocations(tx, ctx.business.id, d.serviceId ?? "", pickedLocations(raw));
+    await tx
       .update(schema.services)
       .set({
         categoryId,
@@ -74,8 +82,8 @@ export const updateService = formAction(fields, async (d) => {
         capacity: d.capacity,
         bookableOnline: d.bookableOnline,
       })
-      .where(eq(schema.services.id, d.serviceId ?? "")),
-  );
+      .where(eq(schema.services.id, d.serviceId ?? ""));
+  });
   revalidatePath(`/app/${d.slug}/services`);
   revalidatePath(`/app/${d.slug}/services/${d.serviceId}`);
   return "Service saved";

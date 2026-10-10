@@ -139,6 +139,13 @@ export const locations = pgTable(
     // Opening hours by weekday ("0" Sunday … "6" Saturday): {open, close} or null when closed.
     // Null overall = no hours set (staff schedules alone decide availability).
     hours: jsonb("hours").$type<Record<string, { open: string; close: string } | null>>(),
+    // The location is the money boundary: its own Stripe Connect account (null = the
+    // business's main account) and its own sales-tax rate (null = the business default).
+    // Receipts and Stripe descriptors use the location's name, address and phone.
+    stripeAccountId: text("stripe_account_id"),
+    stripeChargesEnabled: boolean("stripe_charges_enabled").notNull().default(false),
+    stripeDetailsSubmitted: boolean("stripe_details_submitted").notNull().default(false),
+    taxRateBps: integer("tax_rate_bps"),
     isDefault: boolean("is_default").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -323,6 +330,21 @@ export const staffServices = pgTable(
   (t) => [primaryKey({ columns: [t.staffId, t.serviceId] }), index("staff_services_business_idx").on(t.businessId)],
 );
 
+// Where a service is offered. No rows for a service = offered at every location.
+export const serviceLocations = pgTable(
+  "service_locations",
+  {
+    businessId: businessId(),
+    serviceId: text("service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "cascade" }),
+    locationId: text("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.serviceId, t.locationId] }), index("service_locations_business_idx").on(t.businessId)],
+);
+
 export const clients = pgTable(
   "clients",
   {
@@ -334,8 +356,12 @@ export const clients = pgTable(
     phone: text("phone"),
     notes: text("notes"), // general/private notes
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
-    // Stripe customer on the BUSINESS's connected account (Phase 2)
+    // Legacy: Stripe customer on the business's main account. Superseded by client_stripe_customers
+    // (one customer per connected account); kept so nothing is lost until the next cleanup.
     stripeCustomerId: text("stripe_customer_id"),
+    // Derived: location of the most recent (non-cancelled) appointment. Clients are shared
+    // across a business's locations; this only drives list filters, reports and audiences.
+    homeLocationId: text("home_location_id").references(() => locations.id, { onDelete: "set null" }),
     smsOptIn: boolean("sms_opt_in").notNull().default(true),
     emailOptIn: boolean("email_opt_in").notNull().default(true),
     birthday: date("birthday"), // for birthday messages; year may be 1900 when unknown
@@ -357,6 +383,22 @@ export const clients = pgTable(
     uniqueIndex("clients_referral_code_uq").on(t.businessId, t.referralCode),
     index("clients_birthday_idx").on(t.businessId, t.birthday),
   ],
+);
+
+// Stripe Customer per (client, connected account). A business with several locations can
+// have several Stripe accounts, and a customer object only exists on one of them.
+export const clientStripeCustomers = pgTable(
+  "client_stripe_customers",
+  {
+    businessId: businessId(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    stripeAccountId: text("stripe_account_id").notNull(),
+    customerId: text("customer_id").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.clientId, t.stripeAccountId] }), index("client_stripe_customers_business_idx").on(t.businessId)],
 );
 
 // ---------------------------------------------------------------------------
@@ -820,6 +862,8 @@ export interface CampaignAudience {
   tag?: string | null;
   /** Never completed a visit */
   neverVisited?: boolean | null;
+  /** Home location (last seen at) */
+  locationId?: string | null;
 }
 
 export const campaigns = pgTable(

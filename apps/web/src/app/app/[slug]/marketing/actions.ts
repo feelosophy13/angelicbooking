@@ -17,14 +17,15 @@ const audienceFields = {
   staffId: z.string().optional(),
   tag: f.optional(40),
   neverVisited: f.checkbox(),
+  locationId: z.string().optional(),
 };
 
-function parseAudience(d: { visitedWithinDays?: string; lapsedDays?: string; serviceId?: string; staffId?: string; tag: string | null; neverVisited: boolean }) {
+function parseAudience(d: { visitedWithinDays?: string; lapsedDays?: string; serviceId?: string; staffId?: string; tag: string | null; neverVisited: boolean; locationId?: string }) {
   const n = (v?: string) => (v ? Number(v) : null);
   const vw = n(d.visitedWithinDays);
   const ld = n(d.lapsedDays);
   if ((vw != null && (!Number.isInteger(vw) || vw < 1)) || (ld != null && (!Number.isInteger(ld) || ld < 1))) throw new FormError("Days must be whole numbers");
-  return { visitedWithinDays: vw, lapsedDays: ld, serviceId: d.serviceId || null, staffId: d.staffId || null, tag: d.tag, neverVisited: d.neverVisited };
+  return { visitedWithinDays: vw, lapsedDays: ld, serviceId: d.serviceId || null, staffId: d.staffId || null, tag: d.tag, neverVisited: d.neverVisited, locationId: d.locationId || null };
 }
 
 const campaignFields = z.object({ slug: z.string(), campaignId: z.string().optional(), name: f.text(1, 100), channel: z.enum(["email", "sms"]), subject: f.optional(150), body: f.text(1, 2000), ...audienceFields });

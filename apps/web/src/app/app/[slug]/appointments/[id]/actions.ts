@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { chargeCardOnFile, openSaleForAppointment, SaleError } from "@/server/sales";
 import { refundDeposit } from "@/server/online-payments";
+import { paymentContextForAppointment } from "@/server/locations";
 import { cancelSeriesFrom } from "@/server/series";
 import { queueReviewRequest } from "@/server/reviews";
 import { notifyAppointment } from "@/lib/notify";
@@ -119,7 +120,8 @@ export async function chargeNoShowFee(_prev: ActionState, formData: FormData): P
   const ctx = await requireAction(d.slug, "checkout.take");
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
-  if (!ctx.business.stripeAccountId || !ctx.business.stripeChargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
+  const pay = await paymentContextForAppointment(ctx.business, d.appointmentId);
+  if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
   try {
     const saleId = await openSaleForAppointment({ businessId: ctx.business.id, appointmentId: d.appointmentId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, currency: ctx.business.currency });
     // Replace the service lines with a single fee line so the ticket reflects what was charged.
@@ -130,7 +132,7 @@ export async function chargeNoShowFee(_prev: ActionState, formData: FormData): P
       await tx.insert(dbSchema.saleLines).values({ businessId: ctx.business.id, saleId, kind: "fee", name: "No-show fee", quantity: 1, unitCents: cents, amountCents: cents, taxable: false });
       await tx.update(dbSchema.sales).set({ subtotalCents: cents, discountCents: 0, taxCents: 0, tipCents: 0, totalCents: cents }).where(eq(dbSchema.sales.id, saleId));
     });
-    await chargeCardOnFile({ businessId: ctx.business.id, accountId: ctx.business.stripeAccountId, saleId, paymentMethodId: d.paymentMethodId, amountCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    await chargeCardOnFile({ businessId: ctx.business.id, accountId: pay.accountId, saleId, paymentMethodId: d.paymentMethodId, amountCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
     await setAppointmentStatus(ctx.business.id, d.appointmentId, "no_show", ctx.user.id, "No-show fee charged");
   } catch (e) {
     if (e instanceof SaleError || e instanceof BookingError) return { error: e.message };
@@ -145,7 +147,8 @@ export async function refundDepositAction(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
   const ctx = await requireAction(slug, "reports.view"); // same bar as other refunds
   try {
-    const done = await refundDeposit({ businessId: ctx.business.id, accountId: ctx.business.stripeAccountId, appointmentId, actorUserId: ctx.user.id, reason: "Refunded by staff" });
+    const pay = await paymentContextForAppointment(ctx.business, appointmentId);
+    const done = await refundDeposit({ businessId: ctx.business.id, accountId: pay.accountId, appointmentId, actorUserId: ctx.user.id, reason: "Refunded by staff" });
     await setFlash(done ? "Deposit refunded" : "Nothing to refund", done ? "success" : "info");
   } catch (e) {
     if (e instanceof BookingError) await setFlash(e.message, "error");

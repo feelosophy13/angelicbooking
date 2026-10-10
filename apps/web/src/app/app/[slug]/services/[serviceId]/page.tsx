@@ -8,6 +8,8 @@ import { FormPage, Input, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { CategoryPicker } from "@/components/categories";
 import { updateService } from "../actions";
+import { OfferedAt } from "@/components/offered-at";
+import { listLocations } from "@/server/locations";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; serviceId: string }> }): Promise<Metadata> {
   const { slug, serviceId } = await params;
@@ -19,9 +21,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function EditServicePage({ params }: { params: Promise<{ slug: string; serviceId: string }> }) {
   const { slug, serviceId } = await params;
   const { business } = await requireAction(slug, "services.manage");
-  const [service, categories] = await Promise.all([
+  const [service, categories, locations, offeredAt] = await Promise.all([
     withTenant(business.id, (tx) => tx.query.services.findFirst({ where: eq(schema.services.id, serviceId) })),
     listCategories(business.id, "service"),
+    listLocations(business.id),
+    withTenant(business.id, (tx) => tx.select({ locationId: schema.serviceLocations.locationId }).from(schema.serviceLocations).where(eq(schema.serviceLocations.serviceId, serviceId))),
   ]);
   if (!service) notFound();
   const $ = (c: number) => (c / 100).toFixed(2);
@@ -45,6 +49,7 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
         <Field label="Deposit" name="deposit" hint="Charged when booking online (Stripe must be connected); comes off the bill at checkout and is refunded on cancellations inside the policy window."><Input name="deposit" inputMode="decimal" defaultValue={service.depositCents ? $(service.depositCents) : ""} placeholder="0" /></Field>
         <Field label="Group size" name="capacity" hint="1 = one client at a time. Higher numbers make this a class: you schedule sessions under Classes and several clients book the same one."><Input name="capacity" type="number" min={1} max={500} defaultValue={service.capacity} /></Field>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="bookableOnline" defaultChecked={service.bookableOnline} className="h-4 w-4 accent-brand-600" /> Bookable online</label>
+        <OfferedAt locations={locations} selected={offeredAt.map((r) => r.locationId)} />
         <SubmitButton pendingText="Saving…">Save service</SubmitButton>
       </ActionForm>
     </FormPage>

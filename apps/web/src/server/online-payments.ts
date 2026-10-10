@@ -10,16 +10,17 @@
 import type Stripe from "stripe";
 import { eq, or } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { isStripeConfigured, platformFeeBps, stripe } from "@/lib/stripe";
+import { platformFeeBps, stripe } from "@/lib/stripe";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { BookingError } from "./booking";
 import type { PublicBusiness } from "./public-booking";
+import type { PaymentContext } from "./locations";
 
 export type PaymentMode = "deposit" | "card" | "none";
 
-/** What (if anything) the booking page must collect before this service can be booked. */
-export function onlinePaymentRequirement(business: PublicBusiness, service: { depositCents: number }): { mode: PaymentMode; amountCents: number } {
-  const ready = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+/** What (if anything) the booking page must collect before this service can be booked at this location. */
+export function onlinePaymentRequirement(business: PublicBusiness, service: { depositCents: number }, pay: PaymentContext): { mode: PaymentMode; amountCents: number } {
+  const ready = pay.ready && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
   if (!ready) return { mode: "none", amountCents: 0 };
   if (service.depositCents >= 50) return { mode: "deposit", amountCents: service.depositCents };
   if (business.requireCardOnline) return { mode: "card", amountCents: 0 };
@@ -32,12 +33,14 @@ export interface IntentMeta {
   serviceId: string;
   staffId: string;
   startAt: string; // ISO
+  /** Location the booking is for ("" when the business has one site). */
+  locationId: string;
 }
 
-/** Create the PaymentIntent / SetupIntent the browser will confirm. */
-export async function startOnlinePayment(business: PublicBusiness, mode: Exclude<PaymentMode, "none">, meta: IntentMeta, amountCents: number) {
-  const accountId = business.stripeAccountId;
-  if (!accountId) throw new BookingError("Online payments are not set up.");
+/** Create the PaymentIntent / SetupIntent the browser will confirm, on the location's Stripe account. */
+export async function startOnlinePayment(business: PublicBusiness, pay: PaymentContext, mode: Exclude<PaymentMode, "none">, meta: IntentMeta, amountCents: number) {
+  const accountId = pay.accountId;
+  if (!accountId || !pay.ready) throw new BookingError("Online payments are not set up.");
   const client = await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, meta.clientId) }));
   if (!client) throw new BookingError("Client not found.");
   const customer = await withTenant(business.id, (tx) => ensureStripeCustomer({ accountId, businessId: business.id, client, tx }));
@@ -51,7 +54,7 @@ export async function startOnlinePayment(business: PublicBusiness, mode: Exclude
         customer,
         allowed_payment_method_types: ["card"],
         setup_future_usage: "off_session",
-        description: `Deposit · ${business.name}`,
+        description: `Deposit · ${pay.name}`,
         metadata,
         ...(fee > 0 ? { application_fee_amount: fee } : {}),
       },
@@ -68,14 +71,14 @@ export type VerifiedIntent =
   | { kind: "card"; setupIntentId: string; meta: IntentMeta };
 
 /** Fetch the intent from Stripe and make sure it is ours, succeeded, and for the booking being made. */
-export async function verifyOnlineIntent(business: PublicBusiness, kind: "deposit" | "card", intentId: string, expected: Omit<IntentMeta, "clientId">): Promise<VerifiedIntent> {
-  const accountId = business.stripeAccountId;
+export async function verifyOnlineIntent(business: PublicBusiness, pay: PaymentContext, kind: "deposit" | "card", intentId: string, expected: Omit<IntentMeta, "clientId">): Promise<VerifiedIntent> {
+  const accountId = pay.accountId;
   if (!accountId) throw new BookingError("Online payments are not set up.");
   const check = (md: Stripe.Metadata) => {
-    if (md.businessId !== expected.businessId || md.serviceId !== expected.serviceId || md.staffId !== expected.staffId || md.startAt !== expected.startAt || !md.clientId) {
+    if (md.businessId !== expected.businessId || md.serviceId !== expected.serviceId || md.staffId !== expected.staffId || md.startAt !== expected.startAt || (md.locationId ?? "") !== expected.locationId || !md.clientId) {
       throw new BookingError("That payment doesn't match this booking. Please start again.");
     }
-    return { businessId: md.businessId, clientId: md.clientId, serviceId: md.serviceId, staffId: md.staffId, startAt: md.startAt } satisfies IntentMeta;
+    return { businessId: md.businessId, clientId: md.clientId, serviceId: md.serviceId, staffId: md.staffId, startAt: md.startAt, locationId: md.locationId ?? "" } satisfies IntentMeta;
   };
   if (kind === "deposit") {
     const pi = await stripe().paymentIntents.retrieve(intentId, { expand: ["latest_charge"] }, { stripeAccount: accountId });

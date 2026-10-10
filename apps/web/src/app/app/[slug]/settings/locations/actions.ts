@@ -25,14 +25,20 @@ export const createLocation = formAction(
 );
 
 export const updateLocation = formAction(
-  z.object({ slug: z.string(), locationId: f.id(), name: f.text(1, 80), addressLine1: f.optional(120), city: f.optional(60), state: f.optional(40), postalCode: f.optional(20), phone: f.optional(30), timezone: z.string().optional() }),
+  z.object({ slug: z.string(), locationId: f.id(), name: f.text(1, 80), addressLine1: f.optional(120), city: f.optional(60), state: f.optional(40), postalCode: f.optional(20), phone: f.optional(30), timezone: z.string().optional(), taxPct: z.string().trim().optional() }),
   async (d, raw) => {
     const ctx = await requireAction(d.slug, "business.manage");
     const hours = parseHoursForm((n) => { const v = raw.get(n); return typeof v === "string" ? v : null; });
+    let taxRateBps: number | null = null;
+    if (d.taxPct) {
+      const pct = Number(d.taxPct);
+      if (!Number.isFinite(pct) || pct < 0 || pct > 30) throw new FormError("Tax must be between 0 and 30%", "taxPct");
+      taxRateBps = Math.round(pct * 100);
+    }
     await withTenant(ctx.business.id, (tx) =>
       tx
         .update(schema.locations)
-        .set({ name: d.name, addressLine1: d.addressLine1, city: d.city, state: d.state, postalCode: d.postalCode, phone: d.phone, timezone: d.timezone && TIMEZONES.includes(d.timezone) ? d.timezone : null, hours })
+        .set({ name: d.name, addressLine1: d.addressLine1, city: d.city, state: d.state, postalCode: d.postalCode, phone: d.phone, timezone: d.timezone && TIMEZONES.includes(d.timezone) ? d.timezone : null, hours, taxRateBps })
         .where(eq(schema.locations.id, d.locationId)),
     );
     revalidatePath(`/app/${d.slug}/settings/locations`);

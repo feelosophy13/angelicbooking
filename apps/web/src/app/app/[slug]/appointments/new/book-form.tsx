@@ -21,6 +21,7 @@ export function BookForm(props: {
   clientId: string;
   serviceId: string;
   staffId: string;
+  locationId?: string | null;
   dateLabel: string;
   slots: { iso: string; label: string }[];
   preselectIso?: string | null;
@@ -51,6 +52,7 @@ export function BookForm(props: {
         <input type="hidden" name="clientId" value={props.clientId} />
         <input type="hidden" name="serviceId" value={props.serviceId} />
         <input type="hidden" name="staffId" value={props.staffId} />
+        {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}
         <input type="hidden" name="startAt" value={picked ?? ""} />
         <Field label="Notes (optional)"><Textarea name="notes" rows={2} /></Field>
         <div className="grid grid-cols-2 gap-3">

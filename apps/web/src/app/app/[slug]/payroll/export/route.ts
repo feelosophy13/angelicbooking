@@ -4,6 +4,8 @@ import { requireAction } from "@/lib/tenant";
 import { defaultPeriod, runPayroll } from "@/server/payroll";
 import { buildPayrollWorkbook, buildW2Workbook } from "@/server/payroll-xlsx";
 import { formatDateLong } from "@/lib/utils";
+import { eq } from "drizzle-orm";
+import { schema, withTenant } from "@angelic/db";
 
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -15,8 +17,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const end = isDate(url.searchParams.get("end")) ? url.searchParams.get("end")! : defaultPeriod(today).end;
   const overtime = url.searchParams.get("overtime") === "1";
   const kind = url.searchParams.get("kind") === "w2" ? "w2" : "full";
-  const result = await runPayroll(business, { start, end }, overtime);
-  const periodLabel = `${formatDateLong(start)} - ${formatDateLong(end)}`;
+  const locationId = url.searchParams.get("location") || null;
+  const result = await runPayroll(business, { start, end }, overtime, locationId);
+  const locationName = locationId ? (await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId), columns: { name: true } })))?.name : null;
+  const periodLabel = `${formatDateLong(start)} - ${formatDateLong(end)}${locationName ? ` - ${locationName}` : ""}`;
   const buf = kind === "w2" ? await buildW2Workbook(result, { salon: business.name, periodLabel }) : await buildPayrollWorkbook(result, { salon: business.name, periodLabel });
   const name = `${start.replace(/-/g, "")}_${end.replace(/-/g, "")}_${kind === "w2" ? "W2_Summary" : business.slug}.xlsx`;
   return new NextResponse(new Uint8Array(buf), {

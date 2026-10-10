@@ -18,8 +18,8 @@ import { desc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
 import { NoShowFeeForm } from "./no-show-form";
-import { listSavedCards } from "@/server/stripe-connect";
-import { isStripeConfigured } from "@/lib/stripe";
+import { savedCardsFor } from "@/server/stripe-connect";
+import { paymentContextForAppointment } from "@/server/locations";
 
 const STATUS_LABEL: Record<string, string> = {
   booked: "Booked",
@@ -58,8 +58,9 @@ export default async function AppointmentPage({
   const pinnedNotes = client ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
   const series = appointment.seriesId ? await getSeriesForAppointment(business.id, id) : null;
   const forms = await withTenant(business.id, (tx) => formsForAppointment(tx, id));
-  const stripeReady = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled;
-  const savedCards = stripeReady && client?.stripeCustomerId ? await listSavedCards(business.stripeAccountId!, client.stripeCustomerId).catch(() => []) : [];
+  const pay = await paymentContextForAppointment(business, id);
+  const stripeReady = pay.ready;
+  const savedCards = await savedCardsFor(business.id, pay, client?.id);
   const tz = business.timezone;
   const live = items.filter((i) => i.status !== "cancelled");
   const first = live[0] ?? items[0];

@@ -1,7 +1,8 @@
 import { and, eq, sql } from "drizzle-orm";
-import { schema, withTenant, type TenantDb } from "@angelic/db";
-import { buildBookingSegments } from "@angelic/core";
+import { db, schema, withTenant, type TenantDb } from "@angelic/db";
+import { buildBookingSegments, instantToISODate, weekdayOf } from "@angelic/core";
 import { timingFor } from "./availability";
+import { refreshHomeLocation, serviceOfferedAt } from "./locations";
 
 export class BookingError extends Error {}
 
@@ -80,6 +81,21 @@ export interface BookAppointmentInput {
   classSessionId?: string | null;
   /** Promo code to apply when checkout opens. */
   promoCodeId?: string | null;
+  /** Where the visit happens. Defaults to where the provider works that weekday, else their primary site, else the default. */
+  locationId?: string | null;
+}
+
+/** The location an appointment belongs to when none was chosen explicitly. */
+export async function resolveAppointmentLocation(tx: Tx, staffId: string, startAt: Date, timeZone: string, explicit?: string | null): Promise<string | null> {
+  if (explicit) return explicit;
+  const [rows, person, def] = await Promise.all([
+    tx.select({ weekday: schema.staffSchedules.weekday, locationId: schema.staffSchedules.locationId }).from(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, staffId)),
+    tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true } }),
+    tx.query.locations.findFirst({ where: eq(schema.locations.isDefault, true), columns: { id: true } }),
+  ]);
+  const weekday = weekdayOf(instantToISODate(startAt, timeZone));
+  const day = rows.find((r) => r.weekday === weekday);
+  return day?.locationId ?? person?.locationId ?? def?.id ?? null;
 }
 
 export async function bookAppointment(input: BookAppointmentInput): Promise<{ appointmentId: string }> {
@@ -92,13 +108,14 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
   }
   try {
     return await withTenant(input.businessId, async (tx) => {
-      const staffRow = await tx.query.staff.findFirst({ where: eq(schema.staff.id, input.staffId) });
-      const defaultLoc = await tx.query.locations.findFirst({ where: eq(schema.locations.isDefault, true) });
+      const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
+      const locationId = await resolveAppointmentLocation(tx, input.staffId, input.startAt, biz?.timezone ?? "America/New_York", input.locationId);
+      if (!(await serviceOfferedAt(tx, input.serviceId, locationId))) throw new BookingError("That service isn't offered at this location.");
       const [appt] = await tx
         .insert(schema.appointments)
         .values({
           businessId: input.businessId,
-          locationId: staffRow?.locationId ?? defaultLoc?.id ?? null,
+          locationId,
           clientId: input.clientId,
           notes: input.notes ?? null,
           source: input.source ?? "staff",
@@ -112,6 +129,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
         })
         .returning({ id: schema.appointments.id });
       await insertServiceItems(tx, { ...input, appointmentId: appt!.id, sortOrderBase: 0 });
+      await refreshHomeLocation(tx, input.clientId);
       await audit(tx, input.businessId, input.createdByUserId, "appointment.create", appt!.id, {
         serviceId: input.serviceId,
         staffId: input.staffId,

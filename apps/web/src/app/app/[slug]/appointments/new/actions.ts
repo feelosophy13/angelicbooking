@@ -14,6 +14,7 @@ const schema = z.object({
   serviceId: z.string().min(1),
   staffId: z.string().min(1),
   startAt: z.string().datetime(),
+  locationId: z.string().optional().transform((v) => v || null),
   notes: z.string().trim().max(2000).transform((v) => v || null),
   // Standing appointment: repeat every N weeks, M visits in total (including this one).
   repeatWeeks: z.coerce.number().int().min(0).max(12).default(0),
@@ -40,6 +41,7 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
         occurrences: d.repeatCount,
         notes: d.notes,
         createdByUserId: ctx.user.id,
+        locationId: d.locationId,
       });
       // One confirmation (for the first visit) rather than one per occurrence; reminders for all.
       await notifyAppointment(ctx.business, r.created[0]!.appointmentId, "confirmation");
@@ -56,6 +58,7 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
         startAt,
         notes: d.notes,
         createdByUserId: ctx.user.id,
+        locationId: d.locationId,
       });
       await notifyAppointment(ctx.business, appointmentId, "confirmation");
     }

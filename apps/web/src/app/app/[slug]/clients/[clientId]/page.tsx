@@ -25,8 +25,8 @@ import { adjustClientPoints, createReferralCode } from "./loyalty-actions";
 import { turnOffAutoRenew, turnOnAutoRenew } from "./membership-actions";
 import { replyToClient } from "./messages-actions";
 import { clientThread } from "@/server/inbound";
-import { listSavedCards } from "@/server/stripe-connect";
-import { isStripeConfigured } from "@/lib/stripe";
+import { savedCardsFor } from "@/server/stripe-connect";
+import { paymentContextFor } from "@/server/locations";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -70,8 +70,10 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   if (!data) notFound();
   const { client, visits, sales, packs, memberships, notes } = data;
   const [submissions, loyalty, reviews, thread] = await Promise.all([listSubmissionsForClient(business.id, clientId), business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null), reviewsForClient(business.id, clientId), clientThread(business.id, clientId)]);
-  const stripeReady = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled;
-  const savedCards = stripeReady && client.stripeCustomerId ? await listSavedCards(business.stripeAccountId!, client.stripeCustomerId).catch(() => []) : [];
+  // Cards are shown for the client's home location's Stripe account (else the default site's).
+  const pay = await paymentContextFor(business, client.homeLocationId);
+  const stripeReady = pay.ready;
+  const savedCards = await savedCardsFor(business.id, pay, client.id);
   const authorIds = [...new Set(notes.map((n) => n.authorUserId).filter((x): x is string => !!x))];
   const authors = authorIds.length ? await db.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, authorIds)) : [];
   const authorName = (id: string | null) => authors.find((a) => a.id === id)?.name ?? "Staff";

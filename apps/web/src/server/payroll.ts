@@ -22,7 +22,7 @@ function localDate(at: Date, tz: string) {
  * land in the right period); products and other lines to the checkout date.
  * Discounts, tax and tips are allocated per line so the sheet's columns add up.
  */
-export async function buildPayrollLines(business: Business, period: PayrollPeriod): Promise<PayrollLine[]> {
+export async function buildPayrollLines(business: Business, period: PayrollPeriod, locationId?: string | null): Promise<PayrollLine[]> {
   const tz = business.timezone;
   // Pull a wide window of closed sales (6 months back) because appointment dates
   // can precede or follow checkout; narrow by credited date below.
@@ -32,7 +32,7 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
     const sales = await tx
       .select()
       .from(schema.sales)
-      .where(and(gte(schema.sales.closedAt, from), lte(schema.sales.closedAt, to), sql`${schema.sales.status} in ('paid','refunded')`));
+      .where(and(gte(schema.sales.closedAt, from), lte(schema.sales.closedAt, to), sql`${schema.sales.status} in ('paid','refunded')`, ...(locationId ? [eq(schema.sales.locationId, locationId)] : [])));
     if (!sales.length) return [];
     const saleIds = sales.map((s) => s.id);
     const [lines, pays, clients, users, items] = await Promise.all([
@@ -113,9 +113,9 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
   });
 }
 
-export async function getPayrollInputs(business: Business, period: PayrollPeriod) {
+export async function getPayrollInputs(business: Business, period: PayrollPeriod, locationId?: string | null) {
   const [lines, rest] = await Promise.all([
-    buildPayrollLines(business, period),
+    buildPayrollLines(business, period, locationId),
     withTenant(business.id, async (tx) => {
       const [staff, hours, adjustments] = await Promise.all([
         tx.select().from(schema.staff).orderBy(asc(schema.staff.displayName)),
@@ -150,8 +150,9 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
   return { employees, lines, hours, adjustments, adjustmentRows: rest.adjustments };
 }
 
-export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean): Promise<PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[] }> {
-  const inputs = await getPayrollInputs(business, period);
+/** `locationId` limits sales (commission, tips) to one site; hours and adjustments are per person and stay whole. */
+export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean, locationId?: string | null): Promise<PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[] }> {
+  const inputs = await getPayrollInputs(business, period, locationId);
   const result = computePayroll({ ...inputs, overtime, weekStart: 1 });
   return { ...result, adjustmentRows: inputs.adjustmentRows };
 }

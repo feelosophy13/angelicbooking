@@ -10,6 +10,7 @@ import { appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify
 import { staffAlertEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
 import { shiftISODate } from "@/lib/utils";
+import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt } from "./locations";
 
 export type PublicBusiness = typeof schema.businesses.$inferSelect;
 
@@ -25,7 +26,7 @@ export async function getPublicLocations(businessId: string) {
 
 export async function getPublicMenu(businessId: string, locationId?: string | null) {
   return withTenant(businessId, async (tx) => {
-    const [services, categories, staffAll] = await Promise.all([
+    const [servicesAll, categories, staffAll, hidden, at] = await Promise.all([
       tx
         .select()
         .from(schema.services)
@@ -37,11 +38,12 @@ export async function getPublicMenu(businessId: string, locationId?: string | nu
         .from(schema.staff)
         .where(and(eq(schema.staff.active, true), eq(schema.staff.bookableOnline, true), eq(schema.staff.takesAppointments, true)))
         .orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
+      servicesHiddenAt(tx, locationId),
+      staffIdsAt(tx, locationId),
     ]);
-    const staffLoc = locationId
-      ? (await tx.select({ id: schema.staff.id, locationId: schema.staff.locationId }).from(schema.staff)).filter((x) => !x.locationId || x.locationId === locationId).map((x) => x.id)
-      : null;
-    const staff = staffLoc ? staffAll.filter((s) => staffLoc.includes(s.id)) : staffAll;
+    // At a chosen location: only services offered there and providers who work there on some day.
+    const services = servicesAll.filter((s) => !hidden.has(s.id));
+    const staff = at ? staffAll.filter((s) => at.has(s.id)) : staffAll;
     return { services, categories, staff };
   });
 }
@@ -50,11 +52,14 @@ export async function getPublicMenu(businessId: string, locationId?: string | nu
  * Slots for a service on a date. staffId "any" merges every eligible provider;
  * each slot carries the staff member who would take it (first available by sort order).
  */
-export async function getPublicSlots(business: PublicBusiness, serviceId: string, staffId: string | "any", date: string, now = new Date()) {
-  const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, serviceId), eq(schema.services.active, true), eq(schema.services.bookableOnline, true)) }));
+export async function getPublicSlots(business: PublicBusiness, serviceId: string, staffId: string | "any", date: string, now = new Date(), locationId?: string | null) {
+  const service = await withTenant(business.id, async (tx) => {
+    const svc = await tx.query.services.findFirst({ where: and(eq(schema.services.id, serviceId), eq(schema.services.active, true), eq(schema.services.bookableOnline, true)) });
+    return svc && (await serviceOfferedAt(tx, svc.id, locationId)) ? svc : null;
+  });
   if (!service) return [];
   const window = onlineBookingWindow(now, business);
-  const eligible = (await staffForService(business.id, serviceId)).filter((s) => s.bookableOnline);
+  const eligible = (await staffForService(business.id, serviceId, locationId)).filter((s) => s.bookableOnline);
   const chosen = staffId === "any" ? eligible : eligible.filter((s) => s.id === staffId);
   const out = new Map<number, { at: Date; staffId: string; staffName: string }>();
   for (const s of chosen) {
@@ -66,6 +71,7 @@ export async function getPublicSlots(business: PublicBusiness, serviceId: string
       date,
       service: timingFor(service),
       notBefore: window.notBefore,
+      locationId,
     });
     for (const at of slots) {
       if (at > window.notAfter) continue;
@@ -76,11 +82,11 @@ export async function getPublicSlots(business: PublicBusiness, serviceId: string
 }
 
 /** Which dates in [from, from+days) have at least one opening. Cheap enough for a month. */
-export async function getAvailableDates(business: PublicBusiness, serviceId: string, staffId: string | "any", from: string, days: number) {
+export async function getAvailableDates(business: PublicBusiness, serviceId: string, staffId: string | "any", from: string, days: number, locationId?: string | null) {
   const dates: string[] = [];
   for (let i = 0; i < days; i++) {
     const d = shiftISODate(from, i);
-    const slots = await getPublicSlots(business, serviceId, staffId, d);
+    const slots = await getPublicSlots(business, serviceId, staffId, d, new Date(), locationId);
     if (slots.length) dates.push(d);
   }
   return dates;
@@ -105,6 +111,8 @@ export interface OnlineBookingInput {
   birthday?: string | null;
   /** Promo code typed on the booking form; validated against the service. */
   promoCode?: string | null;
+  /** Location chosen on the booking page (businesses with several sites). */
+  locationId?: string | null;
 }
 
 /** Find a client by phone or email, else create one. Runs inside the tenant tx. */
@@ -133,17 +141,17 @@ export async function findOrCreateClient(businessId: string, input: OnlineBookin
 }
 
 /** Checks a public booking can still be made at `startAt` (window + live availability). */
-export async function assertSlotOpen(business: PublicBusiness, serviceId: string, staffId: string, startAt: Date, now = new Date()) {
+export async function assertSlotOpen(business: PublicBusiness, serviceId: string, staffId: string, startAt: Date, now = new Date(), locationId?: string | null) {
   if (!isWithinBookingWindow(startAt, now, business)) throw new BookingError("That time can no longer be booked online.");
   // Re-validate the slot against live availability so stale pages can't book into a taken time.
-  const slots = await getPublicSlots(business, serviceId, staffId, isoDateIn(startAt, business.timezone), now);
+  const slots = await getPublicSlots(business, serviceId, staffId, isoDateIn(startAt, business.timezone), now, locationId);
   if (!slots.some((s) => s.at.getTime() === startAt.getTime())) throw new BookingError("That time was just taken. Please pick another.");
 }
 
 export async function createOnlineBooking(business: PublicBusiness, input: OnlineBookingInput, now = new Date(), paid?: VerifiedIntent) {
   if (!input.classSessionId) {
     try {
-      await assertSlotOpen(business, input.serviceId, input.staffId, input.startAt, now);
+      await assertSlotOpen(business, input.serviceId, input.staffId, input.startAt, now, input.locationId);
     } catch (e) {
       await undoPayment(business, paid);
       throw e;
@@ -175,6 +183,7 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
       cardSetupIntentId: paid?.kind === "card" ? paid.setupIntentId : null,
       classSessionId: input.classSessionId ?? null,
       promoCodeId,
+      locationId: input.locationId ?? null,
     }));
   } catch (e) {
     await undoPayment(business, paid);
@@ -188,9 +197,11 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
 
 /** A deposit was charged but the booking could not be made: give the money back before surfacing the error. */
 async function undoPayment(business: PublicBusiness, paid: VerifiedIntent | undefined) {
-  if (paid?.kind !== "deposit" || !business.stripeAccountId) return;
+  if (paid?.kind !== "deposit") return;
+  const pay = await paymentContextFor(business, paid.meta.locationId || null);
+  if (!pay.accountId) return;
   try {
-    await refundOrphanIntent(business.stripeAccountId, paid.paymentIntentId);
+    await refundOrphanIntent(pay.accountId, paid.paymentIntentId);
   } catch (e) {
     console.error("[online-payments] could not refund orphan deposit", paid.paymentIntentId, (e as Error).message);
   }
@@ -226,8 +237,9 @@ export async function cancelOnline(slug: string, token: string) {
   if (!m) throw new BookingError("Appointment not found.");
   if (!m.canChange) throw new BookingError(`Online cancellation closes ${m.business.cancelWindowHours} hours before the appointment. Please call ${m.business.phone ?? "the salon"}.`);
   await setAppointmentStatus(m.business.id, m.appt.id, "cancelled", "client", "Cancelled online by client");
-  // Inside the cancellation window the deposit goes back automatically.
-  await refundDeposit({ businessId: m.business.id, accountId: m.business.stripeAccountId, appointmentId: m.appt.id, actorUserId: "client", reason: "Cancelled online within policy" }).catch((e) =>
+  // Inside the cancellation window the deposit goes back automatically (on the account that took it).
+  const pay = await paymentContextFor(m.business, m.appt.locationId);
+  await refundDeposit({ businessId: m.business.id, accountId: pay.accountId, appointmentId: m.appt.id, actorUserId: "client", reason: "Cancelled online within policy" }).catch((e) =>
     console.error("[online-payments] deposit refund on cancel failed", m.appt.id, (e as Error).message),
   );
   await notifyAppointment(m.business, m.appt.id, "cancellation");
@@ -244,7 +256,7 @@ export async function rescheduleOnline(slug: string, token: string, newStartAt: 
   const first = m.live[0]!;
   if (!first.serviceId) throw new BookingError("Please call to reschedule.");
   if (!isWithinBookingWindow(newStartAt, new Date(), m.business)) throw new BookingError("That time can't be booked online.");
-  const slots = await getPublicSlots(m.business, first.serviceId, first.staffId, isoDateIn(newStartAt, m.business.timezone));
+  const slots = await getPublicSlots(m.business, first.serviceId, first.staffId, isoDateIn(newStartAt, m.business.timezone), new Date(), m.appt.locationId);
   if (!slots.some((s) => s.at.getTime() === newStartAt.getTime())) throw new BookingError("That time was just taken. Please pick another.");
   await rescheduleService({ businessId: m.business.id, itemId: first.id, newStartAt, actorUserId: "client" });
   await notifyAppointment(m.business, m.appt.id, "rescheduled");

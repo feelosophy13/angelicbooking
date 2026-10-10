@@ -11,8 +11,10 @@ import { defaultPeriod, getFinalizedRun, listPayrollRuns, runPayroll } from "@/s
 import { formatDateLong, formatMoney } from "@/lib/utils";
 import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice } from "@/components/ui";
 import { deleteAdjustment, finalize } from "./actions";
+import { LocationFilter } from "@/components/location-filter";
+import { listLocations } from "@/server/locations";
 
-export default async function PayrollPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ start?: string; end?: string; overtime?: string }> }) {
+export default async function PayrollPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ start?: string; end?: string; overtime?: string; location?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
   const { business } = await requireAction(slug, "payroll.view");
@@ -23,11 +25,13 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   const end = isDate(sp.end) ? sp.end! : def.end;
   const overtime = sp.overtime === "1";
   const period = { start, end };
-  const [result, finalized, runs] = await Promise.all([runPayroll(business, period, overtime), getFinalizedRun(business.id, period), listPayrollRuns(business.id)]);
+  const locations = await listLocations(business.id);
+  const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
+  const [result, finalized, runs] = await Promise.all([runPayroll(business, period, overtime, locationFilter), getFinalizedRun(business.id, period), listPayrollRuns(business.id)]);
   const money = (c: number) => formatMoney(c, business.currency);
   const active = result.employees.filter((e) => e.hasActivity);
   const unconfigured = result.employees.filter((e) => e.hasActivity && e.employee.payType === "commission" && e.employee.mainCommissionBps === 0 && e.mainRevenueCents > 0);
-  const qs = `start=${start}&end=${end}&overtime=${overtime ? 1 : 0}`;
+  const qs = `start=${start}&end=${end}&overtime=${overtime ? 1 : 0}${locationFilter ? `&location=${locationFilter}` : ""}`;
   const totals = active.reduce((t, e) => ({ total: t.total + e.totalCents, tips: t.tips + e.cashTipsCents + e.cardTipsCents, rev: t.rev + e.serviceRevenueCents }), { total: 0, tips: 0, rev: 0 });
 
   return (
@@ -38,10 +42,12 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <span className="text-sm text-stone-500">to</span>
           <Input type="date" name="end" defaultValue={end} className="w-40" />
           <label className="flex items-center gap-1 text-sm"><input type="checkbox" name="overtime" value="1" defaultChecked={overtime} className="h-4 w-4 accent-brand-600" /> Overtime 1.5× over 40h/wk</label>
+          {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
           <Button type="submit" variant="secondary" size="sm">Run</Button>
         </form>
+        <LocationFilter locations={locations} current={locationFilter} query={`start=${start}&end=${end}&overtime=${overtime ? 1 : 0}`} allLabel="All" />
       </PageHeader>
-      <p className="mb-4 text-sm text-stone-600">{formatDateLong(start)} – {formatDateLong(end)}{finalized ? <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">finalized {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(finalized.createdAt)}</span> : null}</p>
+      <p className="mb-4 text-sm text-stone-600">{formatDateLong(start)} – {formatDateLong(end)}{locationFilter ? ` · ${locations.find((l) => l.id === locationFilter)?.name} sales only (hours and adjustments are per person)` : ""}{finalized ? <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">finalized {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(finalized.createdAt)}</span> : null}</p>
 
       {unconfigured.length ? (
         <div className="mb-4"><Notice>{unconfigured.map((e) => e.employee.name).join(", ")} earned service revenue but {unconfigured.length > 1 ? "have" : "has"} no commission rate. Set it under Staff → Pay.</Notice></div>
@@ -59,13 +65,13 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <div className="flex gap-2">
             <LinkButton href={`/app/${slug}/payroll/export?${qs}`} size="sm"><Download className="h-4 w-4" /> Workbook (.xlsx)</LinkButton>
             <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=w2`} size="sm"><Download className="h-4 w-4" /> W-2 summary</LinkButton>
-            <form action={finalize}>
+            {locationFilter ? null : <form action={finalize}>
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="start" value={start} />
               <input type="hidden" name="end" value={end} />
               {overtime ? <input type="hidden" name="overtime" value="on" /> : null}
               <ConfirmSubmit title={finalized ? "Re-finalize this period?" : "Finalize this pay period?"} body="A snapshot of these figures is saved for the record. You can re-run later if anything changes." confirmLabel={finalized ? "Re-finalize" : "Finalize"} variant="primary">{finalized ? "Re-finalize" : "Finalize period"}</ConfirmSubmit>
-            </form>
+            </form>}
           </div>
         </div>
         {active.length === 0 ? <div className="p-4"><Empty title="No pay activity in this period" body="Closed sales, hours and adjustments drive payroll." /></div> : (

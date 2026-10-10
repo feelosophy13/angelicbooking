@@ -4,14 +4,16 @@ import { schema, withTenant } from "@angelic/db";
 export type ClientSort = "name" | "last_visit" | "spend" | "created";
 
 /** Paginated client list with last visit, visit count and lifetime spend. */
-export async function listClients(businessId: string, opts: { q?: string; sort?: ClientSort; dir?: "asc" | "desc"; page?: number; pageSize?: number }) {
+export async function listClients(businessId: string, opts: { q?: string; sort?: ClientSort; dir?: "asc" | "desc"; page?: number; pageSize?: number; locationId?: string | null }) {
   const page = Math.max(1, opts.page ?? 1);
   const pageSize = Math.min(200, Math.max(10, opts.pageSize ?? 50));
   const q = opts.q?.trim();
   return withTenant(businessId, async (tx) => {
-    const where = q
+    const search = q
       ? or(ilike(schema.clients.firstName, `%${q}%`), ilike(schema.clients.lastName, `%${q}%`), ilike(schema.clients.phone, `%${q}%`), ilike(schema.clients.email, `%${q}%`))
       : undefined;
+    // "Home location" = where the client was last seen; derived, never a silo.
+    const where = opts.locationId ? and(search, eq(schema.clients.homeLocationId, opts.locationId)) : search;
     const visits = tx
       .select({
         clientId: schema.appointments.clientId,
@@ -42,6 +44,8 @@ export async function listClients(businessId: string, opts: { q?: string; sort?:
           email: schema.clients.email,
           createdAt: schema.clients.createdAt,
           notes: schema.clients.notes,
+          homeLocationId: schema.clients.homeLocationId,
+          homeLocationName: schema.locations.name,
           lastVisit: sql<Date | null>`v.last_visit`.mapWith((v: unknown) => (v == null ? null : v instanceof Date ? v : new Date(String(v).replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00")))),
           visitCount: sql<number>`coalesce(v.visit_count, 0)`,
           noShows: sql<number>`coalesce(v.no_shows, 0)`,
@@ -50,6 +54,7 @@ export async function listClients(businessId: string, opts: { q?: string; sort?:
         .from(schema.clients)
         .leftJoin(visits, eq(visits.clientId, schema.clients.id))
         .leftJoin(spend, eq(spend.clientId, schema.clients.id))
+        .leftJoin(schema.locations, eq(schema.locations.id, schema.clients.homeLocationId))
         .where(where)
         .orderBy(opts.sort === "last_visit" || opts.sort === "spend" ? sql`${orderCol} ${opts.dir === "desc" ? sql`desc nulls last` : sql`asc nulls first`}` : dirFn(orderCol))
         .limit(pageSize)

@@ -8,7 +8,8 @@ import { after } from "next/server";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
-import { isStripeConfigured, platformFeeBps, stripe, appUrl } from "@/lib/stripe";
+import { platformFeeBps, stripe, appUrl } from "@/lib/stripe";
+import { paymentContextFor, paymentContextForSale } from "./locations";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { findOrCreateClient, type PublicBusiness } from "./public-booking";
 import { markCardPaymentSucceeded } from "./sales";
@@ -20,8 +21,10 @@ export class StoreError extends Error {}
 
 export const GIFT_PRESETS_CENTS = [2500, 5000, 7500, 10000, 15000, 20000];
 
-export function storeReady(business: PublicBusiness): boolean {
-  return isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+/** Online orders are taken at the default location (its Stripe account and tax rate). */
+export async function storeReady(business: PublicBusiness): Promise<boolean> {
+  const pay = await paymentContextFor(business, null);
+  return pay.ready && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 }
 
 export async function storeProducts(businessId: string) {
@@ -44,12 +47,13 @@ export interface OrderInput {
 
 /** Create the open sale and the PaymentIntent the browser confirms. */
 export async function startOrder(business: PublicBusiness, input: OrderInput) {
-  if (!storeReady(business)) throw new StoreError("Online payments aren't set up yet.");
+  if (!(await storeReady(business))) throw new StoreError("Online payments aren't set up yet.");
+  const pay = await paymentContextFor(business, null);
   if (!input.items.length && !input.giftCard) throw new StoreError("Your cart is empty.");
   if (input.giftCard && (input.giftCard.amountCents < 500 || input.giftCard.amountCents > 100000)) throw new StoreError("Gift cards are between $5 and $1,000.");
   if (input.fulfillment.method === "ship" && (!business.shippingFlatCents || !input.fulfillment.address)) throw new StoreError("Enter a shipping address.");
   const clientId = await findOrCreateClient(business.id, { ...input.buyer, phone: input.buyer.phone, notes: null, serviceId: "", staffId: "", startAt: new Date(), email: input.buyer.email });
-  const accountId = business.stripeAccountId!;
+  const accountId = pay.accountId!;
   return withTenant(business.id, async (tx) => {
     const products = input.items.length ? await tx.select().from(schema.products).where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true), sql`${schema.products.id} in ${input.items.map((i) => i.productId)}`)) : [];
     const lines: (typeof schema.saleLines.$inferInsert)[] = [];
@@ -75,7 +79,7 @@ export async function startOrder(business: PublicBusiness, input: OrderInput) {
       subtotal += shipping;
       lines.push({ businessId: business.id, kind: "fee", name: "Shipping", quantity: 1, unitCents: shipping, amountCents: shipping, taxable: false, sortOrder: 200, saleId: "" });
     }
-    const tax = Math.round((taxable * business.taxRateBps) / 10_000);
+    const tax = Math.round((taxable * pay.taxRateBps) / 10_000);
     const total = subtotal + tax;
     if (total < 50) throw new StoreError("Order total must be at least $0.50.");
     const rows = await tx.execute<{ n: number }>(sql`select next_sale_number(${business.id}) as n`);
@@ -85,6 +89,7 @@ export async function startOrder(business: PublicBusiness, input: OrderInput) {
         businessId: business.id,
         number: Number(rows[0]?.n ?? 1001),
         clientId,
+        locationId: pay.location?.id ?? null,
         currency: business.currency,
         source: "online",
         subtotalCents: subtotal,
@@ -103,7 +108,7 @@ export async function startOrder(business: PublicBusiness, input: OrderInput) {
     const [pending] = await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card", status: "pending", amountCents: total, tipCents: 0 }).returning();
     const fee = Math.round((total * platformFeeBps()) / 10_000);
     const pi = await stripe().paymentIntents.create(
-      { amount: total, currency: business.currency, customer, allowed_payment_method_types: ["card"], description: `Order #${sale!.number} · ${business.name}`, receipt_email: input.buyer.email, metadata: { businessId: business.id, saleId: sale!.id, paymentId: pending!.id, kind: "order" }, ...(fee > 0 ? { application_fee_amount: fee } : {}) },
+      { amount: total, currency: business.currency, customer, allowed_payment_method_types: ["card"], description: `Order #${sale!.number} · ${pay.name}`, receipt_email: input.buyer.email, metadata: { businessId: business.id, saleId: sale!.id, paymentId: pending!.id, kind: "order" }, ...(fee > 0 ? { application_fee_amount: fee } : {}) },
       { stripeAccount: accountId, idempotencyKey: `order_${pending!.id}` },
     );
     await tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending!.id));
@@ -113,7 +118,7 @@ export async function startOrder(business: PublicBusiness, input: OrderInput) {
 
 /** The browser confirmed the PaymentIntent: verify with Stripe, close the sale, email the buyer (and gift recipient). */
 export async function finishOrder(business: PublicBusiness, saleId: string, paymentIntentId: string) {
-  const accountId = business.stripeAccountId;
+  const accountId = (await paymentContextForSale(business, saleId)).accountId;
   if (!accountId) throw new StoreError("Payments aren't set up.");
   const pi = await stripe().paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] }, { stripeAccount: accountId });
   if (pi.metadata.saleId !== saleId || pi.metadata.businessId !== business.id) throw new StoreError("That payment doesn't match this order.");

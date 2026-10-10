@@ -6,6 +6,7 @@ import { BookingError } from "@/server/booking";
 import { assertSlotOpen, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
 import { appointmentForIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
 import { getSession } from "@/server/classes";
+import { paymentContextFor } from "@/server/locations";
 import { schema, withTenant } from "@angelic/db";
 import { and, eq } from "drizzle-orm";
 
@@ -22,7 +23,7 @@ const contact = z.object({
   promoCode: z.string().trim().max(40).optional().transform((v) => v || null),
 });
 
-const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null), embed: z.string().optional() });
+const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null), locationId: z.string().optional().transform((v) => v || null), embed: z.string().optional() });
 const confirmedPath = (d: { slug: string; embed?: string }, token: string) => `${d.embed ? "/embed" : "/book"}/${d.slug}/confirmed/${token}`;
 type BookingFields = z.infer<typeof bookingFields>;
 
@@ -44,7 +45,8 @@ export async function bookOnline(_prev: PublicState, formData: FormData): Promis
   // Services that need a deposit or a card must go through the payment steps below.
   const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, d.serviceId), eq(schema.services.active, true)) }));
   if (!service) return { error: "That service is no longer available." };
-  if (onlinePaymentRequirement(business, service).mode !== "none") return { error: "This booking needs a card. Please reload the page and try again." };
+  const pay = await paymentContextFor(business, d.locationId);
+  if (onlinePaymentRequirement(business, service, pay).mode !== "none") return { error: "This booking needs a card. Please reload the page and try again." };
   let token: string;
   try {
     const r = await createOnlineBooking(business, { ...d, startAt: new Date(d.startAt) });
@@ -70,14 +72,15 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
   if (!business) return { error: "Online booking is not available." };
   const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, d.serviceId), eq(schema.services.active, true)) }));
   if (!service) return { error: "That service is no longer available." };
-  const req = onlinePaymentRequirement(business, service);
+  const pay = await paymentContextFor(business, d.locationId);
+  const req = onlinePaymentRequirement(business, service, pay);
   if (req.mode === "none") return { error: "No payment is needed for this booking. Please reload the page." };
   const startAt = new Date(d.startAt);
   try {
     if (d.classSessionId) await assertSeatOpen(business.id, d.classSessionId, d.staffId, startAt);
-    else await assertSlotOpen(business, d.serviceId, d.staffId, startAt);
+    else await assertSlotOpen(business, d.serviceId, d.staffId, startAt, new Date(), d.locationId);
     const clientId = await findOrCreateClient(business.id, { ...d, startAt });
-    const r = await startOnlinePayment(business, req.mode, { businessId: business.id, clientId, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString() }, req.amountCents);
+    const r = await startOnlinePayment(business, pay, req.mode, { businessId: business.id, clientId, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" }, req.amountCents);
     return { clientSecret: r.clientSecret, intentId: r.id, kind: r.kind, accountId: r.accountId };
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
@@ -97,7 +100,8 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
   let token: string;
   try {
     const startAt = new Date(d.startAt);
-    const verified = await verifyOnlineIntent(business, intent.kind, intent.id, { businessId: business.id, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString() });
+    const pay = await paymentContextFor(business, d.locationId);
+    const verified = await verifyOnlineIntent(business, pay, intent.kind, intent.id, { businessId: business.id, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" });
     const r = await createOnlineBooking(business, { ...d, startAt }, new Date(), verified);
     token = r.token;
   } catch (e) {

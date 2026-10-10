@@ -79,13 +79,13 @@ export async function fulfilOfferLines(tx: TenantDb, businessId: string, saleId:
     if (l.kind === "gift_card") {
       const already = await tx.query.giftCards.findFirst({ where: and(eq(schema.giftCards.saleId, saleId), eq(schema.giftCards.initialCents, l.amountCents)) });
       if (already) continue;
-      await tx.insert(schema.giftCards).values({ businessId, code: newGiftCode(), initialCents: l.amountCents, balanceCents: l.amountCents, purchaserClientId: sale.clientId, recipientName: l.name.replace(/^Gift card( for )?/, "") || null, saleId });
+      await tx.insert(schema.giftCards).values({ businessId, code: newGiftCode(), initialCents: l.amountCents, balanceCents: l.amountCents, purchaserClientId: sale.clientId, recipientName: l.name.replace(/^Gift card( for )?/, "") || null, saleId, locationId: sale.locationId });
     } else if (l.kind === "package" && l.productId && sale.clientId) {
       const already = await tx.query.clientPackages.findFirst({ where: and(eq(schema.clientPackages.saleId, saleId), eq(schema.clientPackages.packageId, l.productId)) });
       if (already) continue;
       const p = await tx.query.packages.findFirst({ where: eq(schema.packages.id, l.productId) });
       if (!p) continue;
-      await tx.insert(schema.clientPackages).values({ businessId, clientId: sale.clientId, packageId: p.id, serviceId: p.serviceId, remaining: p.sessions, saleId, expiresAt: p.validDays ? new Date(Date.now() + p.validDays * 86_400_000) : null });
+      await tx.insert(schema.clientPackages).values({ businessId, clientId: sale.clientId, packageId: p.id, serviceId: p.serviceId, remaining: p.sessions, saleId, locationId: sale.locationId, expiresAt: p.validDays ? new Date(Date.now() + p.validDays * 86_400_000) : null });
     } else if (l.kind === "membership" && l.productId && sale.clientId) {
       const plan = await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, l.productId) });
       if (!plan) continue;
@@ -95,7 +95,7 @@ export async function fulfilOfferLines(tx: TenantDb, businessId: string, saleId:
         const base = existing.currentPeriodEnd > new Date() ? existing.currentPeriodEnd.getTime() : Date.now();
         await tx.update(schema.clientMemberships).set({ currentPeriodEnd: new Date(base + month), creditsRemaining: plan.includedSessions }).where(eq(schema.clientMemberships.id, existing.id));
       } else {
-        await tx.insert(schema.clientMemberships).values({ businessId, clientId: sale.clientId, planId: plan.id, currentPeriodEnd: new Date(Date.now() + month), creditsRemaining: plan.includedSessions });
+        await tx.insert(schema.clientMemberships).values({ businessId, clientId: sale.clientId, planId: plan.id, currentPeriodEnd: new Date(Date.now() + month), creditsRemaining: plan.includedSessions, locationId: sale.locationId });
       }
     }
   }
@@ -114,7 +114,7 @@ export async function redeemGiftCard(input: { businessId: string; saleId: string
     const amount = Math.min(input.amountCents, card.balanceCents, due);
     if (amount <= 0) throw new SaleError(card.balanceCents === 0 ? "That gift card has no balance left." : "Nothing to redeem.");
     await tx.update(schema.giftCards).set({ balanceCents: card.balanceCents - amount }).where(eq(schema.giftCards.id, card.id));
-    await tx.insert(schema.payments).values({ businessId: input.businessId, saleId: sale.id, method: "gift_card", status: "succeeded", amountCents: amount, tipCents: 0, note: `Gift card ${code}`, createdByUserId: input.actorUserId });
+    await tx.insert(schema.payments).values({ businessId: input.businessId, saleId: sale.id, method: "gift_card", status: "succeeded", amountCents: amount, tipCents: 0, note: `Gift card ${code}`, giftCardId: card.id, createdByUserId: input.actorUserId });
     await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "payment.gift_card", entity: "sale", entityId: sale.id, diff: JSON.stringify({ code, amount }) });
     return amount;
   });
@@ -138,7 +138,10 @@ export async function redeemCredit(input: { businessId: string; saleId: string; 
       await tx.update(schema.clientMemberships).set({ creditsRemaining: m.creditsRemaining - 1 }).where(eq(schema.clientMemberships.id, m.id));
     }
     const delta = line.amountCents;
-    await tx.update(schema.saleLines).set({ amountCents: 0, unitCents: 0, name: `${line.name} (${input.source} credit)` }).where(eq(schema.saleLines.id, line.id));
+    await tx
+      .update(schema.saleLines)
+      .set({ amountCents: 0, unitCents: 0, name: `${line.name} (${input.source} credit)`, creditCents: delta, ...(input.source === "package" ? { clientPackageId: input.sourceId } : { clientMembershipId: input.sourceId }) })
+      .where(eq(schema.saleLines.id, line.id));
     await tx.update(schema.sales).set({ subtotalCents: sql`${schema.sales.subtotalCents} - ${delta}`, totalCents: sql`${schema.sales.totalCents} - ${delta}` }).where(eq(schema.sales.id, sale.id));
     await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: `credit.${input.source}`, entity: "sale", entityId: sale.id, diff: JSON.stringify({ lineId: line.id, delta }) });
   });

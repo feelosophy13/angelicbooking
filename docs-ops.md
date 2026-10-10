@@ -193,6 +193,24 @@ name, service names, staff names and appointment time+staff+service. Past appoin
 `allow_overlap` (Vagaro allowed double booking); future clashes are kept and listed. Run from apps/web with the
 db package's tsx and `--env-file=../../.env`; point `DATABASE_URL` at production to load there.
 
+## Locations and money (added 2026-10-10)
+
+A location is the money boundary inside a tenant. `locations.stripe_account_id` (null = the business's
+main account), `locations.tax_rate_bps` (null = business default) and the location's name/address/phone
+(receipt identity when it has its own account). `apps/web/src/server/locations.ts` → `paymentContext()`
+resolves all of that for a sale, appointment or location; every Stripe call goes through it.
+
+- One Connect webhook endpoint still serves everything: `event.account` is looked up on `businesses` first,
+  then on `locations` (policy `jobs_read` on `locations`, migration 0039). Nothing to add in the Stripe
+  dashboard when a location connects its own account.
+- Stripe Customers are per connected account: `client_stripe_customers (client_id, stripe_account_id)`.
+  Legacy `clients.stripe_customer_id` was copied into it by migration 0039 and is no longer read.
+- Migration 0039 also backfilled `sales.location_id` (from the appointment, else default), `gift_cards` /
+  `client_packages.location_id` (from the sale), `clients.home_location_id` (last appointment) and, for
+  multi-location businesses, `staff_schedules.location_id` (staff primary, else default). Re-run nothing;
+  it is idempotent-safe but only meant to run once.
+- Staff hours rows: `staff_schedules.location_id` null = the staff member's primary site, else the default.
+
 ## Stripe webhook setup script
 
 `apps/web/scripts/stripe-production-setup.ts` (run with `packages/db/node_modules/.bin/tsx --env-file=../../.env` from

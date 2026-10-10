@@ -22,6 +22,16 @@ export default async function ServicesPage({ params }: { params: Promise<{ slug:
       .leftJoin(schema.serviceCategories, eq(schema.serviceCategories.id, schema.services.categoryId))
       .orderBy(asc(schema.serviceCategories.sortOrder), asc(schema.serviceCategories.name), asc(schema.services.sortOrder), asc(schema.services.name)),
   );
+  const [locations, offered] = await withTenant(business.id, async (tx) => [
+    await tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations),
+    await tx.select({ serviceId: schema.serviceLocations.serviceId, locationId: schema.serviceLocations.locationId }).from(schema.serviceLocations),
+  ]);
+  const onlyAt = (serviceId: string) => {
+    if (locations.length < 2) return "";
+    const ids = offered.filter((o) => o.serviceId === serviceId).map((o) => o.locationId);
+    if (!ids.length || ids.length >= locations.length) return "";
+    return ` · ${ids.map((id) => locations.find((l) => l.id === id)?.name.replace(/^.*? - /, "") ?? "?").join(", ")} only`;
+  };
   const manage = can(permissions, "services.manage");
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
@@ -62,6 +72,7 @@ export default async function ServicesPage({ params }: { params: Promise<{ slug:
                       {s.depositCents ? ` · deposit ${formatMoney(s.depositCents, business.currency)}` : ""}
                       {s.capacity > 1 ? ` · class of ${s.capacity}` : ""}
                       {!s.bookableOnline ? " · not online" : ""}
+                      {onlyAt(s.id)}
                     </p>
                   </div>
                   <span className="font-medium">{formatMoney(s.priceCents, business.currency)}</span>

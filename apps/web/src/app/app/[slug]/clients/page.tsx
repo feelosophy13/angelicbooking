@@ -7,6 +7,8 @@ import { listClients, type ClientSort } from "@/server/clients";
 import { dateShort, money } from "@/lib/format";
 import { Button, Card, Input, LinkButton, PageHeader, Empty } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { LocationFilter } from "@/components/location-filter";
+import { listLocations } from "@/server/locations";
 
 export const metadata: Metadata = { title: "Clients" };
 
@@ -17,18 +19,20 @@ const SORTS: { key: ClientSort; label: string; align?: "right" }[] = [
   { key: "created", label: "Client since" },
 ];
 
-export default async function ClientsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ q?: string; sort?: string; dir?: string; page?: string }> }) {
+export default async function ClientsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ q?: string; sort?: string; dir?: string; page?: string; location?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
   const { business, permissions } = await requireBusiness(slug);
+  const locations = await listLocations(business.id);
+  const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
   const q = sp.q ?? "";
   const sort = (SORTS.some((s) => s.key === sp.sort) ? sp.sort : "name") as ClientSort;
   const dir = sp.dir === "desc" ? "desc" : sp.dir === "asc" ? "asc" : sort === "name" || sort === "created" ? "asc" : "desc";
   const page = Math.max(1, Number(sp.page) || 1);
-  const r = await listClients(business.id, { q, sort, dir, page });
+  const r = await listClients(business.id, { q, sort, dir, page, locationId: locationFilter });
   const link = (extra: Record<string, string | number | undefined>) => {
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries({ q: q || undefined, sort, dir, page, ...extra })) if (v !== undefined && v !== "") p.set(k, String(v));
+    for (const [k, v] of Object.entries({ q: q || undefined, sort, dir, page, location: locationFilter ?? undefined, ...extra })) if (v !== undefined && v !== "") p.set(k, String(v));
     return `?${p.toString()}`;
   };
   const sortLink = (key: ClientSort) => link({ sort: key, dir: sort === key ? (dir === "asc" ? "desc" : "asc") : key === "name" || key === "created" ? "asc" : "desc", page: 1 });
@@ -38,9 +42,11 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
       <PageHeader title="Clients">
         <form className="flex gap-2">
           <Input name="q" defaultValue={q} placeholder="Search name, phone, email" className="w-64" />
+          {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
           <Button type="submit" variant="secondary" aria-label="Search"><Search className="h-4 w-4" /></Button>
         </form>
-        <LinkButton href={`/app/${slug}/clients/export${q ? `?q=${encodeURIComponent(q)}` : ""}`}><Download className="h-4 w-4" /> CSV</LinkButton>
+        <LocationFilter locations={locations} current={locationFilter} query={q ? `q=${encodeURIComponent(q)}` : ""} allLabel="All" />
+        <LinkButton href={`/app/${slug}/clients/export?${new URLSearchParams({ ...(q ? { q } : {}), ...(locationFilter ? { location: locationFilter } : {}) }).toString()}`}><Download className="h-4 w-4" /> CSV</LinkButton>
         {can(permissions, "clients.write") ? <LinkButton href={`/app/${slug}/clients/new`} variant="primary"><Plus className="h-4 w-4" /> New client</LinkButton> : null}
       </PageHeader>
       <Card>
@@ -67,7 +73,7 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
                 <tr key={c.id} className="hover:bg-stone-50">
                   <td className="px-4 py-2">
                     <Link href={`/app/${slug}/clients/${c.id}`} className="font-medium hover:underline">{c.firstName} {c.lastName}</Link>
-                    <p className="truncate text-xs text-stone-500">{[c.phone, c.email].filter(Boolean).join(" · ") || "no contact info"}</p>
+                    <p className="truncate text-xs text-stone-500">{[c.phone, c.email].filter(Boolean).join(" · ") || "no contact info"}{locations.length > 1 && c.homeLocationName ? ` · ${c.homeLocationName.replace(/^.*? - /, "")}` : ""}</p>
                   </td>
                   <td className="px-4 py-2 text-stone-600">{c.lastVisit ? dateShort(c.lastVisit, business.timezone) : <span className="text-stone-400">—</span>}</td>
                   <td className="px-4 py-2 text-right">{money(Number(c.spend), business.currency)}</td>

@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
 import { syncConnectAccount } from "./stripe-connect";
+import { tenantForAccount } from "./locations";
 import { markCardPaymentFailed, markCardPaymentSucceeded } from "./sales";
 import { handleRenewalFailed, handleRenewalInvoice, handleSubscriptionDeleted } from "./membership-billing";
 
@@ -21,9 +22,16 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<"processed
     if (existing?.processedAt) return "duplicate";
   }
 
-  const business = accountId
-    ? await db.query.businesses.findFirst({ where: eq(schema.businesses.stripeAccountId, accountId) })
-    : null;
+  // The account is the business's main account, or one location's own account.
+  let business = accountId ? await db.query.businesses.findFirst({ where: eq(schema.businesses.stripeAccountId, accountId) }) : null;
+  let locationId: string | null = null;
+  if (!business && accountId) {
+    const t = await tenantForAccount(accountId);
+    if (t) {
+      business = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, t.businessId) })) ?? null;
+      locationId = t.locationId;
+    }
+  }
 
   try {
     let outcome: "processed" | "ignored" = "ignored";
@@ -60,7 +68,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<"processed
         break;
       }
       case "invoice.paid": {
-        if (business) outcome = (await handleRenewalInvoice(business, event.data.object)) ? "processed" : "ignored";
+        if (business) outcome = (await handleRenewalInvoice(business, event.data.object, locationId)) ? "processed" : "ignored";
         break;
       }
       case "invoice.payment_failed": {

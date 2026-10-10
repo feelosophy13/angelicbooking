@@ -19,9 +19,10 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   if (!p) notFound();
   const { campaign } = p;
   const sms = await smsAvailableFor(business.id);
-  const [services, staff] = await withTenant(business.id, async (tx) => [
+  const [services, staff, locations] = await withTenant(business.id, async (tx) => [
     await tx.select({ id: schema.services.id, name: schema.services.name }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
     await tx.select({ id: schema.staff.id, displayName: schema.staff.displayName }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)),
+    await tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations).orderBy(asc(schema.locations.name)),
   ]);
   const stats = campaign.status === "sent" ? await campaignStats(business.id, campaign.id) : null;
   return (
@@ -35,7 +36,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             <p className="whitespace-pre-line rounded-lg bg-stone-50 p-3">{campaign.body}</p>
           </div>
         ) : (
-          <CampaignForm action={updateCampaign} slug={slug} campaign={campaign} services={services} staff={staff} submitLabel="Save" sms={sms} />
+          <CampaignForm action={updateCampaign} slug={slug} campaign={campaign} services={services} staff={staff} locations={locations} submitLabel="Save" sms={sms} />
         )}
       </Card>
       <div className="space-y-4">

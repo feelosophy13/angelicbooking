@@ -76,6 +76,7 @@ const scheduleSchema = z.array(
     on: z.boolean(),
     start: z.string().regex(timeRe),
     end: z.string().regex(timeRe),
+    locationId: z.string().nullable(),
   }),
 );
 
@@ -89,13 +90,17 @@ export async function saveSchedule(formData: FormData) {
       on: formData.get(`on_${weekday}`) === "on",
       start: String(formData.get(`start_${weekday}`) ?? "09:00"),
       end: String(formData.get(`end_${weekday}`) ?? "17:00"),
+      locationId: (formData.get(`loc_${weekday}`) as string | null) || null,
     })),
   );
   for (const r of rows) if (r.on && r.start >= r.end) { await setFlash("Start time must be before end time.", "error"); return; }
 
   await withTenant(ctx.business.id, async (tx) => {
+    // Only locations of this business are accepted; a single-location business stores null (= the only one).
+    const locs = await tx.select({ id: schema.locations.id }).from(schema.locations);
+    const locId = (id: string | null) => (locs.length > 1 && id && locs.some((l) => l.id === id) ? id : null);
     await tx.delete(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, staffId));
-    const values = rows.filter((r) => r.on).map((r) => ({ businessId: ctx.business.id, staffId, weekday: r.weekday, startTime: r.start, endTime: r.end }));
+    const values = rows.filter((r) => r.on).map((r) => ({ businessId: ctx.business.id, staffId, weekday: r.weekday, startTime: r.start, endTime: r.end, locationId: locId(r.locationId) }));
     if (values.length) await tx.insert(schema.staffSchedules).values(values);
   });
   await setFlash("Hours saved");

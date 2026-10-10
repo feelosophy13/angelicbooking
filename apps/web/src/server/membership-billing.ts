@@ -10,6 +10,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, schema, withJobs, withTenant } from "@angelic/db";
 import { stripe } from "@/lib/stripe";
 import { ensureStripeCustomer } from "./stripe-connect";
+import { locationOrDefault, paymentContextFor } from "./locations";
 
 export class MembershipBillingError extends Error {}
 
@@ -25,13 +26,15 @@ async function ensurePlanPrice(accountId: string, businessId: string, plan: type
 
 /** Start charging the saved card every month from the end of the current period. */
 export async function enableAutoRenew(business: Business, membershipId: string, paymentMethodId: string, actorUserId: string) {
-  const accountId = business.stripeAccountId;
-  if (!accountId || !business.stripeChargesEnabled) throw new MembershipBillingError("Connect Stripe under Settings → Payments first.");
   const m = await withTenant(business.id, (tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, membershipId) }));
   if (!m || m.status !== "active") throw new MembershipBillingError("Membership is not active.");
   if (m.stripeSubscriptionId) throw new MembershipBillingError("Auto-renew is already on.");
   const [plan, client] = await withTenant(business.id, async (tx) => [await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, m.planId) }), await tx.query.clients.findFirst({ where: eq(schema.clients.id, m.clientId) })] as const);
   if (!plan || !client) throw new MembershipBillingError("Plan or client not found.");
+  // The subscription lives on the account of the site that sold the membership (else the client's home site, else the default).
+  const pay = await paymentContextFor(business, m.locationId ?? client.homeLocationId);
+  const accountId = pay.accountId;
+  if (!accountId || !pay.ready) throw new MembershipBillingError("Connect Stripe under Settings → Payments first.");
   const customer = await withTenant(business.id, (tx) => ensureStripeCustomer({ accountId, businessId: business.id, client, tx }));
   const priceId = await ensurePlanPrice(accountId, business.id, plan, business.currency);
   const anchor = Math.max(Math.floor(m.currentPeriodEnd.getTime() / 1000), Math.floor(Date.now() / 1000) + 300);
@@ -48,7 +51,7 @@ export async function enableAutoRenew(business: Business, membershipId: string, 
     { stripeAccount: accountId, idempotencyKey: `membership_sub_${m.id}` },
   );
   await withTenant(business.id, async (tx) => {
-    await tx.update(schema.clientMemberships).set({ stripeSubscriptionId: sub.id, autoRenew: true, paymentFailedAt: null }).where(eq(schema.clientMemberships.id, m.id));
+    await tx.update(schema.clientMemberships).set({ stripeSubscriptionId: sub.id, autoRenew: true, paymentFailedAt: null, locationId: m.locationId ?? pay.location?.id ?? null }).where(eq(schema.clientMemberships.id, m.id));
     await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "membership.autorenew_on", entity: "client_membership", entityId: m.id, diff: JSON.stringify({ subscription: sub.id }) });
   });
 }
@@ -56,9 +59,10 @@ export async function enableAutoRenew(business: Business, membershipId: string, 
 export async function disableAutoRenew(business: Business, membershipId: string, actorUserId: string, cancelMembership = false) {
   const m = await withTenant(business.id, (tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, membershipId) }));
   if (!m) throw new MembershipBillingError("Membership not found.");
-  if (m.stripeSubscriptionId && business.stripeAccountId) {
+  const pay = await paymentContextFor(business, m.locationId);
+  if (m.stripeSubscriptionId && pay.accountId) {
     try {
-      await stripe().subscriptions.cancel(m.stripeSubscriptionId, {}, { stripeAccount: business.stripeAccountId });
+      await stripe().subscriptions.cancel(m.stripeSubscriptionId, {}, { stripeAccount: pay.accountId });
     } catch (e) {
       if ((e as Stripe.errors.StripeError).code !== "resource_missing") throw e;
     }
@@ -73,7 +77,7 @@ export async function disableAutoRenew(business: Business, membershipId: string,
 }
 
 /** Connect webhook: a renewal invoice was paid. Extends the period, resets credits, records the sale. Idempotent per invoice. */
-export async function handleRenewalInvoice(business: Business, invoice: Stripe.Invoice) {
+export async function handleRenewalInvoice(business: Business, invoice: Stripe.Invoice, locationId: string | null = null) {
   const subId = subscriptionIdOf(invoice);
   if (!subId) return false;
   const m = await withJobs((tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.stripeSubscriptionId, subId) }));
@@ -97,7 +101,7 @@ export async function handleRenewalInvoice(business: Business, invoice: Stripe.I
       const rows = await tx.execute<{ n: number }>(sql`select next_sale_number(${business.id}) as n`);
       const [sale] = await tx
         .insert(schema.sales)
-        .values({ businessId: business.id, number: Number(rows[0]?.n ?? 1001), clientId: fresh.clientId, currency: invoice.currency, source: "membership", status: "paid", subtotalCents: amount, totalCents: amount, paidCents: amount, closedAt: new Date() })
+        .values({ businessId: business.id, number: Number(rows[0]?.n ?? 1001), clientId: fresh.clientId, locationId: fresh.locationId ?? locationId ?? (await locationOrDefault(tx, null))?.id ?? null, currency: invoice.currency, source: "membership", status: "paid", subtotalCents: amount, totalCents: amount, paidCents: amount, closedAt: new Date() })
         .returning();
       await tx.insert(schema.saleLines).values({ businessId: business.id, saleId: sale!.id, kind: "membership", productId: fresh.planId, name: `${plan?.name ?? "Membership"} renewal`, quantity: 1, unitCents: amount, amountCents: amount, taxable: false });
       const piId = typeof (invoice as unknown as { payment_intent?: string | { id: string } }).payment_intent === "string" ? ((invoice as unknown as { payment_intent: string }).payment_intent) : ((invoice as unknown as { payment_intent?: { id: string } }).payment_intent?.id ?? null);

@@ -2,7 +2,7 @@
 import { sql } from "drizzle-orm";
 import { pgTable, pgEnum, text, integer, boolean, timestamp, index, uniqueIndex, check, jsonb } from "drizzle-orm/pg-core";
 import { user } from "./auth";
-import { appointments, businesses, clients, staff } from "./domain";
+import { appointments, businesses, clients, locations, staff } from "./domain";
 
 const id = () =>
   text("id")
@@ -86,6 +86,8 @@ export const sales = pgTable(
     // Human-friendly, per-business sequential-ish number for receipts.
     number: integer("number").notNull(),
     appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
+    // Where the money was taken: decides the Stripe account, tax rate and receipt identity.
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     status: saleStatus("status").notNull().default("open"),
     currency: text("currency").notNull().default("usd"),
@@ -109,6 +111,7 @@ export const sales = pgTable(
   },
   (t) => [
     index("sales_business_created_idx").on(t.businessId, t.createdAt),
+    index("sales_business_location_idx").on(t.businessId, t.locationId),
     uniqueIndex("sales_business_number_uq").on(t.businessId, t.number),
     uniqueIndex("sales_appointment_uq").on(t.appointmentId),
   ],
@@ -134,6 +137,11 @@ export const saleLines = pgTable(
     amountCents: integer("amount_cents").notNull(), // quantity * unit
     taxable: boolean("taxable").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
+    // A service line covered by a package session or membership credit: what covered it and
+    // what it was worth, so cross-location redemptions can be reported.
+    clientPackageId: text("client_package_id"),
+    clientMembershipId: text("client_membership_id"),
+    creditCents: integer("credit_cents").notNull().default(0),
   },
   (t) => [index("sale_lines_sale_idx").on(t.saleId), index("sale_lines_business_staff_idx").on(t.businessId, t.staffId)],
 );
@@ -153,6 +161,7 @@ export const payments = pgTable(
     refundedCents: integer("refunded_cents").notNull().default(0),
     stripePaymentIntentId: text("stripe_payment_intent_id"),
     stripeChargeId: text("stripe_charge_id"),
+    giftCardId: text("gift_card_id"), // method = gift_card
     cardBrand: text("card_brand"),
     cardLast4: text("card_last4"),
     note: text("note"),
@@ -218,6 +227,7 @@ export const giftCards = pgTable(
     purchaserClientId: text("purchaser_client_id").references(() => clients.id, { onDelete: "set null" }),
     recipientName: text("recipient_name"),
     saleId: text("sale_id").references(() => sales.id, { onDelete: "set null" }),
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }), // sold at
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     active: boolean("active").notNull().default(true),
     createdAt: createdAt(),
@@ -256,6 +266,7 @@ export const clientPackages = pgTable(
     serviceId: text("service_id"), // null = any service
     remaining: integer("remaining").notNull(),
     saleId: text("sale_id").references(() => sales.id, { onDelete: "set null" }),
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }), // sold at
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
@@ -299,6 +310,8 @@ export const clientMemberships = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
     currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull(),
     creditsRemaining: integer("credits_remaining").notNull().default(0),
+    // Sold at: the renewal subscription lives on this location's Stripe account.
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     stripeSubscriptionId: text("stripe_subscription_id"),
     autoRenew: boolean("auto_renew").notNull().default(false),
     lastInvoiceId: text("last_invoice_id"),

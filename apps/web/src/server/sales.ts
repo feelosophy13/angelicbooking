@@ -10,6 +10,7 @@ import { awardPointsForSale } from "./loyalty";
 import { queueReviewRequest } from "./reviews";
 import { decrementStockForSale } from "./inventory";
 import { countPromoUse, promoDiscount, validatePromo, PromoError } from "./promos";
+import { locationOrDefault } from "./locations";
 
 export class SaleError extends Error {}
 
@@ -27,13 +28,23 @@ async function audit(tx: TenantDb, businessId: string, actorUserId: string, acti
   });
 }
 
-/** Recompute stored totals from lines + discount. Call after any line change. */
+/** The tax rate for a sale: its location's own rate when set, else the business default passed in. */
+async function taxRateForSale(tx: TenantDb, saleId: string, businessDefaultBps: number): Promise<number> {
+  const [row] = await tx
+    .select({ bps: schema.locations.taxRateBps })
+    .from(schema.sales)
+    .innerJoin(schema.locations, eq(schema.locations.id, schema.sales.locationId))
+    .where(eq(schema.sales.id, saleId));
+  return row?.bps ?? businessDefaultBps;
+}
+
+/** Recompute stored totals from lines + discount. Call after any line change. `taxRateBps` is the business default; the sale's location may override it. */
 async function recompute(tx: TenantDb, saleId: string, taxRateBps: number, discount: Discount | null, discountNote?: string | null) {
   const lines = await tx.select().from(schema.saleLines).where(eq(schema.saleLines.saleId, saleId));
   const t = computeTotals(
     lines.map((l) => ({ kind: l.kind, amountCents: l.amountCents, taxable: l.taxable, staffId: l.staffId })),
     discount,
-    taxRateBps,
+    await taxRateForSale(tx, saleId, taxRateBps),
   );
   const [paid] = await tx
     .select({
@@ -74,12 +85,15 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
       .orderBy(asc(schema.appointmentItems.sortOrder));
     const rows = await tx.execute<{ n: number }>(sql`select next_sale_number(${input.businessId}) as n`);
     const n = Number(rows[0]?.n ?? 1001);
+    // The money is taken where the appointment happens; walk-ins without a location use the default site.
+    const location = await locationOrDefault(tx, appt.locationId);
     const [sale] = await tx
       .insert(schema.sales)
       .values({
         businessId: input.businessId,
         number: n,
         appointmentId: appt.id,
+        locationId: location?.id ?? null,
         clientId: appt.clientId,
         currency: input.currency,
         createdByUserId: input.actorUserId,
@@ -550,16 +564,23 @@ export async function voidSale(input: { businessId: string; saleId: string; acto
   });
 }
 
-/** Sales summary for a local-date range: by day, by staff, by payment method. */
-export async function salesReport(businessId: string, from: Date, to: Date) {
+/** Sales summary for a local-date range: by day, by staff, by payment method, by location. `locationId` narrows to one site. */
+export async function salesReport(businessId: string, from: Date, to: Date, locationId?: string | null) {
   return withTenant(businessId, async (tx) => {
-    const closed = and(gte(schema.sales.closedAt, from), lt(schema.sales.closedAt, to), sql`${schema.sales.status} in ('paid','refunded')`);
+    const closed = and(
+      gte(schema.sales.closedAt, from),
+      lt(schema.sales.closedAt, to),
+      sql`${schema.sales.status} in ('paid','refunded')`,
+      ...(locationId ? [eq(schema.sales.locationId, locationId)] : []),
+    );
     const [sales, byStaff, byMethod] = await Promise.all([
       tx
         .select({
           id: schema.sales.id,
           number: schema.sales.number,
           closedAt: schema.sales.closedAt,
+          locationId: schema.sales.locationId,
+          locationName: schema.locations.name,
           clientId: schema.sales.clientId,
           clientFirst: schema.clients.firstName,
           clientLast: schema.clients.lastName,
@@ -573,6 +594,7 @@ export async function salesReport(businessId: string, from: Date, to: Date) {
         })
         .from(schema.sales)
         .leftJoin(schema.clients, eq(schema.clients.id, schema.sales.clientId))
+        .leftJoin(schema.locations, eq(schema.locations.id, schema.sales.locationId))
         .where(closed)
         .orderBy(desc(schema.sales.closedAt)),
       tx
@@ -619,10 +641,61 @@ export async function salesReport(businessId: string, from: Date, to: Date) {
         .select({ status: schema.appointments.status, source: schema.appointments.source, count: sql<number>`count(*)` })
         .from(schema.appointments)
         .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id))
-        .where(and(gte(schema.appointmentItems.startAt, from), lt(schema.appointmentItems.startAt, to), eq(schema.appointmentItems.sortOrder, 0)))
+        .where(and(gte(schema.appointmentItems.startAt, from), lt(schema.appointmentItems.startAt, to), eq(schema.appointmentItems.sortOrder, 0), ...(locationId ? [eq(schema.appointments.locationId, locationId)] : [])))
         .groupBy(schema.appointments.status, schema.appointments.source),
     ]);
-    return { sales, byStaff, byMethod, byService, appts };
+    // Per-location totals (always across all sites so the owner sees the split even when filtered).
+    const allClosed = and(gte(schema.sales.closedAt, from), lt(schema.sales.closedAt, to), sql`${schema.sales.status} in ('paid','refunded')`);
+    const [byLocation, crossGift, crossCredit] = await Promise.all([
+      tx
+        .select({
+          locationId: schema.sales.locationId,
+          locationName: schema.locations.name,
+          count: sql<number>`count(*)`,
+          sales: sql<number>`coalesce(sum(${schema.sales.totalCents} - ${schema.sales.tipCents}), 0)`,
+          tips: sql<number>`coalesce(sum(${schema.sales.tipCents}), 0)`,
+          tax: sql<number>`coalesce(sum(${schema.sales.taxCents}), 0)`,
+          refunded: sql<number>`coalesce(sum(${schema.sales.refundedCents}), 0)`,
+        })
+        .from(schema.sales)
+        .leftJoin(schema.locations, eq(schema.locations.id, schema.sales.locationId))
+        .where(allClosed)
+        .groupBy(schema.sales.locationId, schema.locations.name)
+        .orderBy(schema.locations.name),
+      // Gift cards sold at one site and spent at another: the selling site owes the redeeming site.
+      tx
+        .select({
+          soldAt: schema.giftCards.locationId,
+          redeemedAt: schema.sales.locationId,
+          amount: sql<number>`coalesce(sum(${schema.payments.amountCents} - ${schema.payments.refundedCents}), 0)`,
+          count: sql<number>`count(*)`,
+        })
+        .from(schema.payments)
+        .innerJoin(schema.sales, eq(schema.sales.id, schema.payments.saleId))
+        .innerJoin(schema.giftCards, eq(schema.giftCards.id, schema.payments.giftCardId))
+        .where(and(closed, sql`${schema.payments.status} in ('succeeded','partially_refunded','refunded')`, sql`${schema.giftCards.locationId} is distinct from ${schema.sales.locationId}`, sql`${schema.giftCards.locationId} is not null`))
+        .groupBy(schema.giftCards.locationId, schema.sales.locationId),
+      // Package sessions / membership credits bought at one site and used at another.
+      tx
+        .select({
+          kind: sql<"package" | "membership">`case when ${schema.saleLines.clientPackageId} is not null then 'package' else 'membership' end`,
+          soldAt: sql<string | null>`coalesce(cp.location_id, cm.location_id)`,
+          redeemedAt: schema.sales.locationId,
+          amount: sql<number>`coalesce(sum(${schema.saleLines.creditCents}), 0)`,
+          count: sql<number>`count(*)`,
+        })
+        .from(schema.saleLines)
+        .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
+        .leftJoin(sql`client_packages cp`, sql`cp.id = ${schema.saleLines.clientPackageId}`)
+        .leftJoin(sql`client_memberships cm`, sql`cm.id = ${schema.saleLines.clientMembershipId}`)
+        .where(and(closed, sql`${schema.saleLines.creditCents} > 0`, sql`coalesce(cp.location_id, cm.location_id) is not null`, sql`coalesce(cp.location_id, cm.location_id) is distinct from ${schema.sales.locationId}`))
+        .groupBy(sql`1`, sql`2`, schema.sales.locationId),
+    ]);
+    const crossLocation = [
+      ...crossGift.map((r) => ({ kind: "gift_card" as const, soldAt: r.soldAt, redeemedAt: r.redeemedAt, amount: Number(r.amount), count: Number(r.count) })),
+      ...crossCredit.map((r) => ({ kind: r.kind, soldAt: r.soldAt, redeemedAt: r.redeemedAt, amount: Number(r.amount), count: Number(r.count) })),
+    ];
+    return { sales, byStaff, byMethod, byService, appts, byLocation, crossLocation };
   });
 }
 

@@ -70,6 +70,7 @@ export async function audienceClients(tx: TenantDb, business: Business, audience
   if (audience.lapsedDays) conds.push(sql`v.last_visit is not null and v.last_visit <= ${new Date(now - audience.lapsedDays * 86_400_000)}`);
   if (audience.neverVisited) conds.push(sql`coalesce(v.visits, 0) = 0`);
   if (audience.tag) conds.push(sql`${audience.tag} = any(${schema.clients.tags})`);
+  if (audience.locationId) conds.push(eq(schema.clients.homeLocationId, audience.locationId));
   if (audience.serviceId) conds.push(sql`exists (select 1 from appointment_items ai join appointments a on a.id = ai.appointment_id where a.client_id = ${schema.clients.id} and ai.service_id = ${audience.serviceId} and a.status <> 'cancelled')`);
   if (audience.staffId) conds.push(sql`exists (select 1 from appointment_items ai join appointments a on a.id = ai.appointment_id where a.client_id = ${schema.clients.id} and ai.staff_id = ${audience.staffId} and a.status <> 'cancelled')`);
   const rows = await tx

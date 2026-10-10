@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { requireAction } from "@/lib/tenant";
+import { listLocations } from "@/server/locations";
 import { isStripeConfigured, platformFeeBps } from "@/lib/stripe";
 import type { Metadata } from "next";
 import { BackLink, Button, Card, Input, Notice, PageHeader } from "@/components/ui";
@@ -21,6 +23,8 @@ export default async function PaymentsSettingsPage({
   const connected = !!business.stripeAccountId;
   const ready = connected && business.stripeChargesEnabled;
   const fee = platformFeeBps();
+  const locations = await listLocations(business.id);
+  const multi = locations.length > 1;
 
   return (
     <>
@@ -78,9 +82,51 @@ export default async function PaymentsSettingsPage({
           )}
         </Card>
 
+        {multi ? (
+          <Card className="p-4 lg:col-span-2">
+            <h2 className="mb-1 font-medium">Locations</h2>
+            <p className="mb-3 text-sm text-stone-600">
+              Each location is paid out through the main account above unless it is a separate business with its own Stripe account.
+              Sales, deposits, refunds, saved cards and membership renewals follow the location of the visit.
+            </p>
+            <ul className="divide-y divide-stone-100">
+              {locations.map((l) => {
+                const own = !!l.stripeAccountId;
+                const lReady = own && l.stripeChargesEnabled;
+                return (
+                  <li key={l.id} className="flex flex-wrap items-center gap-3 py-3 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium">{l.name}{l.isDefault ? <span className="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-xs text-brand-800">default</span> : null}</p>
+                      {own ? (
+                        <p className="text-xs text-stone-500">Own account <span className="font-mono">{l.stripeAccountId}</span> · {lReady ? <span className="text-emerald-700">charges enabled</span> : <span className="text-amber-700">onboarding not finished</span>}</p>
+                      ) : (
+                        <p className="text-xs text-stone-500">Uses the main Stripe account{connected ? "" : " (not connected yet)"}</p>
+                      )}
+                      <p className="text-xs text-stone-500">Sales tax {l.taxRateBps == null ? `${(business.taxRateBps / 100).toFixed(2)}% (business default)` : `${(l.taxRateBps / 100).toFixed(2)}%`} · <Link href={`/app/${slug}/settings/locations/${l.id}`} className="text-brand-700 underline">edit location</Link></p>
+                    </div>
+                    {configured ? (
+                      <div className="flex flex-wrap gap-2">
+                        {!own ? (
+                          <form action={connectStripe}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="locationId" value={l.id} /><Button type="submit" size="sm" variant="secondary">Connect its own Stripe account</Button></form>
+                        ) : (
+                          <>
+                            {!lReady ? <form action={connectStripe}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="locationId" value={l.id} /><Button type="submit" size="sm">Continue onboarding</Button></form> : null}
+                            <form action={refreshStripe}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="locationId" value={l.id} /><Button type="submit" size="sm" variant="secondary">Refresh</Button></form>
+                            <form action={disconnectStripe}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="locationId" value={l.id} /><ConfirmSubmit title={`Use the main account for ${l.name}?`} body="New card payments at this location go to the main Stripe account. Past payments stay where they were taken." confirmLabel="Use main account" variant="ghost">Use main account</ConfirmSubmit></form>
+                          </>
+                        )}
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        ) : null}
+
         <Card className="p-4">
           <h2 className="mb-1 font-medium">Sales tax</h2>
-          <p className="mb-3 text-sm text-stone-600">Applied to taxable product lines at checkout. Services are not taxed.</p>
+          <p className="mb-3 text-sm text-stone-600">Applied to taxable product lines at checkout. Services are not taxed.{multi ? " A location can override this on its own page." : ""}</p>
           <ActionForm action={saveTax} className="flex items-end gap-2">
             <input type="hidden" name="slug" value={slug} />
             <Field label="Rate (%)" name="taxPct">

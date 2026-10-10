@@ -28,6 +28,7 @@ export default async function EditLocationPage({ params }: { params: Promise<{ s
         <Field label="State" name="state"><Input name="state" defaultValue={l.state ?? ""} /></Field>
         <Field label="ZIP" name="postalCode"><Input name="postalCode" defaultValue={l.postalCode ?? ""} /></Field>
         <Field label="Timezone (if different)" name="timezone"><Select name="timezone" defaultValue={l.timezone ?? ""}><option value="">Same as business</option>{TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}</Select></Field>
+        <Field label="Sales tax (%)" name="taxPct" hint={`Blank = business default (${(business.taxRateBps / 100).toFixed(2)}%). Applies to sales taken at this location.`}><Input name="taxPct" type="number" step="0.01" min={0} max={30} defaultValue={l.taxRateBps == null ? "" : (l.taxRateBps / 100).toFixed(2)} placeholder={(business.taxRateBps / 100).toFixed(2)} /></Field>
         <div className="sm:col-span-2">
           <p className="mb-1 text-sm font-medium text-stone-700">Opening hours</p>
           <p className="mb-2 text-xs text-stone-500">Shown on the booking page. Online bookings for staff at this location stay inside these hours even if a provider&apos;s own schedule runs longer.</p>

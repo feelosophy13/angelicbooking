@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { instantToISODate } from "@angelic/core";
+import { instantToISODate, weekdayOf } from "@angelic/core";
 
 export const metadata: Metadata = { title: "Calendar" };
-import { getRangeAgenda } from "@/server/agenda";
+import { filterAgendaByLocation, getRangeAgenda } from "@/server/agenda";
 import { requireBusiness } from "@/lib/tenant";
 import { formatDateLong, shiftISODate } from "@/lib/utils";
 import { LinkButton, PageHeader, Empty } from "@/components/ui";
@@ -45,8 +45,8 @@ export default async function CalendarPage({
   const agenda = await getRangeAgenda(business.id, tz, from, days);
   const locations = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.name)));
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
-  const staff = locationFilter ? agenda.staff.filter((s) => !s.locationId || s.locationId === locationFilter) : agenda.staff;
-  const items = agenda.items.filter((i) => staff.some((s) => s.id === i.staffId));
+  // Day view: who works at this location on that weekday; week/month: anyone who works there on some day.
+  const { staff, items } = filterAgendaByLocation(agenda, locationFilter, view === "day" ? weekdayOf(date) : null);
   const staffFilter = staff.some((s) => s.id === sp.staff) ? sp.staff! : null;
 
   const minuteOf = (d: Date) => {
@@ -168,7 +168,9 @@ export default async function CalendarPage({
           slug={slug}
         />
       ) : null}
-      {staff.length === 0 ? (
+      {staff.length === 0 && locationFilter ? (
+        <Empty title={`Nobody works at ${locations.find((l) => l.id === locationFilter)?.name ?? "this location"} ${view === "day" ? "on this day" : "yet"}`} body="Set each provider's location per weekday under Staff → Weekly hours." action={{ href: `/app/${slug}/staff`, label: "Open Staff" }} />
+      ) : staff.length === 0 ? (
         <Empty title="No staff yet" body="Add a staff member before booking appointments." action={{ href: `/app/${slug}/staff/new`, label: "Add a staff member" }} />
       ) : view === "month" ? (
         <MonthGrid monthStart={monthStart} daysInMonth={daysInMonth} today={today} items={calItems.filter((i) => i.status !== "cancelled")} staff={staff} slug={slug} staffFilter={staffFilter} />
