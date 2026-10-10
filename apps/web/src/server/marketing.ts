@@ -5,6 +5,7 @@
  * with transactional messages.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { after } from "next/server";
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db, schema, withJobs, withTenant, type CampaignAudience, type TenantDb } from "@angelic/db";
 import { instantToISODate, normalizePhone } from "@angelic/core";
@@ -127,8 +128,8 @@ export async function sendCampaign(business: Business, id: string, actorUserId: 
     await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "campaign.send", entity: "campaign", entityId: c.id, diff: JSON.stringify({ recipients: inserted.length, channel: c.channel }) });
     return inserted.map((r) => r.id);
   });
-  // Deliver in the background; the cron picks up anything left.
-  void deliverMany(business.id, ids).catch((e) => console.error("[campaign] delivery failed", (e as Error).message));
+  // Deliver after the response; the cron picks up anything left.
+  if (ids.length) after(() => deliverMany(business.id, ids).catch((e) => console.error("[campaign] delivery failed", (e as Error).message)));
   return ids.length;
 }
 
@@ -216,14 +217,21 @@ async function runAutomationsFor(business: Business, now: Date): Promise<number>
             order by a.client_id, i.start_at desc
           ) v`);
         const cutoff = now.getTime() - a.days * 86_400_000;
+        const due: { clientId: string; periodKey: string }[] = [];
         for (const r of rows) {
+          if (r.has_upcoming) continue;
           const last = new Date(r.last_visit).getTime();
-          if (a.kind === "win_back" && last <= cutoff && !r.has_upcoming) targets.push({ client: null as unknown as typeof schema.clients.$inferSelect, periodKey: r.appointment_id, ...( { clientId: r.client_id } as object) } as never);
-          if (a.kind === "rebook" && last <= cutoff && last > cutoff - 3 * 86_400_000 && !r.has_upcoming) targets.push({ client: null as unknown as typeof schema.clients.$inferSelect, periodKey: r.appointment_id, ...({ clientId: r.client_id } as object) } as never);
+          // win-back: anyone lapsed past the threshold; rebook: a 3-day window after the threshold so
+          // enabling it later doesn't message every old client at once.
+          const hit = a.kind === "win_back" ? last <= cutoff : last <= cutoff && last > cutoff - 3 * 86_400_000;
+          if (hit) due.push({ clientId: r.client_id, periodKey: r.appointment_id });
         }
-        const ids = [...new Set(targets.map((t) => (t as unknown as { clientId: string }).clientId))];
+        const ids = [...new Set(due.map((d) => d.clientId))];
         const clients = ids.length ? await tx.select().from(schema.clients).where(inArray(schema.clients.id, ids)) : [];
-        targets = targets.map((t) => ({ client: clients.find((c) => c.id === (t as unknown as { clientId: string }).clientId)!, periodKey: t.periodKey })).filter((t) => !!t.client);
+        targets = due.flatMap((d) => {
+          const client = clients.find((c) => c.id === d.clientId);
+          return client ? [{ client, periodKey: d.periodKey }] : [];
+        });
       }
       for (const { client, periodKey } of targets) {
         const claimed = await tx.insert(schema.automationSends).values({ businessId: business.id, automationId: a.id, clientId: client.id, periodKey }).onConflictDoNothing().returning({ id: schema.automationSends.id });
