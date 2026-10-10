@@ -128,6 +128,30 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (hours before, scheduled at booking and cancelled/moved with the appointment), rebook, birthday, win-back.
 - [x] Settings → Locations: edit page for existing locations.
 
+### Locations as a first-class dimension (planned 2026-10-10; one tenant = one Stripe account, locations inside it)
+Decisions with the owner: providers work fixed days per site; Fairfax does not offer facials, prices are the same
+everywhere; gift cards, packages and memberships are redeemable at any site. Vagaro-style "linked businesses" are
+NOT needed for this; separate tenants stay reserved for a separate brand/bank/Stripe account.
+
+**Phase 1 (unblocks Sterling + Fairfax)**
+- [ ] Staff schedules per location: each weekly-hours row carries a location (column exists, unused); the hours
+      editor gets a location picker per day; availability and the calendar filter use the day's location, so
+      "unassigned shows everywhere" goes away. Day-off overrides stay per staff.
+- [ ] Location on every sale (from the appointment's location, else the staff member's location that day, else
+      default); Sales report, CSV exports and payroll grouped/filterable by location.
+- [ ] Per-location booking link and QR on Settings → Online booking / Embed (`?location=` deep link already works).
+- [ ] Services "offered at": a set of locations per service (default all); the booking page and staff pickers
+      hide services not offered at the chosen location. No per-location pricing (not needed).
+
+**Phase 2**
+- [ ] Optional per-location text number and reply-to phone; per-location tax rate override; apply the location
+      timezone to scheduling.
+- [ ] "Valid at" on gift cards / packages / memberships (default: any location) for businesses that want it.
+
+**Phase 3 (owners with several businesses)**
+- [ ] "All my businesses" dashboard: read-only roll-up of sales and upcoming appointments across tenants the
+      user belongs to; optional shared client directory; one platform invoice per owner.
+
 ### Needs a real Stripe/Twilio run before relying on it (2026-10-10)
 - [ ] Online deposit + card on file at booking (test cards on a connected test account), including the
       automatic refund when a slot is taken after the charge and the refund on online cancellation.
