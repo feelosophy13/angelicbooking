@@ -94,12 +94,13 @@ async function main() {
 
 // ---------------------------------------------------------------------------
 async function importLocations(tx: TenantDb, businessId: string) {
-  const want = ["Angelic Beauty", "Angelic Lashes by Tiffany"];
+  const want = ["Angelic Beauty - Sterling", "Angelic Beauty - Fairfax"]; // Vagaro calls the Fairfax site "Angelic Lashes by Tiffany"
   const existing = await tx.select().from(schema.locations);
   const out = new Map<string, string>();
   for (const name of want) {
-    let row = existing.find((l) => norm(l.name).startsWith(norm(name)));
-    if (!row && name === "Angelic Beauty") row = existing.find((l) => l.isDefault);
+    const alias = name.includes("Fairfax") ? ["angelic lashes", "fairfax"] : ["sterling"];
+    let row = existing.find((l) => norm(l.name) === norm(name) || alias.some((a) => norm(l.name).includes(a)));
+    if (!row && name.includes("Sterling")) row = existing.find((l) => l.isDefault);
     if (row) {
       out.set(name, row.id);
       R("locations").existing++;
