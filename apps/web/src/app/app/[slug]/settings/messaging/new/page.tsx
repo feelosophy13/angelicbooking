@@ -3,6 +3,7 @@ import { requireAction } from "@/lib/tenant";
 import { money } from "@/lib/format";
 import { getActiveNumber, numberMonthlyFeeCents, searchTollFree, twilioConfigured } from "@/server/messaging";
 import { redirect } from "next/navigation";
+import { billingState } from "@/server/billing";
 import { Button, FormPage, Input, Notice } from "@/components/ui";
 import { ActionForm, ConfirmSubmit } from "@/components/form";
 import { buyNumberAction } from "../actions";
@@ -14,6 +15,7 @@ export default async function NewNumberPage({ params, searchParams }: { params: 
   const { contains = "" } = await searchParams;
   const { business } = await requireAction(slug, "business.manage");
   if (await getActiveNumber(business.id)) redirect(`/app/${slug}/settings/messaging`);
+  if (!billingState(business).canBuyNumber) redirect(`/app/${slug}/settings/billing`);
   const fee = numberMonthlyFeeCents();
   let numbers: { phoneNumber: string; friendlyName: string }[] = [];
   let error: string | null = null;
@@ -30,7 +32,7 @@ export default async function NewNumberPage({ params, searchParams }: { params: 
   return (
     <FormPage title="Choose a toll-free number" backHref={`/app/${slug}/settings/messaging`} backLabel="Text messaging" width="max-w-2xl">
       <p className="text-sm text-stone-600">
-        Pick any available number. {fee > 0 ? `${money(fee)} per month, billed with your subscription once payments are enabled.` : "Included in your plan."}
+        Pick any available number. {fee > 0 ? `${money(fee)} per month on your invoice.` : "Included in your plan."}
       </p>
       <form method="get" className="mt-3 flex gap-2">
         <Input name="contains" defaultValue={contains} placeholder="Digits or letters to include, e.g. 555 or CUTS (optional)" />

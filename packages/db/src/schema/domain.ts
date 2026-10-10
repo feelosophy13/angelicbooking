@@ -87,8 +87,15 @@ export const businesses = pgTable("businesses", {
   website: text("website"),
   instagram: text("instagram"),
   hoursText: text("hours_text"), // free-form opening hours, one line per day
-  // Platform billing
+  // Platform billing (Stripe Billing on the PLATFORM account, separate from the
+  // business's own Connect account). See apps/web/src/server/billing.ts.
   plan: text("plan").notNull().default("trial"),
+  stripeCustomerId: text("stripe_customer_id").unique(),
+  stripeSubscriptionId: text("stripe_subscription_id").unique(),
+  // none | trialing | active | past_due | unpaid | canceled | incomplete | incomplete_expired | paused
+  subscriptionStatus: text("subscription_status").notNull().default("none"),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -357,6 +364,8 @@ export const messagingNumbers = pgTable(
     // start. Charged by the platform subscription once Stripe billing is enabled.
     monthlyFeeCents: integer("monthly_fee_cents").notNull().default(0),
     billingStartsAt: timestamp("billing_starts_at", { withTimezone: true }),
+    // Stripe subscription item (si_…) carrying the monthly number fee, while active.
+    stripeItemId: text("stripe_item_id"),
     purchasedAt: timestamp("purchased_at", { withTimezone: true }).defaultNow().notNull(),
     releasedAt: timestamp("released_at", { withTimezone: true }),
     createdAt: createdAt(),

@@ -6,6 +6,7 @@ import { appUrl } from "@/lib/stripe";
 import { emailConfigured, sendEmail, sendSms, smsConfigured, type SmsSender } from "./providers";
 import { platformSmsSender } from "@/lib/twilio";
 import { activeNumber } from "@/server/messaging";
+import { reportSmsUsage } from "@/server/billing";
 import { templates, type ApptContext, type TemplateName } from "./templates";
 
 type Row = typeof schema.notifications.$inferSelect;
@@ -197,6 +198,7 @@ async function deliverClaimed(claimed: Claimed[]): Promise<Summary> {
     summary[o.status]++;
     byBusiness.set(c.row.businessId, [...(byBusiness.get(c.row.businessId) ?? []), o]);
   });
+  const smsById = new Map(claimed.filter((c) => c.row.channel === "sms").map((c) => [c.row.id, true]));
   for (const [businessId, list] of byBusiness) {
     await withTenant(businessId, async (tx) => {
       for (const o of list) {
@@ -206,6 +208,8 @@ async function deliverClaimed(claimed: Claimed[]): Promise<Summary> {
           .where(and(eq(schema.notifications.id, o.id), eq(schema.notifications.status, "sending")));
       }
     });
+    // Metered billing: one meter event per text actually sent (idempotent on the notification id).
+    await reportSmsUsage(businessId, list.filter((o) => o.status === "sent" && smsById.has(o.id)).map((o) => o.id));
   }
   return summary;
 }

@@ -54,7 +54,9 @@ Production runs on Render (workspace "My Workspace", region Virginia):
   (created by hand from `packages/db/sql/roles.sql` with a generated password); migrations use the database owner.
   External connections from a laptop need `?sslmode=require` on the URL; the internal URL used by the service does not.
 - Environment variables live in the Render dashboard: `DATABASE_URL`, `DATABASE_ADMIN_URL`, `BETTER_AUTH_SECRET`,
-  `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, `JOBS_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `PLATFORM_FEE_BPS`.
+  `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, `JOBS_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `PLATFORM_FEE_BPS`,
+  `RESEND_API_KEY`, `EMAIL_FROM`, `TWILIO_ACCOUNT_SID/AUTH_TOKEN`, `SMS_NUMBER_MONTHLY_FEE_CENTS`, `SMS_USAGE_CENTS`,
+  `SMS_INCLUDED_PER_MONTH`, `BILLING_BASE_CENTS`, `BILLING_TRIAL_DAYS`. Every variable set on Render must also exist in the local `.env`.
   Stripe, Resend and Twilio keys are not set yet; add them there when ready.
 - Custom domains `angelicbooking.com` (apex) and `www.angelicbooking.com` (redirects to apex) are attached to the service
   and verified. DNS is on Cloudflare (DNS only, not proxied): `A @ 216.24.57.1` and `CNAME www angelic-booking.onrender.com`.
@@ -82,11 +84,17 @@ Environment). Saving in the dashboard offers "Save, rebuild, and deploy"; take i
    "your account"). URL `https://angelicbooking.com/api/stripe/webhook`. Events:
    `account.updated`, `payment_intent.succeeded`, `payment_intent.payment_failed`,
    `charge.refunded`, `charge.dispute.created`. Copy the signing secret.
-5. Render env: `STRIPE_SECRET_KEY=sk_live_…`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_…`,
-   `STRIPE_WEBHOOK_SECRET=whsec_…`. Deploy.
-6. In the app, each business connects its own account: Settings → Payments → Connect Stripe,
+5. Add a SECOND endpoint for your own account (leave "Connected accounts" unticked) at
+   `https://angelicbooking.com/api/stripe/billing` with events `checkout.session.completed`,
+   `customer.subscription.created/updated/deleted/paused/resumed`, `invoice.paid`, `invoice.payment_failed`.
+   Copy its signing secret.
+6. Render env + local `.env`: `STRIPE_SECRET_KEY=sk_live_…`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_…`,
+   `STRIPE_WEBHOOK_SECRET=whsec_…` (Connect endpoint), `STRIPE_BILLING_WEBHOOK_SECRET=whsec_…` (account endpoint). Deploy.
+7. Stripe → Settings → Billing → Customer portal: click Save once so a default portal configuration exists
+   (the app creates one through the API if none is found, but the dashboard copy lets you brand it).
+8. In the app, each business connects its own account: Settings → Payments → Connect Stripe,
    which sends the owner through Stripe's onboarding and returns to `/settings/payments/return`.
-7. Test: book and check out a real card for a small amount, then refund it from the sale page.
+9. Test: book and check out a real card for a small amount, then refund it from the sale page.
    The webhook should flip the sale to paid within seconds; Developers → Webhooks shows 2xx responses.
 
 ### 2. Resend (email: receipts, reminders, owner alerts)
@@ -141,6 +149,28 @@ How delivery works (`apps/web/src/lib/notify/index.ts`):
   subquery, so overlapping runs (cron + after-response sends, or two deploys) never send the same row twice.
 - Sends run 8 at a time; outcomes are written back per tenant. Rows stuck in `sending` for 10 minutes
   (process died mid-run) are reclaimed by the next run.
+
+### 4b. Platform billing (how businesses pay you)
+Stripe Billing on the platform account (`apps/web/src/server/billing.ts`). Each business becomes a Stripe
+Customer with one subscription:
+- **Base plan** `BILLING_BASE_CENTS` per month (currently 0: the platform is free, a card is only collected
+  for add-ons). `BILLING_TRIAL_DAYS` adds a trial when the base is paid.
+- **Dedicated text number** `SMS_NUMBER_MONTHLY_FEE_CENTS` (1500): a licensed subscription item added when a
+  number is bought and removed (prorated credit) when released. Buying requires an `active`/`trialing`
+  subscription whenever the number or usage costs money.
+- **Text usage** `SMS_USAGE_CENTS` per message (2) after `SMS_INCLUDED_PER_MONTH` (0): a metered price on
+  Stripe Billing Meter `sms_sent`. Every SMS marked sent produces one meter event, idempotent on the
+  notification id, from the delivery job.
+- Products (`angelic_platform`, `angelic_sms_number`, `angelic_sms_usage`), prices (lookup keys encode the
+  amounts) and the meter are created on first use. To change a price, change the env value and redeploy;
+  existing subscriptions keep their old price until migrated.
+- Owner flow: Settings → Billing → "Add a card" (Stripe Checkout, `payment_method_collection: always`)
+  → back to the page, which syncs the subscription from the Checkout session; "Manage card & invoices"
+  opens the Customer Portal. `past_due`/`unpaid` shows a red banner across the app.
+- Card payments salons take from clients still go to their own Connect account; a `PLATFORM_FEE_BPS`
+  application fee can be charged on those independently of the subscription.
+- Local testing without the webhook: the Checkout return URL syncs state; "Refresh" re-reads the
+  subscription. For webhooks locally use `stripe listen --forward-to localhost:3001/api/stripe/billing`.
 
 ### 5. Optional
 - Google consent screen logo: adding one triggers Google's brand verification review; skip until

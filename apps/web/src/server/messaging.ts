@@ -8,6 +8,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
+import { attachNumberItem, billingState, detachNumberItem } from "@/server/billing";
 import {
   createTollfreeVerification,
   fetchTollfreeVerification,
@@ -50,6 +51,7 @@ export async function buyNumber(business: Business, phoneNumber: string): Promis
   if (!twilioConfigured()) throw new MessagingError("Text messaging is not set up on this platform yet.");
   const existing = await getActiveNumber(business.id);
   if (existing) throw new MessagingError(`You already have a number (${existing.phoneNumber}). Release it first to pick a different one.`);
+  if (!billingState(business).canBuyNumber) throw new MessagingError("Add a card under Settings → Billing first; the number is billed monthly.");
   let bought: { sid: string; phoneNumber: string };
   try {
     bought = await purchaseNumber(phoneNumber, { friendlyName: `${business.name} (${business.slug})`, smsUrl: appUrl("/api/twilio/inbound") });
@@ -64,6 +66,7 @@ export async function buyNumber(business: Business, phoneNumber: string): Promis
         .values({ businessId: business.id, phoneNumber: bought.phoneNumber, providerSid: bought.sid, monthlyFeeCents: numberMonthlyFeeCents(), billingStartsAt: new Date() })
         .returning(),
     );
+    await attachNumberItem(business, row!.id).catch((e) => console.error("[messaging] could not add number to subscription", (e as Error).message));
     return row!;
   } catch (e) {
     // Don't leave a paid number dangling if the row could not be written.
@@ -84,6 +87,7 @@ export async function releaseBusinessNumber(business: Business): Promise<void> {
   await withTenant(business.id, (tx) =>
     tx.update(schema.messagingNumbers).set({ status: "released", releasedAt: new Date() }).where(eq(schema.messagingNumbers.id, row.id)),
   );
+  await detachNumberItem(business, row).catch((e) => console.error("[messaging] could not remove number from subscription", (e as Error).message));
 }
 
 // ---------------------------------------------------------------------------

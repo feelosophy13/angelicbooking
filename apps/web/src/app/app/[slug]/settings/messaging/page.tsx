@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
 import { money } from "@/lib/format";
 import { getActiveNumber, numberMonthlyFeeCents, twilioConfigured } from "@/server/messaging";
+import { billingState } from "@/server/billing";
 import { StatusBadge } from "@/components/status-badge";
 import { BackLink, Card, LinkButton, Notice, PageHeader } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, SubmitButton } from "@/components/form";
@@ -24,6 +25,7 @@ export default async function MessagingPage({ params, searchParams }: { params: 
   const { business } = await requireAction(slug, "business.manage");
   const number = await getActiveNumber(business.id);
   const fee = numberMonthlyFeeCents();
+  const billing = billingState(business);
 
   return (
     <>
@@ -40,11 +42,13 @@ export default async function MessagingPage({ params, searchParams }: { params: 
             so replies and caller ID are yours. Clients opt in on your booking page.
           </p>
           <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-stone-600">
-            <li>{fee > 0 ? `${money(fee)} per month` : "Included in your plan"}{fee > 0 ? ", billed with your subscription once payments are enabled" : ""}.</li>
+            <li>{fee > 0 ? `${money(fee)} per month` : "Included in your plan"}{billing.config.smsUsageCents > 0 ? ` plus ${money(billing.config.smsUsageCents)} per text sent${billing.config.smsIncluded > 0 ? ` after the first ${billing.config.smsIncluded} each month` : ""}` : ""}, on your monthly invoice.</li>
             <li>One-time carrier verification (we prefill it from your profile); approval usually takes 1 to 3 weeks.</li>
             <li>Until the number is verified, text messages are skipped and clients still get email.</li>
           </ul>
-          {twilioConfigured() ? (
+          {twilioConfigured() && !billing.canBuyNumber ? (
+            <div className="mt-4"><Notice>Add a card under <Link href={`/app/${slug}/settings/billing`} className="underline">Billing</Link> first; the number is billed monthly.</Notice></div>
+          ) : twilioConfigured() ? (
             <div className="mt-4"><LinkButton href={`/app/${slug}/settings/messaging/new`}>Choose a number</LinkButton></div>
           ) : (
             <div className="mt-4"><Notice>Text messaging is not available on this platform yet.</Notice></div>
