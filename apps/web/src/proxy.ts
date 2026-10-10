@@ -8,16 +8,10 @@ const APP_HOSTS = new Set(
     .map((u) => u.replace(/^https?:\/\//, "").replace(/\/.*$/, "")),
 );
 
-const APP_HOST = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-// When the app lives on app.<domain>, send the bare domain and www there until a
-// marketing site exists (otherwise they'd be treated as tenant booking domains).
-const ROOT_REDIRECT_HOSTS = new Set(APP_HOST.startsWith("app.") ? [APP_HOST.slice(4), `www.${APP_HOST.slice(4)}`] : []);
-
 /**
- * 1. Root domain → app subdomain redirect (see ROOT_REDIRECT_HOSTS).
- * 2. Custom booking domains: a request whose host is not the app host is
+ * 1. Custom booking domains: a request whose host is not the app host is
  *    rewritten to /book/_host/<host>/... and resolved to the business there.
- * 3. Cheap optimistic redirect for signed-out visitors on protected paths.
+ * 2. Cheap optimistic redirect for signed-out visitors on protected paths.
  */
 export function proxy(request: NextRequest) {
   // Rate limits: sign-in/up and other auth endpoints, public booking submits, webhook/jobs.
@@ -32,13 +26,6 @@ export function proxy(request: NextRequest) {
   }
   const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "").toLowerCase().split(":")[0]!;
   const { pathname } = request.nextUrl;
-  if (ROOT_REDIRECT_HOSTS.has(host)) {
-    const url = request.nextUrl.clone();
-    url.protocol = "https:";
-    url.host = APP_HOST;
-    url.port = "";
-    return NextResponse.redirect(url, 308);
-  }
   const isAppHost = !host || APP_HOSTS.has(host) || [...APP_HOSTS].some((h) => h.split(":")[0] === host);
   if (!isAppHost && !pathname.startsWith("/book/") && !pathname.startsWith("/api/") && !pathname.startsWith("/_next/")) {
     const url = request.nextUrl.clone();

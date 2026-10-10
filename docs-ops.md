@@ -58,11 +58,12 @@ Production runs on Render (workspace "My Workspace", region Virginia):
   `RESEND_API_KEY`, `EMAIL_FROM`, `TWILIO_ACCOUNT_SID/AUTH_TOKEN`, `SMS_NUMBER_MONTHLY_FEE_CENTS`, `SMS_USAGE_CENTS`,
   `SMS_INCLUDED_PER_MONTH`, `BILLING_BASE_CENTS`, `BILLING_TRIAL_DAYS`. Every variable set on Render must also exist in the local `.env`.
   Stripe, Resend and Twilio keys are not set yet; add them there when ready.
-- The app lives at **`app.angelicbooking.com`** (`BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL`). Custom domains attached to the
-  service: `app.angelicbooking.com`, `angelicbooking.com` and `www.angelicbooking.com`. DNS is on Cloudflare (DNS only, not
-  proxied): `CNAME app angelic-booking.onrender.com`, `A @ 216.24.57.1`, `CNAME www angelic-booking.onrender.com`.
-  `src/proxy.ts` 308-redirects the bare domain and www to the app host (until a marketing site exists); any other host,
-  including the onrender.com hostname, is treated as a tenant booking domain and 404s at `/`. That is expected.
+- The app lives at **`app.angelicbooking.com`** (`BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL`); it is the only custom
+  domain on the Render service. Cloudflare DNS: `CNAME app angelic-booking.onrender.com` (DNS only, not proxied).
+  The bare domain and `www` are served by the Cloudflare Worker `angelicbooking` (marketing site, proxied Worker records
+  in the same zone); a Cloudflare redirect rule sends `angelicbooking.com/book/*`, `/app*`, `/sign-in`, `/sign-up` to
+  the app host so links issued before the move keep working. Any other host hitting the app, including the onrender.com
+  hostname, is treated as a tenant booking domain and 404s at `/`. That is expected.
   Moving hosts: add the domain on Render, add DNS, wait for "verified", change the two env vars, deploy, update the cron
   job's URL, and add the new origin + redirect URI to the Google OAuth client.
 - Changing an env var through the API does not trigger a deploy; POST `/v1/services/<id>/deploys` afterwards.

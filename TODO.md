@@ -38,7 +38,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] `BETTER_AUTH_URL` / `NEXT_PUBLIC_APP_URL` switched, deployed, cron job URL updated, redirects verified.
 - [ ] Google consent screen: change the home page link from the bare domain to `https://app.angelicbooking.com`
       (cosmetic; the bare domain redirects anyway).
-- [ ] Later: put a marketing site on the bare domain and remove the root redirect from `src/proxy.ts`.
+- [x] Marketing site (Cloudflare Worker `angelicbooking`) owns the bare domain and www; root domains detached from Render,
+      root redirect removed from `src/proxy.ts`, Cloudflare redirect rule keeps old `/book/*` links working.
 
 ## 2. Before real customers
 
