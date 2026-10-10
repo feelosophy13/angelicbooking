@@ -132,7 +132,7 @@ async function importStaff(tx: TenantDb, businessId: string, locations: Map<stri
     const isProvider = providers.has(norm(name)) || int(e.services_offered) > 0;
     const [ins] = await tx
       .insert(schema.staff)
-      .values({ businessId, displayName: name, email, phone: normalizePhone(e.cell) ?? null, color: colors[i++ % colors.length]!, position: e.role || null, bookableOnline: isProvider && bool(e.show_on_staff_page), takesAppointments: isProvider, active: true, sortOrder: int(e.lineup_order, 99), locationId: norm(name) === "tiffany yi" ? (locations.get("Angelic Lashes by Tiffany") ?? null) : null })
+      .values({ businessId, displayName: name, email, phone: normalizePhone(e.cell) ?? null, color: colors[i++ % colors.length]!, position: e.role || null, bookableOnline: isProvider && bool(e.show_on_staff_page), takesAppointments: isProvider, active: true, sortOrder: int(e.lineup_order, 99), locationId: null }) // the export does not say where each person works: assign locations in Staff
       .returning();
     byName.set(norm(name), ins!.id);
     R("staff").created++;

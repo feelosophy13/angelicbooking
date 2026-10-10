@@ -13,15 +13,16 @@ import { Card, LinkButton, PageHeader } from "@/components/ui";
 export default async function StaffPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, permissions } = await requireBusiness(slug);
-  const [rows, members] = await Promise.all([
-    withTenant(business.id, (tx) =>
-      tx.select().from(schema.staff).orderBy(asc(schema.staff.active), asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
-    ),
+  const [rows, locations, members] = await Promise.all([
+    withTenant(business.id, (tx) => tx.select().from(schema.staff).orderBy(asc(schema.staff.active), asc(schema.staff.sortOrder), asc(schema.staff.displayName))),
+    withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations)),
     db.select({ userId: schema.member.userId, role: schema.member.role }).from(schema.member).where(eq(schema.member.organizationId, business.id)),
   ]);
   const roles = await listRoles(business.id);
   const roleName = (key: string) => roles.find((r) => r.key === key)?.name ?? key;
   const roleByUser = new Map(members.map((m) => [m.userId, m.role]));
+  const locationName = (id: string | null) => (id ? locations.find((l) => l.id === id)?.name ?? null : null);
+  const multiLocation = locations.length > 1;
   return (
     <>
       <PageHeader title="Staff">
@@ -39,7 +40,7 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
                   <div className="min-w-0 flex-1">
                     <p className={`font-medium ${s.active ? "" : "text-stone-400"}`}>{s.displayName}{s.active ? "" : " · inactive"}</p>
                     <p className="truncate text-xs text-stone-500">
-                      {[s.position, s.email ?? "no email", memberRole ? `${roleName(memberRole)} (has login)` : "no login yet", s.takesAppointments ? null : "no calendar column"].filter(Boolean).join(" · ")}
+                      {[s.position, multiLocation ? (locationName(s.locationId) ?? "any location") : null, s.email ?? "no email", memberRole ? `${roleName(memberRole)} (has login)` : "no login yet", s.takesAppointments ? null : "no calendar column"].filter(Boolean).join(" · ")}
                     </p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-stone-300" />

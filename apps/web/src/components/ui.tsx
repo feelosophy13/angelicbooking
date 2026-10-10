@@ -157,22 +157,4 @@ export function FormPage({ title, backHref, backLabel, children, width = "max-w-
   );
 }
 
-/** Horizontal tabs for a detail page. */
-export function Tabs({ items, current }: { items: { href: string; label: string }[]; current: string }) {
-  return (
-    <nav className="mb-4 flex gap-1 overflow-x-auto border-b border-stone-200">
-      {items.map((t) => (
-        <Link
-          key={t.href}
-          href={t.href}
-          className={cn(
-            "-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm",
-            current === t.href ? "border-brand-600 font-medium text-brand-700" : "border-transparent text-stone-600 hover:text-stone-900",
-          )}
-        >
-          {t.label}
-        </Link>
-      ))}
-    </nav>
-  );
-}
+export { Tabs } from "./tabs";
