@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, lte, or } from "drizzle-orm";
 import { after } from "next/server";
-import { schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
+import { db, schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { formatMoney } from "@/lib/utils";
@@ -154,7 +154,7 @@ const CONCURRENCY = 8;
  * stale "sending" rows. The UPDATE is the lock, so two concurrent runs (cron +
  * after-response delivery, or overlapping deploys) can never both send a row.
  */
-type Claimed = { row: Row; sender: SmsSender | null };
+type Claimed = { row: Row; sender: SmsSender | null; email: { fromName: string; replyTo?: string } | null };
 
 /**
  * The sender a business texts from: its own verified toll-free number, else the
@@ -170,7 +170,10 @@ async function claimWithSender(tx: TenantDb, opts: { ids?: string[]; limit: numb
   const rows = await claim(tx, opts);
   if (!rows.length) return [];
   const sender = rows.some((r) => r.channel === "sms") ? await smsSenderFor(tx) : null;
-  return rows.map((row) => ({ row, sender }));
+  // Emails go out as "<Business> <platform address>" with replies routed to the business.
+  const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, rows[0]!.businessId), columns: { name: true, email: true } });
+  const email = biz ? { fromName: biz.name, replyTo: biz.email ?? undefined } : null;
+  return rows.map((row) => ({ row, sender, email }));
 }
 
 async function claim(tx: TenantDb, opts: { ids?: string[]; limit: number }): Promise<Row[]> {
@@ -194,12 +197,12 @@ async function claim(tx: TenantDb, opts: { ids?: string[]; limit: number }): Pro
     .returning();
 }
 
-async function send({ row: n, sender }: Claimed): Promise<Outcome> {
+async function send({ row: n, sender, email }: Claimed): Promise<Outcome> {
   const configured = n.channel === "email" ? emailConfigured() : smsConfigured();
   if (!configured) return { id: n.id, status: "skipped", error: `${n.channel} provider not configured` };
   if (n.channel === "sms" && !sender) return { id: n.id, status: "skipped", error: "No verified text number yet (Settings → Text messaging)" };
   try {
-    const r = n.channel === "email" ? await sendEmail({ to: n.recipient, subject: n.subject ?? "", html: n.body }) : await sendSms({ to: n.recipient, body: n.body, sender: sender! });
+    const r = n.channel === "email" ? await sendEmail({ to: n.recipient, subject: n.subject ?? "", html: n.body, fromName: email?.fromName, replyTo: email?.replyTo }) : await sendSms({ to: n.recipient, body: n.body, sender: sender! });
     return { id: n.id, status: "sent", providerId: r.id };
   } catch (e) {
     return { id: n.id, status: "failed", error: (e as Error).message };

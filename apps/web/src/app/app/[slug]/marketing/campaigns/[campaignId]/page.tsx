@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
+import { smsAvailableFor } from "@/server/messaging";
 import { campaignStats, previewCampaign } from "@/server/marketing";
 import { Card, Input } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
@@ -17,6 +18,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   const p = await previewCampaign(business, campaignId);
   if (!p) notFound();
   const { campaign } = p;
+  const sms = await smsAvailableFor(business.id);
   const [services, staff] = await withTenant(business.id, async (tx) => [
     await tx.select({ id: schema.services.id, name: schema.services.name }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
     await tx.select({ id: schema.staff.id, displayName: schema.staff.displayName }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)),
@@ -33,7 +35,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             <p className="whitespace-pre-line rounded-lg bg-stone-50 p-3">{campaign.body}</p>
           </div>
         ) : (
-          <CampaignForm action={updateCampaign} slug={slug} campaign={campaign} services={services} staff={staff} submitLabel="Save" />
+          <CampaignForm action={updateCampaign} slug={slug} campaign={campaign} services={services} staff={staff} submitLabel="Save" sms={sms} />
         )}
       </Card>
       <div className="space-y-4">

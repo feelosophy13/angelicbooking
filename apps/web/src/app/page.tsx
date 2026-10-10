@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { listMyBusinesses } from "@/lib/tenant";
 import { LinkButton } from "@/components/ui";
-import { LegalFooter } from "@/components/doc-page";
+import { Landing } from "@/components/landing";
 
 export default async function Home() {
   const session = await getSession();
@@ -29,17 +29,5 @@ export default async function Home() {
       </main>
     );
   }
-  return (
-    <main className="relative mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center gap-6 p-8 text-center">
-      <h1 className="text-4xl font-semibold tracking-tight">Angelic Booking</h1>
-      <p className="max-w-md text-stone-600">
-        Calendar-first scheduling and checkout for salons and spas. Your clients, your Stripe account, no clutter.
-      </p>
-      <div className="flex gap-3">
-        <LinkButton href="/sign-up" variant="primary">Create an account</LinkButton>
-        <LinkButton href="/sign-in">Sign in</LinkButton>
-      </div>
-      <LegalFooter className="absolute bottom-0 left-0 right-0" />
-    </main>
-  );
+  return <Landing />;
 }

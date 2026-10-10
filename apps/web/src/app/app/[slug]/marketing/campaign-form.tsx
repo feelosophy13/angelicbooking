@@ -4,7 +4,7 @@ import { ActionForm, Field, SubmitButton } from "@/components/form";
 
 type Action = Parameters<typeof ActionForm>[0]["action"];
 
-export function CampaignForm({ action, slug, campaign, services, staff, submitLabel }: { action: Action; slug: string; campaign: { id?: string; name: string; channel: "email" | "sms"; subject: string | null; body: string; audience: CampaignAudience } | null; services: { id: string; name: string }[]; staff: { id: string; displayName: string }[]; submitLabel: string }) {
+export function CampaignForm({ action, slug, campaign, services, staff, submitLabel, sms }: { action: Action; slug: string; campaign: { id?: string; name: string; channel: "email" | "sms"; subject: string | null; body: string; audience: CampaignAudience } | null; services: { id: string; name: string }[]; staff: { id: string; displayName: string }[]; submitLabel: string; sms: boolean }) {
   const a = campaign?.audience ?? {};
   return (
     <ActionForm action={action}>
@@ -12,10 +12,10 @@ export function CampaignForm({ action, slug, campaign, services, staff, submitLa
       {campaign?.id ? <input type="hidden" name="campaignId" value={campaign.id} /> : null}
       <div className="grid gap-4 sm:grid-cols-[1fr_10rem]">
         <Field label="Name (internal)" name="name" required><Input name="name" defaultValue={campaign?.name ?? ""} required placeholder="October lash special" /></Field>
-        <Field label="Channel" name="channel">
-          <Select name="channel" defaultValue={campaign?.channel ?? "email"}>
+        <Field label="Channel" name="channel" hint={sms ? undefined : "Texts need a verified number (Settings → Text messaging)"}>
+          <Select name="channel" defaultValue={sms ? (campaign?.channel ?? "email") : "email"}>
             <option value="email">Email</option>
-            <option value="sms">Text message</option>
+            {sms ? <option value="sms">Text message</option> : null}
           </Select>
         </Field>
       </div>

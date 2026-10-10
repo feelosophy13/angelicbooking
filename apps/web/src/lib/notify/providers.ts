@@ -11,12 +11,19 @@ export function smsConfigured(): boolean {
   return twilioConfigured();
 }
 
-export async function sendEmail(input: { to: string; subject: string; html: string; text?: string; replyTo?: string }): Promise<{ id: string }> {
+/** "Angelic Beauty <hello@mail1.angelicbooking.com>": the platform address with the business as the display name. */
+export function fromAddress(fromName?: string | null): string {
+  const raw = process.env.EMAIL_FROM ?? "";
+  const addr = /<([^>]+)>/.exec(raw)?.[1] ?? raw;
+  return fromName ? `${fromName.replace(/["<>]/g, "")} <${addr}>` : raw;
+}
+
+export async function sendEmail(input: { to: string; subject: string; html: string; text?: string; replyTo?: string; fromName?: string | null }): Promise<{ id: string }> {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      from: process.env.EMAIL_FROM,
+      from: fromAddress(input.fromName),
       to: [input.to],
       subject: input.subject,
       html: input.html,

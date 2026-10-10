@@ -10,3 +10,4 @@ coverage
 
 # Vagaro export: real customer/employee data, keep out of git
 data/vagaro-export/
+data/vagaro-export-angelic-lashes/

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { listAutomations } from "@/server/marketing";
+import { smsAvailableFor } from "@/server/messaging";
 import { Card, Input, Select, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { saveAutomationAction, saveReminderHours } from "../actions";
@@ -12,7 +13,7 @@ export const metadata: Metadata = { title: "Automations" };
 export default async function AutomationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, permissions } = await requireAction(slug, "reports.view");
-  const autos = await listAutomations(business.id);
+  const [autos, sms] = await Promise.all([listAutomations(business.id), smsAvailableFor(business.id)]);
   const byKind = Object.fromEntries(autos.map((a) => [a.kind, a]));
   const manage = can(permissions, "business.manage");
 
@@ -27,8 +28,8 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
           <input type="hidden" name="kind" value={a.kind} />
           <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" name="enabled" defaultChecked={a.enabled} className="h-4 w-4 accent-brand-600" /> On</label>
           <div className="grid grid-cols-2 gap-2">
-            <Field label="Send by" name="channel">
-              <Select name="channel" defaultValue={a.channel}><option value="email">Email</option><option value="sms">Text</option><option value="both">Both</option></Select>
+            <Field label="Send by" name="channel" hint={sms ? undefined : "Texts need a verified number"}>
+              <Select name="channel" defaultValue={sms ? a.channel : "email"}><option value="email">Email</option>{sms ? <><option value="sms">Text</option><option value="both">Both</option></> : null}</Select>
             </Field>
             {a.kind === "pre_visit" ? <Field label="Hours before" name="hoursBefore"><Input name="hoursBefore" type="number" min={1} max={720} defaultValue={a.hoursBefore} /></Field> : a.kind !== "birthday" ? <Field label={a.kind === "win_back" ? "After (days)" : "Days after visit"} name="days"><Input name="days" type="number" min={1} max={730} defaultValue={a.days} /></Field> : null}
           </div>
@@ -42,6 +43,7 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
 
   return (
     <div className="space-y-8">
+      {!sms ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Automations go out by email until you have a verified text number. <Link href={`/app/${slug}/settings/messaging`} className="underline">Get a text number</Link>.</p> : null}
       <section>
         <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-stone-500">Before the visit</h2>
         <p className="mb-3 text-sm text-stone-600">Placeholders for these: {"{first_name} {service} {staff} {when} {manage_url} {forms_url} {business}"}.</p>

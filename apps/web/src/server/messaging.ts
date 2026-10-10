@@ -44,6 +44,13 @@ export async function getActiveNumber(businessId: string): Promise<MessagingNumb
   return withTenant(businessId, activeNumber);
 }
 
+/** Whether this business can send texts right now: its own verified number, or a platform fallback sender. */
+export async function smsAvailableFor(businessId: string): Promise<boolean> {
+  const own = await getActiveNumber(businessId);
+  if (own?.status === "verified") return true;
+  return !!(process.env.TWILIO_FROM || process.env.TWILIO_MESSAGING_SERVICE_SID) && twilioConfigured();
+}
+
 export { searchTollFree, twilioConfigured };
 
 /** Buy `phoneNumber` for the business. Refuses if it already has an active number. */
