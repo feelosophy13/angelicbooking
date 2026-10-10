@@ -32,12 +32,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Add a DMARC record in Cloudflare: `TXT _dmarc.mail1  v=DMARC1; p=none;` (improves Gmail/Yahoo delivery).
 - [ ] Set `SUPPORT_EMAIL` on Render and in `.env` so Help/Privacy/Terms show a contact address.
 
-### Domain move to app.angelicbooking.com (in progress 2026-10-10)
-- [ ] Cloudflare DNS: `CNAME app → angelic-booking.onrender.com` (DNS only).
-- [ ] Google Cloud → Credentials → "Angelic Booking (web)": add origin `https://app.angelicbooking.com` and redirect
-      URI `https://app.angelicbooking.com/api/auth/callback/google`; set the consent screen home link to the app URL.
-- [ ] After Render shows the domain verified: switch `BETTER_AUTH_URL` / `NEXT_PUBLIC_APP_URL`, deploy, update the cron
-      job URL, re-check sign-in, Google sign-in, a booking page and the cron run log.
+### Domain move to app.angelicbooking.com (done 2026-10-10)
+- [x] Cloudflare DNS `CNAME app → angelic-booking.onrender.com` (DNS only); Render verified, certificate issued.
+- [x] Google OAuth client: origin `https://app.angelicbooking.com` + redirect URI `…/api/auth/callback/google` added.
+- [x] `BETTER_AUTH_URL` / `NEXT_PUBLIC_APP_URL` switched, deployed, cron job URL updated, redirects verified.
+- [ ] Google consent screen: change the home page link from the bare domain to `https://app.angelicbooking.com`
+      (cosmetic; the bare domain redirects anyway).
 - [ ] Later: put a marketing site on the bare domain and remove the root redirect from `src/proxy.ts`.
 
 ## 2. Before real customers
