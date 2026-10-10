@@ -22,6 +22,23 @@ export const createLocation = formAction(
   },
 );
 
+export const updateLocation = formAction(
+  z.object({ slug: z.string(), locationId: f.id(), name: f.text(1, 80), addressLine1: f.optional(120), city: f.optional(60), state: f.optional(40), postalCode: f.optional(20), phone: f.optional(30), timezone: z.string().optional() }),
+  async (d) => {
+    const ctx = await requireAction(d.slug, "business.manage");
+    await withTenant(ctx.business.id, (tx) =>
+      tx
+        .update(schema.locations)
+        .set({ name: d.name, addressLine1: d.addressLine1, city: d.city, state: d.state, postalCode: d.postalCode, phone: d.phone, timezone: d.timezone && TIMEZONES.includes(d.timezone) ? d.timezone : null })
+        .where(eq(schema.locations.id, d.locationId)),
+    );
+    revalidatePath(`/app/${d.slug}/settings/locations`);
+    revalidatePath(`/app/${d.slug}/settings/locations/${d.locationId}`);
+    revalidatePath(`/book/${ctx.business.slug}`, "layout");
+    return "Location saved";
+  },
+);
+
 export async function setDefaultLocation(formData: FormData) {
   const slug = String(formData.get("slug"));
   const id = String(formData.get("id"));
