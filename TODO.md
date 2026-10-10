@@ -69,7 +69,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       services performed, 125 services + add-ons + classes, 9.5k clients, 4.5k appointments incl. 152 upcoming,
       future blocked time, 188 products with stock, packages + 56 client packages, 10 plans + 113 live memberships,
       120 gift cards, 1 promo code). Done locally; run it against production once the pending deploy is out
-      (`DATABASE_URL=<prod, sslmode=require>`), then assign staff to locations and enable the imported classes.
+      (`DATABASE_URL=<prod, sslmode=require>`), then assign staff to locations, enable the imported classes, and
+      set each location's address/phone/opening hours (taken from angelicbeautyva.com on 2026-10-10: Sterling
+      Mon/Wed/Thu 10–6, Fri 10–7, Sat/Sun 10–5, Tue closed; Fairfax Mon–Fri 9–6, Sat 8:30–6, Sun 9–5).
 - [ ] Write a short privacy/terms review with a lawyer before accepting other businesses.
 
 ## 3. Product backlog
