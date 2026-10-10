@@ -67,6 +67,44 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only.
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### Vagaro parity gaps (added 2026-10-10)
+
+**Booking**
+- [ ] Deposits and card on file at online booking: collect the service deposit (or a SetupIntent for
+      card on file) on the business's Connect account during `/book/[slug]`; today the page only says a
+      deposit "may be required" and no-show fees are charged by hand from the appointment page.
+- [ ] Recurring / standing appointments ("every 4 weeks with Maria"): create the series, edit one vs all,
+      stop at a date or count; respect availability per occurrence.
+- [ ] Class and group bookings: services with a capacity, several clients per appointment slot,
+      per-seat pricing and check-in.
+- [ ] Provider calendar sync: two-way Google/Outlook/Apple calendar sync per staff member (at minimum a
+      per-staff subscribable ICS feed; today only the client gets a one-off `.ics` download).
+
+**Clients**
+- [ ] Intake / consent / waiver forms: form builder, send before the visit (link in the confirmation),
+      signed copies stored on the client, required-form flag per service.
+- [ ] Review requests: text/email after a completed visit with a link to Google (or an internal rating),
+      opt-out per client, shown on the client page.
+- [ ] Client accounts: client login on the booking site with upcoming/past appointments, saved cards,
+      packages/memberships balance and rebook-in-one-tap (today only per-booking manage links).
+- [ ] Loyalty and referrals: points per dollar or visit, redeem at checkout, referral credit.
+
+**Marketing**
+- [ ] Email/text campaigns: one-off blasts to a filtered client list (last visit, service, staff),
+      unsubscribe handling, send-count against the SMS allowance.
+- [ ] Automated marketing: birthday message, "we miss you" after N weeks, rebook reminder after a
+      visit; each with a per-business template and on/off switch.
+- [ ] Promo codes: percentage/fixed discount, expiry, usage limit, service restriction, redeemable
+      online and at checkout.
+- [ ] Instagram / Facebook / Google "Book now" buttons: documented links or embed snippet for the
+      booking page (the custom domain already exists).
+
+**Point of sale and retail**
+- [ ] Online store: sell gift cards and products from the booking page (gift cards first: buy for
+      someone else, delivered by email), then products with pickup or flat-rate shipping.
+- [ ] Inventory: on-hand quantity per product, decrement on sale, low-stock alert, receive stock /
+      simple purchase orders, stock-on-hand report.
+
 ## 4. Recurring upkeep
 
 **Weekly**
