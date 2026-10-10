@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { normalizePhone } from "@angelic/core";
 import { BookingError } from "@/server/booking";
-import { cancelOnline, createOnlineBooking, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
+import { assertSlotOpen, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
+import { appointmentForIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
+import { schema, withTenant } from "@angelic/db";
+import { and, eq } from "drizzle-orm";
 
 export type PublicState = { error?: string; ok?: boolean } | undefined;
 
@@ -16,22 +19,84 @@ const contact = z.object({
   smsConsent: z.string().optional().transform((v) => v === "on"),
 });
 
-export async function bookOnline(_prev: PublicState, formData: FormData): Promise<PublicState> {
-  const parsed = contact
-    .extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime() })
-    .safeParse(Object.fromEntries(formData));
+const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime() });
+type BookingFields = z.infer<typeof bookingFields>;
+
+function parseBooking(raw: Record<string, unknown>): { d: BookingFields } | { error: string } {
+  const parsed = bookingFields.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form" };
   const d = parsed.data;
   if (!d.email && !d.phone) return { error: "Enter an email or a mobile number so we can confirm your booking." };
   if (d.phone && !normalizePhone(d.phone)) return { error: "Enter a valid mobile number." };
+  return { d };
+}
+
+export async function bookOnline(_prev: PublicState, formData: FormData): Promise<PublicState> {
+  const p = parseBooking(Object.fromEntries(formData));
+  if ("error" in p) return { error: p.error };
+  const d = p.d;
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
+  // Services that need a deposit or a card must go through the payment steps below.
+  const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, d.serviceId), eq(schema.services.active, true)) }));
+  if (!service) return { error: "That service is no longer available." };
+  if (onlinePaymentRequirement(business, service).mode !== "none") return { error: "This booking needs a card. Please reload the page and try again." };
   let token: string;
   try {
     const r = await createOnlineBooking(business, { ...d, startAt: new Date(d.startAt) });
     token = r.token;
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
+    throw e;
+  }
+  redirect(`/book/${d.slug}/confirmed/${token}`);
+}
+
+export type StartPaymentResult = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string } | { error: string };
+
+/**
+ * Step 1 of a paid booking: validate the form and the slot, create the client,
+ * and open a PaymentIntent (deposit) or SetupIntent (card on file) for the browser.
+ */
+export async function startOnlinePaymentAction(raw: Record<string, string>): Promise<StartPaymentResult> {
+  const p = parseBooking(raw);
+  if ("error" in p) return { error: p.error };
+  const d = p.d;
+  const business = await getPublicBusiness(d.slug);
+  if (!business) return { error: "Online booking is not available." };
+  const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, d.serviceId), eq(schema.services.active, true)) }));
+  if (!service) return { error: "That service is no longer available." };
+  const req = onlinePaymentRequirement(business, service);
+  if (req.mode === "none") return { error: "No payment is needed for this booking. Please reload the page." };
+  const startAt = new Date(d.startAt);
+  try {
+    await assertSlotOpen(business, d.serviceId, d.staffId, startAt);
+    const clientId = await findOrCreateClient(business.id, { ...d, startAt });
+    const r = await startOnlinePayment(business, req.mode, { businessId: business.id, clientId, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString() }, req.amountCents);
+    return { clientSecret: r.clientSecret, intentId: r.id, kind: r.kind, accountId: r.accountId };
+  } catch (e) {
+    if (e instanceof BookingError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Step 2: the browser confirmed the intent. Verify with Stripe, then book. */
+export async function finishOnlineBookingAction(raw: Record<string, string>, intent: { kind: "deposit" | "card"; id: string }): Promise<{ error?: string }> {
+  const p = parseBooking(raw);
+  if ("error" in p) return { error: p.error };
+  const d = p.d;
+  const business = await getPublicBusiness(d.slug);
+  if (!business) return { error: "Online booking is not available." };
+  const existing = await appointmentForIntent(business.id, intent.id);
+  if (existing) redirect(`/book/${d.slug}/confirmed/${existing.manageToken}`);
+  let token: string;
+  try {
+    const startAt = new Date(d.startAt);
+    const verified = await verifyOnlineIntent(business, intent.kind, intent.id, { businessId: business.id, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString() });
+    const r = await createOnlineBooking(business, { ...d, startAt }, new Date(), verified);
+    token = r.token;
+  } catch (e) {
+    if (e instanceof BookingError) return { error: intent.kind === "deposit" && /just taken|no longer/.test(e.message) ? `${e.message} Your deposit has been refunded.` : e.message };
     throw e;
   }
   redirect(`/book/${d.slug}/confirmed/${token}`);

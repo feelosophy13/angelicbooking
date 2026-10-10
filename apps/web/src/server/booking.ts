@@ -61,7 +61,7 @@ function translate(e: unknown): never {
  * The DB exclusion constraint is the final authority on conflicts, so a race
  * between two bookings resolves safely regardless of app-side checks.
  */
-export async function bookAppointment(input: {
+export interface BookAppointmentInput {
   businessId: string;
   clientId: string | null;
   serviceId: string;
@@ -70,7 +70,15 @@ export async function bookAppointment(input: {
   notes?: string | null;
   createdByUserId: string;
   source?: "staff" | "online";
-}): Promise<{ appointmentId: string }> {
+  /** Standing-appointment series this occurrence belongs to. */
+  seriesId?: string | null;
+  /** Deposit already collected online (PaymentIntent on the business's Stripe account). */
+  deposit?: { paymentIntentId: string; cents: number; cardLabel: string | null } | null;
+  /** SetupIntent that saved a card on file at booking. */
+  cardSetupIntentId?: string | null;
+}
+
+export async function bookAppointment(input: BookAppointmentInput): Promise<{ appointmentId: string }> {
   try {
     return await withTenant(input.businessId, async (tx) => {
       const staffRow = await tx.query.staff.findFirst({ where: eq(schema.staff.id, input.staffId) });
@@ -84,6 +92,11 @@ export async function bookAppointment(input: {
           notes: input.notes ?? null,
           source: input.source ?? "staff",
           createdByUserId: input.createdByUserId,
+          seriesId: input.seriesId ?? null,
+          ...(input.deposit
+            ? { depositCents: input.deposit.cents, depositStatus: "paid" as const, depositPaymentIntentId: input.deposit.paymentIntentId, depositCardLabel: input.deposit.cardLabel }
+            : {}),
+          cardSetupIntentId: input.cardSetupIntentId ?? null,
         })
         .returning({ id: schema.appointments.id });
       await insertServiceItems(tx, { ...input, appointmentId: appt!.id, sortOrderBase: 0 });
@@ -91,6 +104,8 @@ export async function bookAppointment(input: {
         serviceId: input.serviceId,
         staffId: input.staffId,
         startAt: input.startAt,
+        ...(input.seriesId ? { seriesId: input.seriesId } : {}),
+        ...(input.deposit ? { depositCents: input.deposit.cents } : {}),
       });
       return { appointmentId: appt!.id };
     });

@@ -3,6 +3,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { canClientCancel, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
 import { getStaffAvailability, staffForService, timingFor } from "./availability";
 import { bookAppointment, BookingError, rescheduleService, setAppointmentStatus } from "./booking";
+import { refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
 import { appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify";
 import { staffAlertEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
@@ -97,7 +98,7 @@ export interface OnlineBookingInput {
 }
 
 /** Find a client by phone or email, else create one. Runs inside the tenant tx. */
-async function findOrCreateClient(businessId: string, input: OnlineBookingInput) {
+export async function findOrCreateClient(businessId: string, input: OnlineBookingInput) {
   return withTenant(businessId, async (tx) => {
     const phone = normalizePhone(input.phone) ?? input.phone;
     const conds = [];
@@ -120,26 +121,54 @@ async function findOrCreateClient(businessId: string, input: OnlineBookingInput)
   });
 }
 
-export async function createOnlineBooking(business: PublicBusiness, input: OnlineBookingInput, now = new Date()) {
-  if (!isWithinBookingWindow(input.startAt, now, business)) throw new BookingError("That time can no longer be booked online.");
+/** Checks a public booking can still be made at `startAt` (window + live availability). */
+export async function assertSlotOpen(business: PublicBusiness, serviceId: string, staffId: string, startAt: Date, now = new Date()) {
+  if (!isWithinBookingWindow(startAt, now, business)) throw new BookingError("That time can no longer be booked online.");
   // Re-validate the slot against live availability so stale pages can't book into a taken time.
-  const slots = await getPublicSlots(business, input.serviceId, input.staffId, isoDateIn(input.startAt, business.timezone), now);
-  if (!slots.some((s) => s.at.getTime() === input.startAt.getTime())) throw new BookingError("That time was just taken. Please pick another.");
-  const clientId = await findOrCreateClient(business.id, input);
-  const { appointmentId } = await bookAppointment({
-    businessId: business.id,
-    clientId,
-    serviceId: input.serviceId,
-    staffId: input.staffId,
-    startAt: input.startAt,
-    notes: input.notes,
-    createdByUserId: null as unknown as string, // online bookings have no staff actor
-    source: "online",
-  });
+  const slots = await getPublicSlots(business, serviceId, staffId, isoDateIn(startAt, business.timezone), now);
+  if (!slots.some((s) => s.at.getTime() === startAt.getTime())) throw new BookingError("That time was just taken. Please pick another.");
+}
+
+export async function createOnlineBooking(business: PublicBusiness, input: OnlineBookingInput, now = new Date(), paid?: VerifiedIntent) {
+  try {
+    await assertSlotOpen(business, input.serviceId, input.staffId, input.startAt, now);
+  } catch (e) {
+    await undoPayment(business, paid);
+    throw e;
+  }
+  const clientId = paid?.meta.clientId ?? (await findOrCreateClient(business.id, input));
+  let appointmentId: string;
+  try {
+    ({ appointmentId } = await bookAppointment({
+      businessId: business.id,
+      clientId,
+      serviceId: input.serviceId,
+      staffId: input.staffId,
+      startAt: input.startAt,
+      notes: input.notes,
+      createdByUserId: null as unknown as string, // online bookings have no staff actor
+      source: "online",
+      deposit: paid?.kind === "deposit" ? { paymentIntentId: paid.paymentIntentId, cents: paid.cents, cardLabel: paid.cardLabel } : null,
+      cardSetupIntentId: paid?.kind === "card" ? paid.setupIntentId : null,
+    }));
+  } catch (e) {
+    await undoPayment(business, paid);
+    throw e;
+  }
   const token = await withTenant(business.id, async (tx) => (await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId) }))!.manageToken);
   await notifyAppointment(business, appointmentId, "confirmation");
   await alertBusiness(business, appointmentId, "booked");
   return { appointmentId, token };
+}
+
+/** A deposit was charged but the booking could not be made: give the money back before surfacing the error. */
+async function undoPayment(business: PublicBusiness, paid: VerifiedIntent | undefined) {
+  if (paid?.kind !== "deposit" || !business.stripeAccountId) return;
+  try {
+    await refundOrphanIntent(business.stripeAccountId, paid.paymentIntentId);
+  } catch (e) {
+    console.error("[online-payments] could not refund orphan deposit", paid.paymentIntentId, (e as Error).message);
+  }
 }
 
 function isoDateIn(at: Date, tz: string) {
@@ -172,6 +201,10 @@ export async function cancelOnline(slug: string, token: string) {
   if (!m) throw new BookingError("Appointment not found.");
   if (!m.canChange) throw new BookingError(`Online cancellation closes ${m.business.cancelWindowHours} hours before the appointment. Please call ${m.business.phone ?? "the salon"}.`);
   await setAppointmentStatus(m.business.id, m.appt.id, "cancelled", "client", "Cancelled online by client");
+  // Inside the cancellation window the deposit goes back automatically.
+  await refundDeposit({ businessId: m.business.id, accountId: m.business.stripeAccountId, appointmentId: m.appt.id, actorUserId: "client", reason: "Cancelled online within policy" }).catch((e) =>
+    console.error("[online-payments] deposit refund on cancel failed", m.appt.id, (e as Error).message),
+  );
   await notifyAppointment(m.business, m.appt.id, "cancellation");
   await alertBusiness(m.business, m.appt.id, "cancelled");
 }

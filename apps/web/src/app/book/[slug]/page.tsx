@@ -4,6 +4,9 @@ import { getAvailableDates, getPublicBusiness, getPublicLocations, getPublicMenu
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
 import { duration } from "@/lib/format";
 import { BookingForm, WaitlistForm } from "./forms";
+import { PaidBookingForm } from "./payment-form";
+import { onlinePaymentRequirement } from "@/server/online-payments";
+import { brandHex } from "@/lib/brand";
 
 type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string };
 
@@ -173,6 +176,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       </>
     );
   }
+  const pay = onlinePaymentRequirement(business, service);
   return (
     <>
       <Step n={4} title="Your details" />
@@ -180,9 +184,24 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       <div className="mb-4 rounded-xl border p-4 text-sm" style={{ background: "var(--brand-tint)", borderColor: "var(--brand-ring)" }}>
         <p className="font-medium">{service.name} · {formatMoney(service.priceCents, business.currency)}</p>
         <p>{formatDateLong(date)} at {formatTime(startAt, tz)} with {slot.staffName}</p>
-        {service.depositCents > 0 ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(service.depositCents, business.currency)} deposit may be required; the salon will confirm.</p> : null}
+        {pay.mode === "deposit" ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(pay.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : pay.mode === "card" ? <p className="mt-1 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : service.depositCents > 0 ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(service.depositCents, business.currency)} deposit may be required; the salon will confirm.</p> : null}
       </div>
-      <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} />
+      {pay.mode === "none" ? (
+        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} />
+      ) : (
+        <PaidBookingForm
+          slug={slug}
+          serviceId={service.id}
+          staffId={slot.staffId}
+          startAt={startAt.toISOString()}
+          policy={business.bookingPolicy}
+          cancelWindowHours={business.cancelWindowHours}
+          mode={pay.mode}
+          amountLabel={formatMoney(pay.amountCents, business.currency)}
+          publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!}
+          brand={brandHex(business.brandColor)}
+        />
+      )}
     </>
   );
 }

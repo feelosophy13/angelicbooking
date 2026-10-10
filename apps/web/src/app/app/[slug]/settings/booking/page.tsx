@@ -28,11 +28,11 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <Field label="Book up to (days ahead)" name="maxAdvanceDays"><Input name="maxAdvanceDays" type="number" min={1} max={365} defaultValue={business.maxAdvanceDays} /></Field>
               <Field label="Cancellation window (hours)" name="cancelWindowHours" hint="Clients can cancel/reschedule online until this many hours before."><Input name="cancelWindowHours" type="number" min={0} defaultValue={business.cancelWindowHours} /></Field>
               <Field label="Reminder (hours before)" name="reminderHours"><Input name="reminderHours" type="number" min={1} max={168} defaultValue={business.reminderHours} /></Field>
-              <Field label="No-show fee" name="noShowFee" hint="Charged to a saved card from the appointment page."><Input name="noShowFee" inputMode="decimal" defaultValue={business.noShowFeeCents ? (business.noShowFeeCents / 100).toFixed(2) : ""} placeholder="0" /></Field>
+              <Field label="No-show fee" name="noShowFee" hint="Charged to a saved card from the appointment page. Deposits are set per service."><Input name="noShowFee" inputMode="decimal" defaultValue={business.noShowFeeCents ? (business.noShowFeeCents / 100).toFixed(2) : ""} placeholder="0" /></Field>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" name="requireCardOnline" defaultChecked={business.requireCardOnline} className="h-4 w-4 accent-brand-600" />
-              Require a card on file to book online <span className="text-xs text-stone-500">(needs Stripe; enforced in a later release)</span>
+              Require a card on file to book online <span className="text-xs text-stone-500">(needs Stripe connected; nothing is charged at booking, the card is kept for no-show fees)</span>
             </label>
             <Field label="Address (shown on booking page and messages)" name="addressLine"><Input name="addressLine" defaultValue={business.addressLine ?? ""} placeholder="123 Main St, Springfield" /></Field>
             <Field label="Booking policy" name="bookingPolicy" hint="Shown to clients when they book."><Textarea name="bookingPolicy" rows={3} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>

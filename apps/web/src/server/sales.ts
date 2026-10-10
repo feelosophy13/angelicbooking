@@ -98,6 +98,24 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
         })),
       );
     }
+    // A deposit paid at online booking becomes the first payment on the ticket.
+    if (appt.depositStatus === "paid" && appt.depositCents > 0) {
+      const m = /^([A-Z]+) •••• (\d{4})$/.exec(appt.depositCardLabel ?? "");
+      await tx.insert(schema.payments).values({
+        businessId: input.businessId,
+        saleId: sale!.id,
+        method: "card",
+        status: "succeeded",
+        amountCents: appt.depositCents,
+        tipCents: 0,
+        stripePaymentIntentId: appt.depositPaymentIntentId,
+        cardBrand: m?.[1]?.toLowerCase() ?? null,
+        cardLast4: m?.[2] ?? null,
+        note: "Deposit paid online",
+        createdByUserId: input.actorUserId,
+      });
+      await tx.update(schema.appointments).set({ depositStatus: "applied" }).where(eq(schema.appointments.id, appt.id));
+    }
     await recompute(tx, sale!.id, input.taxRateBps, null);
     await audit(tx, input.businessId, input.actorUserId, "sale.open", sale!.id, { appointmentId: appt.id });
     return sale!.id;

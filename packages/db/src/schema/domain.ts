@@ -147,12 +147,18 @@ export const staff = pgTable(
     overtimeOverride: boolean("overtime_override"), // null = follow the run setting
     taxDeductionCents: integer("tax_deduction_cents"), // normally null: accountant fills in
     taxDeductionBps: integer("tax_deduction_bps"),
+    // Secret for the provider's subscribable calendar feed (.ics). Rotate to revoke.
+    calendarToken: text("calendar_token")
+      .notNull()
+      .default(sql`encode(gen_random_bytes(18), 'hex')`)
+      .$defaultFn(() => randomToken()),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index("staff_business_idx").on(t.businessId),
     uniqueIndex("staff_business_user_uq").on(t.businessId, t.userId),
+    uniqueIndex("staff_calendar_token_uq").on(t.calendarToken),
   ],
 );
 
@@ -294,6 +300,30 @@ export const clientNotes = pgTable(
   (t) => [index("client_notes_client_idx").on(t.businessId, t.clientId, t.createdAt)],
 );
 
+// A standing appointment ("every 4 weeks with Maria"). Each occurrence is a
+// normal appointment row pointing back here, so the calendar, checkout and
+// notifications need no special cases.
+export const appointmentSeries = pgTable(
+  "appointment_series",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+    serviceId: text("service_id").references(() => services.id, { onDelete: "set null" }),
+    staffId: text("staff_id").references(() => staff.id, { onDelete: "set null" }),
+    intervalWeeks: smallint("interval_weeks").notNull(),
+    firstStartAt: timestamp("first_start_at", { withTimezone: true }).notNull(),
+    occurrences: smallint("occurrences").notNull(), // planned, including the first
+    notes: text("notes"),
+    endedAt: timestamp("ended_at", { withTimezone: true }), // set when the remaining visits are cancelled
+    createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("appointment_series_business_idx").on(t.businessId, t.clientId)],
+);
+
+export const depositStatus = pgEnum("deposit_status", ["none", "paid", "applied", "refunded"]);
+
 export const appointments = pgTable(
   "appointments",
   {
@@ -312,6 +342,16 @@ export const appointments = pgTable(
       .notNull()
       .default(sql`encode(gen_random_bytes(18), 'hex')`)
       .$defaultFn(() => randomToken()),
+    seriesId: text("series_id").references(() => appointmentSeries.id, { onDelete: "set null" }),
+    // Deposit collected at online booking on the business's Stripe account.
+    // "paid" until a sale is opened for the appointment (then the deposit becomes
+    // a payment on that sale: "applied"), or until it is refunded.
+    depositCents: integer("deposit_cents").notNull().default(0),
+    depositStatus: depositStatus("deposit_status").notNull().default("none"),
+    depositPaymentIntentId: text("deposit_payment_intent_id"),
+    depositCardLabel: text("deposit_card_label"), // "VISA •••• 4242"
+    // SetupIntent that saved a card on file at booking (no money moved).
+    cardSetupIntentId: text("card_setup_intent_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -319,6 +359,8 @@ export const appointments = pgTable(
     index("appointments_business_idx").on(t.businessId),
     index("appointments_client_idx").on(t.businessId, t.clientId),
     uniqueIndex("appointments_manage_token_uq").on(t.manageToken),
+    uniqueIndex("appointments_deposit_pi_uq").on(t.depositPaymentIntentId),
+    index("appointments_series_idx").on(t.seriesId),
   ],
 );
 
@@ -580,4 +622,5 @@ export const TENANT_TABLES = [
   "product_categories",
   "roles",
   "client_notes",
+  "appointment_series",
 ] as const;

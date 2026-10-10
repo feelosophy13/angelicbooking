@@ -44,3 +44,27 @@ export function addMinutes(at: Date, min: number): Date {
 }
 
 export const minutesBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime()) / 60_000);
+
+/** Local wall-clock time ("HH:mm") of an instant as seen in a timezone. */
+export function instantToLocalTime(at: Date, timeZone: string): string {
+  const z = new TZDate(at.getTime(), timeZone);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(z.getHours())}:${pad(z.getMinutes())}`;
+}
+
+/**
+ * The same wall-clock time `weeks` weeks later in a timezone (so a 10:00
+ * standing appointment stays at 10:00 across a daylight-saving change).
+ */
+export function addWeeksSameLocalTime(at: Date, weeks: number, timeZone: string): Date {
+  const z = new TZDate(at.getTime(), timeZone);
+  const moved = new TZDate(z.getFullYear(), z.getMonth(), z.getDate() + weeks * 7, z.getHours(), z.getMinutes(), 0, 0, timeZone);
+  return new Date(moved.getTime());
+}
+
+/** Start instants for a standing series: the first plus `occurrences - 1` repeats every `intervalWeeks`. */
+export function seriesOccurrences(first: Date, intervalWeeks: number, occurrences: number, timeZone: string): Date[] {
+  const n = Math.max(1, Math.min(52, Math.floor(occurrences)));
+  const step = Math.max(1, Math.floor(intervalWeeks));
+  return Array.from({ length: n }, (_, i) => (i === 0 ? first : addWeeksSameLocalTime(first, i * step, timeZone)));
+}

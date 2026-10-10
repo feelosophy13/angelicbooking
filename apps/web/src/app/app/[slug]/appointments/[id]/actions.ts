@@ -2,11 +2,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { chargeCardOnFile, openSaleForAppointment, SaleError } from "@/server/sales";
+import { refundDeposit } from "@/server/online-payments";
+import { cancelSeriesFrom } from "@/server/series";
 import { notifyAppointment } from "@/lib/notify";
 import { parseMoney } from "@angelic/core";
 import { schema as dbSchema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { setFlash } from "@/lib/flash";
 import { schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import {
@@ -133,4 +136,41 @@ export async function chargeNoShowFee(_prev: ActionState, formData: FormData): P
   }
   revalidatePath(`/app/${d.slug}/appointments/${d.appointmentId}`);
   return { ok: true };
+}
+
+/** Give back a deposit paid at online booking (only while it has not been applied to a sale). */
+export async function refundDepositAction(formData: FormData) {
+  const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
+  const ctx = await requireAction(slug, "reports.view"); // same bar as other refunds
+  try {
+    const done = await refundDeposit({ businessId: ctx.business.id, accountId: ctx.business.stripeAccountId, appointmentId, actorUserId: ctx.user.id, reason: "Refunded by staff" });
+    await setFlash(done ? "Deposit refunded" : "Nothing to refund", done ? "success" : "info");
+  } catch (e) {
+    if (e instanceof BookingError) await setFlash(e.message, "error");
+    else throw e;
+  }
+  revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
+}
+
+/** Cancel this visit and all later visits in its standing series. */
+export async function cancelSeries(formData: FormData) {
+  const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
+  const ctx = await requireAction(slug, "appointments.write.any");
+  const reason = String(formData.get("reason") ?? "").trim() || null;
+  let ids: string[] = [];
+  try {
+    ids = await cancelSeriesFrom({ businessId: ctx.business.id, appointmentId, actorUserId: ctx.user.id, reason });
+  } catch (e) {
+    if (e instanceof BookingError) {
+      await setFlash(e.message, "error");
+      revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
+      return;
+    }
+    throw e;
+  }
+  // The client hears about the first cancelled visit; later reminders are dropped with each cancellation.
+  if (ids[0]) await notifyAppointment(ctx.business, ids[0], "cancellation");
+  await setFlash(`Cancelled ${ids.length} visit${ids.length === 1 ? "" : "s"}`);
+  revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
+  revalidatePath(`/app/${slug}`);
 }

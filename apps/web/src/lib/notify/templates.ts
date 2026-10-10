@@ -14,6 +14,10 @@ export interface ApptContext {
   manageUrl: string;
   policy: string | null;
   cancelWindowHours: number;
+  /** Formatted deposit already paid online, e.g. "$25.00"; null when none. */
+  depositPaid?: string | null;
+  /** True when a card was saved at booking (nothing charged). */
+  cardOnFile?: boolean;
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -45,7 +49,9 @@ ${bodyHtml.replace(/#6d28d9/g, brand)}
 function details(ctx: ApptContext) {
   return `<table style="font-size:15px;border-collapse:collapse"><tr><td style="padding:4px 12px 4px 0;color:#78716c">When</td><td>${esc(when(ctx))}</td></tr>
 <tr><td style="padding:4px 12px 4px 0;color:#78716c">Service</td><td>${esc(ctx.services)}</td></tr>
-<tr><td style="padding:4px 12px 4px 0;color:#78716c">With</td><td>${esc(ctx.staffName)}</td></tr></table>`;
+<tr><td style="padding:4px 12px 4px 0;color:#78716c">With</td><td>${esc(ctx.staffName)}</td></tr>${
+    ctx.depositPaid ? `<tr><td style="padding:4px 12px 4px 0;color:#78716c">Deposit paid</td><td>${esc(ctx.depositPaid)}</td></tr>` : ctx.cardOnFile ? `<tr><td style="padding:4px 12px 4px 0;color:#78716c">Card</td><td>Saved on file (nothing charged)</td></tr>` : ""
+  }</table>`;
 }
 
 function manage(ctx: ApptContext) {
@@ -57,7 +63,7 @@ export const templates = {
   confirmation: (ctx: ApptContext) => ({
     subject: `Confirmed: ${ctx.services} at ${ctx.businessName}`,
     html: shell(ctx, `You're booked, ${ctx.clientFirstName}!`, details(ctx) + manage(ctx)),
-    sms: `${ctx.businessName}: you're booked for ${ctx.services} with ${ctx.staffName} on ${when(ctx)}. Manage: ${ctx.manageUrl} Reply STOP to opt out.`,
+    sms: `${ctx.businessName}: you're booked for ${ctx.services} with ${ctx.staffName} on ${when(ctx)}.${ctx.depositPaid ? ` Deposit paid: ${ctx.depositPaid}.` : ""} Manage: ${ctx.manageUrl} Reply STOP to opt out.`,
   }),
   reminder: (ctx: ApptContext) => ({
     subject: `Reminder: ${ctx.services} ${when(ctx)}`,

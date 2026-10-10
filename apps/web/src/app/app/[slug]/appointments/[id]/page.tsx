@@ -9,7 +9,9 @@ import { getAppointmentDetail } from "@/server/appointments";
 import { getStaffAvailability, timingFor } from "@/server/availability";
 import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
-import { addService, changeStatus, moveService, removeService, saveNotes, startCheckout } from "./actions";
+import { addService, cancelSeries, changeStatus, moveService, refundDepositAction, removeService, saveNotes, startCheckout } from "./actions";
+import { getSeriesForAppointment } from "@/server/series";
+import { can } from "@angelic/core";
 import { desc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
@@ -46,12 +48,13 @@ export default async function AppointmentPage({
 }) {
   const { slug, id } = await params;
   const sp = await searchParams;
-  const { business, user } = await requireAction(slug, "appointments.read.any");
+  const { business, user, permissions } = await requireAction(slug, "appointments.read.any");
   const data = await getAppointmentDetail(business.id, id);
   if (!data) notFound();
   const { appointment, items, client, services, staff } = data;
   const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: eq(schema.sales.appointmentId, id) }));
   const pinnedNotes = client ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
+  const series = appointment.seriesId ? await getSeriesForAppointment(business.id, id) : null;
   const stripeReady = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled;
   const savedCards = stripeReady && client?.stripeCustomerId ? await listSavedCards(business.stripeAccountId!, client.stripeCustomerId).catch(() => []) : [];
   const tz = business.timezone;
@@ -272,6 +275,48 @@ export default async function AppointmentPage({
               </p>
             )}
           </Card>
+
+          {series ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Standing appointment</h2>
+              <p className="text-stone-600">Every {series.series.intervalWeeks === 1 ? "week" : `${series.series.intervalWeeks} weeks`} · {series.occurrences.filter((o) => o.status !== "cancelled").length} of {series.series.occurrences} visits{series.series.endedAt ? " · ended" : ""}</p>
+              <ul className="mt-2 max-h-40 space-y-0.5 overflow-y-auto text-xs">
+                {series.occurrences.map((o) => (
+                  <li key={o.id} className={o.id === id ? "font-semibold" : o.status === "cancelled" ? "text-stone-400 line-through" : ""}>
+                    <Link href={`/app/${slug}/appointments/${o.id}`} className="hover:underline">{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: tz }).format(o.startAt)}</Link> · {STATUS_LABEL[o.status] ?? o.status}
+                  </li>
+                ))}
+              </ul>
+              {!locked && series.occurrences.some((o) => o.startAt >= (first?.startAt ?? new Date()) && (o.status === "booked" || o.status === "confirmed")) ? (
+                <form action={cancelSeries} className="mt-3 border-t border-stone-200 pt-3">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="appointmentId" value={id} />
+                  <ConfirmSubmit title="Cancel this and all later visits?" body="Earlier visits in the series are left alone. The client is notified once." confirmLabel="Cancel remaining visits" variant="secondary">Cancel this and later visits</ConfirmSubmit>
+                </form>
+              ) : null}
+            </Card>
+          ) : null}
+
+          {appointment.depositStatus !== "none" || appointment.cardSetupIntentId ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Paid online</h2>
+              {appointment.depositStatus !== "none" ? (
+                <p>
+                  Deposit {formatMoney(appointment.depositCents, business.currency)}
+                  {appointment.depositCardLabel ? ` · ${appointment.depositCardLabel}` : ""} ·{" "}
+                  {appointment.depositStatus === "paid" ? "held, comes off the bill at checkout" : appointment.depositStatus === "applied" ? "applied to the sale" : "refunded"}
+                </p>
+              ) : null}
+              {appointment.cardSetupIntentId ? <p className="text-stone-600">Card saved on file at booking.</p> : null}
+              {appointment.depositStatus === "paid" && !existingSale && can(permissions, "reports.view") ? (
+                <form action={refundDepositAction} className="mt-2">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="appointmentId" value={id} />
+                  <ConfirmSubmit title="Refund the deposit?" body="The deposit goes back to the client's card through Stripe. This can't be undone." confirmLabel="Refund deposit" variant="secondary">Refund deposit</ConfirmSubmit>
+                </form>
+              ) : null}
+            </Card>
+          ) : null}
 
           {!locked && !existingSale && savedCards.length > 0 ? (
             <Card className="p-4">

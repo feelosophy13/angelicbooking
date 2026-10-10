@@ -273,3 +273,14 @@ export const savePay = formAction(
     return "Pay settings saved";
   },
 );
+
+/** Issue a new calendar-feed link for a staff member (the old link stops working). */
+export async function resetCalendarToken(formData: FormData) {
+  const d = z.object({ slug: z.string(), staffId: z.string().min(1) }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "staff.manage");
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  await withTenant(ctx.business.id, (tx) => tx.update(schema.staff).set({ calendarToken: Buffer.from(bytes).toString("hex") }).where(eq(schema.staff.id, d.staffId)));
+  await setFlash("Calendar link reset. Subscribe again with the new link.");
+  revalidatePath(`/app/${d.slug}/staff/${d.staffId}`);
+}

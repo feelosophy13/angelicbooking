@@ -1,0 +1,119 @@
+/**
+ * Money at online booking, on the business's own Stripe account:
+ *   - deposit: a PaymentIntent for the service's deposit, card saved for later
+ *     (no-show fee, remaining balance at checkout);
+ *   - card on file: a SetupIntent that saves the card without charging it.
+ * The appointment is only created once Stripe reports the intent succeeded, so
+ * a slot is never held by someone whose card failed. If the slot was taken in
+ * the meantime the deposit is refunded automatically.
+ */
+import type Stripe from "stripe";
+import { eq, or } from "drizzle-orm";
+import { schema, withTenant } from "@angelic/db";
+import { isStripeConfigured, platformFeeBps, stripe } from "@/lib/stripe";
+import { ensureStripeCustomer } from "./stripe-connect";
+import { BookingError } from "./booking";
+import type { PublicBusiness } from "./public-booking";
+
+export type PaymentMode = "deposit" | "card" | "none";
+
+/** What (if anything) the booking page must collect before this service can be booked. */
+export function onlinePaymentRequirement(business: PublicBusiness, service: { depositCents: number }): { mode: PaymentMode; amountCents: number } {
+  const ready = isStripeConfigured() && !!business.stripeAccountId && business.stripeChargesEnabled && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  if (!ready) return { mode: "none", amountCents: 0 };
+  if (service.depositCents >= 50) return { mode: "deposit", amountCents: service.depositCents };
+  if (business.requireCardOnline) return { mode: "card", amountCents: 0 };
+  return { mode: "none", amountCents: 0 };
+}
+
+export interface IntentMeta {
+  businessId: string;
+  clientId: string;
+  serviceId: string;
+  staffId: string;
+  startAt: string; // ISO
+}
+
+/** Create the PaymentIntent / SetupIntent the browser will confirm. */
+export async function startOnlinePayment(business: PublicBusiness, mode: Exclude<PaymentMode, "none">, meta: IntentMeta, amountCents: number) {
+  const accountId = business.stripeAccountId;
+  if (!accountId) throw new BookingError("Online payments are not set up.");
+  const client = await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, meta.clientId) }));
+  if (!client) throw new BookingError("Client not found.");
+  const customer = await withTenant(business.id, (tx) => ensureStripeCustomer({ accountId, businessId: business.id, client, tx }));
+  const metadata = { ...meta, kind: mode };
+  if (mode === "deposit") {
+    const fee = Math.round((amountCents * platformFeeBps()) / 10_000);
+    const pi = await stripe().paymentIntents.create(
+      {
+        amount: amountCents,
+        currency: business.currency,
+        customer,
+        allowed_payment_method_types: ["card"],
+        setup_future_usage: "off_session",
+        description: `Deposit · ${business.name}`,
+        metadata,
+        ...(fee > 0 ? { application_fee_amount: fee } : {}),
+      },
+      { stripeAccount: accountId },
+    );
+    return { kind: "deposit" as const, id: pi.id, clientSecret: pi.client_secret!, accountId };
+  }
+  const si = await stripe().setupIntents.create({ customer, allowed_payment_method_types: ["card"], usage: "off_session", metadata }, { stripeAccount: accountId });
+  return { kind: "card" as const, id: si.id, clientSecret: si.client_secret!, accountId };
+}
+
+export type VerifiedIntent =
+  | { kind: "deposit"; paymentIntentId: string; cents: number; cardLabel: string | null; meta: IntentMeta }
+  | { kind: "card"; setupIntentId: string; meta: IntentMeta };
+
+/** Fetch the intent from Stripe and make sure it is ours, succeeded, and for the booking being made. */
+export async function verifyOnlineIntent(business: PublicBusiness, kind: "deposit" | "card", intentId: string, expected: Omit<IntentMeta, "clientId">): Promise<VerifiedIntent> {
+  const accountId = business.stripeAccountId;
+  if (!accountId) throw new BookingError("Online payments are not set up.");
+  const check = (md: Stripe.Metadata) => {
+    if (md.businessId !== expected.businessId || md.serviceId !== expected.serviceId || md.staffId !== expected.staffId || md.startAt !== expected.startAt || !md.clientId) {
+      throw new BookingError("That payment doesn't match this booking. Please start again.");
+    }
+    return { businessId: md.businessId, clientId: md.clientId, serviceId: md.serviceId, staffId: md.staffId, startAt: md.startAt } satisfies IntentMeta;
+  };
+  if (kind === "deposit") {
+    const pi = await stripe().paymentIntents.retrieve(intentId, { expand: ["latest_charge"] }, { stripeAccount: accountId });
+    const meta = check(pi.metadata);
+    if (pi.status !== "succeeded") throw new BookingError(`Your card was not charged (${pi.status.replace(/_/g, " ")}). Please try again.`);
+    const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
+    const card = charge?.payment_method_details?.card;
+    return { kind, paymentIntentId: pi.id, cents: pi.amount, cardLabel: card ? `${card.brand?.toUpperCase() ?? "CARD"} •••• ${card.last4 ?? ""}` : null, meta };
+  }
+  const si = await stripe().setupIntents.retrieve(intentId, {}, { stripeAccount: accountId });
+  const meta = check(si.metadata ?? {});
+  if (si.status !== "succeeded") throw new BookingError(`Your card could not be saved (${si.status.replace(/_/g, " ")}). Please try again.`);
+  return { kind, setupIntentId: si.id, meta };
+}
+
+/** The appointment already created for this intent, if the client refreshed the page after booking. */
+export async function appointmentForIntent(businessId: string, intentId: string) {
+  return withTenant(businessId, (tx) => tx.query.appointments.findFirst({ where: or(eq(schema.appointments.depositPaymentIntentId, intentId), eq(schema.appointments.cardSetupIntentId, intentId)) }));
+}
+
+/**
+ * Refund a deposit that has not been applied to a sale yet (online cancellation
+ * inside the policy window, staff courtesy refund, or a booking that failed after
+ * the charge). Idempotent: does nothing unless the deposit is in "paid".
+ */
+export async function refundDeposit(input: { businessId: string; accountId: string | null; appointmentId: string; actorUserId: string; reason: string }) {
+  return withTenant(input.businessId, async (tx) => {
+    const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, input.appointmentId) });
+    if (!appt || appt.depositStatus !== "paid" || !appt.depositPaymentIntentId) return false;
+    if (!input.accountId) throw new BookingError("Stripe account not connected.");
+    await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId, metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: input.accountId, idempotencyKey: `deposit_refund_${appt.id}` });
+    await tx.update(schema.appointments).set({ depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
+    await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.refund", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: appt.depositCents, reason: input.reason }) });
+    return true;
+  });
+}
+
+/** Refund a PaymentIntent that never became an appointment (slot taken after the charge). */
+export async function refundOrphanIntent(accountId: string, paymentIntentId: string) {
+  await stripe().refunds.create({ payment_intent: paymentIntentId, metadata: { reason: "booking_failed" } }, { stripeAccount: accountId, idempotencyKey: `orphan_refund_${paymentIntentId}` });
+}

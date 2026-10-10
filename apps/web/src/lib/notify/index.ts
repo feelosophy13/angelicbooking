@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
+import { formatMoney } from "@/lib/utils";
 import { emailConfigured, sendEmail, sendSms, smsConfigured, type SmsSender } from "./providers";
 import { platformSmsSender } from "@/lib/twilio";
 import { activeNumber } from "@/server/messaging";
@@ -39,6 +40,8 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
     manageUrl: appUrl(`/book/${business.slug}/manage/${appt.manageToken}`),
     policy: business.bookingPolicy,
     cancelWindowHours: business.cancelWindowHours,
+    depositPaid: appt.depositStatus === "paid" || appt.depositStatus === "applied" ? formatMoney(appt.depositCents, business.currency) : null,
+    cardOnFile: !!appt.cardSetupIntentId,
   };
   return { appt, client, ctx };
 }
@@ -76,6 +79,15 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
     return inserted.map((r) => r.id);
   });
   if (ids.length) after(() => deliverMany(business.id, ids));
+}
+
+/** Schedule the reminder for an appointment without sending a confirmation (used for later visits in a series). */
+export async function scheduleReminderFor(business: typeof schema.businesses.$inferSelect, appointmentId: string) {
+  await withTenant(business.id, async (tx) => {
+    const built = await appointmentContext(tx, business, appointmentId);
+    if (!built || !built.client) return;
+    await scheduleReminder(tx, business, appointmentId, built.client, built.ctx, normalizePhone(built.client.phone));
+  });
 }
 
 async function scheduleReminder(

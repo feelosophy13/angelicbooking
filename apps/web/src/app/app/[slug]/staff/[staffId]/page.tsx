@@ -4,7 +4,9 @@ import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { Card, Input, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { updateStaffProfile } from "../actions";
+import { resetCalendarToken, updateStaffProfile } from "../actions";
+import { ConfirmSubmit } from "@/components/form";
+import { appUrl } from "@/lib/stripe";
 
 export default async function StaffProfilePage({ params }: { params: Promise<{ slug: string; staffId: string }> }) {
   const { slug, staffId } = await params;
@@ -16,8 +18,11 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
   });
   if (!data) notFound();
   const { person, locations } = data;
+  const feedUrl = appUrl(`/api/calendar/${person.calendarToken}.ics`);
+  const webcal = feedUrl.replace(/^https?:\/\//, "webcal://");
   return (
-    <Card className="max-w-lg p-5">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,32rem)_minmax(0,22rem)]">
+    <Card className="p-5">
       <ActionForm action={updateStaffProfile}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="staffId" value={staffId} />
@@ -38,5 +43,25 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
         <SubmitButton pendingText="Saving…">Save profile</SubmitButton>
       </ActionForm>
     </Card>
+    <Card className="p-4 text-sm">
+      <h2 className="mb-1 font-medium">Calendar feed</h2>
+      <p className="mb-2 text-stone-600">Subscribe in Google Calendar, Apple Calendar or Outlook to see {person.displayName.split(" ")[0]}&apos;s appointments alongside everything else. Changes show up within a few hours (each app decides how often it refreshes).</p>
+      <input readOnly value={feedUrl} className="mb-2 w-full rounded border border-stone-300 bg-stone-50 px-2 py-1 text-xs" />
+      <div className="mb-3 flex flex-wrap gap-2">
+        <a href={webcal} className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs hover:bg-stone-50">Apple / Outlook (webcal)</a>
+        <a href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`} target="_blank" rel="noreferrer" className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-xs hover:bg-stone-50">Add to Google Calendar</a>
+      </div>
+      <ul className="list-disc space-y-1 pl-4 text-xs text-stone-500">
+        <li><strong>Google:</strong> Other calendars → + → From URL → paste the link.</li>
+        <li><strong>Apple:</strong> File → New Calendar Subscription → paste the link.</li>
+        <li><strong>Outlook:</strong> Add calendar → Subscribe from web.</li>
+      </ul>
+      <form action={resetCalendarToken} className="mt-3 border-t border-stone-200 pt-3">
+        <input type="hidden" name="slug" value={slug} />
+        <input type="hidden" name="staffId" value={staffId} />
+        <ConfirmSubmit title="Reset the calendar link?" body="Anyone using the current link stops receiving updates. You'll need to subscribe again." confirmLabel="Reset link" variant="ghost">Reset link</ConfirmSubmit>
+      </form>
+    </Card>
+    </div>
   );
 }
