@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { and, eq, gte, sql } from "drizzle-orm";
-import { schema, withTenant } from "@angelic/db";
+import { db, schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { money } from "@/lib/format";
 import { billingState, completeCheckout } from "@/server/billing";
@@ -19,8 +19,9 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
   let { business } = await requireAction(slug, "business.manage");
   let justSubscribed = false;
   if (sp.session_id) {
-    await completeCheckout(business, sp.session_id).catch(() => {});
-    business = (await requireAction(slug, "business.manage")).business;
+    await completeCheckout(business, sp.session_id).catch((e) => console.error("[billing] checkout sync failed", (e as Error).message));
+    // requireAction is request-cached, so re-read the row to see what the sync wrote.
+    business = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, business.id) })) ?? business;
     justSubscribed = true;
   }
   const state = billingState(business);
