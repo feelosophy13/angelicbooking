@@ -122,7 +122,7 @@ export default async function CalendarPage({
           <form className="contents">
             <input type="hidden" name="view" value={view} />
             <input type="hidden" name="date" value={date} />
-            <select name="location" defaultValue={locationFilter ?? ""} className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-sm">
+            <select name="location" aria-label="Location" defaultValue={locationFilter ?? ""} className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-sm">
               <option value="">All locations</option>
               {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
             </select>

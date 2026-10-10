@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { requireAction } from "@/lib/tenant";
+import { asc } from "drizzle-orm";
+import { schema, withTenant } from "@angelic/db";
+import { describeHours } from "@/lib/hours";
 import { TIMEZONES } from "@/lib/utils";
 import type { Metadata } from "next";
 import { Card, Input, PageHeader, Select } from "@/components/ui";
@@ -11,6 +14,7 @@ import { updateBusiness } from "./actions";
 export default async function SettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "business.manage");
+  const locations = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.isDefault), asc(schema.locations.name)));
   return (
     <>
       <PageHeader title="Settings" />
@@ -102,9 +106,16 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
           <Link href={`/app/${slug}/settings/notifications`} className="text-sm text-brand-700 underline">Message log →</Link>
         </Card>
         <Card className="p-4">
-          <h2 className="mb-1 font-medium">Locations</h2>
-          <p className="mb-3 text-sm text-stone-600">Add locations and pick the default.</p>
-          <Link href={`/app/${slug}/settings/locations`} className="text-sm text-brand-700 underline">Locations →</Link>
+          <h2 className="mb-1 font-medium">Locations <span className="text-sm font-normal text-stone-500">· {locations.length}</span></h2>
+          <ul className="mb-3 space-y-1 text-sm">
+            {[...locations].reverse().map((l) => (
+              <li key={l.id}>
+                <Link href={`/app/${slug}/settings/locations/${l.id}`} className="font-medium hover:underline">{l.name}</Link>{l.isDefault ? <span className="ml-1 text-xs text-stone-400">default</span> : null}
+                <p className="text-xs text-stone-500">{[[l.addressLine1, l.city].filter(Boolean).join(", ") || null, l.hours ? describeHours(l.hours).join(" · ") : "no hours set"].filter(Boolean).join(" · ")}</p>
+              </li>
+            ))}
+          </ul>
+          <Link href={`/app/${slug}/settings/locations`} className="text-sm text-brand-700 underline">Manage locations →</Link>
         </Card>
         <Card className="p-4">
           <h2 className="mb-1 font-medium">Custom domain</h2>

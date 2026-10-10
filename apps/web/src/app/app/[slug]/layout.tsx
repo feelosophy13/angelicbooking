@@ -3,6 +3,8 @@ import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
+import { asc, desc } from "drizzle-orm";
+import { schema, withTenant } from "@angelic/db";
 import { permissionsForRole, listRoles } from "@/server/roles";
 import { Wordmark } from "@/components/brand";
 import { UserMenu } from "@/components/user-menu";
@@ -16,7 +18,7 @@ type IconName = keyof typeof ICON;
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, user, role, permissions } = await requireBusiness(slug);
-  const [mine, roles] = await Promise.all([listMyBusinesses(user.id), listRoles(business.id)]);
+  const [mine, roles, locations] = await Promise.all([listMyBusinesses(user.id), listRoles(business.id), withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations).orderBy(desc(schema.locations.isDefault), asc(schema.locations.name)))]);
   void permissionsForRole;
   const roleName = roles.find((r) => r.key === role)?.name ?? role.replace("_", " ");
   const base = `/app/${slug}`;
@@ -60,6 +62,11 @@ export default async function AppLayout({ children, params }: { children: React.
         <div className="px-4 pb-3 pt-4">
           <Link href="/" aria-label="Home"><Wordmark /></Link>
           <p className="mt-2 truncate text-xs font-medium text-stone-500">{business.name} · {roleName}</p>
+          {locations.length > 1 ? (
+            <p className="mt-0.5 truncate text-[11px] text-stone-400" title={locations.map((l) => l.name).join(", ")}>
+              {can(permissions, "business.manage") ? <Link href={`${base}/settings/locations`} className="hover:text-stone-600">{locations.length} locations · {locations.map((l) => l.name.replace(`${business.name} - `, "")).join(", ")}</Link> : `${locations.length} locations · ${locations.map((l) => l.name.replace(`${business.name} - `, "")).join(", ")}`}
+            </p>
+          ) : null}
         </div>
         <div className="px-3 pb-2"><CommandPalette slug={slug} /></div>
         <nav className="flex-1 space-y-4 overflow-y-auto px-2 pb-2">
