@@ -94,7 +94,7 @@ async function main() {
 
 // ---------------------------------------------------------------------------
 async function importLocations(tx: TenantDb, businessId: string) {
-  const want = ["Angelic Beauty - Sterling", "Angelic Beauty - Fairfax"]; // Vagaro calls the Fairfax site "Angelic Lashes by Tiffany"
+  const want = ["Angelic Beauty - Sterling", "Angelic Lashes by Tiffany"]; // the Fairfax site is its own legal entity
   const existing = await tx.select().from(schema.locations);
   const out = new Map<string, string>();
   for (const name of want) {

@@ -70,7 +70,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       future blocked time, 188 products with stock, packages + 56 client packages, 10 plans + 113 live memberships,
       120 gift cards, 1 promo code). Done locally; run it against production once the pending deploy is out
       (`DATABASE_URL=<prod, sslmode=require>`), then assign staff to locations, enable the imported classes, and
-      set each location's address/phone/opening hours and name the second site "Angelic Beauty - Fairfax" as on the website (taken from angelicbeautyva.com on 2026-10-10: Sterling
+      set each location's address/phone/opening hours and name the second site "Angelic Lashes by Tiffany" (its own legal entity; the website lists it as Angelic Beauty – Fairfax) (taken from angelicbeautyva.com on 2026-10-10: Sterling
       Mon/Wed/Thu 10–6, Fri 10–7, Sat/Sun 10–5, Tue closed; Fairfax Mon–Fri 9–6, Sat 8:30–6, Sun 9–5).
 - [ ] Write a short privacy/terms review with a lawyer before accepting other businesses.
 
@@ -129,9 +129,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Settings → Locations: edit page for existing locations.
 
 ### Locations as a first-class dimension (planned 2026-10-10; one tenant = one Stripe account, locations inside it)
-Decisions with the owner: providers work fixed days per site; Fairfax does not offer facials, prices are the same
-everywhere; gift cards, packages and memberships are redeemable at any site. Vagaro-style "linked businesses" are
-NOT needed for this; separate tenants stay reserved for a separate brand/bank/Stripe account.
+Decisions with the owner (2026-10-10): the two sites are two legal entities (Angelic Beauty in Sterling, Angelic
+Lashes by Tiffany in Fairfax), each with its own Stripe account; providers work fixed days per site; Fairfax does
+not offer facials, prices are the same everywhere; clients, gift cards, packages and memberships are shared across
+sites. Model: ONE tenant, and the location is the money boundary (own Stripe account, tax rate, receipt identity),
+everything else shared. Clients are never siloed per location inside a tenant; owners who must keep client data
+apart use separate tenants.
 
 **Phase 1 (unblocks Sterling + Fairfax)**
 - [ ] Staff schedules per location: each weekly-hours row carries a location (column exists, unused); the hours
@@ -142,6 +145,11 @@ NOT needed for this; separate tenants stay reserved for a separate brand/bank/St
 - [ ] Per-location booking link and QR on Settings → Online booking / Embed (`?location=` deep link already works).
 - [ ] Services "offered at": a set of locations per service (default all); the booking page and staff pickers
       hide services not offered at the chosen location. No per-location pricing (not needed).
+- [ ] Per-location Stripe account (optional; falls back to the business account), own tax rate and receipt
+      name/address: Settings → Payments shows one Connect row per location; checkout, online deposits, refunds,
+      saved cards, membership renewals and the Connect webhook route by the sale's location. Cross-location gift
+      card / package redemptions get their own line on the Sales report for the accountant.
+- [ ] Clients: a derived "home location" (most recent visit) for the client list, reports and campaign audiences.
 
 **Phase 2**
 - [ ] Optional per-location text number and reply-to phone; per-location tax rate override; apply the location
