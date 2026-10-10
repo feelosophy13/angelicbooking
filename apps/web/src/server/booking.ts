@@ -76,9 +76,18 @@ export interface BookAppointmentInput {
   deposit?: { paymentIntentId: string; cents: number; cardLabel: string | null } | null;
   /** SetupIntent that saved a card on file at booking. */
   cardSetupIntentId?: string | null;
+  /** Book a seat in this class session instead of a one-to-one slot. */
+  classSessionId?: string | null;
 }
 
 export async function bookAppointment(input: BookAppointmentInput): Promise<{ appointmentId: string }> {
+  if (input.classSessionId) {
+    const { insertSeat } = await import("./classes");
+    return withTenant(input.businessId, async (tx) => {
+      const r = await insertSeat(tx, { businessId: input.businessId, sessionId: input.classSessionId!, clientId: input.clientId, notes: input.notes ?? null, source: input.source ?? "staff", createdByUserId: input.createdByUserId ?? null, deposit: input.deposit, cardSetupIntentId: input.cardSetupIntentId });
+      return { appointmentId: r.appointmentId };
+    });
+  }
   try {
     return await withTenant(input.businessId, async (tx) => {
       const staffRow = await tx.query.staff.findFirst({ where: eq(schema.staff.id, input.staffId) });
@@ -166,6 +175,7 @@ export async function rescheduleService(input: {
       if (item.status === "cancelled" || item.status === "completed" || item.status === "no_show") {
         throw new BookingError("This appointment can no longer be moved.");
       }
+      if (item.classSessionId) throw new BookingError("Seats in a class move with the class. Cancel the seat and book another session instead.");
       const siblings = await tx
         .select()
         .from(schema.appointmentItems)

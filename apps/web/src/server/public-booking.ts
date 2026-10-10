@@ -95,6 +95,8 @@ export interface OnlineBookingInput {
   notes: string | null;
   /** Client ticked the SMS consent box on the public form. */
   smsConsent?: boolean;
+  /** Joining a class: the session id (staffId/startAt then come from the session). */
+  classSessionId?: string | null;
 }
 
 /** Find a client by phone or email, else create one. Runs inside the tenant tx. */
@@ -130,11 +132,13 @@ export async function assertSlotOpen(business: PublicBusiness, serviceId: string
 }
 
 export async function createOnlineBooking(business: PublicBusiness, input: OnlineBookingInput, now = new Date(), paid?: VerifiedIntent) {
-  try {
-    await assertSlotOpen(business, input.serviceId, input.staffId, input.startAt, now);
-  } catch (e) {
-    await undoPayment(business, paid);
-    throw e;
+  if (!input.classSessionId) {
+    try {
+      await assertSlotOpen(business, input.serviceId, input.staffId, input.startAt, now);
+    } catch (e) {
+      await undoPayment(business, paid);
+      throw e;
+    }
   }
   const clientId = paid?.meta.clientId ?? (await findOrCreateClient(business.id, input));
   let appointmentId: string;
@@ -150,6 +154,7 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
       source: "online",
       deposit: paid?.kind === "deposit" ? { paymentIntentId: paid.paymentIntentId, cents: paid.cents, cardLabel: paid.cardLabel } : null,
       cardSetupIntentId: paid?.kind === "card" ? paid.setupIntentId : null,
+      classSessionId: input.classSessionId ?? null,
     }));
   } catch (e) {
     await undoPayment(business, paid);

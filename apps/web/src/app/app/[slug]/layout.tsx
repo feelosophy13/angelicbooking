@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings } from "lucide-react";
+import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap } from "lucide-react";
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
@@ -10,7 +10,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { NavLink } from "./nav-link";
 import { MobileNav, type NavSection } from "./mobile-nav";
 
-const ICON = { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings } as const;
+const ICON = { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap } as const;
 type IconName = keyof typeof ICON;
 
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
@@ -25,6 +25,7 @@ export default async function AppLayout({ children, params }: { children: React.
   const sections: { title: string; items: Item[] }[] = [
     { title: "Schedule", items: [
       it(base, "Calendar", "CalendarDays", true),
+      it(`${base}/classes`, "Classes", "GraduationCap"),
       it(`${base}/waitlist`, "Waitlist", "ListOrdered"),
       it(`${base}/time`, "Time clock", "Clock"),
     ] },

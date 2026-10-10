@@ -6,9 +6,10 @@ import { duration } from "@/lib/format";
 import { BookingForm, WaitlistForm } from "./forms";
 import { PaidBookingForm } from "./payment-form";
 import { onlinePaymentRequirement } from "@/server/online-payments";
+import { publicSessions } from "@/server/classes";
 import { brandHex } from "@/lib/brand";
 
-type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string };
+type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string };
 
 export default async function PublicBookingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
@@ -86,6 +87,62 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       {date ? <> · <Link href={q({ date: undefined })} className="underline">{formatDateLong(date)}</Link></> : null}
     </p>
   );
+
+  // ---- Classes: pick a scheduled session instead of a provider + time
+  if (service.capacity > 1) {
+    const sessions = await publicSessions(business, service.id);
+    const chosen = sessions.find((x) => x.id === sp.session) ?? null;
+    if (!chosen) {
+      const byDate = new Map<string, typeof sessions>();
+      for (const x of sessions) {
+        const k = instantToISODate(x.startAt, tz);
+        byDate.set(k, [...(byDate.get(k) ?? []), x]);
+      }
+      return (
+        <>
+          <Step n={2} title="Pick a class" />
+          {crumb}
+          {sessions.length === 0 ? <p className="text-sm text-stone-600">No upcoming sessions are open for booking. Please check back soon{business.phone ? ` or call ${business.phone}` : ""}.</p> : null}
+          {[...byDate.entries()].map(([d, list]) => (
+            <section key={d} className="mb-4">
+              <h2 className="mb-2 text-sm font-semibold text-stone-600">{formatDateLong(d)}</h2>
+              <ul className="divide-y divide-stone-200 overflow-hidden rounded-xl border border-stone-200 bg-white">
+                {list.map((x) => (
+                  <li key={x.id}>
+                    <Link href={q({ session: x.id })} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-stone-50">
+                      <div>
+                        <p className="font-medium">{formatTime(x.startAt, tz)} – {formatTime(x.endAt, tz)}</p>
+                        <p className="text-xs text-stone-500">with {x.staffName}{x.notes ? ` · ${x.notes}` : ""}</p>
+                      </div>
+                      <span className="text-xs text-stone-600">{x.seatsLeft} {x.seatsLeft === 1 ? "seat" : "seats"} left</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </>
+      );
+    }
+    const pay = onlinePaymentRequirement(business, service);
+    const sessionDate = instantToISODate(chosen.startAt, tz);
+    return (
+      <>
+        <Step n={3} title="Your details" />
+        {crumb}
+        <div className="mb-4 rounded-xl border p-4 text-sm" style={{ background: "var(--brand-tint)", borderColor: "var(--brand-ring)" }}>
+          <p className="font-medium">{service.name} · {formatMoney(service.priceCents, business.currency)} per person</p>
+          <p>{formatDateLong(sessionDate)} at {formatTime(chosen.startAt, tz)} with {chosen.staffName} · {chosen.seatsLeft} {chosen.seatsLeft === 1 ? "seat" : "seats"} left</p>
+          {pay.mode === "deposit" ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(pay.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : pay.mode === "card" ? <p className="mt-1 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
+        </div>
+        {pay.mode === "none" ? (
+          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} classSessionId={chosen.id} />
+        ) : (
+          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} mode={pay.mode} amountLabel={formatMoney(pay.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} />
+        )}
+      </>
+    );
+  }
 
   // ---- Step 2: staff
   if (!staffChoice) {

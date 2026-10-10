@@ -5,6 +5,7 @@ import { normalizePhone } from "@angelic/core";
 import { BookingError } from "@/server/booking";
 import { assertSlotOpen, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
 import { appointmentForIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
+import { getSession } from "@/server/classes";
 import { schema, withTenant } from "@angelic/db";
 import { and, eq } from "drizzle-orm";
 
@@ -19,7 +20,7 @@ const contact = z.object({
   smsConsent: z.string().optional().transform((v) => v === "on"),
 });
 
-const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime() });
+const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null) });
 type BookingFields = z.infer<typeof bookingFields>;
 
 function parseBooking(raw: Record<string, unknown>): { d: BookingFields } | { error: string } {
@@ -70,7 +71,8 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
   if (req.mode === "none") return { error: "No payment is needed for this booking. Please reload the page." };
   const startAt = new Date(d.startAt);
   try {
-    await assertSlotOpen(business, d.serviceId, d.staffId, startAt);
+    if (d.classSessionId) await assertSeatOpen(business.id, d.classSessionId, d.staffId, startAt);
+    else await assertSlotOpen(business, d.serviceId, d.staffId, startAt);
     const clientId = await findOrCreateClient(business.id, { ...d, startAt });
     const r = await startOnlinePayment(business, req.mode, { businessId: business.id, clientId, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString() }, req.amountCents);
     return { clientSecret: r.clientSecret, intentId: r.id, kind: r.kind, accountId: r.accountId };
@@ -135,4 +137,12 @@ export async function joinWaitlistAction(_prev: PublicState, formData: FormData)
   if (!business) return { error: "Online booking is not available." };
   await joinWaitlist(business, { ...d, staffId: d.staffId && d.staffId !== "any" ? d.staffId : null });
   return { ok: true };
+}
+
+/** A class seat is still open and the hidden fields describe that session. */
+async function assertSeatOpen(businessId: string, sessionId: string, staffId: string, startAt: Date) {
+  const s = await getSession(businessId, sessionId);
+  if (!s || s.session.status !== "scheduled") throw new BookingError("That class is no longer scheduled.");
+  if (s.session.staffId !== staffId || s.session.startAt.getTime() !== startAt.getTime()) throw new BookingError("That class has changed. Please reload and pick it again.");
+  if (s.seatsLeft <= 0) throw new BookingError("This class is full.");
 }

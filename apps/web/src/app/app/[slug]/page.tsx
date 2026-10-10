@@ -79,10 +79,10 @@ export default async function CalendarPage({
       startMin: minuteOf(i.startAt),
       endMin: minuteOf(i.endAt) <= minuteOf(i.startAt) ? 24 * 60 : minuteOf(i.endAt),
       title: i.clientName ?? "Walk-in",
-      subtitle: i.serviceName.replace(" (finish)", ""),
+      subtitle: i.classSessionId ? "Class" : i.serviceName.replace(" (finish)", ""),
       status: i.status,
       color: staffById.get(i.staffId)?.color ?? "#6366f1",
-      href: `/app/${slug}/appointments/${i.appointmentId}`,
+      href: i.classSessionId ? `/app/${slug}/classes/${i.classSessionId}` : `/app/${slug}/appointments/${i.appointmentId}`,
       groupKey: `${i.appointmentId}:${i.serviceName.replace(" (finish)", "")}:${i.staffId}:${instantToISODate(i.startAt, tz)}`,
     }));
 

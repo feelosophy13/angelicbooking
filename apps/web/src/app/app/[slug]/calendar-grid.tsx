@@ -26,7 +26,7 @@ export type CalItem = {
 const DAY_START_H = 7;
 const DAY_END_H = 21;
 const PX_PER_MIN = 1.2;
-const LOCKED = new Set(["completed", "cancelled", "no_show"]);
+const LOCKED = new Set(["completed", "cancelled", "no_show", "class"]);
 
 const STATUS: Record<string, string> = {
   booked: "bg-brand-100 text-brand-900",
@@ -36,6 +36,7 @@ const STATUS: Record<string, string> = {
   completed: "bg-emerald-100 text-emerald-900",
   no_show: "bg-stone-100 text-stone-500 line-through",
   cancelled: "bg-stone-100 text-stone-400 line-through",
+  class: "bg-violet-100 text-violet-900",
 };
 
 function fmt(min: number) {
@@ -199,7 +200,7 @@ export function CalendarGrid(props: {
                         <span className="w-16 shrink-0 text-xs text-stone-500">{fmt(card.startMin)}</span>
                         <span className="h-8 w-1 rounded-full" style={{ background: card.first.color }} />
                         <span className="min-w-0 flex-1">
-                          <span className={cn("block truncate text-sm font-medium", LOCKED.has(card.first.status) && card.first.status !== "completed" && "text-stone-400 line-through")}>{card.first.title}</span>
+                          <span className={cn("block truncate text-sm font-medium", LOCKED.has(card.first.status) && card.first.status !== "completed" && card.first.status !== "class" && "text-stone-400 line-through")}>{card.first.title}</span>
                           <span className="block truncate text-xs text-stone-500">{card.first.subtitle} · {fmt(card.startMin)}–{fmt(card.endMin)}</span>
                         </span>
                       </button>

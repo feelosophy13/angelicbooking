@@ -4,11 +4,12 @@ import { bookOnline, joinWaitlistAction, type PublicState } from "./actions";
 import { Field, Input, Notice, Textarea } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
 
-export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number }) {
+export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; classSessionId?: string | null }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
   return (
     <form action={action} className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
       <input type="hidden" name="slug" value={props.slug} />
+      {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
       <input type="hidden" name="serviceId" value={props.serviceId} />
       <input type="hidden" name="staffId" value={props.staffId} />
       <input type="hidden" name="startAt" value={props.startAt} />

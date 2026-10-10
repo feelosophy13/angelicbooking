@@ -60,6 +60,7 @@ export default async function ServicesPage({ params }: { params: Promise<{ slug:
                       {s.finishMin ? ` + ${duration(s.finishMin)} finish` : ""}
                       {s.bufferAfterMin ? ` + ${duration(s.bufferAfterMin)} buffer` : ""}
                       {s.depositCents ? ` · deposit ${formatMoney(s.depositCents, business.currency)}` : ""}
+                      {s.capacity > 1 ? ` · class of ${s.capacity}` : ""}
                       {!s.bookableOnline ? " · not online" : ""}
                     </p>
                   </div>

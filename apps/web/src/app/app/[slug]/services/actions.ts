@@ -22,6 +22,7 @@ const fields = z.object({
   bufferAfterMin: f.int(0, 120),
   price: f.money("price"),
   deposit: f.moneyOptional(),
+  capacity: f.int(1, 500).default(1),
   bookableOnline: f.checkbox(),
 });
 
@@ -45,6 +46,7 @@ export const createService = formAction(fields, async (d) => {
       bufferAfterMin: d.bufferAfterMin,
       priceCents: d.price,
       depositCents: d.deposit,
+      capacity: d.capacity,
       bookableOnline: d.bookableOnline,
     }),
   );
@@ -69,6 +71,7 @@ export const updateService = formAction(fields, async (d) => {
         bufferAfterMin: d.bufferAfterMin,
         priceCents: d.price,
         depositCents: d.deposit,
+        capacity: d.capacity,
         bookableOnline: d.bookableOnline,
       })
       .where(eq(schema.services.id, d.serviceId ?? "")),

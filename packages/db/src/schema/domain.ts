@@ -229,6 +229,9 @@ export const services = pgTable(
     bufferAfterMin: smallint("buffer_after_min").notNull().default(0),
     priceCents: integer("price_cents").notNull(),
     depositCents: integer("deposit_cents").notNull().default(0),
+    // 1 = one client at a time. More = a class: staff schedule sessions and
+    // several clients book the same session (see classSessions).
+    capacity: smallint("capacity").notNull().default(1),
     bookableOnline: boolean("bookable_online").notNull().default(true),
     active: boolean("active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -238,6 +241,40 @@ export const services = pgTable(
   (t) => [
     index("services_business_idx").on(t.businessId),
     check("services_duration_ck", sql`${t.durationMin} > 0`),
+    check("services_capacity_ck", sql`${t.capacity} between 1 and 500`),
+  ],
+);
+
+export const classSessionStatus = pgEnum("class_session_status", ["scheduled", "cancelled"]);
+
+// A scheduled run of a group service (yoga at 6pm, lash class on Saturday).
+// Blocks the instructor's calendar; clients enrol with ordinary appointments
+// whose items point here, exempt from the one-client-per-slot constraint.
+export const classSessions = pgTable(
+  "class_sessions",
+  {
+    id: id(),
+    businessId: businessId(),
+    serviceId: text("service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "restrict" }),
+    staffId: text("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "restrict" }),
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
+    startAt: timestamp("start_at", { withTimezone: true }).notNull(),
+    endAt: timestamp("end_at", { withTimezone: true }).notNull(),
+    capacity: smallint("capacity").notNull(),
+    priceCents: integer("price_cents").notNull(), // per seat, snapshot of the service price
+    notes: text("notes"),
+    status: classSessionStatus("status").notNull().default("scheduled"),
+    createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("class_sessions_business_time_idx").on(t.businessId, t.startAt),
+    index("class_sessions_staff_idx").on(t.businessId, t.staffId, t.startAt),
+    check("class_sessions_range_ck", sql`${t.startAt} < ${t.endAt}`),
   ],
 );
 
@@ -547,11 +584,15 @@ export const appointmentItems = pgTable(
     priceCents: integer("price_cents").notNull(),
     status: appointmentStatus("status").notNull().default("booked"),
     sortOrder: integer("sort_order").notNull().default(0),
+    // Set for a seat in a class session; such items share the session's time
+    // and are excluded from the staff double-booking constraint.
+    classSessionId: text("class_session_id").references(() => classSessions.id, { onDelete: "set null" }),
   },
   (t) => [
     index("appointment_items_staff_time_idx").on(t.businessId, t.staffId, t.startAt),
     index("appointment_items_business_time_idx").on(t.businessId, t.startAt),
     index("appointment_items_appointment_idx").on(t.appointmentId),
+    index("appointment_items_class_session_idx").on(t.classSessionId),
     check("appointment_items_range_ck", sql`${t.startAt} < ${t.endAt}`),
   ],
 );
@@ -623,4 +664,5 @@ export const TENANT_TABLES = [
   "roles",
   "client_notes",
   "appointment_series",
+  "class_sessions",
 ] as const;

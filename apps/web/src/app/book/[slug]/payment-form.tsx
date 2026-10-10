@@ -24,6 +24,7 @@ export function PaidBookingForm(props: {
   amountLabel: string;
   publishableKey: string;
   brand: string;
+  classSessionId?: string | null;
 }) {
   const [fields, setFields] = useState<Record<string, string> | null>(null);
   const [intent, setIntent] = useState<Intent | null>(null);
@@ -55,6 +56,7 @@ export function PaidBookingForm(props: {
         <input type="hidden" name="serviceId" value={props.serviceId} />
         <input type="hidden" name="staffId" value={props.staffId} />
         <input type="hidden" name="startAt" value={props.startAt} />
+        {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
         <div className="grid grid-cols-2 gap-3">
           <Field label="First name"><Input name="firstName" required autoComplete="given-name" /></Field>
           <Field label="Last name"><Input name="lastName" autoComplete="family-name" /></Field>

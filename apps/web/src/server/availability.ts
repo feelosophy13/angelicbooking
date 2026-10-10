@@ -38,7 +38,7 @@ export async function getStaffAvailability(opts: {
   const windowEnd = zonedToInstant(shiftISODate(date, 2), "00:00", timeZone);
 
   return withTenant(businessId, async (tx) => {
-    const [weekly, override, items] = await Promise.all([
+    const [weekly, override, items, sessions] = await Promise.all([
       tx
         .select({ weekday: schema.staffSchedules.weekday, start: schema.staffSchedules.startTime, end: schema.staffSchedules.endTime })
         .from(schema.staffSchedules)
@@ -57,6 +57,11 @@ export async function getStaffAvailability(opts: {
             lt(schema.appointmentItems.startAt, windowEnd),
           ),
         ),
+      // Scheduled classes block the instructor even before anyone has enrolled.
+      tx
+        .select({ start: schema.classSessions.startAt, end: schema.classSessions.endAt })
+        .from(schema.classSessions)
+        .where(and(eq(schema.classSessions.staffId, staffId), eq(schema.classSessions.status, "scheduled"), gte(schema.classSessions.startAt, windowStart), lt(schema.classSessions.startAt, windowEnd))),
     ]);
 
     const workingBlocks = resolveWorkingBlocks(
@@ -65,7 +70,7 @@ export async function getStaffAvailability(opts: {
       weekly,
       override ? { date: override.date, isOff: override.isOff, start: override.startTime, end: override.endTime } : null,
     );
-    const busy: Interval[] = items.map((i) => ({ start: i.start, end: i.end }));
+    const busy: Interval[] = [...items, ...sessions].map((i) => ({ start: i.start, end: i.end }));
     return computeAvailableSlots({
       date,
       timeZone,
