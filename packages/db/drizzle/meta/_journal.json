@@ -232,6 +232,13 @@
       "when": 1791660551590,
       "tag": "0032_marketing_store_inventory_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791667719612,
+      "tag": "0033_pre_visit_automation",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { instantToISODate } from "@angelic/core";
 import { getAvailableDates, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots } from "@/server/public-booking";
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
@@ -17,6 +18,8 @@ type SP = { service?: string; staff?: string; date?: string; time?: string; mont
 export default async function PublicBookingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
   const sp = await searchParams;
+  // Rendered under /embed/<slug> inside an iframe on the business's own site: same flow, no chrome.
+  const embed = ((await headers()).get("x-pathname") ?? "").startsWith("/embed/");
   const business = (await getPublicBusiness(slug))!;
   const locations = await getPublicLocations(business.id);
   const location = locations.length > 1 ? (locations.find((l) => l.id === sp.location) ?? null) : (locations[0] ?? null);
@@ -142,9 +145,9 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           {pay.mode === "deposit" ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(pay.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : pay.mode === "card" ? <p className="mt-1 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
         </div>
         {pay.mode === "none" ? (
-          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} />
+          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} />
         ) : (
-          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} mode={pay.mode} amountLabel={formatMoney(pay.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} />
+          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} mode={pay.mode} amountLabel={formatMoney(pay.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} />
         )}
       </>
     );
@@ -250,7 +253,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         {pay.mode === "deposit" ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(pay.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : pay.mode === "card" ? <p className="mt-1 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : service.depositCents > 0 ? <p className="mt-1 text-xs text-stone-600">A {formatMoney(service.depositCents, business.currency)} deposit may be required; the salon will confirm.</p> : null}
       </div>
       {pay.mode === "none" ? (
-        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} />
+        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} />
       ) : (
         <PaidBookingForm
           slug={slug}
@@ -266,6 +269,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           referrals={business.loyaltyEnabled}
           defaults={defaults}
           promos={hasPromos}
+          embed={embed}
         />
       )}
     </>

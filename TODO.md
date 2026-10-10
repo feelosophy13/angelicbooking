@@ -114,6 +114,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Inventory: on-hand quantity per product, decrement on sale, low-stock alert, receive stock /
       simple purchase orders, stock-on-hand report.
 
+### Added 2026-10-10 (evening)
+- [x] Embeddable booking: `public/embed.js` + chromeless `/embed/<slug>` flow (inline or pop-up button), configurator
+      with live preview under Settings → Embed, `frame-ancestors *` only on `/embed/*`.
+- [x] Automations now cover the whole visit: confirmation (info), reminder timing, a new pre-visit message
+      (hours before, scheduled at booking and cancelled/moved with the appointment), rebook, birthday, win-back.
+- [x] Settings → Locations: edit page for existing locations.
+
 ### Needs a real Stripe/Twilio run before relying on it (2026-10-10)
 - [ ] Online deposit + card on file at booking (test cards on a connected test account), including the
       automatic refund when a slot is taken after the charge and the refund on online cancellation.

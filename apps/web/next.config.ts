@@ -15,7 +15,13 @@ const nextConfig: NextConfig = {
   typedRoutes: false,
   poweredByHeader: false,
   async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+    return [
+      // Everything except the embeddable booking flow refuses to be framed.
+      { source: "/((?!embed/).*)", headers: securityHeaders },
+      // /embed/<slug> is meant for iframes on the business's own website (public/embed.js).
+      { source: "/embed/:path*", headers: [...securityHeaders.filter((h) => h.key !== "X-Frame-Options"), { key: "Content-Security-Policy", value: "frame-ancestors *" }] },
+      { source: "/embed.js", headers: [{ key: "Access-Control-Allow-Origin", value: "*" }, { key: "Cache-Control", value: "public, max-age=3600" }] },
+    ];
   },
 };
 

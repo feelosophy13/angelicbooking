@@ -1,6 +1,7 @@
 import { requireAction } from "@/lib/tenant";
 import { appUrl } from "@/lib/stripe";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { BackLink, Card, Input, PageHeader, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 
@@ -57,7 +58,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
             <p><b>Instagram:</b> Edit profile → Links → add the link. Business accounts: Edit profile → Action buttons → Book now → “Other” → paste the link.</p>
             <p><b>Facebook page:</b> Add action button → Book now → Link to website → paste the link.</p>
             <p><b>Google Business Profile:</b> Edit profile → Booking → Add appointment link → paste the link. Google shows a Book button on your listing.</p>
-            <p><b>Your website:</b> paste this button where you want it:</p>
+            <p><b>Your website:</b> to embed the whole booking flow (or a pop-up button) use <Link href={`/app/${slug}/settings/embed`} className="text-brand-700 underline">Settings → Embed</Link>. For a plain link button, paste this:</p>
             <textarea readOnly rows={3} value={embed} className="w-full rounded border border-stone-300 bg-stone-50 p-2 font-mono text-[11px]" />
             {business.giftCardsOnline ? <p><b>Gift cards:</b> {appUrl(`/book/${business.slug}/gift`)}</p> : null}
           </div>

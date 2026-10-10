@@ -6,12 +6,13 @@ import { SubmitButton } from "@/components/form";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean } | null;
 
-export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean }) {
+export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
   const d = props.defaults;
   return (
     <form action={action} className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
       <input type="hidden" name="slug" value={props.slug} />
+      {props.embed ? <input type="hidden" name="embed" value="1" /> : null}
       {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
       <input type="hidden" name="serviceId" value={props.serviceId} />
       <input type="hidden" name="staffId" value={props.staffId} />

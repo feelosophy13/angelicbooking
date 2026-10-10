@@ -18,7 +18,7 @@ export function proxy(request: NextRequest) {
   if (request.method === "POST") {
     const ip = clientIp(request);
     const path = request.nextUrl.pathname;
-    const rule = path.startsWith("/api/auth/") ? { limit: 20, windowMs: 60_000 } : path.startsWith("/book/") ? { limit: 30, windowMs: 60_000 } : path.startsWith("/api/") ? { limit: 120, windowMs: 60_000 } : null;
+    const rule = path.startsWith("/api/auth/") ? { limit: 20, windowMs: 60_000 } : path.startsWith("/book/") || path.startsWith("/embed/") ? { limit: 30, windowMs: 60_000 } : path.startsWith("/api/") ? { limit: 120, windowMs: 60_000 } : null;
     if (rule) {
       const r = rateLimit(`${path.split("/").slice(0, 3).join("/")}:${ip}`, rule.limit, rule.windowMs);
       if (!r.ok) return new NextResponse("Too many requests. Please wait a moment and try again.", { status: 429, headers: { "Retry-After": String(r.retryAfterSec) } });
@@ -27,7 +27,7 @@ export function proxy(request: NextRequest) {
   const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "").toLowerCase().split(":")[0]!;
   const { pathname } = request.nextUrl;
   const isAppHost = !host || APP_HOSTS.has(host) || [...APP_HOSTS].some((h) => h.split(":")[0] === host);
-  if (!isAppHost && !pathname.startsWith("/book/") && !pathname.startsWith("/api/") && !pathname.startsWith("/_next/")) {
+  if (!isAppHost && !pathname.startsWith("/book/") && !pathname.startsWith("/embed/") && !pathname.startsWith("/api/") && !pathname.startsWith("/_next/") && pathname !== "/embed.js") {
     const url = request.nextUrl.clone();
     url.pathname = `/book/_host/${host}${pathname === "/" ? "" : pathname}`;
     return NextResponse.rewrite(url);

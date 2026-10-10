@@ -22,7 +22,8 @@ const contact = z.object({
   promoCode: z.string().trim().max(40).optional().transform((v) => v || null),
 });
 
-const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null) });
+const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null), embed: z.string().optional() });
+const confirmedPath = (d: { slug: string; embed?: string }, token: string) => `${d.embed ? "/embed" : "/book"}/${d.slug}/confirmed/${token}`;
 type BookingFields = z.infer<typeof bookingFields>;
 
 function parseBooking(raw: Record<string, unknown>): { d: BookingFields } | { error: string } {
@@ -52,7 +53,7 @@ export async function bookOnline(_prev: PublicState, formData: FormData): Promis
     if (e instanceof BookingError) return { error: e.message };
     throw e;
   }
-  redirect(`/book/${d.slug}/confirmed/${token}`);
+  redirect(confirmedPath(d, token));
 }
 
 export type StartPaymentResult = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string } | { error: string };
@@ -92,7 +93,7 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
   const existing = await appointmentForIntent(business.id, intent.id);
-  if (existing) redirect(`/book/${d.slug}/confirmed/${existing.manageToken}`);
+  if (existing) redirect(confirmedPath(d, existing.manageToken));
   let token: string;
   try {
     const startAt = new Date(d.startAt);
@@ -103,7 +104,7 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
     if (e instanceof BookingError) return { error: intent.kind === "deposit" && /just taken|no longer/.test(e.message) ? `${e.message} Your deposit has been refunded.` : e.message };
     throw e;
   }
-  redirect(`/book/${d.slug}/confirmed/${token}`);
+  redirect(confirmedPath(d, token));
 }
 
 export async function cancelBooking(_prev: PublicState, formData: FormData): Promise<PublicState> {

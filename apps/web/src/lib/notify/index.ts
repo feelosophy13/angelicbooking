@@ -11,6 +11,8 @@ import { activeNumber } from "@/server/messaging";
 import { reportSmsUsage } from "@/server/billing";
 import { templates, type ApptContext, type TemplateName } from "./templates";
 import { smsBody, smsWithStopNotice } from "./sms";
+import { marketingEmail } from "./templates";
+import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing";
 
 type Row = typeof schema.notifications.$inferSelect;
 
@@ -68,11 +70,11 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
       rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "sms", template, recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, template, ctx)) });
     }
     if (template === "cancellation") {
-      // Drop any pending reminder for this appointment.
+      // Drop any pending reminder / pre-visit message for this appointment.
       await tx
         .update(schema.notifications)
         .set({ status: "cancelled" })
-        .where(and(eq(schema.notifications.appointmentId, appt.id), eq(schema.notifications.status, "queued"), eq(schema.notifications.template, "reminder")));
+        .where(and(eq(schema.notifications.appointmentId, appt.id), eq(schema.notifications.status, "queued"), inArray(schema.notifications.template, ["reminder", "auto_pre_visit"])));
     }
     if (template === "confirmation" || template === "rescheduled") {
       await scheduleReminder(tx, business, appt.id, client, ctx, phone);
@@ -101,17 +103,34 @@ async function scheduleReminder(
   ctx: ApptContext,
   phone: string | null,
 ) {
-  // Replace any existing reminder (time may have changed).
+  // Replace any existing reminder / pre-visit message (time may have changed).
   await tx
     .update(schema.notifications)
     .set({ status: "cancelled" })
-    .where(and(eq(schema.notifications.appointmentId, appointmentId), eq(schema.notifications.status, "queued"), eq(schema.notifications.template, "reminder")));
-  const at = new Date(ctx.startAt.getTime() - business.reminderHours * 3_600_000);
-  if (at <= new Date()) return;
-  const t = templates.reminder(ctx);
+    .where(and(eq(schema.notifications.appointmentId, appointmentId), eq(schema.notifications.status, "queued"), inArray(schema.notifications.template, ["reminder", "auto_pre_visit"])));
   const rows: (typeof schema.notifications.$inferInsert)[] = [];
-  if (client.emailOptIn && client.email) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "email", template: "reminder", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: at });
-  if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", ctx)), scheduledAt: at });
+  const at = new Date(ctx.startAt.getTime() - business.reminderHours * 3_600_000);
+  if (at > new Date()) {
+    const t = templates.reminder(ctx);
+    if (client.emailOptIn && client.email) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "email", template: "reminder", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: at });
+    if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", ctx)), scheduledAt: at });
+  }
+  // Optional pre-visit message (Marketing → Automations), e.g. prep instructions 48h before.
+  const pre = await tx.query.automations.findFirst({ where: and(eq(schema.automations.kind, "pre_visit"), eq(schema.automations.enabled, true)) });
+  if (pre) {
+    const preAt = new Date(ctx.startAt.getTime() - pre.hoursBefore * 3_600_000);
+    if (preAt > new Date()) {
+      const vars = appointmentVars(business, ctx);
+      const brand = { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address: business.addressLine };
+      const wantEmail = pre.channel === "email" || pre.channel === "both";
+      const wantSms = pre.channel === "sms" || pre.channel === "both";
+      if (wantEmail && client.emailOptIn && client.email) {
+        const t = marketingEmail(brand, { subject: renderText(pre.subject ?? "Getting ready for your visit", vars), text: renderText(pre.body, vars), ctaLabel: "Manage appointment", ctaUrl: ctx.manageUrl, unsubscribeUrl: unsubscribeUrl(business, client.id) });
+        rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "email", template: "auto_pre_visit", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: preAt });
+      }
+      if (wantSms && client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "sms", template: "auto_pre_visit", recipient: phone, body: await smsWithStopNotice(tx, client, `${business.name}: ${renderText(pre.body, vars)}`), scheduledAt: preAt });
+    }
+  }
   if (rows.length) await tx.insert(schema.notifications).values(rows);
 }
 

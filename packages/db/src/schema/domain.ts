@@ -833,7 +833,7 @@ export const campaigns = pgTable(
   (t) => [index("campaigns_business_idx").on(t.businessId, t.createdAt)],
 );
 
-export const automationKind = pgEnum("automation_kind", ["birthday", "win_back", "rebook"]);
+export const automationKind = pgEnum("automation_kind", ["birthday", "win_back", "rebook", "pre_visit"]);
 
 // Automated messages: birthday, "we miss you" after N days, rebook reminder N days after a visit.
 export const automations = pgTable(
@@ -845,6 +845,7 @@ export const automations = pgTable(
     enabled: boolean("enabled").notNull().default(false),
     channel: text("channel").notNull().default("email"), // email | sms | both
     days: integer("days").notNull().default(60), // win_back: days since last visit; rebook: days after visit
+    hoursBefore: integer("hours_before").notNull().default(48), // pre_visit: hours before the appointment
     subject: text("subject"),
     body: text("body").notNull(),
     createdAt: createdAt(),

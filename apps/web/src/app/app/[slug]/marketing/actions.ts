@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { schema, withTenant } from "@angelic/db";
+import { db, schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
@@ -70,14 +70,22 @@ export async function deleteCampaign(formData: FormData) {
 }
 
 export const saveAutomationAction = formAction(
-  z.object({ slug: z.string(), kind: z.enum(["birthday", "win_back", "rebook"]), enabled: f.checkbox(), channel: z.enum(["email", "sms", "both"]), days: f.int(0, 730), subject: f.optional(150), body: f.text(1, 1000) }),
+  z.object({ slug: z.string(), kind: z.enum(["pre_visit", "birthday", "win_back", "rebook"]), enabled: f.checkbox(), channel: z.enum(["email", "sms", "both"]), days: f.int(0, 730).default(0), hoursBefore: f.int(1, 720).default(48), subject: f.optional(150), body: f.text(1, 1000) }),
   async (d) => {
     const ctx = await requireAction(d.slug, "reports.view");
-    await saveAutomation(ctx.business.id, d.kind, { enabled: d.enabled, channel: d.channel, days: d.days, subject: d.subject, body: d.body });
+    await saveAutomation(ctx.business.id, d.kind, { enabled: d.enabled, channel: d.channel, days: d.days, hoursBefore: d.hoursBefore, subject: d.subject, body: d.body });
     revalidatePath(`/app/${d.slug}/marketing/automations`);
     return d.enabled ? "Automation on" : "Saved (off)";
   },
 );
+
+/** The standard reminder lead time lives on the business (also under Settings → Online booking). */
+export const saveReminderHours = formAction(z.object({ slug: z.string(), reminderHours: f.int(1, 168) }), async (d) => {
+  const ctx = await requireAction(d.slug, "business.manage");
+  await db.update(schema.businesses).set({ reminderHours: d.reminderHours }).where(eq(schema.businesses.id, ctx.business.id));
+  revalidatePath(`/app/${d.slug}/marketing/automations`);
+  return "Reminder timing saved (applies to new bookings)";
+});
 
 export const createPromo = formAction(
   z.object({ slug: z.string(), code: f.text(2, 30), type: z.enum(["percent", "amount"]), value: z.string().trim(), startsAt: z.string().optional(), expiresAt: z.string().optional(), maxUses: z.string().trim().optional(), minSubtotal: f.moneyOptional() }),

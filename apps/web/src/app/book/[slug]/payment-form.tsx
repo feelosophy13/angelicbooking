@@ -28,6 +28,7 @@ export function PaidBookingForm(props: {
   referrals?: boolean;
   defaults?: BookingDefaults;
   promos?: boolean;
+  embed?: boolean;
 }) {
   const d = props.defaults;
   const [fields, setFields] = useState<Record<string, string> | null>(null);
@@ -57,6 +58,7 @@ export function PaidBookingForm(props: {
         }}
       >
         <input type="hidden" name="slug" value={props.slug} />
+        {props.embed ? <input type="hidden" name="embed" value="1" /> : null}
         <input type="hidden" name="serviceId" value={props.serviceId} />
         <input type="hidden" name="staffId" value={props.staffId} />
         <input type="hidden" name="startAt" value={props.startAt} />
