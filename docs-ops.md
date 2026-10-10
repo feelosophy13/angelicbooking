@@ -58,14 +58,17 @@ Production runs on Render (workspace "My Workspace", region Virginia):
   `RESEND_API_KEY`, `EMAIL_FROM`, `TWILIO_ACCOUNT_SID/AUTH_TOKEN`, `SMS_NUMBER_MONTHLY_FEE_CENTS`, `SMS_USAGE_CENTS`,
   `SMS_INCLUDED_PER_MONTH`, `BILLING_BASE_CENTS`, `BILLING_TRIAL_DAYS`. Every variable set on Render must also exist in the local `.env`.
   Stripe, Resend and Twilio keys are not set yet; add them there when ready.
-- Custom domains `angelicbooking.com` (apex) and `www.angelicbooking.com` (redirects to apex) are attached to the service
-  and verified. DNS is on Cloudflare (DNS only, not proxied): `A @ 216.24.57.1` and `CNAME www angelic-booking.onrender.com`.
-  `BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL` point at `https://angelicbooking.com`, so the onrender.com hostname now
-  returns 404 at `/` (the proxy treats any non-app host as a tenant booking domain). That is expected.
+- The app lives at **`app.angelicbooking.com`** (`BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL`). Custom domains attached to the
+  service: `app.angelicbooking.com`, `angelicbooking.com` and `www.angelicbooking.com`. DNS is on Cloudflare (DNS only, not
+  proxied): `CNAME app angelic-booking.onrender.com`, `A @ 216.24.57.1`, `CNAME www angelic-booking.onrender.com`.
+  `src/proxy.ts` 308-redirects the bare domain and www to the app host (until a marketing site exists); any other host,
+  including the onrender.com hostname, is treated as a tenant booking domain and 404s at `/`. That is expected.
+  Moving hosts: add the domain on Render, add DNS, wait for "verified", change the two env vars, deploy, update the cron
+  job's URL, and add the new origin + redirect URI to the Google OAuth client.
 - Changing an env var through the API does not trigger a deploy; POST `/v1/services/<id>/deploys` afterwards.
 - Reminder delivery: the Render Cron Job `angelic-booking-reminders` (crn-db3hnf6i0phs73a81qcg, same repo, build
   command `echo no build needed`) runs every 5 minutes:
-  `curl -fsS -X POST -H "Authorization: Bearer $JOBS_SECRET" https://angelicbooking.com/api/jobs/notifications`.
+  `curl -fsS -X POST -H "Authorization: Bearer $JOBS_SECRET" https://app.angelicbooking.com/api/jobs/notifications`.
   It has its own `JOBS_SECRET` env var (same value as the web service; update both if it is rotated). Each run's
   output is JSON `{processed, sent, failed, skipped, ms}`; see the cron job's Runs tab or Logs.
 
@@ -81,11 +84,11 @@ Environment). Saving in the dashboard offers "Save, rebuild, and deploy"; take i
    (the app creates Standard accounts and, with `PLATFORM_FEE_BPS`, charges application fees).
 3. Developers → API keys (live mode): copy the secret key and the publishable key.
 4. Developers → Webhooks → Add endpoint. Tick **"Listen to events on Connected accounts"** (not
-   "your account"). URL `https://angelicbooking.com/api/stripe/webhook`. Events:
+   "your account"). URL `https://app.angelicbooking.com/api/stripe/webhook`. Events:
    `account.updated`, `payment_intent.succeeded`, `payment_intent.payment_failed`,
    `charge.refunded`, `charge.dispute.created`. Copy the signing secret.
 5. Add a SECOND endpoint for your own account (leave "Connected accounts" unticked) at
-   `https://angelicbooking.com/api/stripe/billing` with events `checkout.session.completed`,
+   `https://app.angelicbooking.com/api/stripe/billing` with events `checkout.session.completed`,
    `customer.subscription.created/updated/deleted/paused/resumed`, `invoice.paid`, `invoice.payment_failed`.
    Copy its signing secret.
 6. Render env + local `.env`: `STRIPE_SECRET_KEY=sk_live_…`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_…`,

@@ -32,12 +32,20 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Add a DMARC record in Cloudflare: `TXT _dmarc.mail1  v=DMARC1; p=none;` (improves Gmail/Yahoo delivery).
 - [ ] Set `SUPPORT_EMAIL` on Render and in `.env` so Help/Privacy/Terms show a contact address.
 
+### Domain move to app.angelicbooking.com (in progress 2026-10-10)
+- [ ] Cloudflare DNS: `CNAME app → angelic-booking.onrender.com` (DNS only).
+- [ ] Google Cloud → Credentials → "Angelic Booking (web)": add origin `https://app.angelicbooking.com` and redirect
+      URI `https://app.angelicbooking.com/api/auth/callback/google`; set the consent screen home link to the app URL.
+- [ ] After Render shows the domain verified: switch `BETTER_AUTH_URL` / `NEXT_PUBLIC_APP_URL`, deploy, update the cron
+      job URL, re-check sign-in, Google sign-in, a booking page and the cron run log.
+- [ ] Later: put a marketing site on the bare domain and remove the root redirect from `src/proxy.ts`.
+
 ## 2. Before real customers
 
 - [ ] Upgrade the Render Postgres from the free `0.1c-256mb` tier to a paid plan with backups and
       point-in-time recovery; until then run `scripts/backup.sh` nightly somewhere and store the dumps off-box.
 - [ ] Set `ERROR_WEBHOOK_URL` (Slack/Discord incoming webhook) so unhandled errors are seen; consider Sentry.
-- [ ] Add an uptime check on `https://angelicbooking.com/sign-in` and on the cron job's run history
+- [ ] Add an uptime check on `https://app.angelicbooking.com/sign-in` and on the cron job's run history
       (Render emails on failed runs if enabled in the cron job's settings).
 - [ ] Rate limiting is in-memory (fine on one instance). Move to Upstash Redis before scaling to 2+ instances;
       the notification claim logic is already safe for multiple instances.
