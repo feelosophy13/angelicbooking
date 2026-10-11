@@ -185,6 +185,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       "Booked online only" filter and templates added later are topped up on the next trigger.
 - [x] 2026-10-11: Staff hours → "Add time off" button opens a team-wide form (pick the person, first/last day, type,
       hours, note) that returns to Staff hours after saving; the per-person Time off tab is unchanged.
+- [x] 2026-10-11: Reports: "Pay & commissions" card (payroll.view): service commissions, product commissions,
+      hourly & salary and total pay for the period with change vs the prior period, and a per-person table with
+      service revenue, tips and cost of revenue. Same calculation as Payroll (overtime off, before adjustments).
 - [x] 2026-10-11: Reports: revenue by service category (leaf categories rolled up to top level with the second level
       underneath, services count, share of service revenue, change vs the previous period, share bar). Reports open
       on month to date instead of today.

@@ -8,6 +8,7 @@ import { can, instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { salesReport } from "@/server/sales";
 import { stockReport } from "@/server/inventory";
+import { runPayroll } from "@/server/payroll";
 import { formatDateLong, formatMoney, shiftISODate } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Empty, LinkButton } from "@/components/ui";
 import { LocationFilter } from "@/components/location-filter";
@@ -40,11 +41,20 @@ export default async function ReportsPage({
   const prevTo = shiftISODate(from, -1);
   const isPreset = (from === today && to === today) || (from === shiftISODate(today, -6) && to === today) || (from === `${today.slice(0, 8)}01` && to === today);
   const stock = await stockReport(business.id);
-  const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation }, prev, categories] = await Promise.all([
+  const canPayroll = can(permissions, "payroll.view");
+  const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation }, prev, categories, pay, payBefore] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter),
     listCategories(business.id, "service"),
+    // What the period cost in pay: the same calculation as Payroll, overtime off, so the numbers agree.
+    canPayroll ? runPayroll(business, { start: from, end: to }, false, locationFilter) : null,
+    canPayroll ? runPayroll(business, { start: prevFrom, end: prevTo }, false, locationFilter) : null,
   ]);
+  const payRows = (pay?.employees ?? []).filter((e) => e.hasActivity && (e.totalCents !== 0 || e.serviceRevenueCents !== 0));
+  const payTotal = (rows: typeof payRows, k: "wageCents" | "mainCommissionCents" | "productCommissionCents" | "totalCents" | "serviceRevenueCents") => rows.reduce((s, e) => s + e[k], 0);
+  const payBeforeRows = (payBefore?.employees ?? []).filter((e) => e.hasActivity);
+  const tipsOf = (e: (typeof payRows)[number]) => e.cashTipsCents + e.cardTipsCents;
+  const laborPct = (cost: number, rev: number) => (rev > 0 ? `${Math.round((cost / rev) * 100)}%` : "—");
   // Service revenue by category: leaves roll up into their top-level category, with the second level shown under it.
   type CatRow = { id: string; name: string; amount: number; count: number; before: number; children: CatRow[] };
   const rollUp = (rows: { categoryId: string | null; amount: number; count: number }[]) => {
@@ -203,6 +213,66 @@ export default async function ReportsPage({
             </table></div>
           )}
         </Card>
+        {canPayroll ? (
+          <Card className="lg:col-span-2">
+            <h2 className="flex items-center justify-between border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">
+              Pay &amp; commissions
+              <Link href={`/app/${slug}/payroll?start=${from}&end=${to}${lq}`} className="text-xs font-normal text-brand-700 hover:underline">Open in Payroll</Link>
+            </h2>
+            {payRows.length === 0 ? <div className="p-4"><Empty title="No pay in this range" body="Service and product commissions, hourly and salary pay appear here once staff have activity." /></div> : (
+              <>
+                <div className="grid grid-cols-2 gap-px border-b border-stone-200 bg-stone-100 md:grid-cols-4">
+                  {([
+                    ["Service commissions", payTotal(payRows, "mainCommissionCents"), payTotal(payBeforeRows, "mainCommissionCents")],
+                    ["Product commissions", payTotal(payRows, "productCommissionCents"), payTotal(payBeforeRows, "productCommissionCents")],
+                    ["Hourly & salary", payTotal(payRows, "wageCents"), payTotal(payBeforeRows, "wageCents")],
+                    ["Total pay", payTotal(payRows, "totalCents"), payTotal(payBeforeRows, "totalCents")],
+                  ] as const).map(([label, cur, before]) => {
+                    const d = delta(cur, before);
+                    return (
+                      <div key={label} className="bg-white px-4 py-3">
+                        <p className="text-xs uppercase tracking-wide text-stone-500">{label}</p>
+                        <p className="text-lg font-semibold tabular-nums">{money(cur)}</p>
+                        <p className={`text-xs ${d === null ? "text-stone-400" : d.up ? "text-stone-500" : "text-stone-500"}`}>{d === null ? `no change vs ${periodLabel}` : d.pct === null ? `new vs ${periodLabel}` : `${d.pct > 0 ? "+" : ""}${d.pct}% vs ${periodLabel}`}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="overflow-x-auto"><table className="w-full text-sm">
+                  <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Staff</th><th className="px-4 py-2">Pay type</th><th className="px-4 py-2 text-right">Service revenue</th><th className="px-4 py-2 text-right">Service commission</th><th className="px-4 py-2 text-right">Product commission</th><th className="px-4 py-2 text-right">Hourly / salary</th><th className="px-4 py-2 text-right">Tips</th><th className="px-4 py-2 text-right">Total pay</th><th className="px-4 py-2 text-right">Cost of revenue</th></tr></thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {[...payRows].sort((a, b) => b.totalCents - a.totalCents).map((e) => (
+                      <tr key={e.employee.staffId}>
+                        <td className="px-4 py-2 font-medium">{e.employee.name}</td>
+                        <td className="px-4 py-2 text-stone-600">{e.employee.payType === "commission" ? "Commission" : e.employee.payType === "hourly" ? "Hourly" : "Salary"}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{money(e.serviceRevenueCents)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{money(e.mainCommissionCents)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{money(e.productCommissionCents)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{money(e.wageCents)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-stone-600">{money(tipsOf(e))}</td>
+                        <td className="px-4 py-2 text-right font-medium tabular-nums">{money(e.totalCents)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-stone-600">{laborPct(e.mainCommissionCents + e.productCommissionCents + e.wageCents, e.serviceRevenueCents)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="border-t border-stone-200 font-semibold">
+                    <tr>
+                      <td className="px-4 py-2" colSpan={2}>Total</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{money(payTotal(payRows, "serviceRevenueCents"))}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{money(payTotal(payRows, "mainCommissionCents"))}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{money(payTotal(payRows, "productCommissionCents"))}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{money(payTotal(payRows, "wageCents"))}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{money(payRows.reduce((s, e) => s + tipsOf(e), 0))}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{money(payTotal(payRows, "totalCents"))}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{laborPct(payTotal(payRows, "mainCommissionCents") + payTotal(payRows, "productCommissionCents") + payTotal(payRows, "wageCents"), payTotal(payRows, "serviceRevenueCents"))}</td>
+                    </tr>
+                  </tfoot>
+                </table></div>
+                <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Calculated the way Payroll does for these dates, with overtime off and before adjustments or withholding. Tips are passed through, not a cost. Cost of revenue is commissions plus wages as a share of the service revenue that person generated.</p>
+              </>
+            )}
+          </Card>
+        ) : null}
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By payment method</h2>
           {byMethod.length === 0 ? <div className="p-4"><Empty title="No payments in this range" /></div> : (

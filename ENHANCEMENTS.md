@@ -360,6 +360,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - ✅ **P1 Import staging in `os.tmpdir()`** [bug] — `settings/import/actions.ts:15-16,41`; stage in `importJobs`.
 - ✅ **P2 Breaks and split shifts; time-off date ranges** [gap] — one block per day (`staff/[staffId]/hours`,
   `staff/actions.ts:104-139`); one date per submission (`time-off`, `staff/actions.ts:159-190`).
+- ✅ **P2 Labor cost in Reports** [gap] — commissions, wages and total pay next to sales, with cost of revenue.
 - ✅ **P2 Revenue by service category** [gap] — Reports breaks service revenue down by category and sub-category
   with share and period-over-period change.
 - ✅ **P2 Service coverage at a glance** [gap] — Staff hours shows a week with time down the side: who is in, when,
