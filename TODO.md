@@ -201,6 +201,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-11: form consistency. New/edit pages for products, packages and services share one fields component
+      (`components/{product,package,service}-fields.tsx`, like `PlanFields`); per-page form widths removed (default,
+      `max-w-md` for tiny forms, `max-w-3xl` for builders, rule in DESIGN.md); `MoneyInput` (currency symbol, decimal
+      keypad, 0.00) replaces bare amount inputs; validation errors show under the field only, the top banner is kept
+      for errors no field can show and is worded with the visible label; the first failing field scrolls into view;
+      leaving a form with unsaved edits asks first (browser close and in-app links).
 - [x] 2026-10-11 (migration 0061): packages get a photo and a description (form, list thumbnail, served publicly
       like product pictures); product and package lists show a small thumbnail. Demo tenants: every product has a
       drawn SVG packshot (`scripts/demo-art.ts`, picked by name: bottle, tube, dropper, brush, mask, pillow, box) and

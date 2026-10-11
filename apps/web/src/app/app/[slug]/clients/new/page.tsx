@@ -10,7 +10,7 @@ export default async function NewClientPage({ params }: { params: Promise<{ slug
   const { slug } = await params;
   await requireAction(slug, "clients.write");
   return (
-    <FormPage title="New client" backHref={`/app/${slug}/clients`} backLabel="Clients" width="max-w-lg">
+    <FormPage title="New client" backHref={`/app/${slug}/clients`} backLabel="Clients">
       <ActionForm action={createClient}>
         <input type="hidden" name="slug" value={slug} />
         <div className="grid grid-cols-2 gap-3">

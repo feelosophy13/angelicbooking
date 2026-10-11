@@ -1,5 +1,5 @@
 "use client";
-import { createContext, isValidElement, useActionState, useContext, useEffect, useId, useRef, useState } from "react";
+import { createContext, isValidElement, useActionState, useCallback, useContext, useEffect, useId, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Loader2 } from "lucide-react";
 import type { FormState } from "@/lib/form";
@@ -7,26 +7,86 @@ import { cn } from "@/lib/utils";
 
 type Action = (prev: FormState | undefined, fd: FormData) => Promise<FormState>;
 const Ctx = createContext<FormState | undefined>(undefined);
+/** Fields announce their visible label so error summaries can use it instead of the input name. */
+const LabelsCtx = createContext<((name: string, label: string) => void) | undefined>(undefined);
 
 /**
- * Form bound to a formAction(). Shows the top-level error, keeps typed values
- * after a failed submit, and lets <Field> render its own error.
+ * Form bound to a formAction(). Keeps typed values after a failed submit and lets <Field> render
+ * its own error under the control. A banner at the top appears only for errors no field on the
+ * page shows (a hidden input, a form-level failure), worded with the field's visible label.
+ * Edits are guarded: leaving the page with unsaved changes asks first.
  */
 export function ActionForm({ action, children, className, onSuccess }: { action: Action; children: React.ReactNode; className?: string; onSuccess?: () => void }) {
   const [state, act] = useActionState(action, undefined);
+  const [labels, setLabels] = useState<Record<string, string>>({});
+  const register = useCallback((name: string, label: string) => {
+    setLabels((cur) => (cur[name] === label ? cur : { ...cur, [name]: label }));
+  }, []);
+  const formRef = useRef<HTMLFormElement>(null);
+  const dirty = useRef(false);
   useEffect(() => {
-    if (state?.ok) onSuccess?.();
+    if (state?.ok) {
+      dirty.current = false;
+      onSuccess?.();
+    }
   }, [state, onSuccess]);
+  // After a failed submit, bring the first field with an error into view.
+  useEffect(() => {
+    if (!state || state.ok || !state.fieldErrors) return;
+    const el = formRef.current?.querySelector<HTMLElement>("[data-field-error]");
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [state]);
+  useUnsavedChanges(dirty);
+  const fieldErrors = Object.entries(state?.fieldErrors ?? {}).filter(([k]) => k !== "_");
+  const unshown = fieldErrors.filter(([k]) => !(k in labels));
+  const banner = state?.fieldErrors?._ ?? (unshown.length ? `Please check: ${unshown.map(([k, m]) => `${labels[k] ?? labelFor(k)}: ${m}`).join(" · ")}` : fieldErrors.length ? null : state?.error);
   return (
     <Ctx.Provider value={state}>
-      <form action={act} className={cn("space-y-4", className)} noValidate>
-        {state?.error ? (
-          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</div>
-        ) : null}
-        {children}
-      </form>
+      <LabelsCtx.Provider value={register}>
+        <form ref={formRef} action={act} className={cn("space-y-4", className)} noValidate onInput={() => { dirty.current = true; }} onSubmit={() => { dirty.current = false; }}>
+          {banner ? (
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{banner}</div>
+          ) : null}
+          {children}
+        </form>
+      </LabelsCtx.Provider>
     </Ctx.Provider>
   );
+}
+
+/** "Interval count" from "intervalCount": the fallback when a field never registered a label. */
+function labelFor(key: string): string {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_.]+/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Ask before the browser leaves or an in-app link navigates while the form has unsaved edits. */
+function useUnsavedChanges(dirty: React.MutableRefObject<boolean>) {
+  useEffect(() => {
+    const message = "You have unsaved changes. Leave this page?";
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!dirty.current) return;
+      e.preventDefault();
+      e.returnValue = message;
+    };
+    const onClick = (e: MouseEvent) => {
+      if (!dirty.current || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+      const to = new URL(a.href, location.href);
+      if (to.origin !== location.origin || to.pathname + to.search === location.pathname + location.search) return;
+      if (!window.confirm(message)) {
+        e.preventDefault();
+        e.stopPropagation();
+      } else dirty.current = false;
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [dirty]);
 }
 
 export function useFormState() {
@@ -54,8 +114,12 @@ export function Field({ label, name, hint, required, children, className }: { la
   const id = `f-${(name ?? auto).replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const error = fieldName ? state?.fieldErrors?.[fieldName] : undefined;
   const errId = `${id}-error`;
+  const register = useContext(LabelsCtx);
+  useEffect(() => {
+    if (register && fieldName && label) register(fieldName, label);
+  }, [register, fieldName, label]);
   return (
-    <div className={className}>
+    <div className={className} data-field-error={error ? "" : undefined}>
       <label htmlFor={id} className="mb-1 block text-sm font-medium text-stone-700">
         {label}
         {required ? <span className="ml-0.5 text-red-500" aria-hidden>*</span> : null}

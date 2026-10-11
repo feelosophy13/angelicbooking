@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useActionState } from "react";
-import { Button, Field, Input, Notice, Select } from "@/components/ui";
+import { Button, Field, Input, Notice, Select, MoneyInput } from "@/components/ui";
 import { ConfirmSubmit, SubmitButton } from "@/components/form";
 import type { SaleActionState } from "./actions";
 
@@ -43,7 +43,7 @@ export function TipsForm({ action, slug, saleId, staff, current }: { action: Act
       ))}
       {staff.length > 1 ? (
         <Field label="Tip on the whole ticket (split by service revenue)">
-          <Input name="tip_" inputMode="decimal" placeholder="0" />
+          <MoneyInput name="tip_" />
         </Field>
       ) : null}
       {state?.error ? <Notice>{state.error}</Notice> : null}
@@ -63,7 +63,7 @@ export function ManualPayForm({ action, slug, saleId, dueCents }: { action: Acti
           <option value="cash">Cash</option>
           <option value="other">Other</option>
         </Select>
-        <Input name="amount" inputMode="decimal" defaultValue={(dueCents / 100).toFixed(2)} />
+        <MoneyInput name="amount" defaultValue={(dueCents / 100).toFixed(2)} />
       </div>
       <Input name="note" placeholder="Note (e.g. Venmo, gift)" />
       {state?.error ? <Notice>{state.error}</Notice> : null}
@@ -83,7 +83,7 @@ export function SavedCardForm({ action, slug, saleId, dueCents, cards }: { actio
           <option key={c.id} value={c.id}>{c.brand.toUpperCase()} •••• {c.last4} ({c.expMonth}/{String(c.expYear).slice(2)})</option>
         ))}
       </Select>
-      <Input name="amount" inputMode="decimal" defaultValue={(dueCents / 100).toFixed(2)} />
+      <MoneyInput name="amount" defaultValue={(dueCents / 100).toFixed(2)} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton size="sm" pendingText="Charging…">Charge saved card</SubmitButton>
     </form>
@@ -104,7 +104,7 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
       <input type="hidden" name="paymentId" value={paymentId} />
-      <Input name="amount" inputMode="decimal" defaultValue={(maxCents / 100).toFixed(2)} className="w-28" aria-label="Refund amount" />
+      <MoneyInput name="amount" defaultValue={(maxCents / 100).toFixed(2)} className="w-28" aria-label="Refund amount" />
       <Select name="to" value={to} onChange={(e) => setTo(e.target.value as "original" | "store_credit")} className="w-44" aria-label="Refund to">
         <option value="original">To original payment</option>
         <option value="store_credit" disabled={!creditAllowed}>As store credit{creditAllowed ? "" : " (needs a client)"}</option>
@@ -159,7 +159,7 @@ export function StoreCreditPayForm({ action, slug, saleId, balanceCents, dueCent
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
       <p className="text-xs text-stone-500">{(balanceCents / 100).toFixed(2)} available.</p>
-      <Input name="amount" inputMode="decimal" defaultValue={(max / 100).toFixed(2)} aria-label="Store credit to apply" />
+      <MoneyInput name="amount" defaultValue={(max / 100).toFixed(2)} aria-label="Store credit to apply" />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton size="sm" pendingText="Applying…">Apply store credit</SubmitButton>
     </form>
@@ -174,7 +174,7 @@ export function GiftCardPayForm({ action, slug, saleId, dueCents }: { action: Ac
       <input type="hidden" name="saleId" value={saleId} />
       <div className="grid grid-cols-[1fr_6rem] gap-2">
         <Input name="code" placeholder="Gift card code" className="font-mono uppercase" required />
-        <Input name="amount" inputMode="decimal" defaultValue={(dueCents / 100).toFixed(2)} />
+        <MoneyInput name="amount" defaultValue={(dueCents / 100).toFixed(2)} />
       </div>
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <Button type="submit" size="sm" variant="secondary" disabled={pending}>{pending ? "…" : "Redeem gift card"}</Button>

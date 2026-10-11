@@ -19,7 +19,7 @@ export default async function EditCategoryPage({ params }: { params: Promise<{ s
   // A category can't be moved inside itself or one of its own sub-categories.
   const exclude = subtreeIds(categories, me.id);
   return (
-    <FormPage title={me.name} backHref={`/app/${slug}/services/categories/${me.id}`} backLabel={me.name} width="max-w-xl">
+    <FormPage title={me.name} backHref={`/app/${slug}/services/categories/${me.id}`} backLabel={me.name}>
       <ActionForm action={updateServiceCategoryAction}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="id" value={me.id} />

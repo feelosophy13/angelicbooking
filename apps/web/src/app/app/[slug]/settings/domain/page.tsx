@@ -11,7 +11,7 @@ export default async function DomainPage({ params }: { params: Promise<{ slug: s
   const { business } = await requireAction(slug, "business.manage");
   const host = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/^https?:\/\//, "");
   return (
-    <FormPage title="Custom booking domain" backHref={`/app/${slug}/settings`} backLabel="Settings" width="max-w-xl">
+    <FormPage title="Custom booking domain" backHref={`/app/${slug}/settings`} backLabel="Settings">
       <p className="mb-3 text-sm text-stone-600">Serve your booking page from your own hostname instead of {host}/book/{business.slug}.</p>
       <ActionForm action={saveCustomDomain}>
         <input type="hidden" name="slug" value={slug} />

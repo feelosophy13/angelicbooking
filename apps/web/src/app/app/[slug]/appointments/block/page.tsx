@@ -26,7 +26,7 @@ export default async function BlockTimePage({ params, searchParams }: { params: 
   const [h, m] = start.split(":").map(Number);
   const end = `${String(Math.min(23, h! + 1)).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   return (
-    <FormPage title="Block time" backHref={`/app/${slug}?date=${date}`} backLabel="Calendar" width="max-w-lg">
+    <FormPage title="Block time" backHref={`/app/${slug}?date=${date}`} backLabel="Calendar">
       <ActionForm action={createBlock}>
         <input type="hidden" name="slug" value={slug} />
         {location ? <input type="hidden" name="locationId" value={location.id} /> : null}

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAction } from "@/lib/tenant";
 import { appUrl, isStripeConfigured } from "@/lib/stripe";
-import { BackLink, Card, Input, PageHeader, Notice, Checkbox } from "@/components/ui";
+import { BackLink, Card, Input, PageHeader, Notice, Checkbox, MoneyInput } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { saveStoreSettings } from "./actions";
 
@@ -25,7 +25,7 @@ export default async function StoreSettingsPage({ params }: { params: Promise<{ 
             <p className="-mt-2 text-xs text-stone-500">Clients pick an amount, add a recipient and message, and the code is emailed when paid. <a className="underline" href={appUrl(`/book/${business.slug}/gift`)} target="_blank" rel="noreferrer">{appUrl(`/book/${business.slug}/gift`)}</a></p>
             <Checkbox name="storeEnabled" defaultChecked={business.storeEnabled} label="Sell products online" />
             <p className="-mt-2 text-xs text-stone-500">Products marked “sell online” appear at <a className="underline" href={appUrl(`/book/${business.slug}/shop`)} target="_blank" rel="noreferrer">{appUrl(`/book/${business.slug}/shop`)}</a>. Orders show up under Sales with a pickup/shipping note.</p>
-            <Field label="Flat shipping rate" name="shippingFlat" hint="Leave at 0 for pickup only."><Input name="shippingFlat" inputMode="decimal" defaultValue={business.shippingFlatCents ? (business.shippingFlatCents / 100).toFixed(2) : ""} placeholder="0" className="w-40" /></Field>
+            <Field label="Flat shipping rate" name="shippingFlat" hint="Leave at 0 for pickup only."><MoneyInput name="shippingFlat" defaultValue={business.shippingFlatCents ? (business.shippingFlatCents / 100).toFixed(2) : ""} className="w-40" /></Field>
             <SubmitButton pendingText="Saving…">Save</SubmitButton>
           </ActionForm>
         </Card>

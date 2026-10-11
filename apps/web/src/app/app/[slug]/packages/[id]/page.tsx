@@ -4,12 +4,10 @@ import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { serviceGroups } from "@/server/service-groups";
-import { ServicePicker } from "@/components/service-picker";
 import { listLocations } from "@/server/locations";
-import { FormPage, Input, Textarea } from "@/components/ui";
-import { ImageField } from "@/components/image-field";
-import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { ValidAt } from "@/components/offered-at";
+import { FormPage } from "@/components/ui";
+import { ActionForm, SubmitButton } from "@/components/form";
+import { PackageFields } from "@/components/package-fields";
 import { updatePackage } from "../../catalog-actions";
 
 export const metadata: Metadata = { title: "Edit package" };
@@ -29,16 +27,7 @@ export default async function EditPackagePage({ params }: { params: Promise<{ sl
       <ActionForm action={updatePackage}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="id" value={p.id} />
-        <Field label="Name" name="name" required><Input name="name" defaultValue={p.name} required autoFocus /></Field>
-        <Field label="Service" name="serviceId" hint="Choose one service, or let sessions be used on any service."><ServicePicker name="serviceId" groups={groups} value={p.serviceId ?? null} placeholder="Any service" noneLabel="Any service" /></Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Sessions" name="sessions" required><Input name="sessions" type="number" min={1} defaultValue={p.sessions} required /></Field>
-          <Field label="Price" name="price" required><Input name="price" inputMode="decimal" defaultValue={(p.priceCents / 100).toFixed(2)} required /></Field>
-        </div>
-        <Field label="Valid for (days)" name="validDays" hint="Leave blank if sessions never expire."><Input name="validDays" type="number" min={1} defaultValue={p.validDays ?? ""} /></Field>
-        <Field label="Description" name="description"><Textarea name="description" rows={3} defaultValue={p.description ?? ""} /></Field>
-        <Field label="Photo" name="image" className="mt-2"><ImageField name="image" removeName="removeImage" current={p.imageUrl} /></Field>
-        <ValidAt locations={locations} selected={p.validLocationIds} what="package sessions" />
+        <PackageFields pkg={p} groups={groups} locations={locations} currency={business.currency} />
         <SubmitButton pendingText="Saving…">Save package</SubmitButton>
       </ActionForm>
     </FormPage>

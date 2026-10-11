@@ -16,7 +16,7 @@ export default async function NewCategoryPage({ params, searchParams }: { params
   const categories = await listCategories(business.id, "service");
   const parentCat = categories.find((c) => c.id === parent) ?? null;
   return (
-    <FormPage title={parentCat ? `New sub-category in ${parentCat.name}` : "New service category"} backHref={parentCat ? `/app/${slug}/services/categories/${parentCat.id}` : `/app/${slug}/services`} backLabel={parentCat ? parentCat.name : "Services"} width="max-w-xl">
+    <FormPage title={parentCat ? `New sub-category in ${parentCat.name}` : "New service category"} backHref={parentCat ? `/app/${slug}/services/categories/${parentCat.id}` : `/app/${slug}/services`} backLabel={parentCat ? parentCat.name : "Services"}>
       <ActionForm action={createCategory}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="kind" value="service" />

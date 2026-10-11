@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Input, Select } from "@/components/ui";
+import { Input, Select, MoneyInput } from "@/components/ui";
 import { Field } from "@/components/form";
 
 type Pay = { payType: "commission" | "hourly" | "salary"; mainCommissionBps: number; productCommissionBps: number; ccTipFeeBps: number; hourlyRateCents: number; salaryPerPeriodCents: number; overtimeOverride: boolean | null; taxDeductionCents: number | null; taxDeductionBps: number | null };
@@ -34,10 +34,10 @@ export function PayFields({ p }: { p: Pay }) {
           <Input name="mainCommissionPct" type="number" step="0.5" min={0} max={100} defaultValue={(p.mainCommissionBps / 100).toString()} />
         </Field>
         <Field label="Hourly rate ($)" name="hourlyRate" hint={type === "commission" ? "Optional guaranteed base on clocked hours." : "Paid on time-clock hours."} className={hide(type !== "salary")}>
-          <Input name="hourlyRate" inputMode="decimal" defaultValue={p.hourlyRateCents ? (p.hourlyRateCents / 100).toFixed(2) : ""} />
+          <MoneyInput name="hourlyRate" defaultValue={p.hourlyRateCents ? (p.hourlyRateCents / 100).toFixed(2) : ""} />
         </Field>
         <Field label="Salary per pay period ($)" name="salaryPerPeriod" className={hide(type === "salary")}>
-          <Input name="salaryPerPeriod" inputMode="decimal" defaultValue={p.salaryPerPeriodCents ? (p.salaryPerPeriodCents / 100).toFixed(2) : ""} />
+          <MoneyInput name="salaryPerPeriod" defaultValue={p.salaryPerPeriodCents ? (p.salaryPerPeriodCents / 100).toFixed(2) : ""} />
         </Field>
         <Field label="Overtime" name="overtimeOverride" className={hide(type === "hourly")}>
           <Select name="overtimeOverride" defaultValue={p.overtimeOverride == null ? "default" : p.overtimeOverride ? "yes" : "no"}>
@@ -55,7 +55,7 @@ export function PayFields({ p }: { p: Pay }) {
         <Field label="Fee on card tips %" name="ccTipFeePct" hint="Deducted from tips paid by card.">
           <Input name="ccTipFeePct" type="number" step="0.1" min={0} max={100} defaultValue={(p.ccTipFeeBps / 100).toString()} />
         </Field>
-        <Field label="Tax withholding ($ per period)" name="taxDeductionAmount" hint="Leave blank for the accountant."><Input name="taxDeductionAmount" inputMode="decimal" defaultValue={p.taxDeductionCents != null ? (p.taxDeductionCents / 100).toFixed(2) : ""} /></Field>
+        <Field label="Tax withholding ($ per period)" name="taxDeductionAmount" hint="Leave blank for the accountant."><MoneyInput name="taxDeductionAmount" defaultValue={p.taxDeductionCents != null ? (p.taxDeductionCents / 100).toFixed(2) : ""} /></Field>
         <Field label="or withholding %" name="taxDeductionPct"><Input name="taxDeductionPct" type="number" step="0.1" min={0} max={60} defaultValue={p.taxDeductionBps != null ? (p.taxDeductionBps / 100).toString() : ""} /></Field>
       </div>
     </div>

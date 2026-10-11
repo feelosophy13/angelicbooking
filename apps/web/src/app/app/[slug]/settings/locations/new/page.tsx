@@ -12,7 +12,7 @@ export default async function NewLocationPage({ params }: { params: Promise<{ sl
   const { slug } = await params;
   await requireAction(slug, "business.manage");
   return (
-    <FormPage title="New location" backHref={`/app/${slug}/settings/locations`} backLabel="Locations" width="max-w-xl">
+    <FormPage title="New location" backHref={`/app/${slug}/settings/locations`} backLabel="Locations">
       <ActionForm action={createLocation} className="grid gap-3 sm:grid-cols-2">
         <input type="hidden" name="slug" value={slug} />
         <Field label="Name" name="name" required><Input name="name" required placeholder="Fairfax" autoFocus /></Field>

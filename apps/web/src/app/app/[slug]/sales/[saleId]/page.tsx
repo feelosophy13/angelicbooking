@@ -11,7 +11,7 @@ import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForSale, validAtLocation } from "@/server/locations";
 import { MapPin } from "lucide-react";
 import { formatMoney, shiftISODate } from "@/lib/utils";
-import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
+import { Button, Card, Input, PageHeader, Select, MoneyInput } from "@/components/ui";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; saleId: string }> }): Promise<Metadata> {
   const { slug, saleId } = await params;
@@ -138,7 +138,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                           <summary className="cursor-pointer text-xs text-stone-500 hover:text-stone-800">Edit</summary>
                           <form action={editLine} className="mt-1 flex w-56 flex-col gap-1">
                             <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="lineId" value={l.id} />
-                            <Input name="price" inputMode="decimal" defaultValue={(l.unitCents / 100).toFixed(2)} aria-label="Unit price" />
+                            <MoneyInput name="price" defaultValue={(l.unitCents / 100).toFixed(2)} aria-label="Unit price" />
                             {l.kind === "product" ? <Input name="quantity" type="number" min={1} max={99} defaultValue={l.quantity} aria-label="Quantity" /> : null}
                             <Select name="staffId" defaultValue={l.staffId ?? ""} aria-label="Staff credit">
                               <option value="">No staff credit</option>
@@ -213,7 +213,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                           <option value="">No staff credit</option>
                           {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
                         </Select>
-                        <Input name="price" inputMode="decimal" placeholder="Price (optional)" />
+                        <MoneyInput name="price" placeholder="Price (optional)" />
                       </div>
                       <Button type="submit" size="sm" variant="secondary">Add service</Button>
                     </form>
@@ -236,7 +236,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 <div className="grid gap-4 md:grid-cols-3">
                   <form action={addOffer} className="space-y-2">
                     <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="kind" value="gift_card" />
-                    <Input name="amount" inputMode="decimal" placeholder="Gift card amount" required />
+                    <MoneyInput name="amount" placeholder="Gift card amount" required />
                     <Input name="recipientName" placeholder="Recipient (optional)" />
                     <Button type="submit" size="sm" variant="secondary">Add gift card</Button>
                   </form>

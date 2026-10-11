@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { Card, Input, Select, Checkbox } from "@/components/ui";
+import { Card, Input, Select, Checkbox, MoneyInput } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { createPromo } from "../../actions";
 
@@ -26,7 +26,7 @@ export default async function NewPromoPage({ params }: { params: Promise<{ slug:
           <Field label="Expires" name="expiresAt"><Input name="expiresAt" type="date" /></Field>
           <Field label="Max uses" name="maxUses" hint="Blank = unlimited"><Input name="maxUses" type="number" min={1} /></Field>
         </div>
-        <Field label="Minimum subtotal" name="minSubtotal"><Input name="minSubtotal" inputMode="decimal" placeholder="0" className="w-40" /></Field>
+        <Field label="Minimum subtotal" name="minSubtotal"><MoneyInput name="minSubtotal" className="w-40" /></Field>
         <fieldset className="rounded-lg border border-stone-200 p-3">
           <legend className="px-1 text-sm font-medium text-stone-700">Only for these services (optional)</legend>
           <div className="grid gap-1 sm:grid-cols-2">

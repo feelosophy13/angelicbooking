@@ -28,7 +28,14 @@ wrong: fix the page.
 - Two-column detail pages use `grid gap-6 lg:grid-cols-[1fr_360px]`: the main object left, actions and context right.
   On a phone the right column follows the left; the primary action must be reachable without scrolling past
   secondary panels.
-- Full width by default. Only forms are capped (`FormPage`, `max-w-2xl`); lists and tables never are.
+- Full width by default. Only forms are capped (`FormPage`, `max-w-2xl`); lists and tables never are. A form
+  keeps the default width unless it has at most three fields (`width="max-w-md"`) or is a builder with its own
+  table (`max-w-3xl`). Never pick a width per page by taste.
+- New and edit forms for the same thing share one fields component (`ProductFields`, `PackageFields`,
+  `ServiceFields`, `PlanFields`): the page supplies the record (or nothing) and the submit button. Two copies drift.
+- Money is typed in `MoneyInput` (currency symbol, decimal keypad, `0.00` placeholder), never a bare `Input`.
+- Validation errors appear under the field, worded for a person. The red banner at the top is only for errors no
+  field on the page can show. Leaving a form with unsaved edits asks first (`ActionForm` does this).
 
 ## Lists and tables
 

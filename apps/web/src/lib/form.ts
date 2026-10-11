@@ -45,7 +45,7 @@ export function formAction<S extends z.ZodTypeAny>(
       // Always say something at the top too, so a failed submit is never silent even when a
       // field with an error has no <Field> on the page (e.g. a hidden or missing input).
       const summary = Object.entries(fieldErrors).filter(([k]) => k !== "_").map(([k, m]) => `${labelFor(k)}: ${m}`).join(" · ");
-      return { fieldErrors, values: raw, error: fieldErrors._ ?? (summary ? `Please check: ${summary}` : "Please check the highlighted fields.") };
+      return { fieldErrors, values: raw, error: fieldErrors._ ?? (summary ? `Please check: ${summary}` : "Please check the highlighted fields.") }; // ActionForm rewords this with visible labels
     }
     try {
       const message = await handler(parsed.data, formData);

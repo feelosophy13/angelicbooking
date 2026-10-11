@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
-import { FormPage, Input } from "@/components/ui";
+import { FormPage, Input, MoneyInput } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { ValidAt } from "@/components/offered-at";
 import { listLocations } from "@/server/locations";
@@ -17,7 +17,7 @@ export default async function NewGiftCardPage({ params }: { params: Promise<{ sl
       <p className="mb-3 text-sm text-stone-600">Use this for cards paid for outside a sale (or comped). To sell one, add it on the checkout screen instead so it appears on the receipt.</p>
       <ActionForm action={issueGiftCard}>
         <input type="hidden" name="slug" value={slug} />
-        <Field label="Amount" name="amount" required><Input name="amount" inputMode="decimal" required placeholder="50" autoFocus /></Field>
+        <Field label="Amount" name="amount" required><MoneyInput name="amount" required autoFocus /></Field>
         <Field label="Recipient (optional)" name="recipientName"><Input name="recipientName" placeholder="Name" /></Field>
         <ValidAt locations={locations} what="this gift card" />
         <SubmitButton pendingText="Issuing…">Issue gift card</SubmitButton>

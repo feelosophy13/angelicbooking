@@ -76,6 +76,17 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
   );
 }
 
+/** An amount in the business's currency: symbol on the left, decimal keypad on phones, "0.00" placeholder. */
+export function MoneyInput({ currency = "USD", className, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { currency?: string }) {
+  const symbol = new Intl.NumberFormat("en-US", { style: "currency", currency }).formatToParts(0).find((x) => x.type === "currency")?.value ?? "$";
+  return (
+    <span className="relative block">
+      <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-stone-500" aria-hidden>{symbol}</span>
+      <Input inputMode="decimal" placeholder="0.00" className={cn(symbol.length > 1 ? "pl-10" : "pl-7", className)} {...props} />
+    </span>
+  );
+}
+
 export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
   const fieldId = useFieldId();
   return (

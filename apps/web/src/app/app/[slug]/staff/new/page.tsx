@@ -10,7 +10,7 @@ export default async function NewStaffPage({ params }: { params: Promise<{ slug:
   const { slug } = await params;
   await requireAction(slug, "staff.manage");
   return (
-    <FormPage title="New staff member" backHref={`/app/${slug}/staff`} backLabel="Staff" width="max-w-lg">
+    <FormPage title="New staff member" backHref={`/app/${slug}/staff`} backLabel="Staff">
       <p className="mb-4 text-sm text-stone-600">Creates a calendar column with default hours (Tue–Sat 9–5) that you can change next. To let them sign in, send an invitation afterwards.</p>
       <ActionForm action={createStaff}>
         <input type="hidden" name="slug" value={slug} />

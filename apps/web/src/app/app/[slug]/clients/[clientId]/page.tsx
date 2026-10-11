@@ -11,7 +11,7 @@ import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireAction, requireBusiness } from "@/lib/tenant";
 import { formatMoney, formatTime } from "@/lib/utils";
-import { BackLink, Button, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox } from "@/components/ui";
+import { BackLink, Button, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox, MoneyInput } from "@/components/ui";
 import { updateClient } from "../actions";
 import { addNote, deleteNote, togglePin } from "./notes-actions";
 import { Pin, PinOff } from "lucide-react";
@@ -274,7 +274,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                     <input type="hidden" name="slug" value={slug} />
                     <input type="hidden" name="clientId" value={client.id} />
                     <div className="grid grid-cols-[6rem_1fr] gap-2">
-                      <Field label="Amount" name="amount" hint="Negative removes"><Input name="amount" inputMode="decimal" placeholder="25.00" /></Field>
+                      <Field label="Amount" name="amount" hint="Negative removes"><MoneyInput name="amount" /></Field>
                       <Field label="Reason" name="note"><Input name="note" placeholder="Goodwill after a late start" /></Field>
                     </div>
                     <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Apply</SubmitButton>

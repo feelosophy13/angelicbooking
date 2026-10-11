@@ -34,7 +34,7 @@ export default async function NewNumberPage({ params, searchParams }: { params: 
   }
 
   return (
-    <FormPage title={location ? `Choose a toll-free number for ${location.name}` : "Choose a toll-free number"} backHref={`/app/${slug}/settings/messaging`} backLabel="Text messaging" width="max-w-2xl">
+    <FormPage title={location ? `Choose a toll-free number for ${location.name}` : "Choose a toll-free number"} backHref={`/app/${slug}/settings/messaging`} backLabel="Text messaging">
       <p className="text-sm text-stone-600">
         Pick any available number. {fee > 0 ? `${money(fee)} per month on your invoice.` : "Included in your plan."}
       </p>

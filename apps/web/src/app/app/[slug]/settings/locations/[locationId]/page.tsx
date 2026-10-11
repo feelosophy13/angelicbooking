@@ -34,7 +34,7 @@ export default async function EditLocationPage({ params }: { params: Promise<{ s
     })
     .filter((p) => p.days.length || p.primaryOnly);
   return (
-    <FormPage title={l.name} backHref={`/app/${slug}/settings/locations`} backLabel="Locations" width="max-w-xl">
+    <FormPage title={l.name} backHref={`/app/${slug}/settings/locations`} backLabel="Locations">
       {locations.length > 1 ? (
         <div className="mb-5 rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm">
           <p className="mb-1 font-medium text-stone-800">Who works here</p>

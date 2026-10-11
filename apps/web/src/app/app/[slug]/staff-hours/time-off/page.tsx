@@ -20,7 +20,7 @@ export default async function AddTimeOffPage({ params, searchParams }: { params:
   const preset = people.some((p) => p.id === sp.staff) ? sp.staff! : "";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : "";
   return (
-    <FormPage title="Add time off" backHref={`/app/${slug}/staff-hours`} backLabel="Staff hours" width="max-w-lg">
+    <FormPage title="Add time off" backHref={`/app/${slug}/staff-hours`} backLabel="Staff hours">
       <ActionForm action={addOverride}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="returnTo" value={`/app/${slug}/staff-hours`} />
