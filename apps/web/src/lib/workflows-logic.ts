@@ -105,6 +105,7 @@ export function waitResumesAt(step: Extract<WorkflowStep, { type: "wait" }>, now
 // ---------------------------------------------------------------------------
 export const STEP_LABELS: Record<WorkflowStep["type"], string> = {
   wait: "Wait",
+  reminder: "Send the appointment reminder",
   sms: "Send a text",
   email: "Send an email",
   review_request: "Ask for a rating",
@@ -132,6 +133,7 @@ export function validateSteps(steps: WorkflowStep[], trigger: WorkflowTrigger): 
     if (s.type === "sms" && !s.body.trim()) errors.push(`${n}: the text message is empty.`);
     if (s.type === "email" && (!s.subject.trim() || !s.body.trim())) errors.push(`${n}: the email needs a subject and a message.`);
     if (s.type === "review_request" && trigger !== "appointment_completed") errors.push(`${n}: a rating request needs the Visit completed trigger.`);
+    if (s.type === "reminder" && trigger !== "appointment_booked") errors.push(`${n}: the appointment reminder needs the Appointment booked trigger.`);
     if (s.type === "tag" && !s.tag.trim()) errors.push(`${n}: enter a tag.`);
     if (s.type === "points" && !(s.points > 0 && s.points <= 100_000)) errors.push(`${n}: enter the points to give (1 to 100,000).`);
     if (s.type === "notify_staff" && !s.body.trim()) errors.push(`${n}: the staff note is empty.`);
@@ -149,6 +151,7 @@ export function summarizeSteps(steps: WorkflowStep[]): string {
     else if (s.type === "sms") parts.push("text");
     else if (s.type === "email") parts.push("email");
     else if (s.type === "review_request") parts.push("rating request");
+    else if (s.type === "reminder") parts.push("appointment reminder");
     else if (s.type === "tag") parts.push(`tag “${s.tag}”`);
     else if (s.type === "points") parts.push(`+${s.points} points`);
     else parts.push(`notify ${s.to}`);

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Bell, ChevronDown, Clock, Coins, Mail, MessageSquare, Plus, Star, Tag, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Bell, BellRing, ChevronDown, Clock, Coins, Mail, MessageSquare, Plus, Star, Tag, Trash2 } from "lucide-react";
 import type { WorkflowStep, WorkflowTrigger } from "@angelic/db";
 import { Input, Select, Textarea } from "@/components/ui";
 import { APPOINTMENT_TRIGGERS, newStepId, placeholdersFor, STEP_LABELS } from "@/lib/workflows-logic";
@@ -8,8 +8,8 @@ import { cn } from "@/lib/utils";
 
 type StepType = WorkflowStep["type"];
 
-const ICON: Record<StepType, typeof Clock> = { wait: Clock, sms: MessageSquare, email: Mail, review_request: Star, tag: Tag, points: Coins, notify_staff: Bell };
-const TONE: Record<StepType, string> = { wait: "bg-stone-100 text-stone-600", sms: "bg-sky-50 text-sky-700", email: "bg-violet-50 text-violet-700", review_request: "bg-amber-50 text-amber-700", tag: "bg-emerald-50 text-emerald-700", points: "bg-emerald-50 text-emerald-700", notify_staff: "bg-rose-50 text-rose-700" };
+const ICON: Record<StepType, typeof Clock> = { wait: Clock, sms: MessageSquare, email: Mail, review_request: Star, reminder: BellRing, tag: Tag, points: Coins, notify_staff: Bell };
+const TONE: Record<StepType, string> = { wait: "bg-stone-100 text-stone-600", sms: "bg-sky-50 text-sky-700", email: "bg-violet-50 text-violet-700", review_request: "bg-amber-50 text-amber-700", reminder: "bg-brand-50 text-brand-700", tag: "bg-emerald-50 text-emerald-700", points: "bg-emerald-50 text-emerald-700", notify_staff: "bg-rose-50 text-rose-700" };
 
 function blank(type: StepType): WorkflowStep {
   const id = newStepId();
@@ -18,6 +18,7 @@ function blank(type: StepType): WorkflowStep {
     case "sms": return { id, type, body: "" };
     case "email": return { id, type, subject: "", body: "", ctaLabel: null };
     case "review_request": return { id, type };
+    case "reminder": return { id, type };
     case "tag": return { id, type, tag: "" };
     case "points": return { id, type, points: 100, note: null };
     case "notify_staff": return { id, type, to: "owner", body: "" };
@@ -32,6 +33,7 @@ function headline(s: WorkflowStep): string {
     case "sms": return s.body.trim() ? s.body.trim().slice(0, 70) + (s.body.length > 70 ? "…" : "") : "Text message (empty)";
     case "email": return s.subject.trim() || "Email (no subject yet)";
     case "review_request": return "One-tap star rating, once per visit";
+    case "reminder": return "Details, manage link, forms and prep notes, by email and text";
     case "tag": return s.tag.trim() ? `Tag “${s.tag.trim()}”` : "Add a tag (empty)";
     case "points": return `Give ${s.points} points`;
     case "notify_staff": return s.to === "owner" ? "Email the business address" : "Email the provider of the visit";
@@ -62,7 +64,7 @@ export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; tri
   const remove = (i: number) => setSteps((s) => s.filter((_, j) => j !== i));
   const add = (type: StepType) => { const s = blank(type); setSteps((list) => [...list, s]); setOpen(s.id); setMenu(false); };
   const placeholders = placeholdersFor(trigger);
-  const addable: StepType[] = ["wait", "sms", "email", ...(trigger === "appointment_completed" ? (["review_request"] as StepType[]) : []), "tag", "points", "notify_staff"];
+  const addable: StepType[] = ["wait", "sms", "email", ...(trigger === "appointment_completed" ? (["review_request"] as StepType[]) : []), ...(trigger === "appointment_booked" ? (["reminder"] as StepType[]) : []), "tag", "points", "notify_staff"];
   const Placeholders = () => (
     <details className="text-xs text-stone-500">
       <summary className="cursor-pointer select-none hover:text-stone-800">Placeholders you can use</summary>
@@ -121,6 +123,7 @@ export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; tri
                         </div>
                       </>
                     ) : null}
+                    {s.type === "reminder" ? <p className="text-sm text-stone-600">The standard reminder: appointment details, manage link, outstanding forms and the “before your visit” notes of the services booked, by email and text to clients who allow each. Wording lives under Settings → Messages; prep notes on each service or category.</p> : null}
                     {s.type === "review_request" ? <p className="text-sm text-stone-600">Email when the client has one, otherwise a text. Wording lives under Settings → Messages; the Google link under Settings → Review requests.</p> : null}
                     {s.type === "tag" ? <Input value={s.tag} onChange={(e) => update(i, { tag: e.target.value })} placeholder="Tag, e.g. Colour client" maxLength={40} className="max-w-xs" aria-label="Tag" /> : null}
                     {s.type === "points" ? (

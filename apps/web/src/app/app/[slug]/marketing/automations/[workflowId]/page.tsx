@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAction } from "@/lib/tenant";
-import { getWorkflow, recentRuns } from "@/server/workflows";
+import { getWorkflow, recentRuns, WORKFLOW_TEMPLATES } from "@/server/workflows";
 import { triggerMeta } from "@/lib/workflows-logic";
 import { BackLink, Card, PageHeader } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
@@ -24,7 +24,7 @@ export default async function EditWorkflowPage({ params }: { params: Promise<{ s
       <div className="mb-2"><BackLink href={`/app/${slug}/marketing/automations`}>Automations</BackLink></div>
       <PageHeader title={w.name}>
         <form action={duplicateWorkflowAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="workflowId" value={w.id} /><button type="submit" className="rounded-lg border border-stone-300 bg-white px-3 py-1.5 text-sm hover:bg-stone-50">Duplicate</button></form>
-        {!w.templateKey ? (
+        {!w.templateKey || !WORKFLOW_TEMPLATES.some((t) => t.key === w.templateKey) ? (
           <form action={deleteWorkflowAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="workflowId" value={w.id} /><ConfirmSubmit title={`Delete “${w.name}”?`} body="Runs in progress are dropped. This can't be undone." confirmLabel="Delete" variant="ghost" className="text-stone-500 hover:text-red-600">Delete</ConfirmSubmit></form>
         ) : null}
       </PageHeader>

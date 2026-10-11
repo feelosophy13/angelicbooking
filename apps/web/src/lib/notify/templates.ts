@@ -20,6 +20,8 @@ export interface ApptContext {
   cardOnFile?: boolean;
   /** Link to outstanding intake/consent forms for this visit; null when none are due. */
   formsUrl?: string | null;
+  /** "Before your visit" instructions for the booked services (service's own, else its category's), deduplicated. */
+  prepNotes?: string[];
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -60,8 +62,14 @@ function formsNote(ctx: ApptContext) {
   return ctx.formsUrl ? `<p style="margin-top:16px;padding:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:14px">Please complete your forms before your visit: <a href="${ctx.formsUrl}" style="color:#6d28d9">Complete forms</a></p>` : "";
 }
 
+function prepNote(ctx: ApptContext) {
+  if (!ctx.prepNotes?.length) return "";
+  const items = ctx.prepNotes.map((n) => `<li style="margin:4px 0">${esc(n)}</li>`).join("");
+  return `<div style="margin-top:16px;padding:12px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;font-size:14px"><p style="margin:0 0 4px;font-weight:600">Before your visit</p><ul style="margin:0;padding-left:18px">${items}</ul></div>`;
+}
+
 function manage(ctx: ApptContext) {
-  return `${formsNote(ctx)}<p style="margin-top:16px"><a href="${ctx.manageUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Manage appointment</a></p>
+  return `${prepNote(ctx)}${formsNote(ctx)}<p style="margin-top:16px"><a href="${ctx.manageUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Manage appointment</a></p>
 <p style="font-size:13px;color:#78716c">You can cancel or reschedule online up to ${ctx.cancelWindowHours} hours before your appointment.${ctx.policy ? ` ${esc(ctx.policy)}` : ""}</p>`;
 }
 

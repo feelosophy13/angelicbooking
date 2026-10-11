@@ -74,14 +74,6 @@ export async function deleteCampaign(formData: FormData) {
   redirect(`/app/${d.slug}/marketing`);
 }
 
-/** The standard reminder lead time lives on the business (also under Settings → Online booking). */
-export const saveReminderHours = formAction(z.object({ slug: z.string(), reminderHours: f.int(1, 168) }), async (d) => {
-  const ctx = await requireAction(d.slug, "business.manage");
-  await db.update(schema.businesses).set({ reminderHours: d.reminderHours }).where(eq(schema.businesses.id, ctx.business.id));
-  revalidatePath(`/app/${d.slug}/marketing/automations`);
-  return "Reminder timing saved (applies to new bookings)";
-});
-
 export const createPromo = formAction(
   z.object({ slug: z.string(), code: f.text(2, 30), type: z.enum(["percent", "amount"]), value: z.string().trim(), startsAt: z.string().optional(), expiresAt: z.string().optional(), maxUses: z.string().trim().optional(), minSubtotal: f.moneyOptional() }),
   async (d, raw) => {

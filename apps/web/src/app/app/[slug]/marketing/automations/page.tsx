@@ -6,15 +6,13 @@ import { requireAction } from "@/lib/tenant";
 import { listWorkflows, templateGroup, type WorkflowTemplate } from "@/server/workflows";
 import { smsAvailableFor } from "@/server/messaging";
 import { summarizeSteps, triggerMeta } from "@/lib/workflows-logic";
-import { Button, Card, Input, LinkButton, PageHeader } from "@/components/ui";
-import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { saveReminderHours } from "../actions";
+import { Button, Card, LinkButton, PageHeader } from "@/components/ui";
 import { toggleWorkflow } from "./actions";
 
 export const metadata: Metadata = { title: "Automations" };
 
 const GROUPS: { key: WorkflowTemplate["group"]; title: string; blurb: string }[] = [
-  { key: "before", title: "Before the visit", blurb: "Confirmation and reminder always go out; add anything else that should reach clients ahead of time." },
+  { key: "before", title: "Before the visit", blurb: "The confirmation always goes out. The reminder is a workflow: change its timing, or add prep texts for particular services." },
   { key: "after", title: "After the visit", blurb: "Ratings, aftercare and rebooking." },
   { key: "touch", title: "Keep in touch", blurb: "New clients, birthdays, lapsed clients and memberships." },
   { key: "team", title: "For your team", blurb: "Alerts to you or the provider rather than the client." },
@@ -48,17 +46,6 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
                     <div className="mb-1 flex items-center justify-between"><h3 className="font-medium">Confirmation</h3><span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600">Always on</span></div>
                     <p className="text-xs text-stone-500">Sent when an appointment is booked, by email and text (to clients who opted in), with the manage link, deposit and any forms to complete.</p>
                     <p className="mt-2 text-xs text-stone-600">Wording: <Link href={`/app/${slug}/settings/notifications`} className="text-brand-700 underline">Settings → Messages</Link>.</p>
-                  </Card>
-                  <Card className="p-4">
-                    <div className="mb-1 flex items-center justify-between"><h3 className="font-medium">Reminder</h3><span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600">Always on</span></div>
-                    <p className="mb-2 text-xs text-stone-500">Before each appointment by email and text; moves with the appointment and is dropped when it is cancelled.</p>
-                    {manage ? (
-                      <ActionForm action={saveReminderHours} className="space-y-2">
-                        <input type="hidden" name="slug" value={slug} />
-                        <Field label="Hours before" name="reminderHours"><Input name="reminderHours" type="number" min={1} max={168} defaultValue={business.reminderHours} className="h-9 w-28" /></Field>
-                        <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Save</SubmitButton>
-                      </ActionForm>
-                    ) : <p className="text-sm">{business.reminderHours} hours before</p>}
                   </Card>
                 </>
               ) : null}

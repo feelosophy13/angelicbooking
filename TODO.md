@@ -147,6 +147,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       tag, rating range, first visit only. Marketing → Automations lists them with 30-day send counts; each workflow
       page has the step editor and a run log that explains every step. Still to do: a "send me a test" button, a
       projected-sends estimate before enabling, and dropping the unused `automations` table after a deploy.
+- [x] Landed 2026-10-11 (migration 0052): "Before your visit" prep notes on services and categories ride on the
+      confirmation and reminder (email box + text suffix) for the services booked; the reminder is the
+      "Appointment reminder" workflow template (wait N h before → reminder step with the standard wording), created
+      with each tenant's existing lead time, restarted when an appointment moves and dropped when it is cancelled.
+      The pre-visit template and the separate reminder-hours settings are gone. `businesses.reminder_hours` is only
+      read once, at template creation; drop it after a deploy.
 - [ ] Booking page follow-ups: service photos on the Shop/gift pages; a search box on the service step for large
       menus; show provider photos (staff have no photo field yet) and a short bio on the provider step.
 - [ ] Automations: decide between the fixed recipes (today) and a user-built trigger → delay → message builder

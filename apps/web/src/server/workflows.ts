@@ -19,7 +19,8 @@ import { db, schema, withJobs, withTenant, type TenantDb, type WorkflowFilters, 
 import { instantToISODate, normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { appointmentContext, deliverMany } from "@/lib/notify";
-import { brandedEmail, marketingEmail, reviewRequestTemplate, textToHtml } from "@/lib/notify/templates";
+import { brandedEmail, marketingEmail, reviewRequestTemplate, templates as messageTemplates, textToHtml } from "@/lib/notify/templates";
+const reminderTemplate = messageTemplates.reminder;
 import { smsBody, smsWithStopNotice } from "@/lib/notify/sms";
 import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing";
 import { pathTo } from "@/server/categories";
@@ -52,10 +53,9 @@ export type StepDef = WorkflowStep extends infer T ? (T extends WorkflowStep ? O
 const S = (steps: StepDef[]) => steps;
 
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
-  { key: "pre_visit", group: "before", trigger: "appointment_booked", enabled: false, name: "Pre-visit instructions", description: "Prep instructions a set time before the appointment, on top of the standard reminder.", steps: S([
-    { type: "wait", mode: "before_appointment", hours: 48 },
-    { type: "sms", body: "{business}: your {service} with {staff} is {when}. Please arrive 5 minutes early with clean, make-up-free skin. Need to change it? {manage_url}" },
-    { type: "email", subject: "Getting ready for your visit to {business}", body: "Hi {first_name},\n\nYour {service} with {staff} is {when}. Please arrive 5 minutes early with clean, make-up-free skin.\n\nNeed to change it? Use the link below.", ctaLabel: "Manage appointment" },
+  { key: "reminder", group: "before", trigger: "appointment_booked", enabled: true, name: "Appointment reminder", description: "The standard reminder with the details, manage link, outstanding forms and any “before your visit” notes from the services booked. Moves with the appointment; dropped if it is cancelled.", steps: S([
+    { type: "wait", mode: "before_appointment", hours: 24 },
+    { type: "reminder" },
   ]) },
   { key: "review_request", group: "after", trigger: "appointment_completed", enabled: true, name: "Ask for a rating", description: "A one-tap star rating after each visit; 4–5 stars are invited on to Google when a link is set.", steps: S([
     { type: "wait", mode: "after_appointment", hours: 2 },
@@ -125,6 +125,7 @@ export async function ensureTemplates(business: Business): Promise<void> {
         else if (t.key === "win_back") { steps = msgs; filters = { days: old.days }; }
         else steps = msgs;
       }
+      if (t.key === "reminder") steps = [{ id: newStepId(), type: "wait", mode: "before_appointment", hours: Math.max(1, business.reminderHours) }, { id: newStepId(), type: "reminder" }];
       if (t.key === "review_request") {
         enabled = business.reviewRequestEnabled;
         steps = [{ id: newStepId(), type: "wait", mode: "after_appointment", hours: Math.max(0, business.reviewRequestDelayHours) }, { id: newStepId(), type: "review_request" }];
@@ -216,7 +217,8 @@ export async function deleteWorkflow(businessId: string, id: string) {
   await withTenant(businessId, async (tx) => {
     const w = await tx.query.workflows.findFirst({ where: eq(schema.workflows.id, id) });
     if (!w) return;
-    if (w.templateKey) throw new WorkflowError("Built-in workflows can be turned off but not deleted.");
+    // Current templates can only be turned off; a template that has since been retired can go.
+    if (w.templateKey && WORKFLOW_TEMPLATES.some((t) => t.key === w.templateKey)) throw new WorkflowError("Built-in workflows can be turned off but not deleted.");
     await tx.delete(schema.workflows).where(eq(schema.workflows.id, id));
   });
 }
@@ -286,9 +288,11 @@ const triggerLabel = (t: WorkflowTrigger) => ({ appointment_booked: "Appointment
 
 /** Appointment-driven triggers in one call (used by the booking, status and checkout paths). */
 export async function triggerAppointmentWorkflows(business: Business, trigger: Extract<WorkflowTrigger, `appointment_${string}`>, appointmentId: string) {
-  const facts = await withTenant(business.id, (tx) => appointmentFacts(tx, appointmentId));
+  const [facts, times] = await withTenant(business.id, async (tx) => [await appointmentFacts(tx, appointmentId), await appointmentTimes(tx, appointmentId)] as const);
   if (!facts || !facts.clientId) return 0;
-  return triggerWorkflows(business, trigger, { clientId: facts.clientId, appointmentId, dedupeKey: appointmentId, facts, context: { appointmentId, reason: triggerLabel(trigger) } });
+  // "Booked" flows are per time slot: moving the appointment starts them again for the new time.
+  const dedupeKey = trigger === "appointment_booked" && times ? `${appointmentId}:${times.startAt.getTime()}` : appointmentId;
+  return triggerWorkflows(business, trigger, { clientId: facts.clientId, appointmentId, dedupeKey, facts, context: { appointmentId, reason: triggerLabel(trigger) } });
 }
 
 /** Cancel runs: everything active for a workflow, an appointment, or a client. */
@@ -320,20 +324,15 @@ export async function resyncAppointmentRuns(business: Business, appointmentId: s
       }
       return;
     }
-    const runs = await tx.select().from(schema.workflowRuns).where(and(eq(schema.workflowRuns.appointmentId, appointmentId), eq(schema.workflowRuns.status, "active")));
-    if (!runs.length) return;
-    const times = await appointmentTimes(tx, appointmentId);
+    // Moved: "booked" flows for the old time stop (queued messages dropped) and start again for the
+    // new time via triggerAppointmentWorkflows, so a reminder already sent is sent again for the new slot.
+    const runs = await tx.select({ id: schema.workflowRuns.id, workflowId: schema.workflowRuns.workflowId }).from(schema.workflowRuns).where(and(eq(schema.workflowRuns.appointmentId, appointmentId), eq(schema.workflowRuns.status, "active")));
     for (const r of runs) {
-      const w = await tx.query.workflows.findFirst({ where: eq(schema.workflows.id, r.workflowId) });
-      const step = w?.steps[r.stepIndex];
-      if (!w || !step || step.type !== "wait" || step.mode === "delay") continue;
-      const at = waitResumesAt(step, new Date(), times);
-      if (!at) continue;
-      // Messages already queued for the old time are dropped; the step runs again at the new time.
-      await tx.update(schema.notifications).set({ status: "cancelled", error: "Appointment moved" }).where(and(eq(schema.notifications.workflowRunId, r.id), eq(schema.notifications.status, "queued")));
-      await tx.update(schema.workflowRuns).set({ nextAt: at, log: [...r.log, { at: new Date().toISOString(), step: r.stepIndex, event: "waiting", detail: `Appointment moved; now resumes ${at.toISOString()}` }] }).where(eq(schema.workflowRuns.id, r.id));
+      const w = await tx.query.workflows.findFirst({ where: eq(schema.workflows.id, r.workflowId), columns: { trigger: true } });
+      if (w?.trigger === "appointment_booked") await cancelRuns(tx, { appointmentId, workflowId: r.workflowId }, "Appointment moved; restarted for the new time");
     }
   });
+  await triggerAppointmentWorkflows(business, "appointment_booked", appointmentId);
 }
 
 /** Stop "until they book again" runs for a client who just booked. */
@@ -447,6 +446,24 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
         out.push(row!.id);
         note(i, "sent", `Email queued to ${client.email}${deferred}`);
       }
+      continue;
+    }
+    if (step.type === "reminder") {
+      if (!run.appointmentId) { note(i, "skipped", "No appointment to remind about"); continue; }
+      const v = await getVars();
+      if (!v.apptCtx) { note(i, "skipped", "Appointment no longer exists"); continue; }
+      const t = reminderTemplate(v.apptCtx.ctx);
+      const phone = normalizePhone(client.phone);
+      let any = false;
+      if (client.emailOptIn && client.email) {
+        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: "reminder", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });
+        out.push(row!.id); any = true;
+      }
+      if (client.smsOptIn && phone) {
+        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", v.apptCtx.ctx)), scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });
+        out.push(row!.id); any = true;
+      }
+      note(i, any ? "sent" : "skipped", any ? `Reminder queued (${[client.emailOptIn && client.email ? "email" : null, client.smsOptIn && phone ? "text" : null].filter(Boolean).join(" + ")})` : "No channel the client has consented to");
       continue;
     }
     if (step.type === "review_request") {

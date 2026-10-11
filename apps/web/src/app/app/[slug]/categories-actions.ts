@@ -30,13 +30,13 @@ async function imageOrFieldError(businessId: string, raw: FormData) {
 }
 
 /** Create a category. Service categories may nest (`parentId`) and carry a description and image. */
-export const createCategory = formAction(base.extend({ name: f.text(1, 60), parentId: z.string().optional(), description: f.optional(300) }), async (d, raw) => {
+export const createCategory = formAction(base.extend({ name: f.text(1, 60), parentId: z.string().optional(), description: f.optional(300), prepNotes: f.optional(400) }), async (d, raw) => {
   const ctx = await requireAction(d.slug, "services.manage");
   const parentId = d.kind === "service" ? d.parentId || null : null;
   const id = await ensureCategory(ctx.business.id, d.kind, d.name, parentId);
   if (id && d.kind === "service") {
     const imageUrl = await imageOrFieldError(ctx.business.id, raw);
-    await updateServiceCategory(ctx.business.id, id, { name: d.name, description: d.description, parentId, ...(imageUrl ? { imageUrl } : {}) });
+    await updateServiceCategory(ctx.business.id, id, { name: d.name, description: d.description, prepNotes: d.prepNotes, parentId, ...(imageUrl ? { imageUrl } : {}) });
   }
   await setFlash(`${d.name} added`);
   revalidateAll(d.slug, d.kind);
@@ -45,12 +45,12 @@ export const createCategory = formAction(base.extend({ name: f.text(1, 60), pare
 
 /** Full edit of a service category (name, parent, description, image). */
 export const updateServiceCategoryAction = formAction(
-  z.object({ slug: z.string(), id: z.string().min(1), name: f.text(1, 60), parentId: z.string().optional(), description: f.optional(300), removeImage: f.checkbox() }),
+  z.object({ slug: z.string(), id: z.string().min(1), name: f.text(1, 60), parentId: z.string().optional(), description: f.optional(300), prepNotes: f.optional(400), removeImage: f.checkbox() }),
   async (d, raw) => {
     const ctx = await requireAction(d.slug, "services.manage");
     const uploaded = await imageOrFieldError(ctx.business.id, raw);
     try {
-      await updateServiceCategory(ctx.business.id, d.id, { name: d.name, description: d.description, parentId: d.parentId || null, ...(uploaded ? { imageUrl: uploaded } : d.removeImage ? { imageUrl: null } : {}) });
+      await updateServiceCategory(ctx.business.id, d.id, { name: d.name, description: d.description, prepNotes: d.prepNotes, parentId: d.parentId || null, ...(uploaded ? { imageUrl: uploaded } : d.removeImage ? { imageUrl: null } : {}) });
     } catch (e) {
       if (e instanceof CategoryError) throw new FormError(e.message, "parentId");
       throw e;

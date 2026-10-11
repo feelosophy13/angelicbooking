@@ -12,7 +12,7 @@ const itemTable = (kind: Kind) => (kind === "service" ? schema.services : schema
 
 export type ServiceCategory = typeof schema.serviceCategories.$inferSelect;
 /** The flat shape both kinds share; service categories carry the extra columns. */
-export type AnyCategory = { id: string; name: string; sortOrder: number; parentId?: string | null; description?: string | null; imageUrl?: string | null };
+export type AnyCategory = { id: string; name: string; sortOrder: number; parentId?: string | null; description?: string | null; imageUrl?: string | null; prepNotes?: string | null };
 
 export async function listCategories(businessId: string, kind: Kind): Promise<AnyCategory[]> {
   const t = table(kind);
@@ -123,7 +123,7 @@ export class CategoryError extends Error {}
 export async function updateServiceCategory(
   businessId: string,
   id: string,
-  input: { name: string; description: string | null; parentId: string | null; imageUrl?: string | null },
+  input: { name: string; description: string | null; prepNotes?: string | null; parentId: string | null; imageUrl?: string | null },
 ) {
   await withTenant(businessId, async (tx) => {
     const all = await tx.select().from(schema.serviceCategories);
@@ -132,7 +132,7 @@ export async function updateServiceCategory(
     const parentId = input.parentId && all.some((c) => c.id === input.parentId) ? input.parentId : null;
     if (wouldCycle(all, id, parentId)) throw new CategoryError("A category can't be moved inside itself.");
     const moved = (me.parentId ?? null) !== parentId;
-    const set: Partial<typeof schema.serviceCategories.$inferInsert> = { name: input.name.trim(), description: input.description, parentId };
+    const set: Partial<typeof schema.serviceCategories.$inferInsert> = { name: input.name.trim(), description: input.description, parentId, ...(input.prepNotes !== undefined ? { prepNotes: input.prepNotes } : {}) };
     if (moved) set.sortOrder = await nextSortOrder(tx, "service", parentId);
     if (input.imageUrl !== undefined) {
       if (me.imageUrl && me.imageUrl !== input.imageUrl) await deleteFileByUrl(me.imageUrl);

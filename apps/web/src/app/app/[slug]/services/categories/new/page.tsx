@@ -22,6 +22,7 @@ export default async function NewCategoryPage({ params, searchParams }: { params
         <Field label="Name" name="name" required><Input name="name" required placeholder={parentCat ? "Balayage" : "Hair"} autoFocus /></Field>
         <Field label="Inside" name="parentId" hint="Leave at top level for a main menu heading, or nest it under another category (Hair › Colour › Balayage)."><CategoryPicker name="parentId" categories={categories} value={parentCat?.id} allowNew={false} emptyLabel="Top level" /></Field>
         <Field label="Description" name="description" hint="Optional. Shown under the category on the booking page."><Textarea name="description" rows={2} placeholder="Cuts, colour and styling for every hair type." /></Field>
+        <Field label="Before your visit" name="prepNotes" hint="Prep instructions for every service in this category, sent with the confirmation and the reminder. A service's own note takes precedence."><Textarea name="prepNotes" rows={2} placeholder="Please arrive with clean, product-free hair." /></Field>
         <Field label="Image" name="image" hint="PNG/JPEG/WebP up to 2 MB. Landscape works best (5:3). Shown as the category tile on the booking page."><input type="file" name="image" accept="image/*" className="block text-sm" /></Field>
         <SubmitButton pendingText="Creating…">Create category</SubmitButton>
       </ActionForm>

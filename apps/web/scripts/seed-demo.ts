@@ -50,9 +50,9 @@ async function tile(businessId: string, kind: "category" | "service", label: str
 // ---------------------------------------------------------------------------
 // Menu
 // ---------------------------------------------------------------------------
-type Svc = { name: string; min: number; price: number; gap?: number; finish?: number; deposit?: number; desc?: string; emoji: string; capacity?: number };
+type Svc = { name: string; min: number; price: number; gap?: number; finish?: number; deposit?: number; desc?: string; emoji: string; capacity?: number; prep?: string };
 type StaffDef = { name: string; email: string; color: string; position: string; payType: "commission" | "hourly" | "salary"; main?: number; product: number; hourly?: number; salary?: number; skills: string[]; days: number[]; frontDesk?: boolean };
-type Cat = { name: string; emoji: string; desc: string; children?: Cat[]; services?: Svc[] };
+type Cat = { name: string; emoji: string; desc: string; prep?: string; children?: Cat[]; services?: Svc[] };
 const MENU: Cat[] = [
   { name: "Hair", emoji: "💇‍♀️", desc: "Cuts, colour and styling for every hair type.", children: [
     { name: "Cuts & Styling", emoji: "✂️", desc: "Precision cuts and finishing.", services: [
@@ -62,7 +62,7 @@ const MENU: Cat[] = [
       { name: "Blowout", min: 40, price: 4500, emoji: "💨", desc: "Wash and professional blow-dry." },
       { name: "Special Occasion Updo", min: 60, price: 9500, deposit: 2500, emoji: "👰" },
     ] },
-    { name: "Colour", emoji: "🎨", desc: "From root touch-ups to full balayage.", services: [
+    { name: "Colour", emoji: "🎨", desc: "From root touch-ups to full balayage.", prep: "Come with dry, unwashed hair (1–2 days) and no styling products. New to colour with us? A patch test 48 hours before is required.", services: [
       { name: "Root Touch-Up", min: 30, price: 7500, gap: 35, finish: 30, emoji: "🎯", desc: "Single-process colour on regrowth." },
       { name: "Full Colour", min: 45, price: 11000, gap: 40, finish: 30, emoji: "🌈" },
       { name: "Partial Highlights", min: 60, price: 14000, gap: 40, finish: 30, deposit: 3000, emoji: "✨" },
@@ -71,7 +71,7 @@ const MENU: Cat[] = [
     ] },
     { name: "Treatments", emoji: "🧴", desc: "Repair, smooth and shine.", services: [
       { name: "Deep Conditioning Treatment", min: 30, price: 4000, emoji: "🧴" },
-      { name: "Keratin Smoothing", min: 150, price: 28000, deposit: 7500, emoji: "💫", desc: "Frizz-free for up to 4 months." },
+      { name: "Keratin Smoothing", min: 150, price: 28000, deposit: 7500, emoji: "💫", desc: "Frizz-free for up to 4 months.", prep: "Plan 3 hours and bring nothing in your hair: no clips, hats or products. You can't wash it for 72 hours afterwards." },
     ] },
   ] },
   { name: "Nails", emoji: "💅", desc: "Manicures and pedicures in a clean, calm space.", children: [
@@ -86,13 +86,13 @@ const MENU: Cat[] = [
     ] },
   ] },
   { name: "Lashes & Brows", emoji: "👁️", desc: "Extensions, lifts and shaping.", services: [
-    { name: "Classic Lash Full Set", min: 120, price: 18000, deposit: 5000, emoji: "👁️" },
+    { name: "Classic Lash Full Set", min: 120, price: 18000, deposit: 5000, emoji: "👁️", prep: "Please come without mascara or eye make-up, and skip caffeine right before so you can lie still." },
     { name: "Lash Fill", min: 75, price: 8500, emoji: "🪄" },
     { name: "Lash Lift & Tint", min: 60, price: 9500, emoji: "🌙" },
     { name: "Brow Lamination", min: 45, price: 7000, emoji: "🪶" },
     { name: "Brow Shaping", min: 20, price: 2500, emoji: "✏️" },
   ] },
-  { name: "Skin", emoji: "🧖‍♀️", desc: "Facials tailored to your skin.", services: [
+  { name: "Skin", emoji: "🧖‍♀️", desc: "Facials tailored to your skin.", prep: "Arrive make-up free and stop retinol or acids 3 days before.", services: [
     { name: "Signature Facial", min: 60, price: 11000, emoji: "🧖‍♀️", desc: "Cleanse, exfoliate, extractions, mask and massage." },
     { name: "Express Glow Facial", min: 30, price: 6500, emoji: "🌟" },
     { name: "Dermaplaning", min: 45, price: 9000, emoji: "🪒" },
@@ -187,13 +187,13 @@ async function main() {
     let tileNo = 0;
     const insertCat = async (c: Cat, parentId: string | null, order: number): Promise<string> => {
       const imageUrl = await tile(businessId, "category", c.name, c.emoji, tileNo++);
-      const [row] = await tx.insert(schema.serviceCategories).values({ businessId, name: c.name, parentId, description: c.desc || null, imageUrl, sortOrder: order }).returning({ id: schema.serviceCategories.id });
+      const [row] = await tx.insert(schema.serviceCategories).values({ businessId, name: c.name, parentId, description: c.desc || null, prepNotes: c.prep ?? null, imageUrl, sortOrder: order }).returning({ id: schema.serviceCategories.id });
       let i = 0;
       for (const child of c.children ?? []) await insertCat(child, row!.id, i++);
       let j = 0;
       for (const s of c.services ?? []) {
         const img = await tile(businessId, "service", s.name, s.emoji, tileNo++);
-        const [sv] = await tx.insert(schema.services).values({ businessId, categoryId: row!.id, name: s.name, description: s.desc ?? null, imageUrl: img, durationMin: s.min, gapMin: s.gap ?? 0, finishMin: s.finish ?? 0, bufferAfterMin: 10, priceCents: s.price, depositCents: s.deposit ?? 0, capacity: s.capacity ?? 1, sortOrder: j++ }).returning({ id: schema.services.id });
+        const [sv] = await tx.insert(schema.services).values({ businessId, categoryId: row!.id, name: s.name, description: s.desc ?? null, prepNotes: s.prep ?? null, imageUrl: img, durationMin: s.min, gapMin: s.gap ?? 0, finishMin: s.finish ?? 0, bufferAfterMin: 10, priceCents: s.price, depositCents: s.deposit ?? 0, capacity: s.capacity ?? 1, sortOrder: j++ }).returning({ id: schema.services.id });
         serviceIds.push({ id: sv!.id, name: s.name, min: s.min, price: s.price, gap: s.gap ?? 0, finish: s.finish ?? 0, group: c.name, capacity: s.capacity ?? 1 });
         if (c.name === "Colour") colourIds.push(sv!.id);
       }
@@ -356,7 +356,7 @@ async function main() {
   // Workflows: every template exists; turn on the ones a busy salon would use.
   const biz = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) }))!;
   await ensureTemplates(biz);
-  await withTenant(businessId, (tx) => tx.update(schema.workflows).set({ enabled: true }).where(sql`${schema.workflows.templateKey} in ('pre_visit','review_request','rebook','no_show_follow_up','welcome','birthday','win_back','membership_save','low_rating_alert')`));
+  await withTenant(businessId, (tx) => tx.update(schema.workflows).set({ enabled: true }).where(sql`${schema.workflows.templateKey} in ('reminder','review_request','rebook','no_show_follow_up','welcome','birthday','win_back','membership_save','low_rating_alert')`));
 
   console.log(`\nDone. Sign in at ${appUrl("/sign-in")}\n  email:    ${EMAIL}\n  password: ${PASSWORD}\n  business: ${appUrl(`/app/${SLUG}`)}\n  booking:  ${appUrl(`/book/${SLUG}`)}`);
   await pg.end();

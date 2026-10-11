@@ -33,6 +33,7 @@ const stepSchema: z.ZodType<WorkflowStep> = z.discriminatedUnion("type", [
   z.object({ id: z.string().min(1), type: z.literal("sms"), body: z.string().max(1000) }),
   z.object({ id: z.string().min(1), type: z.literal("email"), subject: z.string().max(150), body: z.string().max(5000), ctaLabel: z.string().max(40).nullable().optional() }),
   z.object({ id: z.string().min(1), type: z.literal("review_request") }),
+  z.object({ id: z.string().min(1), type: z.literal("reminder") }),
   z.object({ id: z.string().min(1), type: z.literal("tag"), tag: z.string().max(40) }),
   z.object({ id: z.string().min(1), type: z.literal("points"), points: z.coerce.number().int().min(0).max(100_000), note: z.string().max(120).nullable().optional() }),
   z.object({ id: z.string().min(1), type: z.literal("notify_staff"), to: z.enum(["owner", "provider"]), body: z.string().max(2000) }),

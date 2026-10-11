@@ -252,6 +252,9 @@ export const serviceCategories = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     imageUrl: text("image_url"),
+    // "Before your visit" instructions added to the confirmation and reminder for services in this
+    // category (unless the service has its own).
+    prepNotes: text("prep_notes"),
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("service_categories_business_idx").on(t.businessId), index("service_categories_parent_idx").on(t.parentId)],
@@ -266,6 +269,9 @@ export const services = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     imageUrl: text("image_url"),
+    // "Before your visit" instructions (patch test, no make-up, stop retinol …) sent with the
+    // confirmation and reminder. Falls back to the category's note.
+    prepNotes: text("prep_notes"),
     durationMin: smallint("duration_min").notNull(),
     // Processing/gap time after the active portion during which the staff member
     // is free to take another client (e.g. colour developing).
@@ -1055,6 +1061,8 @@ export type WorkflowStep =
   | { id: string; type: "sms"; body: string }
   | { id: string; type: "email"; subject: string; body: string; ctaLabel?: string | null }
   | { id: string; type: "review_request" }
+  // The standard appointment reminder (details, manage link, forms, prep) on every channel the client allows.
+  | { id: string; type: "reminder" }
   | { id: string; type: "tag"; tag: string }
   | { id: string; type: "points"; points: number; note?: string | null }
   | { id: string; type: "notify_staff"; to: "owner" | "provider"; body: string };

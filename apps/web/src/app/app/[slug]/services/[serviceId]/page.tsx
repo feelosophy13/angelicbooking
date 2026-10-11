@@ -37,6 +37,7 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
         <Field label="Name" name="name" required><Input name="name" defaultValue={service.name} required placeholder="Women's haircut" autoFocus /></Field>
         <Field label="Category" name="categoryIdNew"><CategoryPicker name="categoryId" categories={categories} value={service.categoryId} /></Field>
         <Field label="Description" name="description" hint="Shown on the booking page."><Textarea name="description" rows={2} defaultValue={service.description ?? ""} /></Field>
+        <Field label="Before your visit" name="prepNotes" hint="Prep instructions sent with the confirmation and the reminder, e.g. “Patch test 48 hours before.” Leave empty to use the category's note."><Textarea name="prepNotes" rows={2} defaultValue={service.prepNotes ?? ""} /></Field>
         <Field label="Photo" name="image" hint="PNG/JPEG/WebP up to 2 MB. Shown next to the service on the booking page; uploading replaces the current one.">
           <div className="flex flex-wrap items-start gap-4">
             <CategoryThumb imageUrl={service.imageUrl} name={service.name} icon="image" className="h-24 w-24 rounded-lg" />

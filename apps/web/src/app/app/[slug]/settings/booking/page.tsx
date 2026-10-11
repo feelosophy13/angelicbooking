@@ -35,7 +35,6 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <Field label="Minimum notice (minutes)" name="minNoticeMin" hint="Earliest a client can book from now."><Input name="minNoticeMin" type="number" min={0} defaultValue={business.minNoticeMin} /></Field>
               <Field label="Book up to (days ahead)" name="maxAdvanceDays"><Input name="maxAdvanceDays" type="number" min={1} max={365} defaultValue={business.maxAdvanceDays} /></Field>
               <Field label="Cancellation window (hours)" name="cancelWindowHours" hint="Clients can cancel/reschedule online until this many hours before."><Input name="cancelWindowHours" type="number" min={0} defaultValue={business.cancelWindowHours} /></Field>
-              <Field label="Reminder (hours before)" name="reminderHours"><Input name="reminderHours" type="number" min={1} max={168} defaultValue={business.reminderHours} /></Field>
               <Field label="No-show fee" name="noShowFee" hint="Charged to a saved card from the appointment page. Deposits are set per service."><Input name="noShowFee" inputMode="decimal" defaultValue={business.noShowFeeCents ? (business.noShowFeeCents / 100).toFixed(2) : ""} placeholder="0" /></Field>
             </div>
             <label className="flex items-center gap-2 text-sm">
@@ -46,6 +45,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <input type="checkbox" name="clientAccountsEnabled" defaultChecked={business.clientAccountsEnabled} className="h-4 w-4 accent-brand-600" />
               Client accounts on the booking page <span className="text-xs text-stone-500">(sign in with a code by email or text: upcoming visits, rebook, saved cards, points)</span>
             </label>
+            <p className="text-xs text-stone-500">Reminder timing and wording live under <Link href={`/app/${slug}/marketing/automations`} className="text-brand-700 underline">Marketing → Automations → Appointment reminder</Link>.</p>
             <Field label="Address (shown on booking page and messages)" name="addressLine"><Input name="addressLine" defaultValue={business.addressLine ?? ""} placeholder="123 Main St, Springfield" /></Field>
             <Field label="Booking policy" name="bookingPolicy" hint="Shown to clients when they book."><Textarea name="bookingPolicy" rows={3} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
             <SubmitButton pendingText="Saving…">Save</SubmitButton>

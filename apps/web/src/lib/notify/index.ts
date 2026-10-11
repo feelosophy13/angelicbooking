@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lte, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { after } from "next/server";
 import { db, schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
@@ -20,7 +20,7 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
   const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId) });
   if (!appt) return null;
   const items = await tx
-    .select({ name: schema.appointmentItems.serviceName, startAt: schema.appointmentItems.startAt, staffName: schema.staff.displayName, status: schema.appointmentItems.status })
+    .select({ name: schema.appointmentItems.serviceName, startAt: schema.appointmentItems.startAt, staffName: schema.staff.displayName, status: schema.appointmentItems.status, serviceId: schema.appointmentItems.serviceId })
     .from(schema.appointmentItems)
     .innerJoin(schema.staff, eq(schema.staff.id, schema.appointmentItems.staffId))
     .where(eq(schema.appointmentItems.appointmentId, appointmentId))
@@ -28,6 +28,7 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
   const live = items.filter((i) => i.status !== "cancelled");
   const use = live.length ? live : items;
   if (!use.length) return null;
+  const prepNotes = await prepNotesFor(tx, use.map((i) => i.serviceId).filter((x): x is string => !!x));
   const client = appt.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, appt.clientId) }) : null;
   // Messages speak for the location of the visit: its phone, address and clock.
   const location = appt.locationId ? await tx.query.locations.findFirst({ where: eq(schema.locations.id, appt.locationId) }) : null;
@@ -50,8 +51,26 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
     depositPaid: appt.depositStatus === "paid" || appt.depositStatus === "applied" ? formatMoney(appt.depositCents, business.currency) : null,
     cardOnFile: !!appt.cardSetupIntentId,
     formsUrl: (await formsForAppointment(tx, appt.id)).some((f) => !f.current) ? appUrl(`/book/${business.slug}/manage/${appt.manageToken}/forms`) : null,
+    prepNotes,
   };
   return { appt, client, ctx };
+}
+
+/** "Before your visit" lines for these services: the service's own note, else the nearest category note; deduplicated. */
+export async function prepNotesFor(tx: TenantDb, serviceIds: string[]): Promise<string[]> {
+  if (!serviceIds.length) return [];
+  const services = await tx.select({ id: schema.services.id, prepNotes: schema.services.prepNotes, categoryId: schema.services.categoryId }).from(schema.services).where(inArray(schema.services.id, [...new Set(serviceIds)]));
+  const cats = services.some((s) => !s.prepNotes?.trim() && s.categoryId) ? await tx.select({ id: schema.serviceCategories.id, parentId: schema.serviceCategories.parentId, prepNotes: schema.serviceCategories.prepNotes }).from(schema.serviceCategories) : [];
+  const byId = new Map(cats.map((c) => [c.id, c]));
+  const out: string[] = [];
+  for (const s of services) {
+    let note = s.prepNotes?.trim() ?? "";
+    let cur = note ? undefined : (s.categoryId ? byId.get(s.categoryId) : undefined);
+    const seen = new Set<string>();
+    while (!note && cur && !seen.has(cur.id)) { seen.add(cur.id); note = cur.prepNotes?.trim() ?? ""; cur = cur.parentId ? byId.get(cur.parentId) : undefined; }
+    if (note && !out.includes(note)) out.push(note);
+  }
+  return out;
 }
 
 /**
@@ -79,8 +98,13 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
         .set({ status: "cancelled" })
         .where(and(eq(schema.notifications.appointmentId, appt.id), eq(schema.notifications.status, "queued"), inArray(schema.notifications.template, ["reminder", "auto_pre_visit"])));
     }
-    if (template === "confirmation" || template === "rescheduled") {
-      await scheduleReminder(tx, business, appt.id, client, ctx, phone, appt.locationId);
+    if (template === "rescheduled") {
+      // Reminders queued by the pre-workflow scheduler for the old time (or still queued at all) are dropped;
+      // the "Appointment reminder" workflow restarts for the new time (see resyncAppointmentRuns).
+      await tx
+        .update(schema.notifications)
+        .set({ status: "cancelled" })
+        .where(and(eq(schema.notifications.appointmentId, appt.id), eq(schema.notifications.status, "queued"), inArray(schema.notifications.template, ["reminder", "auto_pre_visit"]), isNull(schema.notifications.workflowRunId)));
     }
     if (!rows.length) return [];
     const inserted = await tx.insert(schema.notifications).values(rows).returning({ id: schema.notifications.id });
@@ -128,40 +152,10 @@ async function sweepOrphanedReminders(tx: TenantDb) {
     .where(and(eq(schema.notifications.status, "queued"), inArray(schema.notifications.template, VISIT_BOUND_TEMPLATES), inArray(schema.notifications.appointmentId, gone)));
 }
 
-/** Schedule the reminder for an appointment without sending a confirmation (used for later visits in a series). */
+/** Later visits in a series get no confirmation, but their "Appointment booked" workflows (reminder …) start. */
 export async function scheduleReminderFor(business: typeof schema.businesses.$inferSelect, appointmentId: string) {
-  await withTenant(business.id, async (tx) => {
-    const built = await appointmentContext(tx, business, appointmentId);
-    if (!built || !built.client) return;
-    await scheduleReminder(tx, business, appointmentId, built.client, built.ctx, normalizePhone(built.client.phone), built.appt.locationId);
-  });
   const wf = await import("@/server/workflows");
   await wf.triggerAppointmentWorkflows(business, "appointment_booked", appointmentId);
-}
-
-async function scheduleReminder(
-  tx: TenantDb,
-  business: typeof schema.businesses.$inferSelect,
-  appointmentId: string,
-  client: typeof schema.clients.$inferSelect,
-  ctx: ApptContext,
-  phone: string | null,
-  locationId: string | null = null,
-) {
-  // Replace any existing reminder / pre-visit message (time may have changed).
-  await tx
-    .update(schema.notifications)
-    .set({ status: "cancelled" })
-    .where(and(eq(schema.notifications.appointmentId, appointmentId), eq(schema.notifications.status, "queued"), inArray(schema.notifications.template, ["reminder", "auto_pre_visit"])));
-  const rows: (typeof schema.notifications.$inferInsert)[] = [];
-  const at = new Date(ctx.startAt.getTime() - business.reminderHours * 3_600_000);
-  if (at > new Date()) {
-    const t = templates.reminder(ctx);
-    if (client.emailOptIn && client.email) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "email", template: "reminder", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: at });
-    if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", ctx)), scheduledAt: at });
-  }
-  // Pre-visit messages are a workflow now (Automations → Pre-visit instructions).
-  if (rows.length) await tx.insert(schema.notifications).values(rows);
 }
 
 /** Queue a one-off message (e.g. staff invitation) and send it after the response. */
