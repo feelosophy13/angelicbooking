@@ -1,10 +1,11 @@
+import { ImageField } from "@/components/image-field";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAction } from "@/lib/tenant";
 import { listCategories, subtreeIds } from "@/server/categories";
 import { Card, FormPage, Input, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
-import { CategoryPicker, CategoryThumb } from "@/components/categories";
+import { CategoryPicker } from "@/components/categories";
 import { removeCategory, updateServiceCategoryAction } from "../../../../categories-actions";
 
 export const metadata: Metadata = { title: "Edit category" };
@@ -26,14 +27,8 @@ export default async function EditCategoryPage({ params }: { params: Promise<{ s
         <Field label="Inside" name="parentId" hint="Move this category under another one, or to the top level."><CategoryPicker name="parentId" categories={categories} value={me.parentId} exclude={exclude} allowNew={false} emptyLabel="Top level" /></Field>
         <Field label="Description" name="description" hint="Optional. Shown under the category on the booking page."><Textarea name="description" rows={4} defaultValue={me.description ?? ""} /></Field>
         <Field label="Before your visit" name="prepNotes" hint="Prep instructions for every service in this category, sent with the confirmation and the reminder. A service's own note takes precedence."><Textarea name="prepNotes" rows={4} defaultValue={me.prepNotes ?? ""} placeholder="Please arrive with clean, product-free hair." /></Field>
-        <Field label="Image" name="image" hint="PNG/JPEG/WebP up to 2 MB. Landscape works best (5:3). Uploading replaces the current image.">
-          <div className="flex flex-wrap items-start gap-4">
-            <CategoryThumb imageUrl={me.imageUrl} name={me.name} className="h-24 w-40 rounded-lg text-2xl" />
-            <div className="space-y-2">
-              <input type="file" name="image" accept="image/*" className="block text-sm" />
-              {me.imageUrl ? <Checkbox name="removeImage" label="Remove the current image" /> : null}
-            </div>
-          </div>
+        <Field label="Image" name="image" hint="Landscape works best (5:3). Shown as the category tile on the booking page.">
+          <ImageField name="image" removeName="removeImage" current={me.imageUrl ?? null} shape="wide" />
         </Field>
         <SubmitButton pendingText="Saving…">Save category</SubmitButton>
       </ActionForm>

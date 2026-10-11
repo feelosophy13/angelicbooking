@@ -1,3 +1,4 @@
+import { ImageField } from "@/components/image-field";
 import { asc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { schema, withTenant } from "@angelic/db";
@@ -31,19 +32,8 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
         <Field label="Email" name="email"><Input name="email" type="email" defaultValue={person.email ?? ""} /></Field>
         <Field label="Phone" name="phone"><Input name="phone" defaultValue={person.phone ?? ""} /></Field>
         <Field label="Calendar colour" name="color"><Input name="color" type="color" defaultValue={person.color} className="h-10 w-24 p-1" /></Field>
-        <Field label="Photo" name="photo" hint="Shown to clients when they pick a provider, and on the staff list. PNG/JPEG/WebP up to 2 MB; a square crop looks best.">
-          <div className="flex items-center gap-3">
-            {person.photoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={person.photoUrl} alt="" className="h-16 w-16 shrink-0 rounded-full border border-stone-200 object-cover" />
-            ) : (
-              <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-semibold text-white" style={{ background: person.color }}>{person.displayName.slice(0, 1)}</span>
-            )}
-            <div className="space-y-1">
-              <input type="file" name="photo" accept="image/*" className="block text-sm" />
-              {person.photoUrl ? <Checkbox name="removePhoto" label="Remove photo" /> : null}
-            </div>
-          </div>
+        <Field label="Photo" name="photo" hint="Shown to clients when they pick a provider, and on the staff list. A square crop looks best.">
+          <ImageField name="photo" removeName="removePhoto" current={person.photoUrl} shape="round" placeholder={person.displayName.slice(0, 1)} placeholderColor={person.color} />
         </Field>
         <Field label="Bio" name="bio" hint="A sentence or two clients see on the booking page: specialties, years of experience."><Textarea name="bio" rows={4} defaultValue={person.bio ?? ""} maxLength={300} placeholder="Balayage specialist with 8 years behind the chair." /></Field>
         {locations.length > 1 ? (

@@ -1,3 +1,4 @@
+import { ImageField } from "@/components/image-field";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
@@ -6,7 +7,7 @@ import { requireAction } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
 import { FormPage, Input, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { CategoryPicker, CategoryThumb } from "@/components/categories";
+import { CategoryPicker } from "@/components/categories";
 import { updateService } from "../actions";
 import { OfferedAt } from "@/components/offered-at";
 import { listLocations } from "@/server/locations";
@@ -38,14 +39,8 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
         <Field label="Category" name="categoryIdNew"><CategoryPicker name="categoryId" categories={categories} value={service.categoryId} /></Field>
         <Field label="Description" name="description" hint="Shown on the booking page."><Textarea name="description" rows={4} defaultValue={service.description ?? ""} /></Field>
         <Field label="Before your visit" name="prepNotes" hint="Prep instructions sent with the confirmation and the reminder, e.g. “Patch test 48 hours before.” Leave empty to use the category's note."><Textarea name="prepNotes" rows={4} defaultValue={service.prepNotes ?? ""} /></Field>
-        <Field label="Photo" name="image" hint="PNG/JPEG/WebP up to 2 MB. Shown next to the service on the booking page; uploading replaces the current one.">
-          <div className="flex flex-wrap items-start gap-4">
-            <CategoryThumb imageUrl={service.imageUrl} name={service.name} icon="image" className="h-24 w-24 rounded-lg" />
-            <div className="space-y-2">
-              <input type="file" name="image" accept="image/*" className="block text-sm" />
-              {service.imageUrl ? <Checkbox name="removeImage" label="Remove the current photo" /> : null}
-            </div>
-          </div>
+        <Field label="Photo" name="image" hint="Shown next to the service on the booking page.">
+          <ImageField name="image" removeName="removeImage" current={service.imageUrl} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Duration (min)" name="durationMin" required><Input name="durationMin" type="number" min={5} step={5} defaultValue={service.durationMin} required /></Field>

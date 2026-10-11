@@ -8,7 +8,7 @@ import { requireAction } from "@/lib/tenant";
 import { ensureCategory } from "@/server/categories";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
-import { FileError, storeImage } from "@/lib/files";
+import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
 import { InventoryError, recordMovement } from "@/server/inventory";
 
 const fields = z.object({
@@ -46,7 +46,10 @@ export const updateProduct = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "services.manage");
   const categoryId = await resolveCategory(ctx.business.id, d);
   const image = await uploadedImage(ctx.business.id, raw);
-  await withTenant(ctx.business.id, (tx) => tx.update(schema.products).set({ categoryId, name: d.name, sku: d.sku, priceCents: d.price, taxable: d.taxable, sellOnline: d.sellOnline, description: d.description, trackStock: d.trackStock, lowStockThreshold: d.lowStockThreshold, costCents: d.cost, ...(image ? { imageUrl: image } : {}) }).where(eq(schema.products.id, d.productId ?? "")));
+  const removeImage = raw.get("removeImage") === "on";
+  const current = await withTenant(ctx.business.id, (tx) => tx.query.products.findFirst({ where: eq(schema.products.id, d.productId ?? ""), columns: { imageUrl: true } }));
+  await withTenant(ctx.business.id, (tx) => tx.update(schema.products).set({ categoryId, name: d.name, sku: d.sku, priceCents: d.price, taxable: d.taxable, sellOnline: d.sellOnline, description: d.description, trackStock: d.trackStock, lowStockThreshold: d.lowStockThreshold, costCents: d.cost, ...(image ? { imageUrl: image } : removeImage ? { imageUrl: null } : {}) }).where(eq(schema.products.id, d.productId ?? "")));
+  if ((image || removeImage) && current?.imageUrl) await deleteFileByUrl(current.imageUrl);
   revalidatePath(`/app/${d.slug}/products`);
   revalidatePath(`/app/${d.slug}/products/${d.productId}`);
   return "Product saved";

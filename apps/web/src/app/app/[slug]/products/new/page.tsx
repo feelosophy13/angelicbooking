@@ -1,3 +1,4 @@
+import { ImageField } from "@/components/image-field";
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
@@ -28,7 +29,7 @@ export default async function NewProductPage({ params }: { params: Promise<{ slu
           <legend className="px-1 text-sm font-medium text-stone-700">Online store</legend>
           <Checkbox name="sellOnline" defaultChecked={false} label="Sell online (needs the store turned on under Settings → Online store)" />
           <Field label="Description" name="description" className="mt-2"><Textarea name="description" rows={4} defaultValue={""} /></Field>
-          <Field label="Photo" name="image" hint="PNG/JPEG/WebP up to 2 MB." className="mt-2"><input type="file" name="image" accept="image/*" className="block text-sm" /></Field>
+          <Field label="Photo" name="image" className="mt-2"><ImageField name="image" current={null} /></Field>
           
         </fieldset>
         <fieldset className="rounded-lg border border-stone-200 p-3">
