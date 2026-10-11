@@ -156,6 +156,75 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
   });
 }
 
+/** A ticket with no appointment: retail, a gift card at the desk, a walk-in rung up without booking. */
+export async function openWalkInSale(input: { businessId: string; actorUserId: string; currency: string; clientId?: string | null; locationId?: string | null }) {
+  return withTenant(input.businessId, async (tx) => {
+    const rows = await tx.execute<{ n: number }>(sql`select next_sale_number(${input.businessId}) as n`);
+    const n = Number(rows[0]?.n ?? 1001);
+    const location = await locationOrDefault(tx, input.locationId ?? null);
+    const [sale] = await tx
+      .insert(schema.sales)
+      .values({ businessId: input.businessId, number: n, locationId: location?.id ?? null, clientId: input.clientId ?? null, currency: input.currency, createdByUserId: input.actorUserId })
+      .returning({ id: schema.sales.id });
+    await audit(tx, input.businessId, input.actorUserId, "sale.open", sale!.id, { walkIn: true });
+    return sale!.id;
+  });
+}
+
+/** Attach (or change) the client on an open ticket so loyalty, saved cards and receipts work. */
+export async function setSaleClient(input: { businessId: string; saleId: string; clientId: string | null; actorUserId: string }) {
+  await withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+    if (!sale) throw new SaleError("Sale not found.");
+    assertOpen(sale);
+    if (input.clientId) {
+      const c = await tx.query.clients.findFirst({ where: eq(schema.clients.id, input.clientId), columns: { id: true } });
+      if (!c) throw new SaleError("Client not found.");
+    }
+    await tx.update(schema.sales).set({ clientId: input.clientId }).where(eq(schema.sales.id, sale.id));
+    await audit(tx, input.businessId, input.actorUserId, "sale.client", sale.id, { clientId: input.clientId });
+  });
+}
+
+export type SalesListFilter = { status?: "open" | "closed" | "all"; q?: string; from?: Date; to?: Date; page?: number; pageSize?: number };
+
+/** Tickets for the Sales page: open ones first, searchable by number or client, newest first. */
+export async function listSales(businessId: string, f: SalesListFilter) {
+  const page = Math.max(1, f.page ?? 1);
+  const pageSize = Math.min(100, Math.max(10, f.pageSize ?? 50));
+  const q = f.q?.trim() ?? "";
+  return withTenant(businessId, async (tx) => {
+    const conds = [];
+    if (f.status === "open") conds.push(eq(schema.sales.status, "open"));
+    if (f.status === "closed") conds.push(sql`${schema.sales.status} in ('paid','refunded','void')`);
+    if (f.from) conds.push(gte(schema.sales.createdAt, f.from));
+    if (f.to) conds.push(lt(schema.sales.createdAt, f.to));
+    if (q) {
+      const n = Number(q.replace(/^#/, ""));
+      const like = `%${q}%`;
+      conds.push(
+        Number.isInteger(n)
+          ? sql`(${schema.sales.number} = ${n} or ${schema.clients.firstName} ilike ${like} or ${schema.clients.lastName} ilike ${like})`
+          : sql`(${schema.clients.firstName} ilike ${like} or ${schema.clients.lastName} ilike ${like} or (${schema.clients.firstName} || ' ' || ${schema.clients.lastName}) ilike ${like})`,
+      );
+    }
+    const where = conds.length ? and(...conds) : undefined;
+    const [rows, count] = await Promise.all([
+      tx
+        .select({ sale: schema.sales, clientFirst: schema.clients.firstName, clientLast: schema.clients.lastName, locationName: schema.locations.name })
+        .from(schema.sales)
+        .leftJoin(schema.clients, eq(schema.clients.id, schema.sales.clientId))
+        .leftJoin(schema.locations, eq(schema.locations.id, schema.sales.locationId))
+        .where(where)
+        .orderBy(sql`case when ${schema.sales.status} = 'open' then 0 else 1 end`, desc(schema.sales.createdAt))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize),
+      tx.select({ n: sql<number>`count(*)` }).from(schema.sales).leftJoin(schema.clients, eq(schema.clients.id, schema.sales.clientId)).where(where),
+    ]);
+    return { rows, total: Number(count[0]?.n ?? 0), page, pageSize };
+  });
+}
+
 export async function getSale(businessId: string, saleId: string) {
   return withTenant(businessId, async (tx) => {
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, saleId) });

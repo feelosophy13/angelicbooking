@@ -22,7 +22,7 @@ import { stripe } from "@/lib/stripe";
 import { addOfferLine, redeemCredit, redeemGiftCard } from "@/server/offers";
 import { LoyaltyError, redeemPoints } from "@/server/loyalty";
 import { PromoError } from "@/server/promos";
-import { applyPromoToSale, removePromoFromSale } from "@/server/sales";
+import { applyPromoToSale, removePromoFromSale, setSaleClient } from "@/server/sales";
 import { schema as dbSchema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { queueOneOff } from "@/lib/notify";
@@ -322,5 +322,21 @@ export async function setFulfillment(formData: FormData) {
     if (!sale?.fulfillment) return;
     await tx.update(dbSchema.sales).set({ fulfillment: { ...sale.fulfillment, status: d.status } }).where(eq(dbSchema.sales.id, d.saleId));
   });
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+export async function attachClient(formData: FormData) {
+  const d = base.extend({ clientId: z.string().optional() }).parse(Object.fromEntries(formData));
+  const ctx = await ctxFor(d.slug);
+  try {
+    await setSaleClient({ businessId: ctx.business.id, saleId: d.saleId, clientId: d.clientId || null, actorUserId: ctx.user.id });
+  } catch (e) {
+    if (e instanceof SaleError) {
+      await setFlash(e.message, "error");
+      revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+      return;
+    }
+    throw e;
+  }
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }

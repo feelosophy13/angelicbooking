@@ -19,7 +19,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, applyDiscount, applyPromo, applyTips, deleteLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
+import { ClientPicker } from "@/components/client-picker";
+import { quickCreateClient } from "../../clients/actions";
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
 import { schema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
@@ -300,10 +302,26 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           {client ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-1 font-medium">Client</h2>
-              <p>{client.firstName} {client.lastName}</p>
+              <p><Link href={`/app/${slug}/clients/${client.id}`} className="hover:underline">{client.firstName} {client.lastName}</Link></p>
               {client.phone ? <p className="text-stone-600">{client.phone}</p> : null}
               {client.email ? <p className="text-stone-600">{client.email}</p> : null}
               {savedCards.length ? <p className="mt-2 text-xs text-stone-500">{savedCards.length} saved card{savedCards.length > 1 ? "s" : ""}</p> : null}
+              {open && !sale.appointmentId ? (
+                <form action={attachClient} className="mt-2">
+                  <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="clientId" value="" />
+                  <Button type="submit" size="sm" variant="ghost">Detach client</Button>
+                </form>
+              ) : null}
+            </Card>
+          ) : open ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Client</h2>
+              <p className="mb-2 text-xs text-stone-500">Walk-in. Attach a client for loyalty points, saved cards and an emailed receipt.</p>
+              <form action={attachClient} className="space-y-2">
+                <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />
+                <ClientPicker slug={slug} initial={null} canCreate={can(permissions, "clients.write")} createClient={quickCreateClient} allowWalkIn={false} />
+                <Button type="submit" size="sm" variant="secondary">Attach</Button>
+              </form>
             </Card>
           ) : null}
         </div>

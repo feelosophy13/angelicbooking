@@ -112,6 +112,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       overlapping cards share the column side by side, and a drag is refused with a clear message when it lands
       outside the provider's hours or on a provider who doesn't perform the service (the same qualification check now
       applies when adding a service to a ticket).
+- [x] Landed 2026-10-10 (batch 6, front desk): New appointment has a client type-ahead (name, phone or email, any
+      number of clients) with inline "New client", an exact-time field for walk-ins that already started (works even
+      when no slot is open), and "Add another service" to book a cut + colour back to back with the same provider
+      (slots are computed for the whole chain); a Sales page (Money → Sales: open tickets, today, all, search by
+      number or client) with "Start sale" for retail/gift-card tickets without an appointment; an open walk-in ticket
+      can attach or detach a client; Reports keeps its own nav entry.
 
 - [x] Membership auto-billing (recurring charges on the business's Connect account). Done 2026-10-10 (client page → Auto-renew with saved card; Connect webhook `invoice.paid` / `invoice.payment_failed` / `customer.subscription.deleted`). Untested against Stripe until keys exist.
 - [ ] Tap to Pay / card reader support.

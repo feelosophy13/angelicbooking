@@ -20,7 +20,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
    freeze to dollars; promos discount ineligible lines; package-covered services pay $0 commission.
 3. **P1 Reminders after cancellation** — removing the last service and cancelling a series skip `notifyAppointment`,
    and `deliverDue` never re-checks appointment status, so clients get texts for cancelled visits.
-4. **P1 Front-desk booking** — single service per booking, a 500-row client `<select>` with no search or inline
+4. ✅ **P1 Front-desk booking** — single service per booking, a 500-row client `<select>` with no search or inline
    create, no walk-in "now"/custom time, no Rebook button, no block time from the calendar.
 5. ✅ **P1 Calendar grid** — no working hours/time-off shading, concurrent cards fully overlap, drag bypasses every
    availability rule, quick actions are hover-only (unreachable on the front-desk iPad), touch drag hijacks scrolling.
@@ -30,7 +30,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
    who can't do the service, promo codes are validated only after the deposit is charged, month availability runs
    hundreds of queries per render.
 8. **P1 Import staging on `os.tmpdir()`** breaks on Render (ephemeral disk, restarts).
-9. **P2 Findability** — no Sales list page, gift cards capped at 50 with no search, products/memberships/reviews
+9. ✅ **P2 Findability** — no Sales list page, gift cards capped at 50 with no search, products/memberships/reviews
    unsearchable, ⌘K misses sales, gift cards, products and most settings pages.
 10. **P2 Staff schedules** — one block per day (no lunch/split shift), time off one date at a time.
 11. **P2 Notifications** — failed sends never retried and no "send again", one reminder only (PLAN promises 24h + 2h),
@@ -86,10 +86,10 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 
 ## 2. New appointment (`app/app/[slug]/appointments/new/*`)
 
-- **P1 Multi-service booking** [gap] — one `serviceId` per booking; cut + colour takes three page loads.
-- **P1 Client typeahead with inline "New client"** [bug] — native select `limit(500)` (`page.tsx:38`; same in
+- ✅ **P1 Multi-service booking** [gap] — one `serviceId` per booking; cut + colour takes three page loads.
+- ✅ **P1 Client typeahead with inline "New client"** [bug] — native select `limit(500)` (`page.tsx:38`; same in
   `classes/[sessionId]/page.tsx:31`): clients past #500 can never be booked, and a new walk-in requires leaving the form.
-- **P1 Walk-in now / custom time / outside hours / deliberate double-book** [gap] — `notBefore: new Date()`
+- ✅ **P1 Walk-in now / custom time / outside hours / deliberate double-book** [gap] — `notBefore: new Date()`
   (`page.tsx:55`) hides a walk-in that started five minutes ago; the DB already supports `allowOverlap`.
 - **P2 Auto-refresh slots on change** [ux] — GET form requires "Find times" after every change (`page.tsx:65-98`);
   when `time=` from the calendar isn't open, `preselectIso` is silently null (`page.tsx:117`).
@@ -228,9 +228,9 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 
 ## 8. Checkout and sales (`app/app/[slug]/sales/[saleId]/*`, `server/sales.ts`, `server/offers.ts`)
 
-- **P1 Walk-in / retail-only sale** [gap] — the only entry is `openSaleForAppointment`; no "New sale" with optional
+- ✅ **P1 Walk-in / retail-only sale** [gap] — the only entry is `openSaleForAppointment`; no "New sale" with optional
   client and staff; walk-in sales can't attach a client or carry notes.
-- **P1 Sales list page** [gap] — no `sales/page.tsx`; closed tickets are only reachable from Reports or a client's
+- ✅ **P1 Sales list page** [gap] — no `sales/page.tsx`; closed tickets are only reachable from Reports or a client's
   last 20. Add Open / Today / search by number or client.
 - ✅ **P1 Refunds reverse side effects** [bug] — stock (the `"refund"` movement in `server/inventory.ts:27` is never
   used), loyalty points, `promoCodes.usesCount`, issued gift cards/packages; Stripe-dashboard refunds and disputes
@@ -316,7 +316,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
   `order/[saleId]/page.tsx:11-12`; gate on paid and add a token.
 - ✅ **P1 Review opt-out and unsubscribe mutate on GET** [bug] — `review/page.tsx:11-13`, `unsubscribe/page.tsx:9`;
   link scanners will opt clients out. Confirm button + POST.
-- **P2 Multi-service booking and "next available"** [gap][ux] — `actions.ts:26` single service.
+- ✅ **P2 Multi-service booking and "next available"** [gap][ux] — `actions.ts:26` single service.
 - **P2 Show forms, address/maps link, deposit and concrete cancel deadline on confirmed/manage pages** [gap] —
   `formsUrl` only goes in email/SMS (`lib/notify/index.ts:54`); `confirmed/page.tsx:24-27`.
 - **P2 Promo/referral inline feedback** [ux] — `page.tsx:257`, `loyalty.ts:106-110` drops unknown referral codes.

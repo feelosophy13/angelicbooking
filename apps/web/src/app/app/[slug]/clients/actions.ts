@@ -49,3 +49,23 @@ export const updateClient = formAction(fields, async (d) => {
   revalidatePath(`/app/${d.slug}/clients/${d.clientId}`);
   return "Client saved";
 });
+
+export type QuickClientResult = { id: string; name: string } | { error: string };
+
+/** Inline "new client" from a picker (new appointment, sale): minimal fields, returns the row to select. */
+export async function quickCreateClient(input: { slug: string; firstName: string; lastName: string; phone: string; email: string }): Promise<QuickClientResult> {
+  const d = z
+    .object({ slug: z.string(), firstName: z.string().trim().min(1, "First name is required").max(60), lastName: z.string().trim().max(60).default(""), phone: z.string().trim().max(30).default(""), email: z.string().trim().max(120).default("") })
+    .safeParse(input);
+  if (!d.success) return { error: d.error.issues[0]?.message ?? "Check the details" };
+  const ctx = await requireAction(d.data.slug, "clients.write");
+  const phone = d.data.phone ? normalizePhone(d.data.phone) : null;
+  if (d.data.phone && !phone) return { error: "Enter a valid mobile number" };
+  const email = d.data.email ? d.data.email.toLowerCase() : null;
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: "Enter a valid email" };
+  const [row] = await withTenant(ctx.business.id, (tx) =>
+    tx.insert(schema.clients).values({ businessId: ctx.business.id, firstName: d.data.firstName, lastName: d.data.lastName, phone, email, smsOptIn: true, emailOptIn: true }).returning({ id: schema.clients.id }),
+  );
+  revalidatePath(`/app/${d.data.slug}/clients`);
+  return { id: row!.id, name: `${d.data.firstName} ${d.data.lastName}`.trim() };
+}
