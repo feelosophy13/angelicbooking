@@ -12,6 +12,7 @@ import { formatDateLong, formatMoney, shiftISODate } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Empty, LinkButton } from "@/components/ui";
 import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
+import { listCategories, pathTo } from "@/server/categories";
 
 export default async function ReportsPage({
   params,
@@ -38,10 +39,44 @@ export default async function ReportsPage({
   const prevTo = shiftISODate(from, -1);
   const isPreset = (from === today && to === today) || (from === shiftISODate(today, -6) && to === today) || (from === `${today.slice(0, 8)}01` && to === today);
   const stock = await stockReport(business.id);
-  const [{ sales, byStaff, byMethod, byService, appts, byLocation, crossLocation }, prev] = await Promise.all([
+  const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation }, prev, categories] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter),
+    listCategories(business.id, "service"),
   ]);
+  // Service revenue by category: leaves roll up into their top-level category, with the second level shown under it.
+  type CatRow = { id: string; name: string; amount: number; count: number; before: number; children: CatRow[] };
+  const rollUp = (rows: { categoryId: string | null; amount: number; count: number }[]) => {
+    const tops = new Map<string, CatRow>();
+    const other: CatRow = { id: "none", name: "Uncategorised", amount: 0, count: 0, before: 0, children: [] };
+    for (const r of rows) {
+      const path = r.categoryId ? pathTo(categories, r.categoryId) : [];
+      const top = path[0];
+      if (!top) { other.amount += Number(r.amount); other.count += Number(r.count); continue; }
+      if (!tops.has(top.id)) tops.set(top.id, { id: top.id, name: top.name, amount: 0, count: 0, before: 0, children: [] });
+      const t = tops.get(top.id)!;
+      t.amount += Number(r.amount); t.count += Number(r.count);
+      const second = path[1];
+      if (second) {
+        let c = t.children.find((x) => x.id === second.id);
+        if (!c) { c = { id: second.id, name: second.name, amount: 0, count: 0, before: 0, children: [] }; t.children.push(c); }
+        c.amount += Number(r.amount); c.count += Number(r.count);
+      }
+    }
+    const out = [...tops.values()];
+    if (other.count) out.push(other);
+    return out;
+  };
+  const catRows = rollUp(byCategory);
+  const catBefore = rollUp(prev.byCategory);
+  for (const t of catRows) {
+    const b = catBefore.find((x) => x.id === t.id);
+    t.before = b?.amount ?? 0;
+    for (const c of t.children) c.before = b?.children.find((x) => x.id === c.id)?.amount ?? 0;
+    t.children.sort((x, y) => y.amount - x.amount);
+  }
+  catRows.sort((x, y) => y.amount - x.amount);
+  const serviceRevenue = catRows.reduce((s, r) => s + r.amount, 0);
   const money = (c: number) => formatMoney(Number(c), business.currency);
   type K = "subtotalCents" | "discountCents" | "taxCents" | "tipCents" | "totalCents" | "refundedCents";
   const sum = (k: K, rows = sales) => rows.reduce((s, r) => s + r[k], 0);
@@ -175,6 +210,35 @@ export default async function ReportsPage({
               </tbody>
             </table></div>
           )}
+        </Card>
+        <Card className="lg:col-span-2">
+          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Revenue by service category</h2>
+          {catRows.length === 0 ? <div className="p-4"><Empty title="No services sold in this range" /></div> : (
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Category</th><th className="px-4 py-2 text-right">Services</th><th className="px-4 py-2 text-right">Revenue</th><th className="px-4 py-2 text-right">Share</th><th className="px-4 py-2 text-right">vs {periodLabel}</th><th className="w-1/4 px-4 py-2"><span className="sr-only">Share bar</span></th></tr></thead>
+              <tbody className="divide-y divide-stone-100">
+                {catRows.flatMap((t) => {
+                  const line = (r: CatRow, depth: number) => {
+                    const d = delta(r.amount, r.before);
+                    const share = serviceRevenue ? (r.amount / serviceRevenue) * 100 : 0;
+                    return (
+                      <tr key={`${depth}:${r.id}`} className={depth ? "text-stone-600" : "font-medium"}>
+                        <td className="px-4 py-2" style={{ paddingLeft: `${1 + depth * 1.25}rem` }}>{depth ? <span className="text-stone-400">› </span> : null}{r.name}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{r.count}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{money(r.amount)}</td>
+                        <td className="px-4 py-2 text-right tabular-nums">{share.toFixed(0)}%</td>
+                        <td className={`px-4 py-2 text-right tabular-nums text-xs ${d === null ? "text-stone-400" : d.up ? "text-emerald-700" : "text-red-700"}`}>{d === null ? "—" : d.pct === null ? "new" : `${d.pct > 0 ? "+" : ""}${d.pct}%`}</td>
+                        <td className="px-4 py-2"><div className="h-2 w-full rounded bg-stone-100"><div className={`h-2 rounded ${depth ? "bg-brand-300" : "bg-brand-500"}`} style={{ width: `${Math.min(100, share)}%` }} /></div></td>
+                      </tr>
+                    );
+                  };
+                  return [line(t, 0), ...(t.children.length > 1 ? t.children.map((c) => line(c, 1)) : [])];
+                })}
+              </tbody>
+              <tfoot className="border-t border-stone-200 text-sm font-semibold"><tr><td className="px-4 py-2">All services</td><td className="px-4 py-2 text-right tabular-nums">{catRows.reduce((s, r) => s + r.count, 0)}</td><td className="px-4 py-2 text-right tabular-nums">{money(serviceRevenue)}</td><td className="px-4 py-2 text-right">100%</td><td colSpan={2} /></tr></tfoot>
+            </table></div>
+          )}
+          <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Service lines on paid tickets, by the service's category today. Sub-categories are listed when a category has more than one.</p>
         </Card>
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Top services &amp; products</h2>

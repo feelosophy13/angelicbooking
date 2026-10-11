@@ -804,7 +804,7 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
         .where(and(closed, sql`${schema.payments.status} in ('succeeded','partially_refunded','refunded')`))
         .groupBy(schema.payments.method),
     ]);
-    const [byService, appts] = await Promise.all([
+    const [byService, byCategory, appts] = await Promise.all([
       tx
         .select({
           name: schema.saleLines.name,
@@ -818,6 +818,18 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
         .groupBy(schema.saleLines.name, schema.saleLines.kind)
         .orderBy(sql`sum(${schema.saleLines.amountCents}) desc`)
         .limit(25),
+      // Service revenue per (leaf) category; the page rolls leaves up into their parents.
+      tx
+        .select({
+          categoryId: schema.services.categoryId,
+          count: sql<number>`count(*)`,
+          amount: sql<number>`coalesce(sum(${schema.saleLines.amountCents}), 0)`,
+        })
+        .from(schema.saleLines)
+        .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
+        .leftJoin(schema.services, eq(schema.services.id, schema.saleLines.serviceId))
+        .where(and(closed, eq(schema.saleLines.kind, "service")))
+        .groupBy(schema.services.categoryId),
       tx
         .select({ status: schema.appointments.status, source: schema.appointments.source, count: sql<number>`count(*)` })
         .from(schema.appointments)
@@ -876,7 +888,7 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
       ...crossGift.map((r) => ({ kind: "gift_card" as const, soldAt: r.soldAt, redeemedAt: r.redeemedAt, amount: Number(r.amount), count: Number(r.count) })),
       ...crossCredit.map((r) => ({ kind: r.kind, soldAt: r.soldAt, redeemedAt: r.redeemedAt, amount: Number(r.amount), count: Number(r.count) })),
     ];
-    return { sales, byStaff, byMethod, byService, appts, byLocation, crossLocation };
+    return { sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation };
   });
 }
 
