@@ -183,6 +183,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       bookings carry an "online" chip with when they came in). "New online booking" automation template (team
       group, on by default) emails the owner and the provider when a client books online; automations gain a
       "Booked online only" filter and templates added later are topped up on the next trigger.
+- [x] 2026-10-11: Staff hours → "Add time off" button opens a team-wide form (pick the person, first/last day, type,
+      hours, note) that returns to Staff hours after saving; the per-person Time off tab is unchanged.
 - [x] 2026-10-11: Reports: revenue by service category (leaf categories rolled up to top level with the second level
       underneath, services count, share of service revenue, change vs the previous period, share bar). Reports open
       on month to date instead of today.

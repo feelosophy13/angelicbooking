@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Ban, ChevronLeft, ChevronRight } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can, instantToISODate, mondayOf } from "@angelic/core";
@@ -144,7 +144,10 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="min-w-0">
-          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Time off in the next 90 days</h2>
+          <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-2">
+            <h2 className="text-sm font-semibold text-stone-600">Time off in the next 90 days</h2>
+            {manage ? <LinkButton href={`${base}/staff-hours/time-off`} size="sm"><Plus className="h-4 w-4" /> Add time off</LinkButton> : null}
+          </div>
           {groups.length === 0 ? (
             <div className="p-4"><Empty title="Nothing scheduled" body="Days off and custom hours added under a provider's Time off show here." /></div>
           ) : (

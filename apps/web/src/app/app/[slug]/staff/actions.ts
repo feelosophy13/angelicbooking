@@ -200,6 +200,8 @@ const overrideSchema = z
     start: z.string().optional(),
     end: z.string().optional(),
     note: f.optional(200),
+    /** In-app path to go to after saving (the team-wide form on Staff hours). */
+    returnTo: z.string().optional(),
   })
   .superRefine((o, ctx) => {
     if (o.to !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(o.to)) ctx.addIssue({ code: "custom", path: ["to"], message: "Pick a date" });
@@ -232,8 +234,14 @@ export const addOverride = formAction(overrideSchema, async (o) => {
       .onConflictDoUpdate({ target: [schema.staffScheduleOverrides.businessId, schema.staffScheduleOverrides.staffId, schema.staffScheduleOverrides.date], set: fields }),
   );
   revalidatePath(`/app/${o.slug}/staff/${o.staffId}/time-off`);
+  revalidatePath(`/app/${o.slug}/staff-hours`);
   const span = dates.length > 1 ? ` for ${dates.length} days` : "";
-  return o.kind === "off" ? `Time off added${span}` : `Custom hours added${span}`;
+  const message = o.kind === "off" ? `Time off added${span}` : `Custom hours added${span}`;
+  if (o.returnTo && o.returnTo.startsWith(`/app/${o.slug}/`)) {
+    await setFlash(message);
+    redirect(o.returnTo);
+  }
+  return message;
 });
 
 export async function deleteOverride(formData: FormData) {
