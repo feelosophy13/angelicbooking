@@ -30,13 +30,15 @@ export default async function LocationsPage({ params }: { params: Promise<{ slug
                 <p className="text-xs text-stone-500">{[l.addressLine1, l.city, l.state, l.postalCode].filter(Boolean).join(", ") || "No address"}{l.phone ? ` · ${l.phone}` : ""}{l.timezone ? ` · ${l.timezone}` : ""}</p>
                 <p className="text-xs text-stone-500">{l.hours ? describeHours(l.hours).join(" · ") : "No opening hours set"}</p>
               </div>
-              <LinkButton href={`/app/${slug}/settings/locations/${l.id}`} size="sm">Edit</LinkButton>
-              {!l.isDefault ? (
-                <>
-                  <form action={setDefaultLocation}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={l.id} /><Button size="sm" variant="ghost" type="submit">Make default</Button></form>
-                  <form action={deleteLocation}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={l.id} /><ConfirmSubmit title={`Remove ${l.name}?`} body="Staff assigned here become unassigned; past appointments keep their records." confirmLabel="Remove" variant="ghost">Remove</ConfirmSubmit></form>
-                </>
-              ) : null}
+              <div className="flex items-center gap-1">
+                {!l.isDefault ? (
+                  <>
+                    <form action={setDefaultLocation}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={l.id} /><Button size="sm" variant="ghost" type="submit">Make default</Button></form>
+                    <form action={deleteLocation}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={l.id} /><ConfirmSubmit title={`Remove ${l.name}?`} body="Staff assigned here become unassigned; past appointments keep their records." confirmLabel="Remove" variant="ghost">Remove</ConfirmSubmit></form>
+                  </>
+                ) : null}
+                <LinkButton href={`/app/${slug}/settings/locations/${l.id}`} size="sm" className="ml-1">Edit</LinkButton>
+              </div>
             </li>
           ))}
         </ul>
