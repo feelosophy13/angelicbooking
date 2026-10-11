@@ -7,6 +7,7 @@ import { smsAvailableFor } from "@/server/messaging";
 import { campaignStats, previewCampaign } from "@/server/marketing";
 import { Card, Input } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
+import { serviceGroups } from "@/server/service-groups";
 import { CampaignForm } from "../../campaign-form";
 import { deleteCampaign, sendCampaignAction, updateCampaign } from "../../actions";
 
@@ -20,7 +21,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   const { campaign } = p;
   const sms = await smsAvailableFor(business.id);
   const [services, staff, locations] = await withTenant(business.id, async (tx) => [
-    await tx.select({ id: schema.services.id, name: schema.services.name }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
+    await serviceGroups(business, { meta: "none" }),
     await tx.select({ id: schema.staff.id, displayName: schema.staff.displayName }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)),
     await tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations).orderBy(asc(schema.locations.name)),
   ]);

@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { getOffersCatalog } from "@/server/offers";
+import { serviceGroups } from "@/server/service-groups";
+import { ServicePicker } from "@/components/service-picker";
 import { listLocations } from "@/server/locations";
 import { FormPage, Input, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
@@ -15,9 +16,9 @@ export const metadata: Metadata = { title: "Edit package" };
 export default async function EditPackagePage({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
   const { business } = await requireAction(slug, "services.manage");
-  const [p, { services }, locations] = await Promise.all([
+  const [p, groups, locations] = await Promise.all([
     withTenant(business.id, (tx) => tx.query.packages.findFirst({ where: eq(schema.packages.id, id) })),
-    getOffersCatalog(business.id),
+    serviceGroups(business, { meta: "none" }),
     listLocations(business.id),
   ]);
   if (!p) notFound();
@@ -28,7 +29,7 @@ export default async function EditPackagePage({ params }: { params: Promise<{ sl
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="id" value={p.id} />
         <Field label="Name" name="name" required><Input name="name" defaultValue={p.name} required autoFocus /></Field>
-        <Field label="Service" name="serviceId" hint="Choose one service, or let sessions be used on any service."><Select name="serviceId" defaultValue={p.serviceId ?? ""}><option value="">Any service</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
+        <Field label="Service" name="serviceId" hint="Choose one service, or let sessions be used on any service."><ServicePicker name="serviceId" groups={groups} value={p.serviceId ?? null} placeholder="Any service" noneLabel="Any service" /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Sessions" name="sessions" required><Input name="sessions" type="number" min={1} defaultValue={p.sessions} required /></Field>
           <Field label="Price" name="price" required><Input name="price" inputMode="decimal" defaultValue={(p.priceCents / 100).toFixed(2)} required /></Field>

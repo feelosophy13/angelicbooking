@@ -24,6 +24,8 @@ import { ClientPicker } from "@/components/client-picker";
 import { Disclosure } from "@/components/disclosure";
 import { quickCreateClient } from "../../clients/actions";
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
+import { serviceGroups } from "@/server/service-groups";
+import { ServicePicker } from "@/components/service-picker";
 import { schema, withTenant } from "@angelic/db";
 import { asc, eq } from "drizzle-orm";
 import { instantToISODate } from "@angelic/core";
@@ -55,7 +57,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
   const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
   const rebookLine = lines.find((l) => l.kind === "service") ?? null;
-  const servicesForSale = open ? await withTenant(business.id, (tx) => tx.select({ id: schema.services.id, name: schema.services.name, priceCents: schema.services.priceCents }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name))) : [];
+  const serviceGroupsForSale = open ? await serviceGroups(business, { meta: "price" }) : [];
   const promo = sale.promoCodeId ? await withTenant(business.id, (tx) => tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.id, sale.promoCodeId!), columns: { code: true } })) : null;
   const typedDiscount: { type: "amount" | "percent"; value: number } | null =
     !sale.promoCodeId && (sale.discountType === "percent" || sale.discountType === "amount") && sale.discountValue ? { type: sale.discountType, value: sale.discountValue } : null;
@@ -191,10 +193,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                     <h3 className="mb-2 text-sm font-medium text-stone-700">Service</h3>
                     <form action={addServiceToSale} className="space-y-2">
                       <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />
-                      <Select name="serviceId" required defaultValue="">
-                        <option value="" disabled>Choose a service</option>
-                        {servicesForSale.map((s) => <option key={s.id} value={s.id}>{s.name} · {money(s.priceCents)}</option>)}
-                      </Select>
+                      <ServicePicker name="serviceId" groups={serviceGroupsForSale} value={null} />
                       <div className="grid grid-cols-2 gap-2">
                         <Select name="staffId" defaultValue={staffOnTicket[0]?.id ?? ""}>
                           <option value="">No staff credit</option>

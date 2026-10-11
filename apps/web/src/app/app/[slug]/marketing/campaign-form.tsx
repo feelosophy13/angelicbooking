@@ -1,10 +1,11 @@
+import { ServicePicker, type ServiceGroup } from "@/components/service-picker";
 import type { CampaignAudience } from "@angelic/db";
 import { Input, Select, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 
 type Action = Parameters<typeof ActionForm>[0]["action"];
 
-export function CampaignForm({ action, slug, campaign, services, staff, locations = [], submitLabel, sms }: { action: Action; slug: string; campaign: { id?: string; name: string; channel: "email" | "sms"; subject: string | null; body: string; audience: CampaignAudience } | null; services: { id: string; name: string }[]; staff: { id: string; displayName: string }[]; locations?: { id: string; name: string }[]; submitLabel: string; sms: boolean }) {
+export function CampaignForm({ action, slug, campaign, services, staff, locations = [], submitLabel, sms }: { action: Action; slug: string; campaign: { id?: string; name: string; channel: "email" | "sms"; subject: string | null; body: string; audience: CampaignAudience } | null; services: ServiceGroup[]; staff: { id: string; displayName: string }[]; locations?: { id: string; name: string }[]; submitLabel: string; sms: boolean }) {
   const a = campaign?.audience ?? {};
   return (
     <ActionForm action={action}>
@@ -28,7 +29,7 @@ export function CampaignForm({ action, slug, campaign, services, staff, location
           <Field label="Visited within the last (days)" name="visitedWithinDays"><Input name="visitedWithinDays" type="number" min={1} defaultValue={a.visitedWithinDays ?? ""} placeholder="90" /></Field>
           <Field label="Hasn't visited for at least (days)" name="lapsedDays"><Input name="lapsedDays" type="number" min={1} defaultValue={a.lapsedDays ?? ""} placeholder="60" /></Field>
           <Field label="Has had this service" name="serviceId">
-            <Select name="serviceId" defaultValue={a.serviceId ?? ""}><option value="">Any service</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
+            <ServicePicker name="serviceId" groups={services} value={a.serviceId ?? null} placeholder="Any service" noneLabel="Any service" />
           </Field>
           <Field label="Has seen this provider" name="staffId">
             <Select name="staffId" defaultValue={a.staffId ?? ""}><option value="">Anyone</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}</Select>
