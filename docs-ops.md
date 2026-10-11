@@ -262,7 +262,10 @@ Two profiles, same password `demo-salon-2026`:
 - `glow`: `demo2@angelicbooking.com`, business `demo-twosites` ("Glow Collective"), two locations (Arlington, Reston) with
   staff, hours, appointments, sales, reviews and time entries split between them; the booking page asks for a location.
 
-Each profile creates its user and business:
+Both profiles use Angelic Beauty's real menu (angelicbeautyva.com, fetched 2026-10-11: lash extensions by style, Korean lash
+lift, core/Korean facials and add-ons, waxing, brows, personal colour analysis, permanent makeup, training) with the
+studio's own category and service photos downloaded from its S3 bucket at seed time (a gradient tile is used if a
+fetch fails). Each profile creates its user and business:
 nested service menu with placeholder images, six staff across every pay model, 40 clients, eight weeks of completed
 visits with sales/tips/reviews, three weeks of upcoming bookings, time-clock entries, products with stock, two forms,
 packages, membership plans, gift cards, a promo code, waitlist entries and enabled automations. `--reset` deletes and
