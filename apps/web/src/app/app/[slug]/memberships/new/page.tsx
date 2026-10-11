@@ -15,7 +15,7 @@ export default async function NewPlanPage({ params }: { params: Promise<{ slug: 
   const { business } = await requireAction(slug, "services.manage");
   const [{ services }, locations] = await Promise.all([getOffersCatalog(business.id), listLocations(business.id)]);
   return (
-    <FormPage title="New membership plan" backHref={`/app/${slug}/memberships`} backLabel="Membership plans" width="max-w-lg">
+    <FormPage title="New membership plan" backHref={`/app/${slug}/memberships`} backLabel="Membership plans">
       <ActionForm action={createPlan}>
         <input type="hidden" name="slug" value={slug} />
         <PlanFields services={services} />

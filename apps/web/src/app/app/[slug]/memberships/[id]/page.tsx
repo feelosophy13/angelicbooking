@@ -23,7 +23,7 @@ export default async function EditPlanPage({ params }: { params: Promise<{ slug:
   ]);
   if (!p) notFound();
   return (
-    <FormPage title={p.name} backHref={`/app/${slug}/memberships`} backLabel="Membership plans" width="max-w-lg">
+    <FormPage title={p.name} backHref={`/app/${slug}/memberships`} backLabel="Membership plans">
       <p className="mb-3 text-xs text-stone-500">Price and billing changes apply to new sales; members on auto-renew keep the price and cadence they signed up with until auto-renew is set up again.</p>
       <ActionForm action={updatePlan}>
         <input type="hidden" name="slug" value={slug} />
