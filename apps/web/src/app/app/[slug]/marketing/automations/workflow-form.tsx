@@ -27,6 +27,7 @@ function conditionChips(f: WorkflowFilters, trigger: WorkflowTrigger, p: Pickers
   if (f.tags?.length) chips.push(`tag ${f.tags.join(" or ")}`);
   if (f.minRating != null || f.maxRating != null) chips.push(`${f.minRating ?? 1}–${f.maxRating ?? 5} stars`);
   if (f.firstVisitOnly) chips.push("first visit only");
+  if (f.onlineOnly) chips.push("booked online only");
   return chips;
 }
 
@@ -147,6 +148,7 @@ export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: strin
               ) : null}
               <Field label="Client has a tag" name="tags" hint="Comma-separated; any match counts."><Input name="tags" defaultValue={(f.tags ?? []).join(", ")} placeholder="VIP, Colour client" className="h-9" /></Field>
               {apptTrigger || trigger === "client_created" ? <Checkbox name="firstVisitOnly" defaultChecked={f.firstVisitOnly ?? false} label="First visit only" /> : null}
+              {apptTrigger ? <Checkbox name="onlineOnly" defaultChecked={f.onlineOnly ?? false} label="Booked online only" hint="Skips appointments the desk enters or imports." /> : null}
             </div>
           </div>
         </details>

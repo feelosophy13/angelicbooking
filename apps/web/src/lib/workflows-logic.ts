@@ -49,6 +49,8 @@ export interface TriggerFacts {
   rating?: number | null;
   /** True when this is the client's first visit (booked or completed), or a brand-new client. */
   firstVisit?: boolean;
+  /** How the appointment was made. */
+  source?: "staff" | "online" | "import" | null;
 }
 
 /** Does a trigger occurrence pass the workflow's filters? Unset filters match everything. */
@@ -63,6 +65,7 @@ export function matchesFilters(f: WorkflowFilters | null | undefined, facts: Tri
   if (f.minRating != null && (facts.rating == null || facts.rating < f.minRating)) return false;
   if (f.maxRating != null && (facts.rating == null || facts.rating > f.maxRating)) return false;
   if (f.firstVisitOnly && !facts.firstVisit) return false;
+  if (f.onlineOnly && facts.source !== "online") return false;
   return true;
 }
 

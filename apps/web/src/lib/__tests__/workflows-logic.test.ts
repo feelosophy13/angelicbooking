@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { deferToDaytime, matchesFilters, summarizeSteps, validateSteps, waitResumesAt } from "../workflows-logic";
 
 describe("matchesFilters", () => {
+  it("can be limited to bookings the client made online", () => {
+    expect(matchesFilters({ onlineOnly: true }, { source: "online" })).toBe(true);
+    expect(matchesFilters({ onlineOnly: true }, { source: "staff" })).toBe(false);
+    expect(matchesFilters({ onlineOnly: true }, {})).toBe(false);
+    expect(matchesFilters({ onlineOnly: false }, { source: "staff" })).toBe(true);
+  });
   it("matches everything when nothing is set", () => {
     expect(matchesFilters({}, {})).toBe(true);
     expect(matchesFilters(null, { rating: 1 })).toBe(true);

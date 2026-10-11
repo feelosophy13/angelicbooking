@@ -25,6 +25,7 @@ const fields = z.object({
   minRating: z.string().trim().optional(),
   maxRating: z.string().trim().optional(),
   firstVisitOnly: f.checkbox(),
+  onlineOnly: f.checkbox(),
   tags: f.optional(200),
 });
 
@@ -57,6 +58,7 @@ function parseInput(d: z.infer<typeof fields>, raw: FormData): WorkflowInput {
     minRating: num(d.minRating),
     maxRating: num(d.maxRating),
     firstVisitOnly: d.firstVisitOnly,
+    onlineOnly: d.onlineOnly,
     days: num(d.days),
   };
   return { name: d.name, description: d.description, trigger: d.trigger, enabled: d.enabled, exitOnBooking: d.exitOnBooking, filters, steps };

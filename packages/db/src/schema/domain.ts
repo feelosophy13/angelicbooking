@@ -1064,6 +1064,8 @@ export interface WorkflowFilters {
   maxRating?: number | null;
   /** appointment_* / client_created: only the client's first completed or booked visit. */
   firstVisitOnly?: boolean;
+  /** appointment_*: only appointments the client booked online (not ones the desk entered or imported). */
+  onlineOnly?: boolean;
   /** no_visit: days since the last completed visit. */
   days?: number | null;
 }

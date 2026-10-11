@@ -90,6 +90,10 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   { key: "low_rating_alert", group: "team", trigger: "review_submitted", enabled: true, filters: { maxRating: 3 }, name: "Low rating alert", description: "Email the owner when a client leaves 3 stars or fewer, so you can call them the same day.", steps: S([
     { type: "notify_staff", to: "owner", body: "{first_name} rated their {service} with {staff} {rating}/5.\n\n{comment}" },
   ]) },
+  { key: "new_online_booking", group: "team", trigger: "appointment_booked", enabled: true, filters: { onlineOnly: true }, name: "New online booking", description: "Email you and the provider the moment a client books online. Appointments the desk enters are skipped.", steps: S([
+    { type: "notify_staff", to: "owner", body: "{first_name} just booked {service} with {staff} for {when} through online booking." },
+    { type: "notify_staff", to: "provider", body: "{first_name} just booked {service} with you for {when} through online booking." },
+  ]) },
 ];
 
 const withIds = (steps: StepDef[]): WorkflowStep[] => steps.map((s) => ({ ...s, id: newStepId() }) as WorkflowStep);
@@ -250,7 +254,7 @@ export async function appointmentFacts(tx: TenantDb, appointmentId: string): Pro
   const [prior] = appt.clientId
     ? await tx.select({ n: sql<number>`count(*)` }).from(schema.appointments).where(and(eq(schema.appointments.clientId, appt.clientId), ne(schema.appointments.id, appt.id), eq(schema.appointments.kind, "visit"), inArray(schema.appointments.status, ["completed", "checked_in", "confirmed", "booked"])))
     : [{ n: 0 }];
-  return { clientId: appt.clientId, locationId: appt.locationId, staffId: use[0]?.staffId ?? null, serviceIds, categoryIds, clientTags: client?.tags ?? [], firstVisit: Number(prior?.n ?? 0) === 0 };
+  return { clientId: appt.clientId, locationId: appt.locationId, staffId: use[0]?.staffId ?? null, serviceIds, categoryIds, clientTags: client?.tags ?? [], firstVisit: Number(prior?.n ?? 0) === 0, source: appt.source };
 }
 
 /**
@@ -259,9 +263,9 @@ export async function appointmentFacts(tx: TenantDb, appointmentId: string): Pro
  * caller's response via the returned promise, or on the next cron run regardless.
  */
 export async function triggerWorkflows(business: Business, trigger: WorkflowTrigger, input: TriggerInput): Promise<number> {
-  // A business that has never opened Automations still gets the defaults (e.g. rating requests).
-  const [cnt] = await withTenant(business.id, (tx) => tx.select({ n: sql<number>`count(*)` }).from(schema.workflows));
-  if (Number(cnt?.n ?? 0) === 0) await ensureTemplates(business);
+  // A business that has never opened Automations still gets the defaults (e.g. rating requests), and one that
+  // has gets any template added since (it is a no-op once they all exist).
+  await ensureTemplates(business);
   const ids = await withTenant(business.id, async (tx) => {
     const flows = await tx.select().from(schema.workflows).where(and(eq(schema.workflows.trigger, trigger), eq(schema.workflows.enabled, true)));
     if (!flows.length) return [];

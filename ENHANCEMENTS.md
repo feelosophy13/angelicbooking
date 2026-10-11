@@ -360,6 +360,8 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - ✅ **P1 Import staging in `os.tmpdir()`** [bug] — `settings/import/actions.ts:15-16,41`; stage in `importJobs`.
 - ✅ **P2 Breaks and split shifts; time-off date ranges** [gap] — one block per day (`staff/[staffId]/hours`,
   `staff/actions.ts:104-139`); one date per submission (`time-off`, `staff/actions.ts:159-190`).
+- ✅ **P2 Online bookings are invisible to the team** [gap] — no alert when a client books online and no list of
+  bookings; now a "New online booking" automation and Schedule → Appointments.
 - ✅ **P2 Findability of schedule pages** [ux] — Schedule → Staff hours overview; Marketing ↔
   Automations/Loyalty cross-links; Payroll/Sales/Reviews ↔ Reports with filters; ⌘K indexes every sidebar and
   Settings page from `lib/nav.ts`.
