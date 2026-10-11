@@ -30,8 +30,9 @@ export default async function ReportsPage({
   const tz = business.timezone;
   const today = instantToISODate(new Date(), tz);
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
-  const from = isDate(sp.from) ? sp.from! : today;
-  const to = isDate(sp.to) ? sp.to! : from;
+  // Month to date by default: "today" is often empty (closed day, early morning) and looks like missing data.
+  const from = isDate(sp.from) ? sp.from! : `${today.slice(0, 8)}01`;
+  const to = isDate(sp.to) ? sp.to! : isDate(sp.from) ? from : today;
   const days = Math.max(1, Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1);
   const prevFrom = shiftISODate(from, -days);
   const prevTo = shiftISODate(from, -1);
