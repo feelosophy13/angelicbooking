@@ -15,8 +15,14 @@ export async function submitReviewAction(_prev: ReviewState, formData: FormData)
   return { ok: true, rating: d.data.rating };
 }
 
-export async function optOutOfReviews(slug: string, token: string) {
-  const r = await getReviewByToken(slug, token);
-  if (!r?.client) return;
+export type OptOutState = { ok?: boolean; error?: string } | undefined;
+
+/** Applied only on an explicit confirm (POST): mail scanners and link previews fetch the GET. */
+export async function optOutOfReviewsAction(_prev: OptOutState, formData: FormData): Promise<OptOutState> {
+  const d = z.object({ slug: z.string(), token: z.string().min(10) }).safeParse(Object.fromEntries(formData));
+  if (!d.success) return { error: "This link is no longer valid." };
+  const r = await getReviewByToken(d.data.slug, d.data.token);
+  if (!r?.client) return { error: "This link is no longer valid." };
   await withTenant(r.business.id, (tx) => tx.update(schema.clients).set({ reviewOptOut: true }).where(eq(schema.clients.id, r.client!.id)));
+  return { ok: true };
 }

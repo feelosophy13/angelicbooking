@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
@@ -5,6 +6,8 @@ import { getManagedAppointment } from "@/server/public-booking";
 import { formatTime } from "@/lib/utils";
 import { addressOf } from "@/server/locations";
 import { CalendarPlus } from "lucide-react";
+
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default async function ConfirmedPage({ params }: { params: Promise<{ slug: string; token: string }> }) {
   const { slug, token } = await params;

@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { instantToISODate } from "@angelic/core";
 import { getManagedAppointment, getPublicSlots } from "@/server/public-booking";
 import { formatDateLong, formatMoney, formatTime, shiftISODate } from "@/lib/utils";
 import { CancelForm, RescheduleForm } from "./forms";
+
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default async function ManagePage({ params, searchParams }: { params: Promise<{ slug: string; token: string }>; searchParams: Promise<{ date?: string; moved?: string; cancelled?: string }> }) {
   const { slug, token } = await params;

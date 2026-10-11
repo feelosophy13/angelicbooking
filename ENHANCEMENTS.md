@@ -26,7 +26,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
    availability rule, quick actions are hover-only (unreachable on the front-desk iPad), touch drag hijacks scrolling.
 6. **P1 Auth/permissions** — open redirect via `?next=`, system-role edits never sync to Better Auth org roles,
    permission errors render as "Something went wrong" in production, client pages don't enforce `clients.read`.
-7. **P1 Public booking dead ends** — waitlist is unreachable (empty days aren't clickable), provider step lists staff
+7. ✅ **P1 Public booking dead ends** — waitlist is unreachable (empty days aren't clickable), provider step lists staff
    who can't do the service, promo codes are validated only after the deposit is charged, month availability runs
    hundreds of queries per render.
 8. **P1 Import staging on `os.tmpdir()`** breaks on Render (ephemeral disk, restarts).
@@ -302,19 +302,19 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 
 ## 12. Public booking (`app/book/[slug]/*`, `server/public-booking.ts`)
 
-- **P1 Waitlist unreachable** [bug] — days without openings are plain divs (`page.tsx:208-219`); make them tappable
+- ✅ **P1 Waitlist unreachable** [bug] — days without openings are plain divs (`page.tsx:208-219`); make them tappable
   and add "No times? Join the waitlist".
-- **P1 Provider step lists staff who can't do the service** [bug] — uses `staff`, not `staffForService`
+- ✅ **P1 Provider step lists staff who can't do the service** [bug] — uses `staff`, not `staffForService`
   (`public-booking.ts:36-40`); picking one yields an empty calendar.
-- **P1 Month availability N+1** [perf] — `getAvailableDates` (`public-booking.ts:85-93`) calls `getPublicSlots` per
+- ✅ **P1 Month availability N+1** [perf] — `getAvailableDates` (`public-booking.ts:85-93`) calls `getPublicSlots` per
   day, ~6 queries per staff per day (`availability.ts:49-75`); batch per month and skip days past `maxDate`.
-- **P1 Validate promo before charging the deposit** [bug] — `startOnlinePaymentAction` never checks it;
+- ✅ **P1 Validate promo before charging the deposit** [bug] — `startOnlinePaymentAction` never checks it;
   `createOnlineBooking` validates post-payment and refunds (`public-booking.ts:162-170`).
-- **P1 `noindex` on token pages** [bug] — layout `robots.index` covers confirmed/manage/review/unsubscribe/order
+- ✅ **P1 `noindex` on token pages** [bug] — layout `robots.index` covers confirmed/manage/review/unsubscribe/order
   (`layout.tsx:22`).
-- **P1 Order page by sale id with no secret; unpaid orders say "received"; gift code shown** [bug] —
+- ✅ **P1 Order page by sale id with no secret; unpaid orders say "received"; gift code shown** [bug] —
   `order/[saleId]/page.tsx:11-12`; gate on paid and add a token.
-- **P1 Review opt-out and unsubscribe mutate on GET** [bug] — `review/page.tsx:11-13`, `unsubscribe/page.tsx:9`;
+- ✅ **P1 Review opt-out and unsubscribe mutate on GET** [bug] — `review/page.tsx:11-13`, `unsubscribe/page.tsx:9`;
   link scanners will opt clients out. Confirm button + POST.
 - **P2 Multi-service booking and "next available"** [gap][ux] — `actions.ts:26` single service.
 - **P2 Show forms, address/maps link, deposit and concrete cancel deadline on confirmed/manage pages** [gap] —
@@ -334,7 +334,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - **P2 Service photos, "from" pricing, add-ons; provider photo/title/bio** [gap].
 - **P2 Category chips/search on long menus; description on its own line** [ux] — `page.tsx:75-92,84`.
 - **P2 Order summary at the card step; "Already a client? Sign in"** [ux] — `payment-form.tsx:90-100`.
-- **P3 `assertSlotOpen` uses business tz not location tz** [bug] — `public-booking.ts:147`.
+- ✅ **P3 `assertSlotOpen` uses business tz not location tz** [bug] — `public-booking.ts:147`.
 - **P3 `rescheduleOnline` multi-item guard uses `&&`** [bug] — `public-booking.ts:254`.
 - **P3 Cancel copy "up to 0 hours before"** (`forms.tsx:34`); completed visits show the cutoff warning
   (`manage page:39-42`); cancel confirm doesn't restate deposit outcome; orphaned PaymentIntent on Edit

@@ -86,6 +86,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       remove-last-service and series cancel plus a sweep before every delivery run, promo dates in the business
       timezone, Better Auth invite/role/remove hooks enforce our `members.manage`, permission errors survive
       production builds, `clients.read` on client pages, import staging stored in the database.
+- [x] Landed 2026-10-10 (batch 2, public booking): full days on the calendar are tappable to join the waitlist (closed
+      days excluded), the provider step only lists staff who perform the service, month availability runs one query
+      set per provider instead of per day, promo codes are validated before a deposit is charged, token pages
+      (confirmed/manage/forms/review/unsubscribe/order/account) are `noindex`, the order page needs a signed key and a
+      paid sale, review opt-out and unsubscribe confirm on POST instead of mutating on GET, slot re-validation uses the
+      location's clock.
 
 - [x] Membership auto-billing (recurring charges on the business's Connect account). Done 2026-10-10 (client page → Auto-renew with saved card; Connect webhook `invoice.paid` / `invoice.payment_failed` / `customer.subscription.deleted`). Untested against Stripe until keys exist.
 - [ ] Tap to Pay / card reader support.

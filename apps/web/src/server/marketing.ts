@@ -29,11 +29,18 @@ export function unsubscribeUrl(business: Business, clientId: string): string {
   return appUrl(`/book/${business.slug}/unsubscribe/${clientId}.${unsubSig(business.id, clientId)}`);
 }
 
-export async function applyUnsubscribe(business: Business, token: string): Promise<boolean> {
+/** The client id an unsubscribe token points at, or null if the signature is wrong. Does not change anything. */
+export function verifyUnsubscribe(business: Business, token: string): string | null {
   const [clientId, sig] = token.split(".");
-  if (!clientId || !sig) return false;
+  if (!clientId || !sig) return null;
   const expected = unsubSig(business.id, clientId);
-  if (expected.length !== sig.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return false;
+  if (expected.length !== sig.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return null;
+  return clientId;
+}
+
+export async function applyUnsubscribe(business: Business, token: string): Promise<boolean> {
+  const clientId = verifyUnsubscribe(business, token);
+  if (!clientId) return false;
   await withTenant(business.id, (tx) => tx.update(schema.clients).set({ emailOptIn: false }).where(eq(schema.clients.id, clientId)));
   return true;
 }

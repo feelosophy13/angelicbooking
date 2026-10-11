@@ -149,7 +149,7 @@ function PayStep({ slug, saleId, brand, total }: { slug: string; saleId: string;
       setBusy(false);
       return;
     }
-    router.push(`/book/${slug}/order/${saleId}`);
+    router.push(`/book/${slug}/order/${saleId}?k=${encodeURIComponent(out.key ?? "")}`);
   }
   return (
     <form onSubmit={submit} className="space-y-3">

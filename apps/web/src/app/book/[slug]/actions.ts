@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { normalizePhone } from "@angelic/core";
 import { BookingError } from "@/server/booking";
+import { PromoError, validatePromo } from "@/server/promos";
 import { assertSlotOpen, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
 import { appointmentForIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
 import { getSession } from "@/server/classes";
@@ -76,6 +77,15 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
   const req = onlinePaymentRequirement(business, service, pay);
   if (req.mode === "none") return { error: "No payment is needed for this booking. Please reload the page." };
   const startAt = new Date(d.startAt);
+  // A bad promo code must fail here, before a deposit is taken, not after (charge-then-refund).
+  if (d.promoCode) {
+    try {
+      await withTenant(business.id, (tx) => validatePromo(tx, d.promoCode!, { serviceIds: [d.serviceId] }));
+    } catch (e) {
+      if (e instanceof PromoError) return { error: e.message };
+      throw e;
+    }
+  }
   try {
     if (d.classSessionId) await assertSeatOpen(business.id, d.classSessionId, d.staffId, startAt);
     else await assertSlotOpen(business, d.serviceId, d.staffId, startAt, new Date(), d.locationId);

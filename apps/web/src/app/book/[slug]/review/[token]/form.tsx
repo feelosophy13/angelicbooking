@@ -2,7 +2,7 @@
 import { useActionState, useState } from "react";
 import { Notice, Textarea } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
-import { submitReviewAction, type ReviewState } from "./actions";
+import { optOutOfReviewsAction, submitReviewAction, type OptOutState, type ReviewState } from "./actions";
 
 export function ReviewForm({ slug, token, initialRating, googleReviewUrl, businessName }: { slug: string; token: string; initialRating: number | null; googleReviewUrl: string | null; businessName: string }) {
   const [state, action] = useActionState<ReviewState, FormData>(submitReviewAction, undefined);
@@ -36,6 +36,20 @@ export function ReviewForm({ slug, token, initialRating, googleReviewUrl, busine
       <Textarea name="comment" rows={3} placeholder={rating && rating <= 3 ? "What could we do better?" : "Anything you'd like to add? (optional)"} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Sending…" disabled={!rating}>Send</SubmitButton>
+    </form>
+  );
+}
+
+export function ReviewOptOutForm({ slug, token }: { slug: string; token: string }) {
+  const [state, action] = useActionState<OptOutState, FormData>(optOutOfReviewsAction, undefined);
+  if (state?.ok) return <p className="text-center text-sm text-stone-700">Got it. We won&apos;t ask you for reviews again.</p>;
+  return (
+    <form action={action} className="space-y-3 text-center">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="token" value={token} />
+      <p className="text-sm text-stone-700">Stop receiving review requests after your visits?</p>
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+      <SubmitButton variant="secondary" pendingText="Saving…">Yes, stop asking me</SubmitButton>
     </form>
   );
 }

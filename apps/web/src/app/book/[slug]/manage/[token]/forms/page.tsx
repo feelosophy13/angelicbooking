@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPublicBusiness } from "@/server/public-booking";
 import { formsForManageToken } from "@/server/forms";
 import { PublicForm } from "./form";
+
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default async function PublicFormsPage({ params }: { params: Promise<{ slug: string; token: string }> }) {
   const { slug, token } = await params;

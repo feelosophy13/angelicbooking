@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { normalizePhone } from "@angelic/core";
 import { getPublicBusiness } from "@/server/public-booking";
-import { finishOrder, startOrder, StoreError } from "@/server/store";
+import { finishOrder, orderKey, startOrder, StoreError } from "@/server/store";
 import { BookingError } from "@/server/booking";
 
 const buyer = z.object({
@@ -42,12 +42,12 @@ export async function startOrderAction(input: {
   }
 }
 
-export async function finishOrderAction(slug: string, saleId: string, paymentIntentId: string): Promise<{ error?: string; ok?: boolean }> {
+export async function finishOrderAction(slug: string, saleId: string, paymentIntentId: string): Promise<{ error?: string; ok?: boolean; key?: string }> {
   const business = await getPublicBusiness(slug);
   if (!business) return { error: "Not available." };
   try {
     await finishOrder(business, saleId, paymentIntentId);
-    return { ok: true };
+    return { ok: true, key: orderKey(business.id, saleId) };
   } catch (e) {
     if (e instanceof StoreError) return { error: e.message };
     throw e;

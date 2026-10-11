@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { instantToISODate } from "@angelic/core";
-import { getAvailableDates, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots } from "@/server/public-booking";
+import { instantToISODate, weekdayOf } from "@angelic/core";
+import { getAvailableDates, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots, publicProvidersFor } from "@/server/public-booking";
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
 import { duration } from "@/lib/format";
 import { BookingForm, WaitlistForm } from "./forms";
@@ -53,7 +53,10 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const tz = tzFor(business, location);
   const today = instantToISODate(new Date(), tz);
   const service = services.find((s) => s.id === sp.service) ?? null;
-  const staffChoice = sp.staff === "any" || staff.some((s) => s.id === sp.staff) ? sp.staff! : null;
+  // Only providers who perform this service (and are bookable online here) are offered.
+  const providerIds = service ? new Set((await publicProvidersFor(business, service.id, locId)).map((s) => s.id)) : null;
+  const providers = providerIds ? staff.filter((s) => providerIds.has(s.id)) : staff;
+  const staffChoice = sp.staff === "any" || providers.some((s) => s.id === sp.staff) ? sp.staff! : null;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : null;
   const q = (extra: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
@@ -167,7 +170,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         {crumb}
         <ul className="divide-y divide-stone-200 overflow-hidden rounded-xl border border-stone-200 bg-white">
           <li><Link href={q({ staff: "any" })} className="block px-4 py-3 font-medium hover:bg-stone-50">Any available provider</Link></li>
-          {staff.map((s) => (
+          {providers.map((s) => (
             <li key={s.id}><Link href={q({ staff: s.id })} className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50"><span className="h-3 w-3 rounded-full" style={{ background: s.color }} />{s.displayName}</Link></li>
           ))}
         </ul>
@@ -181,7 +184,12 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const daysInMonth = new Date(Date.UTC(Number(monthStart.slice(0, 4)), Number(monthStart.slice(5, 7)), 0)).getUTCDate();
     const firstDow = new Date(monthStart + "T00:00:00Z").getUTCDay();
     const maxDate = shiftISODate(today, business.maxAdvanceDays);
-    const available = new Set(await getAvailableDates(business, service.id, staffChoice as "any" | string, monthStart < today ? today : monthStart, daysInMonth, locId));
+    // Only the part of the month that can be booked is checked for openings.
+    const rangeStart = monthStart < today ? today : monthStart;
+    const monthEnd = shiftISODate(monthStart, daysInMonth - 1);
+    const rangeEnd = monthEnd < maxDate ? monthEnd : maxDate;
+    const rangeDays = rangeEnd < rangeStart ? 0 : Math.round((Date.parse(`${rangeEnd}T00:00:00Z`) - Date.parse(`${rangeStart}T00:00:00Z`)) / 86_400_000) + 1;
+    const available = new Set(await getAvailableDates(business, service.id, staffChoice as "any" | string, rangeStart, rangeDays, locId));
     const slots = date ? await getPublicSlots(business, service.id, staffChoice as "any" | string, date, new Date(), locId) : [];
     const prevMonth = shiftISODate(monthStart, -1).slice(0, 7);
     const nextMonth = shiftISODate(monthStart, daysInMonth).slice(0, 7);
@@ -202,17 +210,29 @@ export default async function PublicBookingPage({ params, searchParams }: { para
               {Array.from({ length: firstDow }).map((_, i) => <div key={`e${i}`} />)}
               {Array.from({ length: daysInMonth }, (_, i) => {
                 const d = shiftISODate(monthStart, i);
-                const ok = available.has(d) && d <= maxDate;
-                return ok ? (
-                  <Link key={d} href={q({ date: d, month: sp.month })} className={cn("rounded-lg py-2 text-center text-sm font-medium", d === date ? "text-white" : "")} style={d === date ? { background: "var(--brand)" } : { background: "var(--brand-tint)", color: "var(--brand-dark)" }}>{i + 1}</Link>
-                ) : (
-                  <div key={d} className="py-2 text-center text-sm text-stone-300">{i + 1}</div>
-                );
+                // Days the location is closed are neither bookable nor waitlist-able.
+                const closed = location?.hours ? location.hours[String(weekdayOf(d))] === null : false;
+                const bookable = d >= today && d <= maxDate && !closed;
+                const ok = available.has(d) && bookable;
+                const label = formatDateLong(d);
+                if (ok) {
+                  return (
+                    <Link key={d} href={q({ date: d, month: sp.month })} aria-label={`${label}: openings available`} aria-current={d === date ? "date" : undefined} className={cn("rounded-lg py-2 text-center text-sm font-medium", d === date ? "text-white" : "")} style={d === date ? { background: "var(--brand)" } : { background: "var(--brand-tint)", color: "var(--brand-dark)" }}>{i + 1}</Link>
+                  );
+                }
+                // A full day can still be tapped to join the waitlist for it.
+                if (bookable) {
+                  return (
+                    <Link key={d} href={q({ date: d, month: sp.month })} aria-label={`${label}: no openings, join the waitlist`} aria-current={d === date ? "date" : undefined} className={cn("rounded-lg border border-dashed py-2 text-center text-sm", d === date ? "border-stone-500 text-stone-800" : "border-stone-200 text-stone-400 hover:border-stone-400")}>{i + 1}</Link>
+                  );
+                }
+                return <div key={d} aria-hidden className="py-2 text-center text-sm text-stone-300">{i + 1}</div>;
               })}
             </div>
+            <p className="mt-2 text-xs text-stone-500">Highlighted days have openings. Tap a full day to join its waitlist.</p>
           </div>
           <div>
-            {!date ? <p className="text-sm text-stone-500">Select a highlighted day.</p> : slots.length === 0 ? (
+            {!date ? <p className="text-sm text-stone-500">Select a day.</p> : slots.length === 0 ? (
               <div className="space-y-3">
                 <p className="text-sm text-stone-600">No openings on {formatDateLong(date)}.</p>
                 <WaitlistForm slug={slug} serviceId={service.id} staffId={staffChoice} date={date} locationId={locId} />

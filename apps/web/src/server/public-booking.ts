@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { canClientCancel, instantToISODate, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
-import { getStaffAvailability, staffForService, timingFor } from "./availability";
+import { getStaffAvailability, getStaffAvailabilityForDates, staffForService, timingFor } from "./availability";
 import { bookAppointment, BookingError, rescheduleService, setAppointmentStatus } from "./booking";
 import { refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
 import { findReferrer } from "./loyalty";
@@ -52,14 +52,24 @@ export async function getPublicMenu(businessId: string, locationId?: string | nu
  * Slots for a service on a date. staffId "any" merges every eligible provider;
  * each slot carries the staff member who would take it (first available by sort order).
  */
-export async function getPublicSlots(business: PublicBusiness, serviceId: string, staffId: string | "any", date: string, now = new Date(), locationId?: string | null) {
-  const service = await withTenant(business.id, async (tx) => {
+/** The service if it is bookable online (and offered at the location), else null. */
+async function publicService(business: PublicBusiness, serviceId: string, locationId?: string | null) {
+  return withTenant(business.id, async (tx) => {
     const svc = await tx.query.services.findFirst({ where: and(eq(schema.services.id, serviceId), eq(schema.services.active, true), eq(schema.services.bookableOnline, true)) });
     return svc && (await serviceOfferedAt(tx, svc.id, locationId)) ? svc : null;
   });
+}
+
+/** Providers a client may pick for a service online (perform it, bookable online, work at the location). */
+export async function publicProvidersFor(business: PublicBusiness, serviceId: string, locationId?: string | null) {
+  return (await staffForService(business.id, serviceId, locationId)).filter((s) => s.bookableOnline);
+}
+
+export async function getPublicSlots(business: PublicBusiness, serviceId: string, staffId: string | "any", date: string, now = new Date(), locationId?: string | null) {
+  const service = await publicService(business, serviceId, locationId);
   if (!service) return [];
   const window = onlineBookingWindow(now, business);
-  const eligible = (await staffForService(business.id, serviceId, locationId)).filter((s) => s.bookableOnline);
+  const eligible = await publicProvidersFor(business, serviceId, locationId);
   const chosen = staffId === "any" ? eligible : eligible.filter((s) => s.id === staffId);
   const out = new Map<number, { at: Date; staffId: string; staffName: string }>();
   for (const s of chosen) {
@@ -81,15 +91,36 @@ export async function getPublicSlots(business: PublicBusiness, serviceId: string
   return [...out.values()].sort((a, b) => a.at.getTime() - b.at.getTime());
 }
 
-/** Which dates in [from, from+days) have at least one opening. Cheap enough for a month. */
+/**
+ * Which dates in [from, from+days) have at least one opening. One set of
+ * queries per provider for the whole range (not per day), so a month costs
+ * about the same as a single day did.
+ */
 export async function getAvailableDates(business: PublicBusiness, serviceId: string, staffId: string | "any", from: string, days: number, locationId?: string | null) {
-  const dates: string[] = [];
-  for (let i = 0; i < days; i++) {
-    const d = shiftISODate(from, i);
-    const slots = await getPublicSlots(business, serviceId, staffId, d, new Date(), locationId);
-    if (slots.length) dates.push(d);
+  if (days <= 0) return [];
+  const service = await publicService(business, serviceId, locationId);
+  if (!service) return [];
+  const window = onlineBookingWindow(new Date(), business);
+  const eligible = await publicProvidersFor(business, serviceId, locationId);
+  const chosen = staffId === "any" ? eligible : eligible.filter((s) => s.id === staffId);
+  const dates = Array.from({ length: days }, (_, i) => shiftISODate(from, i));
+  const open = new Set<string>();
+  for (const s of chosen) {
+    const remaining = dates.filter((d) => !open.has(d));
+    if (!remaining.length) break;
+    const byDate = await getStaffAvailabilityForDates({
+      businessId: business.id,
+      timeZone: business.timezone,
+      slotIntervalMin: business.slotIntervalMin,
+      staffId: s.id,
+      dates: remaining,
+      service: timingFor(service),
+      notBefore: window.notBefore,
+      locationId,
+    });
+    for (const [d, slots] of byDate) if (slots.some((at) => at <= window.notAfter)) open.add(d);
   }
-  return dates;
+  return dates.filter((d) => open.has(d));
 }
 
 export interface OnlineBookingInput {
@@ -144,7 +175,9 @@ export async function findOrCreateClient(businessId: string, input: OnlineBookin
 export async function assertSlotOpen(business: PublicBusiness, serviceId: string, staffId: string, startAt: Date, now = new Date(), locationId?: string | null) {
   if (!isWithinBookingWindow(startAt, now, business)) throw new BookingError("That time can no longer be booked online.");
   // Re-validate the slot against live availability so stale pages can't book into a taken time.
-  const slots = await getPublicSlots(business, serviceId, staffId, isoDateIn(startAt, business.timezone), now, locationId);
+  // The date is taken in the location's clock, the same way the page listed the slot.
+  const loc = locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) })) : null;
+  const slots = await getPublicSlots(business, serviceId, staffId, isoDateIn(startAt, tzFor(business, loc ?? null)), now, locationId);
   if (!slots.some((s) => s.at.getTime() === startAt.getTime())) throw new BookingError("That time was just taken. Please pick another.");
 }
 

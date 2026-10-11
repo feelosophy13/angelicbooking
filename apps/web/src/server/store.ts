@@ -5,6 +5,7 @@
  * account; closing it issues the gift card and emails the buyer.
  */
 import { after } from "next/server";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
@@ -127,6 +128,17 @@ export async function finishOrder(business: PublicBusiness, saleId: string, paym
   await markCardPaymentSucceeded({ businessId: business.id, paymentIntentId: pi.id, chargeId: charge?.id ?? null, card: { brand: charge?.payment_method_details?.card?.brand ?? null, last4: charge?.payment_method_details?.card?.last4 ?? null }, taxRateBps: business.taxRateBps });
   after(() => sendOrderEmails(business, saleId).catch((e) => console.error("[store] order emails failed", saleId, (e as Error).message)));
   return getOrder(business.id, saleId);
+}
+
+/** Unguessable key that lets the buyer (and only the buyer) open the order page; it is never emailed or stored. */
+export function orderKey(businessId: string, saleId: string): string {
+  return createHmac("sha256", process.env.BETTER_AUTH_SECRET ?? "dev").update(`order:${businessId}:${saleId}`).digest("base64url").slice(0, 32);
+}
+
+export function verifyOrderKey(businessId: string, saleId: string, key: string | undefined): boolean {
+  if (!key) return false;
+  const expected = orderKey(businessId, saleId);
+  return expected.length === key.length && timingSafeEqual(Buffer.from(expected), Buffer.from(key));
 }
 
 export async function getOrder(businessId: string, saleId: string) {

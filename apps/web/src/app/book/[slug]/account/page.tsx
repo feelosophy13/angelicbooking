@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CalendarPlus, CreditCard, LogOut } from "lucide-react";
@@ -6,6 +7,8 @@ import { clientAccountData, currentClient } from "@/server/client-auth";
 import { formatMoney, formatTime } from "@/lib/utils";
 import { ProfileForm, SignInForm } from "./forms";
 import { removeCard, signOutClient } from "./actions";
+
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default async function AccountPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;

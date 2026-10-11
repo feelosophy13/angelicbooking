@@ -1,7 +1,9 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getReviewByToken } from "@/server/reviews";
-import { ReviewForm } from "./form";
-import { optOutOfReviews } from "./actions";
+import { ReviewForm, ReviewOptOutForm } from "./form";
+
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default async function ReviewPage({ params, searchParams }: { params: Promise<{ slug: string; token: string }>; searchParams: Promise<{ rating?: string; optout?: string }> }) {
   const { slug, token } = await params;
@@ -9,8 +11,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
   const r = await getReviewByToken(slug, token);
   if (!r) notFound();
   if (sp.optout === "1") {
-    await optOutOfReviews(slug, token);
-    return <div className="rounded-xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-700">Got it. We won&apos;t ask you for reviews again.</div>;
+    return <div className="rounded-xl border border-stone-200 bg-white p-6"><ReviewOptOutForm slug={slug} token={token} /></div>;
   }
   const initial = /^[1-5]$/.test(sp.rating ?? "") ? Number(sp.rating) : null;
   return (
