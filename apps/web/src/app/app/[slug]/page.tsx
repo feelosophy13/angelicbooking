@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { instantToISODate, weekdayOf } from "@angelic/core";
 
 export const metadata: Metadata = { title: "Calendar" };
@@ -108,9 +108,9 @@ export default async function CalendarPage({
       columnKey: view === "day" ? i.staffId : instantToISODate(i.startAt, tz),
       startMin: minuteOf(i.startAt),
       endMin: minuteOf(i.endAt) <= minuteOf(i.startAt) ? 24 * 60 : minuteOf(i.endAt),
-      title: i.clientName ?? "Walk-in",
-      subtitle: (i.classSessionId ? "Class" : i.serviceName.replace(" (finish)", "")) + (missingForms.has(i.appointmentId) ? " · forms due" : ""),
-      status: i.status,
+      title: i.kind === "block" ? i.serviceName.replace(/^Blocked( · )?/, "") || "Blocked" : (i.clientName ?? "Walk-in"),
+      subtitle: i.kind === "block" ? "Blocked time" : (i.classSessionId ? "Class" : i.serviceName.replace(" (finish)", "")) + (missingForms.has(i.appointmentId) ? " · forms due" : ""),
+      status: i.kind === "block" && i.status !== "cancelled" ? "block" : i.status,
       color: staffById.get(i.staffId)?.color ?? "#6366f1",
       href: i.classSessionId ? `/app/${slug}/classes/${i.classSessionId}` : `/app/${slug}/appointments/${i.appointmentId}`,
       groupKey: `${i.appointmentId}:${i.serviceName.replace(" (finish)", "")}:${i.staffId}:${instantToISODate(i.startAt, tz)}`,
@@ -172,7 +172,10 @@ export default async function CalendarPage({
           <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label="Next"><ChevronRight className="h-4 w-4" /></LinkButton>
         </div>
         {can(permissions, "appointments.write.any") ? (
-          <LinkButton href={`/app/${slug}/appointments/new?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}`} variant="primary" size="sm"><Plus className="h-4 w-4" /> <span className="hidden sm:inline">New appointment</span><span className="sm:hidden">New</span></LinkButton>
+          <>
+            <LinkButton href={`/app/${slug}/appointments/block?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}`} variant="secondary" size="sm"><Ban className="h-4 w-4" /> <span className="hidden sm:inline">Block time</span></LinkButton>
+            <LinkButton href={`/app/${slug}/appointments/new?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}`} variant="primary" size="sm"><Plus className="h-4 w-4" /> <span className="hidden sm:inline">New appointment</span><span className="sm:hidden">New</span></LinkButton>
+          </>
         ) : null}
       </PageHeader>
 
@@ -182,7 +185,7 @@ export default async function CalendarPage({
           date={date}
           isToday={date === today}
           stats={(() => {
-            const live = items.filter((i) => i.status !== "cancelled");
+            const live = items.filter((i) => i.status !== "cancelled" && i.kind !== "block");
             const byAppt = new Map<string, (typeof live)[number]>();
             for (const i of live) if (!byAppt.has(i.appointmentId)) byAppt.set(i.appointmentId, i);
             const appts = [...byAppt.values()];

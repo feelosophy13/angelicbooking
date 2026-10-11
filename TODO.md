@@ -118,6 +118,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (slots are computed for the whole chain); a Sales page (Money → Sales: open tickets, today, all, search by
       number or client) with "Start sale" for retail/gift-card tickets without an appointment; an open walk-in ticket
       can attach or detach a client; Reports keeps its own nav entry.
+- [x] Landed 2026-10-10 (batch 7; migration 0048): Block time from the calendar (lunch, late start, "do not book")
+      as `appointments.kind = block` with a hatched card, its own create page and a Remove button; checkout prompts
+      for outstanding required forms ("Complete forms now" / "Check out anyway"); services can be added to an open
+      ticket at the desk and any line's price, quantity or staff credit edited; a voided ticket no longer blocks
+      checking the visit out again. All P1 items in `ENHANCEMENTS.md` are now ticked.
 
 - [x] Membership auto-billing (recurring charges on the business's Connect account). Done 2026-10-10 (client page → Auto-renew with saved card; Connect webhook `invoice.paid` / `invoice.payment_failed` / `customer.subscription.deleted`). Untested against Stripe until keys exist.
 - [ ] Tap to Pay / card reader support.

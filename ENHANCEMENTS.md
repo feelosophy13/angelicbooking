@@ -18,18 +18,18 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
    cards/packages or restore gift-card balances; deleting a credit-covered line loses the package session; expired
    packages/memberships can still be redeemed; two same-amount gift cards on one sale issue one; percent discounts
    freeze to dollars; promos discount ineligible lines; package-covered services pay $0 commission.
-3. **P1 Reminders after cancellation** — removing the last service and cancelling a series skip `notifyAppointment`,
+3. ✅ **P1 Reminders after cancellation** — removing the last service and cancelling a series skip `notifyAppointment`,
    and `deliverDue` never re-checks appointment status, so clients get texts for cancelled visits.
 4. ✅ **P1 Front-desk booking** — single service per booking, a 500-row client `<select>` with no search or inline
    create, no walk-in "now"/custom time, no Rebook button, no block time from the calendar.
 5. ✅ **P1 Calendar grid** — no working hours/time-off shading, concurrent cards fully overlap, drag bypasses every
    availability rule, quick actions are hover-only (unreachable on the front-desk iPad), touch drag hijacks scrolling.
-6. **P1 Auth/permissions** — open redirect via `?next=`, system-role edits never sync to Better Auth org roles,
+6. ✅ **P1 Auth/permissions** — open redirect via `?next=`, system-role edits never sync to Better Auth org roles,
    permission errors render as "Something went wrong" in production, client pages don't enforce `clients.read`.
 7. ✅ **P1 Public booking dead ends** — waitlist is unreachable (empty days aren't clickable), provider step lists staff
    who can't do the service, promo codes are validated only after the deposit is charged, month availability runs
    hundreds of queries per render.
-8. **P1 Import staging on `os.tmpdir()`** breaks on Render (ephemeral disk, restarts).
+8. ✅ **P1 Import staging on `os.tmpdir()`** breaks on Render (ephemeral disk, restarts).
 9. ✅ **P2 Findability** — no Sales list page, gift cards capped at 50 with no search, products/memberships/reviews
    unsearchable, ⌘K misses sales, gift cards, products and most settings pages.
 10. **P2 Staff schedules** — one block per day (no lunch/split shift), time off one date at a time.
@@ -57,7 +57,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
   (`calendar-grid.tsx:289`). Show on `focus-within` and always on coarse pointers; add Confirm, Start, No-show.
 - ✅ **P1 Touch drag hijacks scrolling on iPad** [bug] — `onPointerDown` calls `preventDefault()` for every pointer type
   (`calendar-grid.tsx:170-177`); require long-press for `pointerType === "touch"`.
-- **P1 Block time from the calendar** [gap] — only whole-day time off exists (`staff/[staffId]/time-off`); no lunch,
+- ✅ **P1 Block time from the calendar** [gap] — only whole-day time off exists (`staff/[staffId]/time-off`); no lunch,
   late start or "do not book" blocks, and blocks aren't drawn as cards.
 - ✅ **P2 Staff filter leaks into day view** [bug] — `staff=` applies in every view (`page.tsx:58,82`) but the select only
   renders in week view; the Day/Week/Month toggle drops `staff`, `location` and `forms` params (`page.tsx:126-128`).
@@ -179,7 +179,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
   and the server then rejects it as required. Treat `undefined` as `false`; add a test for `equals: "false"`.
 - ✅ **P1 Blank signatures stored** [bug] — `pointerleave` sets `dataUrl` even with no strokes
   (`components/form-fill.tsx:142-146,163`); `storeSignaturePng` only rejects <200 bytes (`lib/files.ts:49-56`).
-- **P1 Enforce required forms** [gap] — `appointmentsMissingForms` only badges; prompt at check-in and `startCheckout`
+- ✅ **P1 Enforce required forms** [gap] — `appointmentsMissingForms` only badges; prompt at check-in and `startCheckout`
   ("2 forms outstanding: complete here / skip"); online booking never asks.
 - **P2 Public/blank form link** [gap] — forms exist only behind an appointment token or the staff fill page.
 - **P2 Chained conditions diverge client/server** [bug] — hidden driver keeps stale state (`form-fill.tsx:26-36`,
@@ -238,7 +238,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - ✅ **P1 Discount and promo math** [bug] — percent discounts stored as cents (`sales.ts:222-224`); promo can't be
   removed and is still counted (`sales.ts:304`); service-restricted promo discounts the whole ticket
   (`packages/core/src/pricing.ts:39-45`); discounts apply to gift card/package/membership lines (`offers.ts:81-83`).
-- **P1 Add or edit service lines on an open ticket** [gap] — price, qty, staff; upsells today go back to the appointment.
+- ✅ **P1 Add or edit service lines on an open ticket** [gap] — price, qty, staff; upsells today go back to the appointment.
 - ✅ **P2 `addOffer` errors render the Next error page** [bug] — plain form action with no inline notice.
 - **P2 Card reader / Tap to Pay** [gap] — in-person card is a keyed-in Payment Element (`card-payment.tsx`);
   `paymentMethod` already has `"terminal"`.

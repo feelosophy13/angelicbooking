@@ -14,7 +14,7 @@ import { getSeriesForAppointment } from "@/server/series";
 import { formsForAppointment } from "@/server/forms";
 import { appUrl } from "@/lib/stripe";
 import { can } from "@angelic/core";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
 import { NoShowFeeForm } from "./no-show-form";
@@ -55,7 +55,7 @@ export default async function AppointmentPage({
   const data = await getAppointmentDetail(business.id, id);
   if (!data) notFound();
   const { appointment, items, client, services, staff } = data;
-  const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: eq(schema.sales.appointmentId, id) }));
+  const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, id), ne(schema.sales.status, "void")), orderBy: desc(schema.sales.createdAt) }));
   const pinnedNotes = client ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
   const series = appointment.seriesId ? await getSeriesForAppointment(business.id, id) : null;
   const forms = await withTenant(business.id, (tx) => formsForAppointment(tx, id));
@@ -115,6 +115,30 @@ export default async function AppointmentPage({
           notBefore: new Date(),
         })
       : [];
+
+  if (appointment.kind === "block") {
+    const blockItem = items[0];
+    return (
+      <>
+        <PageHeader title="Blocked time">
+          <Link href={`/app/${slug}?date=${apptDate}`} className="text-sm text-brand-700 underline">← Calendar</Link>
+        </PageHeader>
+        <Card className="max-w-lg p-4 text-sm">
+          <p className="font-medium">{appointment.notes || "Blocked time"}</p>
+          {blockItem ? <p className="text-stone-600">{staff.find((s) => s.id === blockItem.staffId)?.displayName} · {formatDateLong(apptDate)} · {formatTime(blockItem.startAt, tz)} – {formatTime(blockItem.endAt, tz)}</p> : null}
+          {appointment.status === "cancelled" ? <p className="mt-2 text-stone-500">This block was removed.</p> : can(permissions, "appointments.write.any") ? (
+            <form action={changeStatus} className="mt-3">
+              <input type="hidden" name="slug" value={slug} />
+              <input type="hidden" name="appointmentId" value={id} />
+              <input type="hidden" name="status" value="cancelled" />
+              <Button type="submit" variant="secondary">Remove block</Button>
+            </form>
+          ) : null}
+          <p className="mt-3 text-xs text-stone-500">Drag the block on the calendar to move it.</p>
+        </Card>
+      </>
+    );
+  }
 
   return (
     <>
@@ -250,11 +274,28 @@ export default async function AppointmentPage({
                 {existingSale.status === "open" ? `Continue checkout (#${existingSale.number})` : `View sale #${existingSale.number}`}
               </Link>
             ) : appointment.status !== "cancelled" ? (
-              <form action={startCheckout}>
-                <input type="hidden" name="slug" value={slug} />
-                <input type="hidden" name="appointmentId" value={id} />
-                <Button type="submit" className="w-full">Check out · {formatMoney(total, business.currency)}</Button>
-              </form>
+              forms.some((f) => !f.current) ? (
+                <div className="space-y-2">
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {forms.filter((f) => !f.current).length} required form{forms.filter((f) => !f.current).length === 1 ? "" : "s"} outstanding: {forms.filter((f) => !f.current).map((f) => f.form.name).join(", ")}.
+                  </p>
+                  {client ? (
+                    <Link href={`/app/${slug}/forms/fill/${forms.find((f) => !f.current)!.form.id}?clientId=${client.id}&appointmentId=${appointment.id}`} className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700">Complete forms now</Link>
+                  ) : null}
+                  <form action={startCheckout}>
+                    <input type="hidden" name="slug" value={slug} />
+                    <input type="hidden" name="appointmentId" value={id} />
+                    <input type="hidden" name="skipForms" value="1" />
+                    <Button type="submit" variant="secondary" className="w-full">Check out anyway · {formatMoney(total, business.currency)}</Button>
+                  </form>
+                </div>
+              ) : (
+                <form action={startCheckout}>
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="appointmentId" value={id} />
+                  <Button type="submit" className="w-full">Check out · {formatMoney(total, business.currency)}</Button>
+                </form>
+              )
             ) : (
               <p className="text-sm text-stone-500">Cancelled appointments can&apos;t be checked out.</p>
             )}

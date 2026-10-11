@@ -315,6 +315,43 @@ export async function removeServiceFromAppointment(input: { businessId: string; 
   });
 }
 
+/**
+ * Blocked time: lunch, a late start, "do not book". Stored as an appointment of
+ * kind "block" with one item (no service, no client) so availability, the
+ * calendar and the exclusion constraint treat it like any other busy time.
+ */
+export async function blockTime(input: { businessId: string; staffId: string; startAt: Date; endAt: Date; reason: string | null; actorUserId: string; locationId?: string | null }): Promise<{ appointmentId: string }> {
+  if (input.endAt <= input.startAt) throw new BookingError("The block must end after it starts.");
+  if (input.endAt.getTime() - input.startAt.getTime() > 24 * 3_600_000) throw new BookingError("A block can't be longer than a day.");
+  try {
+    return await withTenant(input.businessId, async (tx) => {
+      const staffRow = await tx.query.staff.findFirst({ where: eq(schema.staff.id, input.staffId) });
+      if (!staffRow || !staffRow.active) throw new BookingError("That staff member is not available.");
+      const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
+      const locationId = await resolveAppointmentLocation(tx, input.staffId, input.startAt, biz?.timezone ?? "America/New_York", input.locationId);
+      const [appt] = await tx
+        .insert(schema.appointments)
+        .values({ businessId: input.businessId, locationId, clientId: null, kind: "block", notes: input.reason, createdByUserId: input.actorUserId, source: "staff" })
+        .returning({ id: schema.appointments.id });
+      await tx.insert(schema.appointmentItems).values({
+        businessId: input.businessId,
+        appointmentId: appt!.id,
+        staffId: input.staffId,
+        serviceId: null,
+        serviceName: input.reason ? `Blocked · ${input.reason}` : "Blocked time",
+        startAt: input.startAt,
+        endAt: input.endAt,
+        priceCents: 0,
+        sortOrder: 0,
+      });
+      await audit(tx, input.businessId, input.actorUserId, "appointment.block", appt!.id, { staffId: input.staffId, startAt: input.startAt, endAt: input.endAt, reason: input.reason });
+      return { appointmentId: appt!.id };
+    });
+  } catch (e) {
+    translate(e);
+  }
+}
+
 export async function setAppointmentStatus(
   businessId: string,
   appointmentId: string,

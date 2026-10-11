@@ -74,7 +74,8 @@ async function recompute(tx: TenantDb, saleId: string, taxRateBps: number, disco
 /** Open (or return the existing) sale for an appointment, seeded with its live services. */
 export async function openSaleForAppointment(input: { businessId: string; appointmentId: string; actorUserId: string; taxRateBps: number; currency: string }) {
   return withTenant(input.businessId, async (tx) => {
-    const existing = await tx.query.sales.findFirst({ where: eq(schema.sales.appointmentId, input.appointmentId) });
+    // A voided ticket is history; the visit can be rung up again.
+    const existing = await tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, input.appointmentId), sql`${schema.sales.status} <> 'void'`), orderBy: desc(schema.sales.createdAt) });
     if (existing) return existing.id;
     const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, input.appointmentId) });
     if (!appt) throw new SaleError("Appointment not found.");
@@ -274,6 +275,45 @@ export async function addProductLine(input: { businessId: string; saleId: string
       sortOrder: 100,
     });
     await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
+  });
+}
+
+/** Ring up a service that wasn't on the appointment (an upsell at the desk), at the service's price unless overridden. */
+export async function addServiceLine(input: { businessId: string; saleId: string; serviceId: string; staffId: string | null; priceCents?: number | null; taxRateBps: number; actorUserId: string }) {
+  await withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+    if (!sale) throw new SaleError("Sale not found.");
+    assertOpen(sale);
+    const service = await tx.query.services.findFirst({ where: eq(schema.services.id, input.serviceId) });
+    if (!service || !service.active) throw new SaleError("Service not available.");
+    const override = input.staffId ? await tx.query.staffServices.findFirst({ where: and(eq(schema.staffServices.staffId, input.staffId), eq(schema.staffServices.serviceId, service.id)) }) : null;
+    const price = input.priceCents ?? override?.priceCentsOverride ?? service.priceCents;
+    const [agg] = await tx.select({ max: sql<number>`coalesce(max(${schema.saleLines.sortOrder}), -1)` }).from(schema.saleLines).where(and(eq(schema.saleLines.saleId, sale.id), eq(schema.saleLines.kind, "service")));
+    await tx.insert(schema.saleLines).values({ businessId: input.businessId, saleId: sale.id, kind: "service", staffId: input.staffId, serviceId: service.id, name: service.name, quantity: 1, unitCents: price, amountCents: price, taxable: false, sortOrder: Number(agg?.max ?? -1) + 1 });
+    await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
+    await audit(tx, input.businessId, input.actorUserId, "sale.add_service", sale.id, { serviceId: service.id, price });
+  });
+}
+
+/** Change a line's price, quantity or who gets credit for it (open tickets; not lines covered by a credit). */
+export async function updateLine(input: { businessId: string; saleId: string; lineId: string; unitCents?: number | null; quantity?: number | null; staffId?: string | null; taxRateBps: number; actorUserId: string }) {
+  await withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+    if (!sale) throw new SaleError("Sale not found.");
+    assertOpen(sale);
+    const line = await tx.query.saleLines.findFirst({ where: and(eq(schema.saleLines.id, input.lineId), eq(schema.saleLines.saleId, sale.id)) });
+    if (!line) throw new SaleError("Line not found.");
+    if (line.kind === "tip") throw new SaleError("Change tips under Tips.");
+    if (line.creditCents > 0) throw new SaleError("This line is covered by a credit. Remove it and add the service again to change it.");
+    const unit = input.unitCents ?? line.unitCents;
+    const qty = line.kind === "product" ? Math.max(1, Math.min(99, Math.round(input.quantity ?? line.quantity))) : line.quantity;
+    if (unit < 0) throw new SaleError("Price can't be negative.");
+    await tx
+      .update(schema.saleLines)
+      .set({ unitCents: unit, quantity: qty, amountCents: unit * qty, ...(input.staffId !== undefined ? { staffId: input.staffId } : {}) })
+      .where(eq(schema.saleLines.id, line.id));
+    await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
+    await audit(tx, input.businessId, input.actorUserId, "sale.edit_line", sale.id, { lineId: line.id, from: { unit: line.unitCents, qty: line.quantity, staffId: line.staffId }, to: { unit, qty, staffId: input.staffId ?? line.staffId } });
   });
 }
 
@@ -782,7 +822,7 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
         .select({ status: schema.appointments.status, source: schema.appointments.source, count: sql<number>`count(*)` })
         .from(schema.appointments)
         .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id))
-        .where(and(gte(schema.appointmentItems.startAt, from), lt(schema.appointmentItems.startAt, to), eq(schema.appointmentItems.sortOrder, 0), ...(locationId ? [eq(schema.appointments.locationId, locationId)] : [])))
+        .where(and(gte(schema.appointmentItems.startAt, from), lt(schema.appointmentItems.startAt, to), eq(schema.appointmentItems.sortOrder, 0), eq(schema.appointments.kind, "visit"), ...(locationId ? [eq(schema.appointments.locationId, locationId)] : [])))
         .groupBy(schema.appointments.status, schema.appointments.source),
     ]);
     // Per-location totals (always across all sites so the owner sees the split even when filtered).

@@ -46,6 +46,7 @@ const STATUS: Record<string, string> = {
   no_show: "bg-stone-100 text-stone-500 line-through",
   cancelled: "bg-stone-100 text-stone-400 line-through",
   class: "bg-violet-100 text-violet-900",
+  block: "bg-stone-200 text-stone-700 bg-[repeating-linear-gradient(135deg,transparent_0_6px,rgba(255,255,255,0.5)_6px_12px)]",
 };
 
 /** The parts of [gridStart, gridEnd) not covered by any working block. */

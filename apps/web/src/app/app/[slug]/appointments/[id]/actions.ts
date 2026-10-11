@@ -5,6 +5,7 @@ import { chargeCardOnFile, openSaleForAppointment, SaleError } from "@/server/sa
 import { refundDeposit } from "@/server/online-payments";
 import { paymentContextForAppointment } from "@/server/locations";
 import { cancelSeriesFrom } from "@/server/series";
+import { formsForAppointment } from "@/server/forms";
 import { queueReviewRequest } from "@/server/reviews";
 import { cancelQueuedReminders, notifyAppointment } from "@/lib/notify";
 import { parseMoney } from "@angelic/core";
@@ -104,8 +105,17 @@ export async function removeService(formData: FormData) {
 }
 
 export async function startCheckout(formData: FormData) {
-  const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
+  const { slug, appointmentId, skipForms } = base.extend({ skipForms: z.string().optional() }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(slug, "checkout.take");
+  // Required forms are prompted for at checkout; the desk can still proceed deliberately.
+  if (!skipForms) {
+    const due = (await withTenant(ctx.business.id, (tx) => formsForAppointment(tx, appointmentId))).filter((f) => !f.current);
+    if (due.length) {
+      await setFlash(`${due.length} required form${due.length === 1 ? "" : "s"} still outstanding (${due.map((f) => f.form.name).join(", ")}). Complete them, or choose "Check out anyway".`, "error");
+      revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
+      return;
+    }
+  }
   const saleId = await openSaleForAppointment({
     businessId: ctx.business.id,
     appointmentId,

@@ -591,6 +591,8 @@ export const appointments = pgTable(
     clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     status: appointmentStatus("status").notNull().default("booked"),
     source: appointmentSource("source").notNull().default("staff"),
+    // visit (a client appointment) | block (blocked time: lunch, late start, "do not book"; no client, no checkout)
+    kind: text("kind").notNull().default("visit"),
     notes: text("notes"),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),

@@ -1,0 +1,1 @@
+ALTER TABLE "appointments" ADD COLUMN "kind" text DEFAULT 'visit' NOT NULL;

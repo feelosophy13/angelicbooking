@@ -19,12 +19,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, editLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
 import { ClientPicker } from "@/components/client-picker";
 import { quickCreateClient } from "../../clients/actions";
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
 import { schema, withTenant } from "@angelic/db";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { instantToISODate } from "@angelic/core";
 import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
 import { pointsBalance } from "@/server/loyalty";
@@ -54,6 +54,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
   const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
   const rebookLine = lines.find((l) => l.kind === "service") ?? null;
+  const servicesForSale = open ? await withTenant(business.id, (tx) => tx.select({ id: schema.services.id, name: schema.services.name, priceCents: schema.services.priceCents }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name))) : [];
   const promo = sale.promoCodeId ? await withTenant(business.id, (tx) => tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.id, sale.promoCodeId!), columns: { code: true } })) : null;
   const typedDiscount: { type: "amount" | "percent"; value: number } | null =
     !sale.promoCodeId && (sale.discountType === "percent" || sale.discountType === "amount") && sale.discountValue ? { type: sale.discountType, value: sale.discountValue } : null;
@@ -115,6 +116,21 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       ) : null}
                     </td>
                     <td className="w-10 py-2 text-right">
+                      {open && l.kind !== "tip" && l.creditCents === 0 ? (
+                        <details className="mb-1 text-left">
+                          <summary className="cursor-pointer text-xs text-stone-500 hover:text-stone-800">Edit</summary>
+                          <form action={editLine} className="mt-1 flex w-56 flex-col gap-1">
+                            <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="lineId" value={l.id} />
+                            <Input name="price" inputMode="decimal" defaultValue={(l.unitCents / 100).toFixed(2)} aria-label="Unit price" />
+                            {l.kind === "product" ? <Input name="quantity" type="number" min={1} max={99} defaultValue={l.quantity} aria-label="Quantity" /> : null}
+                            <Select name="staffId" defaultValue={l.staffId ?? ""} aria-label="Staff credit">
+                              <option value="">No staff credit</option>
+                              {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                            </Select>
+                            <Button type="submit" size="sm" variant="secondary">Save</Button>
+                          </form>
+                        </details>
+                      ) : null}
                       {open ? (
                         <form action={deleteLine}>
                           <input type="hidden" name="slug" value={slug} />
@@ -167,6 +183,24 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                     <Button type="submit" size="sm" variant="secondary">Add</Button>
                   </form>
                 )}
+              </Card>
+              <Card className="p-4">
+                <h2 className="mb-2 font-medium">Add service</h2>
+                <form action={addServiceToSale} className="space-y-2">
+                  <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />
+                  <Select name="serviceId" required defaultValue="">
+                    <option value="" disabled>Choose a service</option>
+                    {servicesForSale.map((s) => <option key={s.id} value={s.id}>{s.name} · {money(s.priceCents)}</option>)}
+                  </Select>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Select name="staffId" defaultValue={staffOnTicket[0]?.id ?? ""}>
+                      <option value="">No staff credit</option>
+                      {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                    </Select>
+                    <Input name="price" inputMode="decimal" placeholder="Price (optional)" />
+                  </div>
+                  <Button type="submit" size="sm" variant="secondary">Add service</Button>
+                </form>
               </Card>
               <Card className="p-4">
                 <h2 className="mb-2 font-medium">Discount</h2>

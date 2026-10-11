@@ -19,6 +19,8 @@ export type AgendaItem = {
   classSessionId?: string | null;
   /** Where the visit happens (appointments.location_id / class_sessions.location_id). */
   locationId?: string | null;
+  /** "block" for blocked time (lunch, late start); "visit" otherwise. */
+  kind?: string;
 };
 
 /** Active staff plus every appointment item starting within [fromDate, fromDate + days). */
@@ -42,6 +44,7 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
           lastName: schema.clients.lastName,
           notes: schema.appointments.notes,
           locationId: schema.appointments.locationId,
+          kind: schema.appointments.kind,
         })
         .from(schema.appointmentItems)
         .innerJoin(schema.appointments, eq(schema.appointments.id, schema.appointmentItems.appointmentId))

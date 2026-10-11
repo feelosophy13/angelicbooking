@@ -22,7 +22,7 @@ import { stripe } from "@/lib/stripe";
 import { addOfferLine, redeemCredit, redeemGiftCard } from "@/server/offers";
 import { LoyaltyError, redeemPoints } from "@/server/loyalty";
 import { PromoError } from "@/server/promos";
-import { applyPromoToSale, removePromoFromSale, setSaleClient } from "@/server/sales";
+import { addServiceLine, applyPromoToSale, removePromoFromSale, setSaleClient, updateLine } from "@/server/sales";
 import { schema as dbSchema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { queueOneOff } from "@/lib/notify";
@@ -337,6 +337,42 @@ export async function attachClient(formData: FormData) {
       return;
     }
     throw e;
+  }
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+export async function addServiceToSale(formData: FormData) {
+  const d = base.extend({ serviceId: z.string().min(1), staffId: z.string().optional(), price: z.string().optional() }).parse(Object.fromEntries(formData));
+  const ctx = await ctxFor(d.slug);
+  const price = d.price?.trim() ? parseMoney(d.price) : null;
+  if (d.price?.trim() && price === null) {
+    await setFlash("Enter a price like 65 or 65.50.", "error");
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    return;
+  }
+  try {
+    await addServiceLine({ businessId: ctx.business.id, saleId: d.saleId, serviceId: d.serviceId, staffId: d.staffId || null, priceCents: price, taxRateBps: ctx.business.taxRateBps, actorUserId: ctx.user.id });
+  } catch (e) {
+    if (e instanceof SaleError) await setFlash(e.message, "error");
+    else throw e;
+  }
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+export async function editLine(formData: FormData) {
+  const d = base.extend({ lineId: z.string().min(1), price: z.string().optional(), quantity: z.string().optional(), staffId: z.string().optional() }).parse(Object.fromEntries(formData));
+  const ctx = await ctxFor(d.slug);
+  const unit = d.price?.trim() ? parseMoney(d.price) : null;
+  if (d.price?.trim() && unit === null) {
+    await setFlash("Enter a price like 65 or 65.50.", "error");
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    return;
+  }
+  try {
+    await updateLine({ businessId: ctx.business.id, saleId: d.saleId, lineId: d.lineId, unitCents: unit, quantity: d.quantity ? Number(d.quantity) : null, staffId: d.staffId === undefined ? undefined : d.staffId || null, taxRateBps: ctx.business.taxRateBps, actorUserId: ctx.user.id });
+  } catch (e) {
+    if (e instanceof SaleError) await setFlash(e.message, "error");
+    else throw e;
   }
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
