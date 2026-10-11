@@ -323,7 +323,7 @@ export function CalendarGrid(props: {
                 {/* Time outside the provider's hours (or the whole day off) is hatched so gaps read at a glance. */}
                 {c.working
                   ? offBlocks(c.working, DAY_START_H * 60, DAY_END_H * 60).map((b, i) => (
-                      <div key={`off${i}`} className="pointer-events-none absolute inset-x-0 bg-[repeating-linear-gradient(135deg,rgba(120,113,108,0.08)_0_6px,transparent_6px_12px)] bg-stone-50" style={{ top: top(b.from), height: (b.to - b.from) * PX_PER_MIN }} aria-hidden />
+                      <div key={`off${i}`} className="hatched pointer-events-none absolute inset-x-0" style={{ top: top(b.from), height: (b.to - b.from) * PX_PER_MIN }} aria-hidden />
                     ))
                   : null}
                 {quarterLines.map((m) => (

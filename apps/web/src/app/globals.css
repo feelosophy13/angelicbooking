@@ -29,3 +29,9 @@ label:has(> input[type="checkbox"]:not(:disabled)),
 label:has(> input[type="radio"]:not(:disabled)) {
   cursor: pointer;
 }
+
+/* Closed or unavailable time: slanted stripes, the same everywhere (calendar off-hours, coverage grid). */
+.hatched {
+  background-color: #fafaf9; /* stone-50 */
+  background-image: repeating-linear-gradient(135deg, rgba(120, 113, 108, 0.1) 0 6px, transparent 6px 12px);
+}

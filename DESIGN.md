@@ -93,6 +93,9 @@ wrong: fix the page.
 - Brand purple for the primary action, links and focus rings. Stone greys for everything structural. Emerald for
   done/paid, amber for warnings and "forms due", red only for destructive actions and failures, sky/violet for
   calendar states via `StatusBadge`.
+- Closed or unavailable time is hatched: the `hatched` utility (slanted 135° stripes on stone-50), the same on
+  the calendar's off-hours, the coverage grid's closed hours and any future time grid. Never a flat grey block,
+  and never a second stripe pattern.
 - Body text 14px (`text-sm`), helper text 12px (`text-xs text-stone-500`), section labels
   `text-xs font-semibold uppercase tracking-wide text-stone-500`. Never below 11px, never grey-on-grey below AA
   contrast (`text-stone-400` is for disabled or decorative only).

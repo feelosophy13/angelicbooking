@@ -8,11 +8,11 @@ const PX_PER_HOUR = 44;
 const fmt = (min: number) => (min >= 24 * 60 ? "12am" : time12(`${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`));
 /** A few names when the list is short, otherwise categories with counts. */
 const describeMissing = (s: CoverageStrip) => (s.missingCount <= 3 ? s.missing.join(", ") : s.missingGroups.slice(0, 4).join(", ") + (s.missingGroups.length > 4 ? "…" : ""));
-const STRIP: Record<CoverageStrip["state"], string> = { closed: "bg-stone-200", none: "bg-red-400", partial: "bg-amber-400", full: "bg-emerald-400" };
+const STRIP: Record<CoverageStrip["state"], string> = { closed: "hatched", none: "bg-red-400", partial: "bg-amber-400", full: "bg-emerald-400" };
 
 /**
  * Time down the side, the week across the top. Each day column shows opening hours as the white
- * area, every provider on duty as a coloured lane, and a strip on the left edge that says whether
+ * area (closed time is hatched, as on the calendar), every provider on duty as a coloured lane, and a strip on the left edge that says whether
  * the services in scope are covered (green), partly covered (amber) or nobody is in (red).
  */
 export function CoverageGrid({ coverage, today, hoursHref }: { coverage: Coverage; today: string; hoursHref: (staffId: string) => string | null }) {
@@ -53,9 +53,9 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref }: { day: Coverag
   // Two or more lanes leave no room for a name across; write it down the lane instead.
   const narrow = day.lanes.length >= 2;
   return (
-    <div className={cn("relative border-l border-stone-100 bg-stone-100/70", isToday && "bg-brand-50/40")} style={{ height }}>
+    <div className={cn("hatched relative border-l border-stone-100")} style={{ height }}>
       {/* Opening hours: the white area */}
-      {day.open ? <div className="absolute inset-x-0 bg-white" style={{ top: y(day.open.start), height: y(day.open.end) - y(day.open.start) }} /> : null}
+      {day.open ? <div className={cn("absolute inset-x-0", isToday ? "bg-brand-50/50" : "bg-white")} style={{ top: y(day.open.start), height: y(day.open.end) - y(day.open.start) }} /> : null}
       {/* Hour lines */}
       {hours.map((t) => <div key={t} className="pointer-events-none absolute inset-x-0 border-t border-stone-100" style={{ top: y(t) }} />)}
       {/* Coverage strip on the left edge */}

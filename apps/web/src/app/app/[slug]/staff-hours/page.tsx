@@ -124,7 +124,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
             <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-emerald-400 align-middle" />{coverage.scope.label === "All services" ? "every service covered" : `${coverage.scope.label} covered`}</span>
             <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-amber-400 align-middle" />some services uncovered</span>
             <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-red-400 align-middle" />open, nobody in</span>
-            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-stone-200 align-middle" />closed</span>
+            <span><span className="hatched mr-1 inline-block h-2.5 w-2.5 rounded-sm border border-stone-200 align-middle" />closed</span>
           </p>
         </div>
         {people.length === 0 ? (
