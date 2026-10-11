@@ -107,6 +107,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       opens the visit), the staff filter is week-only, view switches keep the location, "Expected" excludes no-shows;
       Rebook link on the appointment and sale pages (same client/service/provider, four weeks out); failed sends retry
       up to 3 times with backoff and Settings → Messages has "Send again" on failed/skipped rows.
+- [x] Landed 2026-10-10 (batch 5, calendar grid): time outside each provider's hours (and whole days off / closed
+      days) is hatched in day and week view, the grid widens past 7am–9pm to fit early/late hours or bookings,
+      overlapping cards share the column side by side, and a drag is refused with a clear message when it lands
+      outside the provider's hours or on a provider who doesn't perform the service (the same qualification check now
+      applies when adding a service to a ticket).
 
 - [x] Membership auto-billing (recurring charges on the business's Connect account). Done 2026-10-10 (client page → Auto-renew with saved card; Connect webhook `invoice.paid` / `invoice.payment_failed` / `customer.subscription.deleted`). Untested against Stripe until keys exist.
 - [ ] Tap to Pay / card reader support.

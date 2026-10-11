@@ -127,6 +127,68 @@ export async function getStaffAvailabilityForDates(opts: AvailabilityOpts & { da
   });
 }
 
+export type WorkingInterval = { start: Date; end: Date };
+
+/**
+ * Working blocks (as instants) per staff member per date, honouring day
+ * overrides, each block's location opening hours and that location's clock.
+ * Key: `${staffId}:${date}`. A key present with an empty array means a day off.
+ */
+export async function workingBlocksFor(opts: { businessId: string; timeZone: string; staffIds: string[]; dates: string[]; locationId?: string | null }): Promise<Map<string, WorkingInterval[]>> {
+  const out = new Map<string, WorkingInterval[]>();
+  const dates = [...new Set(opts.dates)].sort();
+  const staffIds = [...new Set(opts.staffIds)];
+  if (!dates.length || !staffIds.length) return out;
+  return withTenant(opts.businessId, async (tx) => {
+    const [weekly, overrides, people, locations] = await Promise.all([
+      tx.select({ staffId: schema.staffSchedules.staffId, weekday: schema.staffSchedules.weekday, start: schema.staffSchedules.startTime, end: schema.staffSchedules.endTime, locationId: schema.staffSchedules.locationId }).from(schema.staffSchedules).where(inArray(schema.staffSchedules.staffId, staffIds)),
+      tx.select().from(schema.staffScheduleOverrides).where(and(inArray(schema.staffScheduleOverrides.staffId, staffIds), inArray(schema.staffScheduleOverrides.date, dates))),
+      tx.select({ id: schema.staff.id, locationId: schema.staff.locationId }).from(schema.staff).where(inArray(schema.staff.id, staffIds)),
+      tx.select({ id: schema.locations.id, isDefault: schema.locations.isDefault, hours: schema.locations.hours, timezone: schema.locations.timezone }).from(schema.locations),
+    ]);
+    const defaultLoc = locations.find((l) => l.isDefault)?.id ?? locations[0]?.id ?? null;
+    for (const staffId of staffIds) {
+      const fallbackLoc = people.find((p) => p.id === staffId)?.locationId ?? defaultLoc;
+      const locOf = (r: { locationId: string | null }) => r.locationId ?? fallbackLoc;
+      const openAt = (locId: string | null, weekday: number) => {
+        const l = locations.find((x) => x.id === locId);
+        return l?.hours ? (l.hours[String(weekday)] ?? null) : undefined;
+      };
+      const tzAt = (locId: string | null) => locations.find((x) => x.id === locId)?.timezone ?? opts.timeZone;
+      const mine = weekly.filter((r) => r.staffId === staffId);
+      for (const date of dates) {
+        const weekday = weekdayOf(date);
+        const override = overrides.find((o) => o.staffId === staffId && o.date === date);
+        const ov = override ? { date: override.date, isOff: override.isOff, start: override.startTime, end: override.endTime } : null;
+        const todays = mine.filter((r) => r.weekday === weekday);
+        const blocks: WorkingInterval[] = [];
+        const push = (loc: string | null, local: { start: string; end: string }[]) => {
+          for (const b of local) blocks.push({ start: zonedToInstant(date, b.start, tzAt(loc)), end: b.end === "24:00" ? zonedToInstant(date, "23:59", tzAt(loc)) : zonedToInstant(date, b.end, tzAt(loc)) });
+        };
+        if (ov) {
+          const dayLoc = todays[0] ? locOf(todays[0]) : fallbackLoc;
+          if (!opts.locationId || dayLoc === opts.locationId) push(dayLoc, clampToOpenHours(resolveWorkingBlocks(date, weekday, [], ov), openAt(dayLoc, weekday)));
+        } else {
+          const byLoc = new Map<string | null, typeof todays>();
+          for (const r of todays) {
+            const l = locOf(r);
+            if (opts.locationId && l !== opts.locationId) continue;
+            byLoc.set(l, [...(byLoc.get(l) ?? []), r]);
+          }
+          for (const [l, rows] of byLoc) push(l, clampToOpenHours(resolveWorkingBlocks(date, weekday, rows, null), openAt(l, weekday)));
+        }
+        out.set(`${staffId}:${date}`, blocks.sort((a, b) => a.start.getTime() - b.start.getTime()));
+      }
+    }
+    return out;
+  });
+}
+
+/** Every segment must sit inside one of the provider's working blocks that day. */
+export function withinWorkingBlocks(blocks: WorkingInterval[], segments: Interval[]): boolean {
+  return segments.every((s) => blocks.some((b) => s.start >= b.start && s.end <= b.end));
+}
+
 /** Staff who can perform a service (or all active staff if no mapping exists yet), optionally only those working at a location. */
 export async function staffForService(businessId: string, serviceId: string, locationId?: string | null) {
   return withTenant(businessId, async (tx) => {

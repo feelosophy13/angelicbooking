@@ -4,6 +4,7 @@ import { instantToISODate, weekdayOf } from "@angelic/core";
 
 export const metadata: Metadata = { title: "Calendar" };
 import { filterAgendaByLocation, getRangeAgenda } from "@/server/agenda";
+import { workingBlocksFor } from "@/server/availability";
 import { tzFor } from "@/server/locations";
 import { appointmentsMissingForms } from "@/server/forms";
 import { requireBusiness } from "@/lib/tenant";
@@ -64,9 +65,23 @@ export default async function CalendarPage({
     return h * 60 + Number(parts.find((p) => p.type === "minute")!.value);
   };
 
+  // Working hours per column: each provider's blocks (day view), one provider's week, or everyone's union per day.
+  const gridDates = view === "week" ? Array.from({ length: 7 }, (_, i) => shiftISODate(from, i)) : [date];
+  const blocks = view === "month" ? new Map<string, { start: Date; end: Date }[]>() : await workingBlocksFor({ businessId: business.id, timeZone: tz, staffIds: staff.map((s) => s.id), dates: gridDates, locationId: locationFilter });
+  const toMinutes = (b: { start: Date; end: Date }) => ({ startMin: minuteOf(b.start), endMin: minuteOf(b.end) <= minuteOf(b.start) ? 24 * 60 : minuteOf(b.end) });
+  const unionFor = (d: string) => {
+    const all = staff.flatMap((s) => (blocks.get(`${s.id}:${d}`) ?? []).map(toMinutes)).sort((a, b) => a.startMin - b.startMin);
+    const merged: { startMin: number; endMin: number }[] = [];
+    for (const b of all) {
+      const last = merged[merged.length - 1];
+      if (last && b.startMin <= last.endMin) last.endMin = Math.max(last.endMin, b.endMin);
+      else merged.push({ ...b });
+    }
+    return merged;
+  };
   const columns: CalColumn[] =
     view !== "week"
-      ? staff.map((s) => ({ key: s.id, label: s.displayName, color: s.color, date, staffId: s.id }))
+      ? staff.map((s) => ({ key: s.id, label: s.displayName, color: s.color, date, staffId: s.id, working: (blocks.get(`${s.id}:${date}`) ?? []).map(toMinutes) }))
       : Array.from({ length: 7 }, (_, i) => {
           const d = shiftISODate(from, i);
           return {
@@ -75,9 +90,14 @@ export default async function CalendarPage({
             date: d,
             staffId: staffFilter,
             isToday: d === today,
+            working: staffFilter ? (blocks.get(`${staffFilter}:${d}`) ?? []).map(toMinutes) : unionFor(d),
           };
         });
 
+  // The grid shows 7am–9pm by default and widens to fit early/late hours or bookings.
+  const minutesSeen = [...columns.flatMap((c) => (c.working ?? []).flatMap((w) => [w.startMin, w.endMin])), ...items.filter((i) => i.status !== "cancelled").flatMap((i) => [minuteOf(i.startAt), minuteOf(i.endAt) <= minuteOf(i.startAt) ? 24 * 60 : minuteOf(i.endAt)])];
+  const startHour = Math.max(0, Math.min(7, ...minutesSeen.map((m) => Math.floor(m / 60))));
+  const endHour = Math.min(24, Math.max(21, ...minutesSeen.map((m) => Math.ceil(m / 60))));
   const staffById = new Map(staff.map((s) => [s.id, s]));
   const calItems: CalItem[] = items
     .filter((i) => !staffFilter || i.staffId === staffFilter)
@@ -198,6 +218,8 @@ export default async function CalendarPage({
           items={calItems}
           slotIntervalMin={business.slotIntervalMin}
           canEdit={can(permissions, "appointments.write.any")}
+          startHour={startHour}
+          endHour={endHour}
         />
       )}
     </>

@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
 import { buildBookingSegments, instantToISODate, weekdayOf } from "@angelic/core";
-import { timingFor } from "./availability";
+import { timingFor, withinWorkingBlocks, workingBlocksFor } from "./availability";
 import { refreshHomeLocation, serviceOfferedAt } from "./locations";
 
 export class BookingError extends Error {}
@@ -17,6 +17,7 @@ async function insertServiceItems(
   if (!service || !service.active) throw new BookingError("That service is no longer available.");
   const staffRow = await tx.query.staff.findFirst({ where: eq(schema.staff.id, input.staffId) });
   if (!staffRow || !staffRow.active) throw new BookingError("That staff member is not available.");
+  await assertQualified(tx, staffRow, service);
   const override = await tx.query.staffServices.findFirst({
     where: and(eq(schema.staffServices.staffId, input.staffId), eq(schema.staffServices.serviceId, input.serviceId)),
   });
@@ -37,6 +38,12 @@ async function insertServiceItems(
     })),
   );
   return { service, segments };
+}
+
+/** When a service has an assigned-staff list, only those providers may take it. (No list = anyone.) */
+async function assertQualified(tx: Tx, staffRow: { id: string; displayName: string }, service: { id: string; name: string }) {
+  const mapped = await tx.select({ staffId: schema.staffServices.staffId }).from(schema.staffServices).where(eq(schema.staffServices.serviceId, service.id));
+  if (mapped.length && !mapped.some((m) => m.staffId === staffRow.id)) throw new BookingError(`${staffRow.displayName} doesn't perform ${service.name}. Assign it under Staff → Services first.`);
 }
 
 async function audit(tx: Tx, businessId: string, actorUserId: string, action: string, entityId: string, diff?: unknown) {
@@ -212,9 +219,21 @@ export async function rescheduleService(input: {
       const deltaMs = input.newStartAt.getTime() - first.startAt.getTime();
       const staffId = input.newStaffId ?? item.staffId;
       if (deltaMs === 0 && staffId === item.staffId) return;
-      if (staffId !== item.staffId) {
-        const target = await tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId) });
-        if (!target || !target.active) throw new BookingError("That staff member is not available.");
+      const target = await tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId) });
+      if (!target || !target.active) throw new BookingError("That staff member is not available.");
+      if (staffId !== item.staffId && item.serviceId) {
+        const service = await tx.query.services.findFirst({ where: eq(schema.services.id, item.serviceId), columns: { id: true, name: true } });
+        if (service) await assertQualified(tx, target, service);
+      }
+      // The moved segments must land inside the provider's working hours that day (busy clashes are the DB's job).
+      const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
+      const tz = biz?.timezone ?? "America/New_York";
+      const moved = siblings.map((s) => ({ start: new Date(s.startAt.getTime() + deltaMs), end: new Date(s.endAt.getTime() + deltaMs) }));
+      const day = instantToISODate(moved[0]!.start, tz);
+      const blocks = (await workingBlocksFor({ businessId: input.businessId, timeZone: tz, staffIds: [staffId], dates: [day] })).get(`${staffId}:${day}`) ?? [];
+      if (!withinWorkingBlocks(blocks, moved)) {
+        const when = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz }).format(moved[0]!.start);
+        throw new BookingError(blocks.length ? `${target.displayName} isn't working at ${when}. Pick a time inside their hours, or change their hours under Staff.` : `${target.displayName} is off on ${when.split(",")[0]}.`);
       }
       await tx.execute(sql`set constraints appointment_items_no_double_booking deferred`);
       for (const s of siblings) {

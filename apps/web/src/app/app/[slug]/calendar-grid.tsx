@@ -6,7 +6,16 @@ import { cn } from "@/lib/utils";
 import { moveAppointmentItem, quickStatus } from "./actions";
 import { Check, LogIn } from "lucide-react";
 
-export type CalColumn = { key: string; label: string; color?: string; date: string; staffId: string | null; isToday?: boolean };
+export type CalColumn = {
+  key: string;
+  label: string;
+  color?: string;
+  date: string;
+  staffId: string | null;
+  isToday?: boolean;
+  /** Working time in grid minutes. Omitted = unknown (no shading); [] = off that day. */
+  working?: { startMin: number; endMin: number }[];
+};
 export type CalItem = {
   id: string;
   appointmentId: string;
@@ -23,8 +32,8 @@ export type CalItem = {
   groupKey: string;
 };
 
-const DAY_START_H = 7;
-const DAY_END_H = 21;
+const DEFAULT_START_H = 7;
+const DEFAULT_END_H = 21;
 const PX_PER_MIN = 1.2;
 const LOCKED = new Set(["completed", "cancelled", "no_show", "class"]);
 
@@ -38,6 +47,18 @@ const STATUS: Record<string, string> = {
   cancelled: "bg-stone-100 text-stone-400 line-through",
   class: "bg-violet-100 text-violet-900",
 };
+
+/** The parts of [gridStart, gridEnd) not covered by any working block. */
+function offBlocks(working: { startMin: number; endMin: number }[], gridStart: number, gridEnd: number): { from: number; to: number }[] {
+  const out: { from: number; to: number }[] = [];
+  let cursor = gridStart;
+  for (const w of [...working].sort((a, b) => a.startMin - b.startMin)) {
+    if (w.startMin > cursor) out.push({ from: cursor, to: Math.min(w.startMin, gridEnd) });
+    cursor = Math.max(cursor, w.endMin);
+  }
+  if (cursor < gridEnd) out.push({ from: cursor, to: gridEnd });
+  return out.filter((b) => b.to > b.from);
+}
 
 function fmt(min: number) {
   const h = Math.floor(min / 60) % 24;
@@ -65,6 +86,36 @@ function groupCards(items: CalItem[]): Card[] {
 
 type Drag = { key: string; originX: number; originY: number; dx: number; dy: number; moved: boolean };
 
+/**
+ * Side-by-side lanes for cards that overlap in time (double bookings, a class
+ * next to a visit): cards in one overlapping cluster share the width equally.
+ */
+function layoutLanes(cards: Card[]): Map<string, { lane: number; lanes: number }> {
+  const out = new Map<string, { lane: number; lanes: number }>();
+  const sorted = [...cards].sort((a, b) => a.startMin - b.startMin || b.endMin - a.endMin);
+  let cluster: Card[] = [];
+  let laneEnds: number[] = [];
+  let clusterEnd = -1;
+  const flush = () => {
+    for (const c of cluster) out.set(c.key, { lane: out.get(c.key)!.lane, lanes: laneEnds.length });
+    cluster = [];
+    laneEnds = [];
+  };
+  for (const c of sorted) {
+    if (cluster.length && c.startMin >= clusterEnd) flush();
+    let lane = laneEnds.findIndex((end) => end <= c.startMin);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(c.endMin);
+    } else laneEnds[lane] = c.endMin;
+    out.set(c.key, { lane, lanes: 1 });
+    cluster.push(c);
+    clusterEnd = Math.max(clusterEnd, c.endMin);
+  }
+  if (cluster.length) flush();
+  return out;
+}
+
 function useNowMinutes(tz: string) {
   const calc = () => {
     const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "numeric", hour12: false }).formatToParts(new Date());
@@ -89,8 +140,13 @@ export function CalendarGrid(props: {
   slotIntervalMin: number;
   canEdit: boolean;
   todayISO: string;
+  /** Grid range in hours; the page widens it to fit early/late hours and bookings. */
+  startHour?: number;
+  endHour?: number;
 }) {
   const { columns, items, slotIntervalMin } = props;
+  const DAY_START_H = props.startHour ?? DEFAULT_START_H;
+  const DAY_END_H = props.endHour ?? DEFAULT_END_H;
   const router = useRouter();
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
@@ -109,6 +165,11 @@ export function CalendarGrid(props: {
     for (const c of columns) m.set(c.key, groupCards(items.filter((i) => i.columnKey === c.key)));
     return m;
   }, [columns, items]);
+  const lanesByCol = useMemo(() => {
+    const m = new Map<string, Map<string, { lane: number; lanes: number }>>();
+    for (const [k, cards] of cardsByCol) m.set(k, layoutLanes(cards));
+    return m;
+  }, [cardsByCol]);
 
   // Scroll so the working day (or now) is in view on first paint.
   useEffect(() => {
@@ -258,6 +319,12 @@ export function CalendarGrid(props: {
                     : undefined
                 }
               >
+                {/* Time outside the provider's hours (or the whole day off) is hatched so gaps read at a glance. */}
+                {c.working
+                  ? offBlocks(c.working, DAY_START_H * 60, DAY_END_H * 60).map((b, i) => (
+                      <div key={`off${i}`} className="pointer-events-none absolute inset-x-0 bg-[repeating-linear-gradient(135deg,rgba(120,113,108,0.08)_0_6px,transparent_6px_12px)] bg-stone-50" style={{ top: top(b.from), height: (b.to - b.from) * PX_PER_MIN }} aria-hidden />
+                    ))
+                  : null}
                 {quarterLines.map((m) => (
                   <div key={m} className={cn("absolute inset-x-0 border-t", m % 60 === 0 ? "border-stone-200" : m % 30 === 0 ? "border-stone-100" : "border-stone-50")} style={{ top: top(m) }} />
                 ))}
@@ -268,6 +335,7 @@ export function CalendarGrid(props: {
                   </div>
                 ) : null}
                 {(cardsByCol.get(c.key) ?? []).map((card) => {
+                  const lane = lanesByCol.get(c.key)?.get(card.key) ?? { lane: 0, lanes: 1 };
                   const dragging = drag?.key === card.key && drag.moved;
                   const dyMin = dragging ? snap(drag.dy) : 0;
                   const draggable = props.canEdit && !LOCKED.has(card.first.status);
@@ -284,8 +352,15 @@ export function CalendarGrid(props: {
                       onKeyDown={(e) => e.key === "Enter" && router.push(card.first.href)}
                       title={`${card.first.title} · ${card.first.subtitle} · ${fmt(card.startMin)}–${fmt(card.endMin)}`}
                       data-card
-                      className={cn("group absolute inset-x-1 overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", dragging && "z-30 ring-2 ring-brand-500 shadow-lg")}
-                      style={{ top: top(card.startMin), height, borderLeftColor: card.first.color, transform: dragging ? `translate(${drag.dx}px, ${dyMin * PX_PER_MIN}px)` : undefined }}
+                      className={cn("group absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", dragging && "z-30 ring-2 ring-brand-500 shadow-lg")}
+                      style={{
+                        top: top(card.startMin),
+                        height,
+                        left: `calc(${(lane.lane * 100) / lane.lanes}% + 4px)`,
+                        width: `calc(${100 / lane.lanes}% - ${lane.lanes > 1 ? 6 : 8}px)`,
+                        borderLeftColor: card.first.color,
+                        transform: dragging ? `translate(${drag.dx}px, ${dyMin * PX_PER_MIN}px)` : undefined,
+                      }}
                     >
                       {card.gaps.map((g, i) => (
                         <div key={i} className="pointer-events-none absolute inset-x-0 bg-[repeating-linear-gradient(135deg,transparent_0_6px,rgba(255,255,255,0.55)_6px_12px)]" style={{ top: (g.from - card.startMin) * PX_PER_MIN, height: (g.to - g.from) * PX_PER_MIN }}>

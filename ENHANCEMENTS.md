@@ -22,7 +22,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
    and `deliverDue` never re-checks appointment status, so clients get texts for cancelled visits.
 4. **P1 Front-desk booking** — single service per booking, a 500-row client `<select>` with no search or inline
    create, no walk-in "now"/custom time, no Rebook button, no block time from the calendar.
-5. **P1 Calendar grid** — no working hours/time-off shading, concurrent cards fully overlap, drag bypasses every
+5. ✅ **P1 Calendar grid** — no working hours/time-off shading, concurrent cards fully overlap, drag bypasses every
    availability rule, quick actions are hover-only (unreachable on the front-desk iPad), touch drag hijacks scrolling.
 6. **P1 Auth/permissions** — open redirect via `?next=`, system-role edits never sync to Better Auth org roles,
    permission errors render as "Something went wrong" in production, client pages don't enforce `clients.read`.
@@ -46,11 +46,11 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 
 ## 1. Calendar home (`app/app/[slug]/page.tsx`, `calendar-grid.tsx`, `month-grid.tsx`, `today-strip.tsx`)
 
-- **P1 Render working hours, time off and closed hours on the grid** [gap] — grid is hard-coded 7:00–21:00
+- ✅ **P1 Render working hours, time off and closed hours on the grid** [gap] — grid is hard-coded 7:00–21:00
   (`calendar-grid.tsx:26-27`) and receives no schedules; bookings outside that range are clipped off-grid.
-- **P1 Lane layout for concurrent cards** [bug] — cards are `absolute inset-x-1` by time only
+- ✅ **P1 Lane layout for concurrent cards** [bug] — cards are `absolute inset-x-1` by time only
   (`calendar-grid.tsx:280-281`); week view "All staff" stacks every provider into one column and overlaps hide cards.
-- **P1 Validate drag-to-reschedule** [bug] — `actions.ts:27-54` → `server/booking.ts:186-238` checks only that the
+- ✅ **P1 Validate drag-to-reschedule** [bug] — `actions.ts:27-54` → `server/booking.ts:186-238` checks only that the
   staff is active; a drag can land in the past, off-hours, on a day off or on an unqualified provider. Validate like the
   Move panel, or make it an explicit override with a confirm, and show why a drop was rejected.
 - ✅ **P1 Quick actions reachable on touch and keyboard** [a11y][bug] — Check in/Complete are `hidden group-hover:flex`
@@ -110,7 +110,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - **P2 Status buttons allow regressions and can crash** [bug] — `page.tsx:259-268` offers Confirmed on a no-show/paid
   visit; re-activating items can hit the exclusion constraint outside `translate`, surfacing the generic error page.
 - **P2 Undo cancel / no-show** [gap] — a mis-click is permanent.
-- **P2 Add/Move service ignores location and qualifications** [bug] — `page.tsx:88-96,108-116` omit `locationId`;
+- ✅ **P2 Add/Move service ignores location and qualifications** [bug] — `page.tsx:88-96,108-116` omit `locationId`;
   staff selects (`page.tsx:176,204`) list everyone; `insertServiceItems` doesn't check `staffServices`.
 - **P2 Sticky action bar on mobile** [ux] — Checkout/status/no-show fee sit below services, Move, Add, Notes.
 - **P2 Client context on the ticket** [gap] — visit count, last visit, no-show/late-cancel count, balances, saved
