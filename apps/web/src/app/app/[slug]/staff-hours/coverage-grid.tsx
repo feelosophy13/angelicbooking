@@ -55,7 +55,10 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref }: { day: Coverag
   return (
     <div className={cn("hatched relative border-l border-stone-100")} style={{ height }}>
       {/* Opening hours: the white area */}
-      {day.open ? <div className={cn("absolute inset-x-0", isToday ? "bg-brand-50/50" : "bg-white")} style={{ top: y(day.open.start), height: y(day.open.end) - y(day.open.start) }} /> : null}
+      {/* Opaque, so the hatching never shows through open hours (today is tinted, not translucent). */}
+      {day.open ? <div className={cn("absolute inset-x-0", isToday ? "bg-brand-50" : "bg-white")} style={{ top: y(day.open.start), height: y(day.open.end) - y(day.open.start) }} /> : null}
+      {/* Open with nobody in: the whole stretch blushes, not just the strip. */}
+      {day.uncovered.map((u, i) => <div key={`u${i}`} className="pointer-events-none absolute inset-x-0 bg-red-50" style={{ top: y(u.start), height: y(u.end) - y(u.start) }} />)}
       {/* Hour lines */}
       {hours.map((t) => <div key={t} className="pointer-events-none absolute inset-x-0 border-t border-stone-100" style={{ top: y(t) }} />)}
       {/* Coverage strip on the left edge */}
