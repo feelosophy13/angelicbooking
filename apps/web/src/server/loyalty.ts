@@ -198,3 +198,63 @@ export async function sendReferralCode(business: Business, clientId: string, cha
   await queueOneOff(business.id, { channel: "email", template: "referral_code", recipient: client.email, subject: `Your ${business.name} referral code`, body: html, clientId: client.id });
   return client.email;
 }
+
+// ---------------------------------------------------------------------------
+// Programme overview for the Loyalty & referrals page
+// ---------------------------------------------------------------------------
+
+export interface LoyaltyPeriodStats {
+  pointsIssued: number;
+  pointsRedeemed: number;
+  referralsJoined: number;
+  referralsConverted: number;
+}
+
+/** Points and referral activity in [from, to). */
+export async function loyaltyStats(tx: TenantDb, from: Date, to: Date): Promise<LoyaltyPeriodStats> {
+  const [[pts], [joined], [converted]] = await Promise.all([
+    tx
+      .select({
+        issued: sql<number>`coalesce(sum(${schema.loyaltyLedger.delta}) filter (where ${schema.loyaltyLedger.delta} > 0), 0)`,
+        redeemed: sql<number>`coalesce(sum(-${schema.loyaltyLedger.delta}) filter (where ${schema.loyaltyLedger.reason} = 'redeem'), 0)`,
+      })
+      .from(schema.loyaltyLedger)
+      .where(and(gte(schema.loyaltyLedger.createdAt, from), lt(schema.loyaltyLedger.createdAt, to))),
+    tx.select({ n: sql<number>`count(*)` }).from(schema.clients).where(and(isNotNull(schema.clients.referredByClientId), gte(schema.clients.createdAt, from), lt(schema.clients.createdAt, to))),
+    tx.select({ n: sql<number>`count(*)` }).from(schema.clients).where(and(isNotNull(schema.clients.referredByClientId), gte(schema.clients.referralRewardedAt, from), lt(schema.clients.referralRewardedAt, to))),
+  ]);
+  return { pointsIssued: Number(pts?.issued ?? 0), pointsRedeemed: Number(pts?.redeemed ?? 0), referralsJoined: Number(joined?.n ?? 0), referralsConverted: Number(converted?.n ?? 0) };
+}
+
+/** Clients who have referred the most people, all time. */
+export async function topReferrers(tx: TenantDb, limit = 8): Promise<{ id: string; name: string; referred: number; converted: number }[]> {
+  const referred = schema.clients;
+  const rows = await tx
+    .select({ id: referred.referredByClientId, referred: sql<number>`count(*)`, converted: sql<number>`count(${referred.referralRewardedAt})` })
+    .from(referred)
+    .where(isNotNull(referred.referredByClientId))
+    .groupBy(referred.referredByClientId)
+    .orderBy(desc(sql`count(*)`), desc(sql`count(${referred.referralRewardedAt})`))
+    .limit(limit);
+  const ids = rows.map((r) => r.id!).filter(Boolean);
+  const people = ids.length ? await tx.select({ id: schema.clients.id, firstName: schema.clients.firstName, lastName: schema.clients.lastName }).from(schema.clients).where(inArray(schema.clients.id, ids)) : [];
+  return rows.map((r) => {
+    const p = people.find((x) => x.id === r.id);
+    return { id: r.id!, name: p ? `${p.firstName} ${p.lastName ?? ""}`.trim() : "Former client", referred: Number(r.referred), converted: Number(r.converted) };
+  });
+}
+
+/** The most recent referrals, any period. */
+export async function recentReferrals(tx: TenantDb, limit = 10): Promise<ReferralRow[]> {
+  const referred = schema.clients;
+  const rows = await tx
+    .select({ referrerId: referred.referredByClientId, referredId: referred.id, firstName: referred.firstName, lastName: referred.lastName, joinedAt: referred.createdAt, rewardedAt: referred.referralRewardedAt })
+    .from(referred)
+    .where(isNotNull(referred.referredByClientId))
+    .orderBy(desc(sql`coalesce(${referred.referralRewardedAt}, ${referred.createdAt})`))
+    .limit(limit);
+  const referrerIds = [...new Set(rows.map((r) => r.referrerId!).filter(Boolean))];
+  const referrers = referrerIds.length ? await tx.select({ id: schema.clients.id, firstName: schema.clients.firstName, lastName: schema.clients.lastName }).from(schema.clients).where(inArray(schema.clients.id, referrerIds)) : [];
+  const nameOf = (id: string) => { const c = referrers.find((x) => x.id === id); return c ? `${c.firstName} ${c.lastName ?? ""}`.trim() : "Former client"; };
+  return rows.map((r) => ({ referrerId: r.referrerId!, referrerName: nameOf(r.referrerId!), referredId: r.referredId, referredName: `${r.firstName} ${r.lastName ?? ""}`.trim(), joinedAt: r.joinedAt, rewardedAt: r.rewardedAt }));
+}

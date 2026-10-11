@@ -183,6 +183,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       bookings carry an "online" chip with when they came in). "New online booking" automation template (team
       group, on by default) emails the owner and the provider when a client books online; automations gain a
       "Booked online only" filter and templates added later are topped up on the next trigger.
+- [x] 2026-10-11: Loyalty & referrals page shows activity under the rules: this month vs last (points issued and
+      redeemed, referrals joined and converted), top referrers and recent referrals, each linking to client pages
+      and Reports.
 - [x] 2026-10-11: referrals made visible. Client page: referral code with "Text it" / "Email it" (consent-aware,
       one-off notification), the referrer's name on referred clients with the bonus date, and the list of clients
       this person referred with first-visit status. Reports → "Referrals" (who referred whom, joined, first paid
