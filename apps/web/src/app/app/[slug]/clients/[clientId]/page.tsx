@@ -20,6 +20,7 @@ import { ConfirmSubmit, SubmitButton as NoteSubmit } from "@/components/form";
 import { relative } from "@/lib/format";
 import { listForms, listSubmissionsForClient } from "@/server/forms";
 import { getClientLoyalty, referralsOf } from "@/server/loyalty";
+import { clientStats } from "@/server/clients";
 import { reviewsForClient } from "@/server/reviews";
 import { adjustClientPoints, adjustClientStoreCredit, createReferralCode, sendReferralCodeAction } from "./loyalty-actions";
 import { getClientStoreCredit } from "@/server/store-credit";
@@ -97,6 +98,18 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const past = visits.filter((v) => v.startAt < new Date() || done.has(v.status));
   const money = (c: number) => formatMoney(c, business.currency);
   const write = can(permissions, "clients.write");
+  const stats = await withTenant(business.id, (tx) => clientStats(tx, client));
+  const fmtMonth = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: tz });
+  const sinceMonths = Math.max(0, Math.round((Date.now() - stats.since.getTime()) / (30.44 * 86_400_000)));
+  const sinceLabel = sinceMonths < 1 ? "this month" : sinceMonths < 24 ? `${sinceMonths} mo` : `${Math.round(sinceMonths / 12)} yr`;
+  const lapsed = stats.lastVisit && !stats.nextVisit ? Math.round((Date.now() - stats.lastVisit.getTime()) / 86_400_000) : null;
+  const glance: { label: string; value: string; hint?: string; tone?: "warn" }[] = [
+    { label: "Client since", value: fmtMonth.format(stats.since), hint: stats.sinceIsFirstVisit ? `${sinceLabel} · first visit` : `${sinceLabel} · no visit yet` },
+    { label: "Visits", value: String(stats.completed), hint: [stats.upcoming ? `${stats.upcoming} upcoming` : null, stats.noShows ? `${stats.noShows} no-show${stats.noShows === 1 ? "" : "s"}` : null, stats.cancelled ? `${stats.cancelled} cancelled` : null].filter(Boolean).join(" · ") || "none upcoming", tone: stats.noShows >= 2 ? "warn" : undefined },
+    { label: "Spent", value: money(stats.spentCents), hint: stats.ticketCount ? `${money(stats.averageTicketCents)} avg · ${money(stats.tipsCents)} tips` : "no paid visits yet" },
+    { label: stats.nextVisit ? "Next visit" : "Last visit", value: stats.nextVisit ? fmtDate.format(stats.nextVisit) : stats.lastVisit ? fmtDate.format(stats.lastVisit) : "—", hint: stats.nextVisit && stats.lastVisit ? `last ${fmtDate.format(stats.lastVisit)}` : lapsed != null ? `${lapsed} days ago${stats.visitEveryDays && lapsed > stats.visitEveryDays * 1.5 ? " · overdue" : ""}` : undefined, tone: lapsed != null && stats.visitEveryDays && lapsed > stats.visitEveryDays * 1.5 ? "warn" : undefined },
+    { label: "Usually", value: stats.favouriteService ?? "—", hint: [stats.usualProvider ? `with ${stats.usualProvider}` : null, stats.visitEveryDays ? `every ${stats.visitEveryDays} days` : null].filter(Boolean).join(" · ") || undefined },
+  ];
 
   return (
     <>
@@ -104,6 +117,16 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
       <PageHeader title={`${client.firstName} ${client.lastName}`.trim()}>
         {can(permissions, "appointments.write.any") ? <LinkButton href={`/app/${slug}/appointments/new?clientId=${client.id}`} variant="primary"><Plus className="h-4 w-4" /> Book appointment</LinkButton> : null}
       </PageHeader>
+      {/* At a glance: the numbers the desk asks about before anything else. */}
+      <Card className="mb-6 grid grid-cols-2 gap-px overflow-hidden bg-stone-100 sm:grid-cols-3 lg:grid-cols-5">
+        {glance.map((g) => (
+          <div key={g.label} className="bg-white px-4 py-3">
+            <p className="text-xs uppercase tracking-wide text-stone-500">{g.label}</p>
+            <p className="line-clamp-2 text-lg font-semibold leading-tight tabular-nums" title={g.value}>{g.value}</p>
+            {g.hint ? <p className={`truncate text-xs ${g.tone === "warn" ? "text-amber-700" : "text-stone-500"}`} title={g.hint}>{g.hint}</p> : null}
+          </div>
+        ))}
+      </Card>
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
           <Card>
