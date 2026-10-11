@@ -31,13 +31,13 @@ export default async function StaffHoursPage({ params }: { params: Promise<{ slu
         {DAYS.map((name, weekday) => {
           const row = byDay.get(weekday);
           return (
-            <div key={weekday} className={`grid items-center gap-2 text-sm ${multi ? "grid-cols-[6rem_7rem_max-content_7rem_minmax(12rem,20rem)]" : "grid-cols-[6rem_7rem_max-content_7rem]"}`}>
+            <div key={weekday} className={`grid items-center gap-3 py-1 text-sm ${multi ? "grid-cols-[8.5rem_9.5rem_max-content_9.5rem_minmax(14rem,22rem)]" : "grid-cols-[8.5rem_9.5rem_max-content_9.5rem]"}`}>
               <Checkbox name={`on_${weekday}`} defaultChecked={!!row} label={name} className="!items-center [&>input]:mt-0" />
-              <Input name={`start_${weekday}`} type="time" defaultValue={row ? hhmm(row.startTime) : "09:00"} className="w-28 px-2" />
+              <Input name={`start_${weekday}`} type="time" defaultValue={row ? hhmm(row.startTime) : "09:00"} className="w-full" aria-label={`${name} start`} />
               <span className="text-stone-400">to</span>
-              <Input name={`end_${weekday}`} type="time" defaultValue={row ? hhmm(row.endTime) : "17:00"} className="w-28 px-2" />
+              <Input name={`end_${weekday}`} type="time" defaultValue={row ? hhmm(row.endTime) : "17:00"} className="w-full" aria-label={`${name} end`} />
               {multi ? (
-                <Select name={`loc_${weekday}`} defaultValue={row?.locationId ?? fallbackLoc} className="h-9 px-2" aria-label={`${name} location`}>
+                <Select name={`loc_${weekday}`} defaultValue={row?.locationId ?? fallbackLoc} aria-label={`${name} location`}>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </Select>
               ) : null}
