@@ -183,6 +183,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       bookings carry an "online" chip with when they came in). "New online booking" automation template (team
       group, on by default) emails the owner and the provider when a client books online; automations gain a
       "Booked online only" filter and templates added later are topped up on the next trigger.
+- [x] 2026-10-11: appointment page shows the visit's rating (stars, date, comment, link to Reviews) or that a rating
+      was requested and not yet answered.
 - [x] 2026-10-11: client page History is one timeline: past visits with their ticket total (open tickets flagged
       "due") and the rating + comment inline; sales with no visit (retail, gift cards, open tickets) as rows of
       their own; separate Sales and Ratings cards removed; average rating in the History header.

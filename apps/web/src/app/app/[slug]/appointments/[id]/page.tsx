@@ -57,6 +57,9 @@ export default async function AppointmentPage({
   if (!data) notFound();
   const { appointment, items, client, services, staff } = data;
   const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, id), ne(schema.sales.status, "void")), orderBy: desc(schema.sales.createdAt) }));
+  // The rating request for this visit, if one went out: submitted or still waiting.
+  const review = await withTenant(business.id, (tx) => tx.query.reviews.findFirst({ where: eq(schema.reviews.appointmentId, id), orderBy: desc(schema.reviews.requestedAt) }));
+  const fmtDay = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
   const pinnedNotes = client ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
   const series = appointment.seriesId ? await getSeriesForAppointment(business.id, id) : null;
   const forms = await withTenant(business.id, (tx) => formsForAppointment(tx, id));
@@ -371,6 +374,21 @@ export default async function AppointmentPage({
                   <ConfirmSubmit title="Cancel this and all later visits?" body="Earlier visits in the series are left alone. The client is notified once." confirmLabel="Cancel remaining visits" variant="secondary">Cancel this and later visits</ConfirmSubmit>
                 </form>
               ) : null}
+            </Card>
+          ) : null}
+
+          {review ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Rating</h2>
+              {review.submittedAt && review.rating ? (
+                <>
+                  <p><span className="text-lg text-amber-400">{"★".repeat(review.rating)}<span className="text-stone-200">{"★".repeat(5 - review.rating)}</span></span> <span className="text-xs text-stone-500">{fmtDay.format(review.submittedAt)}</span></p>
+                  {review.comment ? <p className="mt-1 text-stone-700">“{review.comment}”</p> : <p className="mt-1 text-xs text-stone-500">No comment left.</p>}
+                  <p className="mt-2 text-xs text-stone-500"><Link href={`/app/${slug}/reviews`} className="text-brand-700 underline">All reviews</Link></p>
+                </>
+              ) : (
+                <p className="text-stone-500">Rating requested {fmtDay.format(review.requestedAt)} · no reply yet.</p>
+              )}
             </Card>
           ) : null}
 
