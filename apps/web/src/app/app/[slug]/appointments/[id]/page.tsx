@@ -11,7 +11,7 @@ import { requireAction } from "@/lib/tenant";
 import { getAppointmentDetail } from "@/server/appointments";
 import { getStaffAvailability, timingFor } from "@/server/availability";
 import { formatDateLong, formatMoney, formatTime, shiftISODate } from "@/lib/utils";
-import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { Button, Card, Field, Input, PageHeader, Select, Textarea, LinkButton } from "@/components/ui";
 import { addService, cancelSeries, changeStatus, moveService, refundDepositAction, removeService, saveNotes, startCheckout } from "./actions";
 import { getSeriesForAppointment } from "@/server/series";
 import { formsForAppointment } from "@/server/forms";
@@ -191,7 +191,7 @@ export default async function AppointmentPage({
                     <span className="text-sm">{formatMoney(segs.reduce((s, i) => s + i.priceCents, 0), business.currency)}</span>
                     {!locked && !cancelled ? (
                       <div className="flex gap-1">
-                        <Link href={`${self}?moveItemId=${head.id}`} className="rounded-md px-2 py-1 text-xs text-stone-700 hover:bg-stone-100">Move</Link>
+                        <LinkButton href={`${self}?moveItemId=${head.id}`} variant="ghost" size="sm">Move</LinkButton>
                         <form action={removeService}>
                           <input type="hidden" name="slug" value={slug} />
                           <input type="hidden" name="appointmentId" value={id} />
