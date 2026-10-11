@@ -23,7 +23,6 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     ] },
     { title: "People", items: [
       it(`${base}/clients`, "Clients", "Users"),
-      it(`${base}/reviews`, "Reviews", "Star"),
       it(`${base}/staff`, "Staff", "UserCog", { exclude: [`${base}/staff-hours`] }),
     ] },
     { title: "Catalog", items: [
@@ -35,10 +34,14 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     ] },
     { title: "Money", items: [
       ...(ok("checkout.take") ? [it(`${base}/sales`, "Sales", "Receipt")] : []),
-      ...(ok("reports.view") ? [it(`${base}/reports`, "Reports", "BarChart3"), it(`${base}/marketing`, "Marketing", "Megaphone", { exclude: [`${base}/marketing/automations`] })] : []),
+      ...(ok("reports.view") ? [it(`${base}/reports`, "Reports", "BarChart3")] : []),
       ...(ok("payroll.view") ? [it(`${base}/payroll`, "Payroll", "Wallet")] : []),
     ] },
-    { title: "Automation", items: ok("reports.view") ? [it(`${base}/marketing/automations`, "Automations", "Workflow")] : [] },
+    // Bringing clients back: campaigns and promo codes, automated messages, and what clients say.
+    { title: "Grow", items: [
+      ...(ok("reports.view") ? [it(`${base}/marketing`, "Marketing", "Megaphone", { exclude: [`${base}/marketing/automations`] }), it(`${base}/marketing/automations`, "Automations", "Workflow")] : []),
+      it(`${base}/reviews`, "Reviews", "Star"),
+    ] },
     { title: "", items: ok("business.manage") ? [it(`${base}/settings`, "Settings", "Settings")] : [] },
   ].filter((s) => s.items.length > 0);
 }

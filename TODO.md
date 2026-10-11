@@ -176,6 +176,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       link cards for Automations, Loyalty and review requests, Loyalty links back; Payroll, Sales and
       Reviews link to the matching report slice (period + location carried), Reports → Payroll; sidebar, Settings
       directory and ⌘K pages come from one definition (`lib/nav.ts`, see DESIGN.md → Navigation).
+- [x] 2026-10-11: sidebar groups: Money is Sales, Reports, Payroll; new Grow group holds Marketing, Automations and
+      Reviews (Automation group and Reviews-under-People retired).
 - [ ] Booking page follow-ups: service photos on the Shop/gift pages; a search box on the service step for large
       menus; show provider photos (staff have no photo field yet) and a short bio on the provider step.
 - [ ] Automations: decide between the fixed recipes (today) and a user-built trigger → delay → message builder
