@@ -1,6 +1,8 @@
 "use client";
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { previousPath } from "./nav-history";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Inbox } from "lucide-react";
 import { useFieldId } from "./form";
@@ -151,11 +153,35 @@ export function Empty({ title, body, action }: { title: string; body?: string; a
   );
 }
 
-/** "← Back to X" link used in page headers. */
+/**
+ * "← Back" link used in page headers. Goes back to wherever the person came from when that was a page
+ * of this app (the overview, a search, a client), and reads "Back"; otherwise, e.g. arriving from a
+ * bookmark or a new tab, it goes to `href`, the page's natural parent, and reads that page's name.
+ */
 export function BackLink({ href, children }: { href: string; children: React.ReactNode }) {
+  const router = useRouter();
+  const [history, setHistory] = React.useState(false);
+  React.useEffect(() => {
+    try {
+      // In-app navigations are recorded by <NavHistory>; a full page load from another page of ours shows as the referrer.
+      const ref = document.referrer ? new URL(document.referrer) : null;
+      const cameFromUs = !!previousPath() || (!!ref && ref.origin === window.location.origin && ref.pathname !== window.location.pathname);
+      setHistory(cameFromUs && window.history.length > 1);
+    } catch {
+      setHistory(false);
+    }
+  }, []);
   return (
-    <Link href={href} className="inline-flex items-center gap-1 text-sm text-stone-600 hover:text-stone-900">
-      <ArrowLeft className="h-4 w-4" aria-hidden /> {children}
+    <Link
+      href={href}
+      onClick={(e) => {
+        if (!history) return;
+        e.preventDefault();
+        router.back();
+      }}
+      className="inline-flex items-center gap-1 text-sm text-stone-600 hover:text-stone-900"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden /> {history ? "Back" : children}
     </Link>
   );
 }

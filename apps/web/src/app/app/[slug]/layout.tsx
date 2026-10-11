@@ -10,6 +10,7 @@ import { appUrl } from "@/lib/stripe";
 import { Wordmark } from "@/components/brand";
 import { UserMenu } from "@/components/user-menu";
 import { CommandPalette } from "@/components/command-palette";
+import { NavHistory } from "@/components/nav-history";
 import { navSections } from "@/lib/nav";
 import { NavLink } from "./nav-link";
 import { MobileNav, type NavSection } from "./mobile-nav";
@@ -38,6 +39,7 @@ export default async function AppLayout({ children, params }: { children: React.
 
   return (
     <div className="flex min-h-screen">
+      <NavHistory />
       <aside className="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:flex">
         <div className="px-4 pb-3 pt-4">
           <Link href="/" aria-label="Home"><Wordmark /></Link>

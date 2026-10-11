@@ -20,7 +20,10 @@ wrong: fix the page.
 ## Page anatomy
 
 - `PageHeader` with the title on the left and at most two actions on the right. The primary action is
-  `LinkButton variant="primary"` (or `Button`). A back link (`BackLink`) sits above the title on sub-pages.
+  `LinkButton variant="primary"` (or `Button`). A back link (`BackLink`) sits above the title on sub-pages. It
+  returns to the page the person actually came from (and reads "Back"); only when there is no such page, such as
+  a bookmark or a new tab, does it go to the hard-coded parent and show that page's name. Never hand-write a
+  back link.
 - Content is a `Card` (or a few). Cards have a 1px border and no heavy shadow. Don't nest cards.
 - Two-column detail pages use `grid gap-6 lg:grid-cols-[1fr_360px]`: the main object left, actions and context right.
   On a phone the right column follows the left; the primary action must be reachable without scrolling past
