@@ -215,7 +215,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                         </span>
                       </div>
                       {t.review ? (
-                        <p className="mt-0.5 text-xs text-stone-600"><span className="text-amber-400">{"★".repeat(t.review.rating ?? 0)}</span>{t.review.comment ? ` “${t.review.comment}”` : ""}</p>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-stone-600" title={t.review.comment ?? undefined}><span className="text-amber-400">{"★".repeat(t.review.rating ?? 0)}</span>{t.review.comment ? ` “${t.review.comment}”` : ""}</p>
                       ) : null}
                     </li>
                   );
