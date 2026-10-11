@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const PX_PER_HOUR = 44;
 const fmt = (min: number) => (min >= 24 * 60 ? "12am" : time12(`${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`));
-/** Service names when only a few are missing, otherwise every category with how much of it is uncovered. */
+/** Service names when only a few are missing, otherwise the categories they fall in. */
 const describeMissing = (s: CoverageStrip) => (s.missingCount <= 3 ? s.missing.join(", ") : s.missingGroups.join(", "));
 const STRIP: Record<CoverageStrip["state"], string> = { closed: "hatched", none: "bg-red-400", partial: "bg-amber-400", full: "bg-emerald-400" };
 
@@ -120,7 +120,6 @@ export function CoverageGaps({ coverage }: { coverage: Coverage }) {
           </ul>
         </section>
       ))}
-      <p className="px-4 py-2 text-xs text-stone-500">"12 of 24 Facials" means that during those hours nobody on duty can do 12 of the 24 services in that category.</p>
     </div>
   );
 }

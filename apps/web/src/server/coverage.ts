@@ -23,7 +23,7 @@ export interface CoverageStrip {
   /** Services nobody on duty performs (names). */
   missing: string[];
   missingCount: number;
-  /** The same by top-level category, with how much of the category that is: "12 of 24 Facials", "all 6 Brows". */
+  /** The top-level categories those services fall in, most affected first. */
   missingGroups: string[];
 }
 export interface CoverageDay {
@@ -79,12 +79,11 @@ export async function buildCoverage(
   for (const r of staffServices) mappedStaff.set(r.serviceId, (mappedStaff.get(r.serviceId) ?? new Set()).add(r.staffId));
   const performs = (staffId: string, serviceId: string) => { const m = mappedStaff.get(serviceId); return !m || m.size === 0 || m.has(staffId); };
   const topCategory = (categoryId: string | null) => (categoryId ? pathTo(cats, categoryId)[0]?.name : null) ?? "Other";
-  const totals = new Map<string, number>();
-  for (const svc of scoped) totals.set(topCategory(svc.categoryId), (totals.get(topCategory(svc.categoryId)) ?? 0) + 1);
   const groupNames = (list: { categoryId: string | null }[]) => {
     const counts = new Map<string, number>();
     for (const svc of list) counts.set(topCategory(svc.categoryId), (counts.get(topCategory(svc.categoryId)) ?? 0) + 1);
-    return [...counts.entries()].sort((x, y) => y[1] - x[1]).map(([name, n]) => { const t = totals.get(name) ?? n; return n === t ? (t === 1 ? name : `all ${t} ${name}`) : `${n} of ${t} ${name}`; });
+    // Category names only: the counts were more puzzling than helpful.
+    return [...counts.entries()].sort((x, y) => y[1] - x[1]).map(([name]) => name);
   };
 
   // Opening hours: the location's, or across every location when looking at all of them.
