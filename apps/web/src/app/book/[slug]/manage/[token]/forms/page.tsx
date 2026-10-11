@@ -21,7 +21,7 @@ export default async function PublicFormsPage({ params }: { params: Promise<{ sl
       {due.map(({ form }) => (
         <section key={form.id} className="rounded-xl border border-stone-200 bg-white p-5">
           <h2 className="mb-3 font-medium">{form.name}</h2>
-          <PublicForm slug={slug} token={token} form={form} clientName={`${m.client!.firstName} ${m.client!.lastName}`.trim()} />
+          <PublicForm slug={slug} token={token} form={form} clientName={`${m.client!.firstName} ${m.client!.lastName}`.trim()} defaults={due.find((d) => d.form.id === form.id)?.submission?.answers ?? null} />
         </section>
       ))}
       {done.length ? <p className="text-xs text-stone-500">Already on file: {done.map((d) => d.form.name).join(", ")}.</p> : null}

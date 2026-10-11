@@ -406,14 +406,18 @@ export const clientStripeCustomers = pgTable(
 // ---------------------------------------------------------------------------
 // Intake / consent forms
 // ---------------------------------------------------------------------------
-export type FormFieldType = "text" | "textarea" | "checkbox" | "select" | "date" | "statement";
+export type FormFieldType = "text" | "textarea" | "checkbox" | "select" | "multiselect" | "number" | "date" | "file" | "statement";
 export interface FormFieldDef {
   id: string;
   type: FormFieldType;
   label: string;
   required?: boolean;
-  options?: string[]; // select
+  options?: string[]; // select / multiselect
+  /** Only shown (and required) when an earlier question has this answer ("true" for a ticked checkbox). */
+  showIf?: { fieldId: string; equals: string } | null;
 }
+/** One answer: text/number/date/select as string, checkbox as boolean, multiselect as string[], file as the file id. */
+export type FormAnswer = string | boolean | string[];
 
 export const forms = pgTable(
   "forms",
@@ -429,6 +433,8 @@ export const forms = pgTable(
     serviceIds: text("service_ids").array().notNull().default(sql`'{}'::text[]`), // or only these services
     // How often a client must sign it again: null = once ever, N = every N days.
     renewDays: integer("renew_days"),
+    // Required only for visits at these locations. Empty = every location.
+    locationIds: text("location_ids").array().notNull().default(sql`'{}'::text[]`),
     active: boolean("active").notNull().default(true),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -448,10 +454,14 @@ export const formSubmissions = pgTable(
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
     appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
-    answers: jsonb("answers").$type<Record<string, string | boolean>>().notNull().default(sql`'{}'::jsonb`),
+    answers: jsonb("answers").$type<Record<string, FormAnswer>>().notNull().default(sql`'{}'::jsonb`),
     signatureName: text("signature_name"),
+    // Drawn signature (PNG in `files`), when the client signed with their finger.
+    signatureFileId: text("signature_file_id"),
     signedAt: timestamp("signed_at", { withTimezone: true }),
     ipAddress: text("ip_address"),
+    // Staff member who completed it with the client at the front desk (null = client's own device).
+    assistedByUserId: text("assisted_by_user_id"),
     // Snapshot of the form as it was signed, so later edits don't change the record.
     formSnapshot: jsonb("form_snapshot").$type<{ name: string; fields: FormFieldDef[]; description: string | null }>(),
     createdAt: createdAt(),
@@ -981,7 +991,7 @@ export const files = pgTable(
   {
     id: id(),
     businessId: businessId(),
-    kind: text("kind").notNull(), // logo | cover | product
+    kind: text("kind").notNull(), // logo | cover | product | form (client upload) | signature
     contentType: text("content_type").notNull(),
     size: integer("size").notNull(),
     data: customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" })("data").notNull(),

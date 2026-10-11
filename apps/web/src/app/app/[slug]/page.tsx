@@ -5,6 +5,7 @@ import { instantToISODate, weekdayOf } from "@angelic/core";
 export const metadata: Metadata = { title: "Calendar" };
 import { filterAgendaByLocation, getRangeAgenda } from "@/server/agenda";
 import { tzFor } from "@/server/locations";
+import { appointmentsMissingForms } from "@/server/forms";
 import { requireBusiness } from "@/lib/tenant";
 import { formatDateLong, shiftISODate } from "@/lib/utils";
 import { LinkButton, PageHeader, Empty } from "@/components/ui";
@@ -30,7 +31,7 @@ export default async function CalendarPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ date?: string; view?: string; staff?: string; location?: string }>;
+  searchParams: Promise<{ date?: string; view?: string; staff?: string; location?: string; forms?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
@@ -48,7 +49,12 @@ export default async function CalendarPage({
   const days = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
   const agenda = await getRangeAgenda(business.id, tz, from, days);
   // Day view: who works at this location on that weekday; week/month: anyone who works there on some day.
-  const { staff, items } = filterAgendaByLocation(agenda, locationFilter, view === "day" ? weekdayOf(date) : null);
+  const filtered = filterAgendaByLocation(agenda, locationFilter, view === "day" ? weekdayOf(date) : null);
+  const staff = filtered.staff;
+  // Which visits still have a required form outstanding (day view only: it's a per-appointment check).
+  const missingForms = view === "day" ? await withTenant(business.id, (tx) => appointmentsMissingForms(tx, [...new Set(filtered.items.filter((i) => !i.classSessionId).map((i) => i.appointmentId))])) : new Set<string>();
+  const formsFilter = sp.forms === "missing";
+  const items = formsFilter ? filtered.items.filter((i) => missingForms.has(i.appointmentId)) : filtered.items;
   const staffFilter = staff.some((s) => s.id === sp.staff) ? sp.staff! : null;
 
   const minuteOf = (d: Date) => {
@@ -82,7 +88,7 @@ export default async function CalendarPage({
       startMin: minuteOf(i.startAt),
       endMin: minuteOf(i.endAt) <= minuteOf(i.startAt) ? 24 * 60 : minuteOf(i.endAt),
       title: i.clientName ?? "Walk-in",
-      subtitle: i.classSessionId ? "Class" : i.serviceName.replace(" (finish)", ""),
+      subtitle: (i.classSessionId ? "Class" : i.serviceName.replace(" (finish)", "")) + (missingForms.has(i.appointmentId) ? " · forms due" : ""),
       status: i.status,
       color: staffById.get(i.staffId)?.color ?? "#6366f1",
       href: i.classSessionId ? `/app/${slug}/classes/${i.classSessionId}` : `/app/${slug}/appointments/${i.appointmentId}`,
@@ -109,7 +115,7 @@ export default async function CalendarPage({
       { key: "booking", label: "Share your booking link", href: `/app/${slug}/settings/booking`, done: counts.appointments > 0 && business.onlineBookingEnabled, hint: "Put it on Instagram and Google." },
     ];
   }
-  const nav = (d: string) => `?view=${view}&date=${d}${staffFilter ? `&staff=${staffFilter}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}`;
+  const nav = (d: string) => `?view=${view}&date=${d}${staffFilter ? `&staff=${staffFilter}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${formsFilter ? "&forms=missing" : ""}`;
   const step = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
   const title = view === "week" ? `Week of ${formatDateLong(from)}` : view === "month" ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(monthStart + "T00:00:00Z")) : formatDateLong(date);
 
@@ -164,10 +170,13 @@ export default async function CalendarPage({
               noShows: appts.filter((a) => a.status === "no_show").length,
               expected: money(live.reduce((s, i) => s + i.priceCents, 0), business.currency),
               nextUp: appts.filter((a) => a.startAt > new Date() && (a.status === "booked" || a.status === "confirmed")).sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0] ?? null,
+              formsMissing: missingForms.size,
             };
           })()}
           tz={tz}
           slug={slug}
+          formsHref={formsFilter ? nav(date).replace("&forms=missing", "") : `${nav(date)}&forms=missing`}
+          formsFilterOn={formsFilter}
         />
       ) : null}
       {staff.length === 0 && locationFilter ? (

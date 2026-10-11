@@ -81,6 +81,11 @@ export const templates = {
     html: shell(ctx, `Your appointment was moved`, details(ctx) + manage(ctx)),
     sms: `${ctx.businessName}: your ${ctx.services} appointment is now ${when(ctx)} with ${ctx.staffName}. Manage: ${ctx.manageUrl}`,
   }),
+  formsNudge: (ctx: ApptContext) => ({
+    subject: `Before your visit today: a form to complete`,
+    html: shell(ctx, `See you ${esc(when(ctx)).replace(/^.*? at /, "at ")}, ${ctx.clientFirstName}`, `<p>Your ${esc(ctx.services)} with ${esc(ctx.staffName)} is coming up. One quick thing first:</p>${formsNote(ctx)}<p style="font-size:13px;color:#78716c">It takes a minute on your phone and saves time at the front desk.</p>`),
+    sms: `${ctx.businessName}: see you today for ${ctx.services}. Please complete your form first: ${ctx.formsUrl}`,
+  }),
   cancellation: (ctx: ApptContext) => ({
     subject: `Cancelled: ${ctx.services} at ${ctx.businessName}`,
     html: shell(ctx, `Your appointment was cancelled`, `<p>${esc(ctx.services)} on ${esc(when(ctx))} has been cancelled.</p><p>Book again any time${ctx.businessPhone ? ` or call ${esc(ctx.businessPhone)}` : ""}.</p>`),

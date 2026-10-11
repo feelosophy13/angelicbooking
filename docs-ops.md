@@ -216,6 +216,9 @@ resolves all of that for a sale, appointment or location; every Stripe call goes
   number texted). Each extra number is billed through the same subscription item flow as the first.
 - `locations.timezone` is now applied to scheduling (availability, booking pages, messages, filtered calendar).
 - `valid_location_ids text[]` on `gift_cards`, `packages`, `membership_plans`: empty = any location.
+- Migrations 0044–0045 (forms): `forms.location_ids`, `form_submissions.signature_file_id` / `assisted_by_user_id`,
+  `files.kind` gains `form` and `signature`, and a `jobs_read` policy on `forms` so the cron run can queue the
+  morning-of nudge (`queueFormsNudges` in `server/forms.ts`, called from `/api/jobs/notifications`).
 - Migration 0043: `locations.clock_token` (kiosk QR secret, `/clock/<token>` is public and rate limited),
   `staff.clock_pin_hash` (sha256 of `businessId:pin`), `time_entries.location_id`.
 - Migration 0042: `waitlist.location_id`; `clients.stripe_customer_id` dropped (per-account customers live in

@@ -18,7 +18,7 @@ import { inArray } from "drizzle-orm";
 import { Textarea as NoteArea } from "@/components/ui";
 import { ConfirmSubmit, SubmitButton as NoteSubmit } from "@/components/form";
 import { relative } from "@/lib/format";
-import { listSubmissionsForClient } from "@/server/forms";
+import { listForms, listSubmissionsForClient } from "@/server/forms";
 import { getClientLoyalty } from "@/server/loyalty";
 import { reviewsForClient } from "@/server/reviews";
 import { adjustClientPoints, createReferralCode } from "./loyalty-actions";
@@ -70,6 +70,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   });
   if (!data) notFound();
   const { client, visits, sales, packs, memberships, notes } = data;
+  const activeForms = (await listForms(business.id)).filter((f) => f.active);
   const [submissions, loyalty, reviews, thread] = await Promise.all([listSubmissionsForClient(business.id, clientId), business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null), reviewsForClient(business.id, clientId), clientThread(business.id, clientId)]);
   // Cards are shown for the client's home location's Stripe account (else the default site's).
   const pay = await paymentContextFor(business, client.homeLocationId);
@@ -248,9 +249,14 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             <h2 className="mb-2 font-medium">Forms</h2>
             {submissions.length === 0 ? <p className="text-stone-500">Nothing signed yet.</p> : (
               <ul className="space-y-1">
-                {submissions.map(({ s: sub, formName }) => <li key={sub.id}><Link href={`/app/${slug}/settings/forms/submissions/${sub.id}`} className="hover:underline">{formName}</Link> <span className="text-xs text-stone-500">· {fmtDate.format(sub.createdAt)}{sub.signatureName ? " · signed" : ""}</span></li>)}
+                {submissions.map(({ s: sub, formName }) => <li key={sub.id}><Link href={`/app/${slug}/settings/forms/submissions/${sub.id}`} className="hover:underline">{formName}</Link> <span className="text-xs text-stone-500">· {fmtDate.format(sub.createdAt)}{sub.signatureName ? " · signed" : ""}{sub.assistedByUserId ? " · at the desk" : ""}</span></li>)}
               </ul>
             )}
+            {write && activeForms.length ? (
+              <p className="mt-2 text-xs text-stone-500">
+                Complete here: {activeForms.map((f, i) => <span key={f.id}>{i ? " · " : ""}<Link href={`/app/${slug}/forms/fill/${f.id}?clientId=${client.id}`} className="text-brand-700 underline">{f.name}</Link></span>)}
+              </p>
+            ) : null}
           </Card>
           {reviews.length ? (
             <Card className="p-4 text-sm">

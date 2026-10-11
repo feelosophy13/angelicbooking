@@ -289,7 +289,10 @@ export default async function AppointmentPage({
                 {forms.map((f) => (
                   <li key={f.form.id} className="flex items-center justify-between gap-2">
                     <span>{f.current ? "✓" : "○"} {f.form.name}</span>
-                    {f.submission ? <Link href={`/app/${slug}/settings/forms/submissions/${f.submission.id}`} className="text-xs text-brand-700 underline">{f.current ? "View" : "Expired · view"}</Link> : <span className="text-xs text-stone-400">not yet</span>}
+                    <span className="flex items-center gap-2 text-xs">
+                      {f.submission ? <Link href={`/app/${slug}/settings/forms/submissions/${f.submission.id}`} className="text-brand-700 underline">{f.current ? "View" : "Expired · view"}</Link> : null}
+                      {!f.current && client ? <Link href={`/app/${slug}/forms/fill/${f.form.id}?clientId=${client.id}&appointmentId=${appointment.id}`} className="rounded border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-brand-800">Complete here</Link> : !f.submission ? <span className="text-stone-400">not yet</span> : null}
+                    </span>
                   </li>
                 ))}
               </ul>

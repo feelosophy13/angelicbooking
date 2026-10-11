@@ -31,3 +31,28 @@ export function fileIdFromUrl(url: string | null | undefined): string | null {
   const m = /\/api\/files\/([0-9a-f-]{36})$/.exec(url ?? "");
   return m?.[1] ?? null;
 }
+
+const FORM_ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/heic", "application/pdf"]);
+export const MAX_FORM_FILE_BYTES = 5 * 1024 * 1024;
+
+/** A photo or PDF a client attaches to a form answer. */
+export async function storeFormFile(businessId: string, file: File): Promise<string> {
+  if (!file || file.size === 0) throw new FileError("Choose a file.");
+  if (!FORM_ALLOWED.has(file.type)) throw new FileError("Attach a photo (PNG, JPEG, WebP, HEIC) or a PDF.");
+  if (file.size > MAX_FORM_FILE_BYTES) throw new FileError("Files must be 5 MB or smaller.");
+  const data = Buffer.from(await file.arrayBuffer());
+  const [row] = await db.insert(schema.files).values({ businessId, kind: "form", contentType: file.type, size: data.length, data }).returning({ id: schema.files.id });
+  return row!.id;
+}
+
+/** A drawn signature posted by the pad as a PNG data URL. */
+export async function storeSignaturePng(businessId: string, dataUrl: string): Promise<string> {
+  const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!m) throw new FileError("Signature image is not valid.");
+  const data = Buffer.from(m[1]!, "base64");
+  if (data.length < 200 || data.length > 400 * 1024) throw new FileError("Signature image is not valid.");
+  const [row] = await db.insert(schema.files).values({ businessId, kind: "signature", contentType: "image/png", size: data.length, data }).returning({ id: schema.files.id });
+  return row!.id;
+}
+
+export const fileUrl = (id: string) => appUrl(`/api/files/${id}`);

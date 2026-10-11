@@ -8,6 +8,7 @@ import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { parseFieldRows } from "@/server/forms";
+import { validAtFromForm } from "@/server/locations";
 
 const fields = z.object({
   slug: z.string(),
@@ -35,8 +36,8 @@ function parse(d: z.infer<typeof fields>, raw: FormData) {
 export const createForm = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "business.manage");
   const { defs, serviceIds, renewDays } = parse(d, raw);
-  const [row] = await withTenant(ctx.business.id, (tx) =>
-    tx.insert(schema.forms).values({ businessId: ctx.business.id, name: d.name, kind: d.kind, description: d.description, fields: defs, requireSignature: d.requireSignature, applyToAll: d.applyToAll, serviceIds, renewDays, active: true }).returning({ id: schema.forms.id }),
+  const [row] = await withTenant(ctx.business.id, async (tx) =>
+    tx.insert(schema.forms).values({ businessId: ctx.business.id, name: d.name, kind: d.kind, description: d.description, fields: defs, requireSignature: d.requireSignature, applyToAll: d.applyToAll, serviceIds, renewDays, locationIds: await validAtFromForm(tx, raw), active: true }).returning({ id: schema.forms.id }),
   );
   await setFlash(`${d.name} created`);
   revalidatePath(`/app/${d.slug}/settings/forms`);
@@ -46,8 +47,8 @@ export const createForm = formAction(fields, async (d, raw) => {
 export const updateForm = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "business.manage");
   const { defs, serviceIds, renewDays } = parse(d, raw);
-  await withTenant(ctx.business.id, (tx) =>
-    tx.update(schema.forms).set({ name: d.name, kind: d.kind, description: d.description, fields: defs, requireSignature: d.requireSignature, applyToAll: d.applyToAll, serviceIds, renewDays, active: d.active }).where(eq(schema.forms.id, d.formId ?? "")),
+  await withTenant(ctx.business.id, async (tx) =>
+    tx.update(schema.forms).set({ name: d.name, kind: d.kind, description: d.description, fields: defs, requireSignature: d.requireSignature, applyToAll: d.applyToAll, serviceIds, renewDays, locationIds: await validAtFromForm(tx, raw), active: d.active }).where(eq(schema.forms.id, d.formId ?? "")),
   );
   revalidatePath(`/app/${d.slug}/settings/forms`);
   revalidatePath(`/app/${d.slug}/settings/forms/${d.formId}`);

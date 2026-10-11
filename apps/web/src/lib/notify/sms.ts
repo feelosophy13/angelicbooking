@@ -8,7 +8,7 @@ import { schema, type TenantDb } from "@angelic/db";
 import type { ApptContext } from "./templates";
 import { formatTime } from "@/lib/utils";
 
-export const SMS_TEMPLATE_KEYS = ["confirmation", "reminder", "rescheduled", "cancellation", "review_request"] as const;
+export const SMS_TEMPLATE_KEYS = ["confirmation", "reminder", "rescheduled", "cancellation", "forms_nudge", "review_request"] as const;
 export type SmsTemplateKey = (typeof SMS_TEMPLATE_KEYS)[number];
 
 export const SMS_PLACEHOLDERS = ["{first_name}", "{business}", "{service}", "{staff}", "{when}", "{manage_url}", "{deposit}", "{forms_url}", "{review_url}"] as const;
@@ -18,6 +18,7 @@ export const SMS_DEFAULTS: Record<SmsTemplateKey, string> = {
   reminder: "{business} reminder: {service} with {staff} {when}. Manage: {manage_url}",
   rescheduled: "{business}: your {service} appointment is now {when} with {staff}. Manage: {manage_url}",
   cancellation: "{business}: your {service} appointment on {when} was cancelled.",
+  forms_nudge: "{business}: see you today for {service}. Please complete your form first: {forms_url}",
   review_request: "{business}: thanks for coming in! How was your visit? Rate us in 10 seconds: {review_url}",
 };
 

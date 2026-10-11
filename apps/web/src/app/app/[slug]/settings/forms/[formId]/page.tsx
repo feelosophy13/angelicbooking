@@ -4,6 +4,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
+import { listLocations } from "@/server/locations";
 import { getForm } from "@/server/forms";
 import { Card, FormPage } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
@@ -32,9 +33,9 @@ export default async function EditFormPage({ params }: { params: Promise<{ slug:
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
   return (
     <FormPage title={form.name} backHref={`/app/${slug}/settings/forms`} backLabel="Forms" width="max-w-3xl">
-      <FormEditor action={updateForm} slug={slug} form={form} services={services} submitLabel="Save form" />
+      <FormEditor action={updateForm} slug={slug} form={form} services={services} locations={await listLocations(business.id)} submitLabel="Save form" />
       <div className="mt-6 border-t border-stone-200 pt-4">
-        <h2 className="mb-2 text-sm font-semibold text-stone-600">Recent submissions</h2>
+        <div className="mb-2 flex items-center justify-between"><h2 className="text-sm font-semibold text-stone-600">Recent submissions</h2><Link href={`/app/${slug}/settings/forms/${form.id}/export`} className="text-xs text-brand-700 underline">Export all as CSV</Link></div>
         {recent.length === 0 ? <p className="text-sm text-stone-500">Nobody has completed this form yet.</p> : (
           <Card>
             <ul className="divide-y divide-stone-100 text-sm">

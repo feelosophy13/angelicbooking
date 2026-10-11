@@ -72,7 +72,7 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
       rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, locationId: appt.locationId, channel: "email", template, recipient: client.email, subject: t.subject, body: t.html });
     }
     if (client.smsOptIn && phone) {
-      rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, locationId: appt.locationId, channel: "sms", template, recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, template, ctx)) });
+      rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, locationId: appt.locationId, channel: "sms", template, recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, template === "formsNudge" ? "forms_nudge" : template, ctx)) });
     }
     if (template === "cancellation") {
       // Drop any pending reminder / pre-visit message for this appointment.
@@ -141,7 +141,7 @@ async function scheduleReminder(
 }
 
 /** Queue a one-off message (e.g. staff invitation) and send it after the response. */
-export async function queueOneOff(businessId: string, input: { channel: "email" | "sms"; template: string; recipient: string; subject?: string; body: string; clientId?: string | null }) {
+export async function queueOneOff(businessId: string, input: { channel: "email" | "sms"; template: string; recipient: string; subject?: string; body: string; clientId?: string | null; appointmentId?: string | null; locationId?: string | null }) {
   const [row] = await withTenant(businessId, (tx) =>
     tx.insert(schema.notifications).values({ businessId, ...input }).returning({ id: schema.notifications.id }),
   );

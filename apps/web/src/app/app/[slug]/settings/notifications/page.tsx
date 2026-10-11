@@ -18,7 +18,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
   const { business } = await requireAction(slug, "business.manage");
   const rows = await withTenant(business.id, (tx) => tx.select().from(schema.notifications).orderBy(desc(schema.notifications.createdAt)).limit(200));
   const inbox = await listInbox(business.id, 50);
-  const LABEL: Record<string, string> = { confirmation: "Confirmation", reminder: "Reminder", rescheduled: "Rescheduled", cancellation: "Cancellation", review_request: "Review request" };
+  const LABEL: Record<string, string> = { forms_nudge: "Forms still due (morning of the visit)", confirmation: "Confirmation", reminder: "Reminder", rescheduled: "Rescheduled", cancellation: "Cancellation", review_request: "Review request" };
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: business.timezone });
   return (
     <>

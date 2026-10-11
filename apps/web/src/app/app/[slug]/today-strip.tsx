@@ -1,18 +1,19 @@
 import Link from "next/link";
-import { CalendarCheck, Clock3, DollarSign, UserX } from "lucide-react";
+import { CalendarCheck, Clock3, DollarSign, UserX, ClipboardList } from "lucide-react";
 import { dateShort, time } from "@/lib/format";
 
 type NextUp = { appointmentId: string; startAt: Date; title: string; subtitle: string } | null;
 
 /** Compact numbers for the day shown above the calendar. */
-export function TodayStrip({ date, isToday, stats, tz, slug }: { date: string; isToday: boolean; stats: { appointments: number; unconfirmed: number; completed: number; noShows: number; expected: string; nextUp: { appointmentId: string; startAt: Date; clientName: string | null; serviceName: string } | null }; tz: string; slug: string }) {
-  if (stats.appointments === 0) return null;
+export function TodayStrip({ date, isToday, stats, tz, slug, formsHref, formsFilterOn }: { date: string; isToday: boolean; stats: { appointments: number; unconfirmed: number; completed: number; noShows: number; expected: string; nextUp: { appointmentId: string; startAt: Date; clientName: string | null; serviceName: string } | null; formsMissing?: number }; tz: string; slug: string; formsHref?: string; formsFilterOn?: boolean }) {
+  if (stats.appointments === 0 && !formsFilterOn) return null;
   const next: NextUp = stats.nextUp ? { appointmentId: stats.nextUp.appointmentId, startAt: stats.nextUp.startAt, title: stats.nextUp.clientName ?? "Walk-in", subtitle: stats.nextUp.serviceName } : null;
   const cells = [
     { icon: CalendarCheck, label: isToday ? "Today" : dateShort(date), value: `${stats.appointments} appointment${stats.appointments === 1 ? "" : "s"}`, sub: stats.unconfirmed ? `${stats.unconfirmed} unconfirmed` : "all confirmed" },
     { icon: DollarSign, label: "Expected", value: stats.expected, sub: `${stats.completed} checked out` },
     ...(stats.noShows ? [{ icon: UserX, label: "No-shows", value: String(stats.noShows), sub: "" }] : []),
     ...(isToday && next ? [{ icon: Clock3, label: "Next up", value: `${time(next.startAt, tz)} · ${next.title}`, sub: next.subtitle, href: `/app/${slug}/appointments/${next.appointmentId}` }] : []),
+    ...(stats.formsMissing || formsFilterOn ? [{ icon: ClipboardList, label: "Forms due", value: `${stats.formsMissing ?? 0} visit${stats.formsMissing === 1 ? "" : "s"}`, sub: formsFilterOn ? "showing only these · tap to clear" : "tap to show only these", href: formsHref }] : []),
   ];
   return (
     <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

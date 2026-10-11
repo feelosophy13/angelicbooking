@@ -198,6 +198,25 @@ invoice per owner was built and then reverted (commit 70435d9 and its revert): t
 tenant with two locations, so tying separate businesses together is not needed. Revisit only if a customer
 runs several salons on separate accounts.
 
+### Forms enhancements (built 2026-10-10, migrations 0044–0045)
+- [x] Front desk completion: "Complete here" on the appointment page (outstanding forms) and the client page
+      (any active form) opens the same form on the salon's device; the record notes who assisted.
+- [x] Drawn signature pad (PNG kept in `files`) alongside the typed name; print / save-as-PDF view per signed
+      form at `/print/forms/<slug>/<submissionId>`.
+- [x] Prefill from the client's last answers to the same form; staff see "changed" badges against the previous
+      copy on the submission page.
+- [x] New question types: number, choose-any (multi-select), photo/PDF upload (5 MB, served from `/api/files`).
+- [x] Conditional questions ("Only show when" an earlier yes/no or choice answer matches); builder reorders
+      questions with up/down.
+- [x] Forms can be required only at chosen locations ("Required at").
+- [x] Morning-of nudge: the jobs run queues one text/email per visit that still has a form outstanding
+      (after 08:00 local, visits at least an hour away; template `forms_nudge`, editable under Settings → Messages),
+      and the day calendar marks "forms due" with a "Forms due" strip cell that filters to those visits.
+- [x] CSV export of a form's submissions (one column per question) from the form's edit page.
+- [ ] Follow-ups: uploads and signature images are served by unguessable id without login (same as logos);
+      class seats aren't marked "forms due" on the calendar (the class card stands in for the seats); no
+      multi-language forms; no per-question help text.
+
 ### Time clock kiosk (built 2026-10-10, migration 0043)
 - [x] QR clock-in: Time clock shows a printable QR code per location (`/clock/<token>`, rotatable). Staff scan
       it, type a 4–6 digit PIN (set or generated on their staff profile, stored hashed, unique per business) and

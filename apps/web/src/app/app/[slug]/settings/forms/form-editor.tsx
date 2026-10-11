@@ -2,11 +2,12 @@ import type { FormFieldDef } from "@angelic/db";
 import { Input, Select, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { FieldBuilder } from "./builder";
+import { OfferedAt } from "@/components/offered-at";
 
 type Action = Parameters<typeof ActionForm>[0]["action"];
 
 /** Shared create/edit form for an intake or consent form. */
-export function FormEditor({ action, slug, form, services, submitLabel }: { action: Action; slug: string; form: { id?: string; name: string; kind: string; description: string | null; fields: FormFieldDef[]; requireSignature: boolean; applyToAll: boolean; serviceIds: string[]; renewDays: number | null; active: boolean } | null; services: { id: string; name: string }[]; submitLabel: string }) {
+export function FormEditor({ action, slug, form, services, locations = [], submitLabel }: { action: Action; slug: string; form: { id?: string; name: string; kind: string; description: string | null; fields: FormFieldDef[]; requireSignature: boolean; applyToAll: boolean; serviceIds: string[]; renewDays: number | null; active: boolean; locationIds?: string[] } | null; services: { id: string; name: string }[]; locations?: { id: string; name: string }[]; submitLabel: string }) {
   return (
     <ActionForm action={action}>
       <input type="hidden" name="slug" value={slug} />
@@ -36,6 +37,7 @@ export function FormEditor({ action, slug, form, services, submitLabel }: { acti
           ))}
         </div>
       </fieldset>
+      <OfferedAt locations={locations} selected={form?.locationIds ?? []} legend="Required at" hint="Untick a location if visits there don't need this form (e.g. a different legal entity with its own waiver)." />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Ask again after (days)" name="renewDays" hint="Blank = sign once, valid forever."><Input name="renewDays" type="number" min={1} defaultValue={form?.renewDays ?? ""} placeholder="365" /></Field>
         {form ? <label className="mt-7 flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={form.active} className="h-4 w-4 accent-brand-600" /> Active</label> : <input type="hidden" name="active" value="on" />}
