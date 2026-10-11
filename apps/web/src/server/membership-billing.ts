@@ -1,15 +1,19 @@
 /**
  * Membership auto-renewal with Stripe subscriptions on the business's own
- * Connect account. Setting it up creates a monthly price for the plan (once)
- * and a subscription anchored to the current period end, charging the
- * client's saved card. Renewal invoices arrive on the Connect webhook and
- * extend the membership, reset its credits and record a paid sale.
+ * Connect account. Setting it up creates a recurring price for the plan (once,
+ * at the plan's cadence) and a subscription anchored to the current period end,
+ * charging the client's saved card. Renewal invoices arrive on the Connect
+ * webhook and extend the membership, top up its credits (plus any rollover)
+ * and record a paid sale. Fixed-length plans get a Stripe cancel-at date so the
+ * card stops being charged after the last period. A freeze pauses collection
+ * in Stripe (invoices in the window are voided) until the thaw date.
  */
 import { triggerWorkflows } from "@/server/workflows";
 import type Stripe from "stripe";
 import { eq, sql } from "drizzle-orm";
 import { db, schema, withJobs, withTenant } from "@angelic/db";
 import { stripe } from "@/lib/stripe";
+import { addMembershipPeriod, isMembershipInterval, renewedCredits } from "@angelic/core";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { locationOrDefault, paymentContextFor } from "./locations";
 
@@ -20,18 +24,23 @@ type Business = typeof schema.businesses.$inferSelect;
 async function ensurePlanPrice(accountId: string, businessId: string, plan: typeof schema.membershipPlans.$inferSelect, currency: string): Promise<string> {
   if (plan.stripePriceId) return plan.stripePriceId;
   const product = await stripe().products.create({ name: `${plan.name} membership`, metadata: { planId: plan.id, businessId } }, { stripeAccount: accountId });
-  const price = await stripe().prices.create({ product: product.id, currency, unit_amount: plan.priceCents, recurring: { interval: "month" }, metadata: { planId: plan.id } }, { stripeAccount: accountId });
+  const price = await stripe().prices.create({ product: product.id, currency, unit_amount: plan.priceCents, recurring: { interval: isMembershipInterval(plan.interval) ? plan.interval : "month", interval_count: Math.max(1, plan.intervalCount) }, metadata: { planId: plan.id } }, { stripeAccount: accountId });
   await withTenant(businessId, (tx) => tx.update(schema.membershipPlans).set({ stripePriceId: price.id }).where(eq(schema.membershipPlans.id, plan.id)));
   return price.id;
 }
 
-/** Start charging the saved card every month from the end of the current period. */
+/** Start charging the saved card every period from the end of the current one. */
 export async function enableAutoRenew(business: Business, membershipId: string, paymentMethodId: string, actorUserId: string) {
   const m = await withTenant(business.id, (tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, membershipId) }));
-  if (!m || m.status !== "active") throw new MembershipBillingError("Membership is not active.");
+  // A membership paused by a failed card comes back to life here; a frozen one has to be resumed first.
+  const revivable = m?.status === "paused" && !m.frozenUntil;
+  if (!m || (m.status !== "active" && !revivable)) throw new MembershipBillingError(m?.status === "paused" ? "Resume the membership first." : "Membership is not active.");
   if (m.stripeSubscriptionId) throw new MembershipBillingError("Auto-renew is already on.");
   const [plan, client] = await withTenant(business.id, async (tx) => [await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, m.planId) }), await tx.query.clients.findFirst({ where: eq(schema.clients.id, m.clientId) })] as const);
   if (!plan || !client) throw new MembershipBillingError("Plan or client not found.");
+  const interval = isMembershipInterval(plan.interval) ? plan.interval : "month";
+  const periodsLeft = plan.cycleCount ? plan.cycleCount - m.cyclesBilled : null;
+  if (periodsLeft !== null && periodsLeft <= 0) throw new MembershipBillingError("This plan's last period is already paid; there is nothing left to renew.");
   // The subscription lives on the account of the site that sold the membership (else the client's home site, else the default).
   const pay = await paymentContextFor(business, m.locationId ?? client.homeLocationId);
   const accountId = pay.accountId;
@@ -45,6 +54,8 @@ export async function enableAutoRenew(business: Business, membershipId: string, 
       items: [{ price: priceId }],
       default_payment_method: paymentMethodId,
       billing_cycle_anchor: anchor,
+      // Fixed-length plans: charge the remaining periods, then stop on their own.
+      ...(periodsLeft !== null ? { cancel_at: Math.floor(addMembershipPeriod(new Date(anchor * 1000), interval, plan.intervalCount, periodsLeft).getTime() / 1000) } : {}),
       proration_behavior: "none",
       collection_method: "charge_automatically",
       metadata: { businessId: business.id, membershipId: m.id, planId: plan.id, clientId: client.id },
@@ -52,7 +63,7 @@ export async function enableAutoRenew(business: Business, membershipId: string, 
     { stripeAccount: accountId, idempotencyKey: `membership_sub_${m.id}` },
   );
   await withTenant(business.id, async (tx) => {
-    await tx.update(schema.clientMemberships).set({ stripeSubscriptionId: sub.id, autoRenew: true, paymentFailedAt: null, locationId: m.locationId ?? pay.location?.id ?? null }).where(eq(schema.clientMemberships.id, m.id));
+    await tx.update(schema.clientMemberships).set({ stripeSubscriptionId: sub.id, autoRenew: true, status: "active", paymentFailedAt: null, locationId: m.locationId ?? pay.location?.id ?? null }).where(eq(schema.clientMemberships.id, m.id));
     await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "membership.autorenew_on", entity: "client_membership", entityId: m.id, diff: JSON.stringify({ subscription: sub.id }) });
   });
 }
@@ -77,6 +88,42 @@ export async function disableAutoRenew(business: Business, membershipId: string,
   });
 }
 
+/** Pause a membership until a date: no charges, no credits. It resumes on its own when the date passes. */
+export async function freezeMembership(business: Business, membershipId: string, until: Date, actorUserId: string) {
+  const m = await withTenant(business.id, (tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, membershipId) }));
+  if (!m || m.status !== "active") throw new MembershipBillingError("Only an active membership can be frozen.");
+  if (until.getTime() <= Date.now()) throw new MembershipBillingError("Pick a date in the future.");
+  if (m.stripeSubscriptionId) {
+    const pay = await paymentContextFor(business, m.locationId);
+    if (pay.accountId) await stripe().subscriptions.update(m.stripeSubscriptionId, { pause_collection: { behavior: "void", resumes_at: Math.floor(until.getTime() / 1000) } }, { stripeAccount: pay.accountId });
+  }
+  await withTenant(business.id, async (tx) => {
+    await tx.update(schema.clientMemberships).set({ status: "paused", frozenAt: new Date(), frozenUntil: until }).where(eq(schema.clientMemberships.id, m.id));
+    await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "membership.freeze", entity: "client_membership", entityId: m.id, diff: JSON.stringify({ until: until.toISOString() }) });
+  });
+}
+
+/** End a freeze early. Members without card billing get the frozen time added to their period. */
+export async function resumeMembership(business: Business, membershipId: string, actorUserId: string) {
+  const m = await withTenant(business.id, (tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, membershipId) }));
+  if (!m || m.status !== "paused" || !m.frozenUntil) throw new MembershipBillingError("This membership isn't frozen.");
+  let periodEnd = m.currentPeriodEnd;
+  if (m.stripeSubscriptionId) {
+    const pay = await paymentContextFor(business, m.locationId);
+    if (pay.accountId) {
+      const sub = await stripe().subscriptions.update(m.stripeSubscriptionId, { pause_collection: "" }, { stripeAccount: pay.accountId });
+      const end = (sub as unknown as { current_period_end?: number }).current_period_end ?? (sub.items?.data?.[0] as unknown as { current_period_end?: number } | undefined)?.current_period_end;
+      if (end) periodEnd = new Date(end * 1000);
+    }
+  } else if (m.frozenAt) {
+    periodEnd = new Date(m.currentPeriodEnd.getTime() + Math.max(0, Date.now() - m.frozenAt.getTime()));
+  }
+  await withTenant(business.id, async (tx) => {
+    await tx.update(schema.clientMemberships).set({ status: "active", frozenAt: null, frozenUntil: null, currentPeriodEnd: periodEnd }).where(eq(schema.clientMemberships.id, m.id));
+    await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "membership.resume", entity: "client_membership", entityId: m.id });
+  });
+}
+
 /** Connect webhook: a renewal invoice was paid. Extends the period, resets credits, records the sale. Idempotent per invoice. */
 export async function handleRenewalInvoice(business: Business, invoice: Stripe.Invoice, locationId: string | null = null) {
   const subId = subscriptionIdOf(invoice);
@@ -92,10 +139,18 @@ export async function handleRenewalInvoice(business: Business, invoice: Stripe.I
     if (!fresh || fresh.lastInvoiceId === invoice.id) return;
     const plan = await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, fresh.planId) });
     const periodEnd = invoice.lines.data[0]?.period?.end;
-    const base = fresh.currentPeriodEnd > new Date() ? fresh.currentPeriodEnd.getTime() : Date.now();
+    const base = fresh.currentPeriodEnd > new Date() ? fresh.currentPeriodEnd : new Date();
+    const fallbackEnd = addMembershipPeriod(base, plan && isMembershipInterval(plan.interval) ? plan.interval : "month", plan?.intervalCount ?? 1);
     await tx
       .update(schema.clientMemberships)
-      .set({ currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : new Date(base + 30 * 86_400_000), creditsRemaining: plan?.includedSessions ?? 0, status: "active", paymentFailedAt: null, lastInvoiceId: invoice.id })
+      .set({
+        currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : fallbackEnd,
+        creditsRemaining: renewedCredits(fresh.creditsRemaining, plan?.includedSessions ?? 0, plan?.rolloverCap ?? 0),
+        cyclesBilled: fresh.cyclesBilled + 1,
+        status: "active",
+        paymentFailedAt: null,
+        lastInvoiceId: invoice.id,
+      })
       .where(eq(schema.clientMemberships.id, fresh.id));
     const amount = invoice.amount_paid ?? 0;
     if (amount > 0) {

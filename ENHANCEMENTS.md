@@ -39,7 +39,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
     saved cards fetched but never shown, history shows only the first service of a visit, no alerts strip.
 13. **P2 Forms before rollout** — "is not ticked" conditions never show on first load, blank signatures get stored,
     required forms aren't enforced at check-in/checkout, no public/blank form link.
-14. **P2 Membership lifecycle** — failed-renewal state is a dead end, plan price edits never reach Stripe, re-selling
+14. ✅ **P2 Membership lifecycle** — failed-renewal state is a dead end, plan price edits never reach Stripe, re-selling
     to a paused member creates a duplicate.
 15. ✅ **P3 Setup checklist** can never finish for a solo salon or one without a Vagaro export and cannot be dismissed; on
     desktop it fills the calendar viewport and on a phone pushes the day grid off-screen entirely.
@@ -154,9 +154,9 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - **P2 Alerts strip under the header** [ux] — allergies/pinned note, no-show count, owes money, opted out.
 - **P2 History shows only the first service per visit** [bug] — joins `sortOrder = 0` (`page.tsx:48-55`, also
   `listClients`); show all items and the sale total, plus per-visit notes/formulas inline.
-- **P2 Membership payment-failed dead end** [bug] — paused with `autoRenew` still true; UI says "turn auto-renew on
+- ✅ **P2 Membership payment-failed dead end** [bug] — paused with `autoRenew` still true; UI says "turn auto-renew on
   again" but `enableAutoRenew` requires active (`page.tsx:276-290`, `server/membership-billing.ts:30,119`).
-- **P2 Manual package/membership adjustments** [gap] — add a session, extend expiry, pause/resume, transfer.
+- **P2 Manual package/membership adjustments** [gap] — add a session, extend expiry, transfer (freeze/resume ✅).
 - **P2 List filters** [gap] — tags, no visit in N months, birthday month, opted-out, has balance; `clients.tags` is
   only settable by import.
 - **P2 Edit notes** [ux] — only add/pin/delete (`notes-actions.ts`).
@@ -221,7 +221,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
   outstanding package sessions across clients.
 - **P3 Stale copy** — memberships list still says auto-billing "arrives with Stripe subscriptions"
   (`memberships/page.tsx:27`).
-- **P3 30-day periods and silent credit reset** [polish] — `offers.ts:94-99`, `membership-billing.ts:97`.
+- ✅ **P3 30-day periods and silent credit reset** [polish] — calendar periods at the plan cadence, rollover cap; — `offers.ts:94-99`, `membership-billing.ts:97`.
 - **P3 Loyalty** — integer points-per-dollar only (`settings/loyalty/actions.ts:13`); no expiry, tiers or exclusions;
   client page shows 10 of 50 with no "see all".
 - **P3 Reviews** — no filters, pagination, owner reply, low-rating alert or export (`listReviews` cap 200).

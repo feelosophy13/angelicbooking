@@ -114,10 +114,10 @@ export async function clientAccountData(business: PublicBusiness, clientId: stri
       .innerJoin(schema.packages, eq(schema.packages.id, schema.clientPackages.packageId))
       .where(and(eq(schema.clientPackages.clientId, clientId), gt(schema.clientPackages.remaining, 0), or(isNull(schema.clientPackages.expiresAt), gt(schema.clientPackages.expiresAt, now))));
     const memberships = await tx
-      .select({ id: schema.clientMemberships.id, name: schema.membershipPlans.name, status: schema.clientMemberships.status, creditsRemaining: schema.clientMemberships.creditsRemaining, currentPeriodEnd: schema.clientMemberships.currentPeriodEnd })
+      .select({ id: schema.clientMemberships.id, name: schema.membershipPlans.name, status: schema.clientMemberships.status, creditsRemaining: schema.clientMemberships.creditsRemaining, currentPeriodEnd: schema.clientMemberships.currentPeriodEnd, autoRenew: schema.clientMemberships.autoRenew, frozenUntil: schema.clientMemberships.frozenUntil, cycleCount: schema.membershipPlans.cycleCount, cyclesBilled: schema.clientMemberships.cyclesBilled })
       .from(schema.clientMemberships)
       .innerJoin(schema.membershipPlans, eq(schema.membershipPlans.id, schema.clientMemberships.planId))
-      .where(and(eq(schema.clientMemberships.clientId, clientId), eq(schema.clientMemberships.status, "active")));
+      .where(and(eq(schema.clientMemberships.clientId, clientId), sql`${schema.clientMemberships.status} in ('active','paused')`));
     const points = business.loyaltyEnabled ? await pointsBalance(tx, clientId) : 0;
     const referralCode = business.loyaltyEnabled && (business.referralBonusPoints > 0 || business.referralFriendBonusPoints > 0) ? await ensureReferralCode(tx, client) : null;
     const giftCards = await tx.select({ code: schema.giftCards.code, balanceCents: schema.giftCards.balanceCents }).from(schema.giftCards).where(and(eq(schema.giftCards.purchaserClientId, clientId), gt(schema.giftCards.balanceCents, 0), eq(schema.giftCards.active, true)));

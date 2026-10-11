@@ -421,6 +421,13 @@
       "when": 1791742326330,
       "tag": "0059_refund_reasons_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1791747719122,
+      "tag": "0060_membership_cadence",
+      "breakpoints": true
     }
   ]
 }

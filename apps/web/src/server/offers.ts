@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
+import { addMembershipPeriod, isMembershipInterval, periodNoun, renewedCredits } from "@angelic/core";
 import { SaleError } from "./sales";
 import { validAtLocation } from "./locations";
 
@@ -25,8 +26,28 @@ export async function getOffersCatalog(businessId: string) {
   });
 }
 
+/** Lazy state changes a membership makes on its own: a freeze that has ended resumes, a fixed-length plan whose last period passed ends. */
+export async function settleMemberships(tx: TenantDb, clientId: string) {
+  const now = new Date();
+  const rows = await tx
+    .select({ m: schema.clientMemberships, cycleCount: schema.membershipPlans.cycleCount })
+    .from(schema.clientMemberships)
+    .innerJoin(schema.membershipPlans, eq(schema.membershipPlans.id, schema.clientMemberships.planId))
+    .where(and(eq(schema.clientMemberships.clientId, clientId), sql`${schema.clientMemberships.status} in ('active','paused')`));
+  for (const { m, cycleCount } of rows) {
+    if (m.status === "paused" && m.frozenUntil && m.frozenUntil <= now) {
+      // Members without card billing get the frozen time back; Stripe-billed ones follow the next invoice.
+      const extend = !m.stripeSubscriptionId && m.frozenAt ? Math.max(0, m.frozenUntil.getTime() - m.frozenAt.getTime()) : 0;
+      await tx.update(schema.clientMemberships).set({ status: "active", frozenAt: null, frozenUntil: null, currentPeriodEnd: new Date(m.currentPeriodEnd.getTime() + extend) }).where(eq(schema.clientMemberships.id, m.id));
+    } else if (m.status === "active" && cycleCount && m.cyclesBilled >= cycleCount && m.currentPeriodEnd <= now) {
+      await tx.update(schema.clientMemberships).set({ status: "ended", autoRenew: false }).where(eq(schema.clientMemberships.id, m.id));
+    }
+  }
+}
+
 /** Client's usable credits for checkout. */
 export async function getClientCredits(tx: TenantDb, clientId: string) {
+  await settleMemberships(tx, clientId);
   const now = new Date();
   const [packs, memberships] = await Promise.all([
     tx
@@ -64,7 +85,8 @@ export async function addOfferLine(input: { businessId: string; saleId: string; 
       if (!p || !p.active) throw new SaleError("Membership plan not found.");
       if (!sale.clientId) throw new SaleError("Attach a client to sell a membership.");
       amount = p.priceCents;
-      name = `${p.name} membership (1 month)`;
+      const noun = periodNoun(isMembershipInterval(p.interval) ? p.interval : "month", p.intervalCount);
+      name = `${p.name} membership (${p.intervalCount > 1 ? noun : `1 ${noun}`})`;
     }
     await tx.insert(schema.saleLines).values({ businessId: input.businessId, saleId: sale.id, kind: input.kind, productId: input.refId, name, quantity: 1, unitCents: amount, amountCents: amount, taxable: false, sortOrder: 200 });
     await tx.update(schema.sales).set({ subtotalCents: sql`${schema.sales.subtotalCents} + ${amount}`, totalCents: sql`${schema.sales.totalCents} + ${amount}` }).where(eq(schema.sales.id, sale.id));
@@ -93,13 +115,17 @@ export async function fulfilOfferLines(tx: TenantDb, businessId: string, saleId:
     } else if (l.kind === "membership" && l.productId && sale.clientId) {
       const plan = await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, l.productId) });
       if (!plan) continue;
-      const existing = await tx.query.clientMemberships.findFirst({ where: and(eq(schema.clientMemberships.clientId, sale.clientId), eq(schema.clientMemberships.planId, plan.id), eq(schema.clientMemberships.status, "active")) });
-      const month = 30 * 86_400_000;
+      const interval = isMembershipInterval(plan.interval) ? plan.interval : "month";
+      // Selling the plan again renews by hand (and revives one paused by a failed card or a freeze) instead of starting a duplicate.
+      const existing = await tx.query.clientMemberships.findFirst({ where: and(eq(schema.clientMemberships.clientId, sale.clientId), eq(schema.clientMemberships.planId, plan.id), sql`${schema.clientMemberships.status} in ('active','paused')`) });
       if (existing) {
-        const base = existing.currentPeriodEnd > new Date() ? existing.currentPeriodEnd.getTime() : Date.now();
-        await tx.update(schema.clientMemberships).set({ currentPeriodEnd: new Date(base + month), creditsRemaining: plan.includedSessions }).where(eq(schema.clientMemberships.id, existing.id));
+        // Next period starts when the current one ends (or now, if lapsed).
+        const lapsed = existing.currentPeriodEnd <= new Date();
+        const base = lapsed ? new Date() : existing.currentPeriodEnd;
+        const credits = lapsed ? plan.includedSessions : renewedCredits(existing.creditsRemaining, plan.includedSessions, plan.rolloverCap);
+        await tx.update(schema.clientMemberships).set({ currentPeriodEnd: addMembershipPeriod(base, interval, plan.intervalCount), creditsRemaining: credits, cyclesBilled: existing.cyclesBilled + 1, status: "active", paymentFailedAt: null, frozenAt: null, frozenUntil: null }).where(eq(schema.clientMemberships.id, existing.id));
       } else {
-        await tx.insert(schema.clientMemberships).values({ businessId, clientId: sale.clientId, planId: plan.id, currentPeriodEnd: new Date(Date.now() + month), creditsRemaining: plan.includedSessions, locationId: sale.locationId });
+        await tx.insert(schema.clientMemberships).values({ businessId, clientId: sale.clientId, planId: plan.id, currentPeriodEnd: addMembershipPeriod(new Date(), interval, plan.intervalCount), creditsRemaining: plan.includedSessions, cyclesBilled: 1, locationId: sale.locationId });
       }
     }
   }

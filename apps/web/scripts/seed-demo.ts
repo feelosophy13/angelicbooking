@@ -462,6 +462,9 @@ async function main() {
     await tx.insert(schema.membershipPlans).values([
       { businessId, name: "Classic Lash Membership", priceCents: 11000, includedServiceId: gel.id, includedSessions: 2, discountBps: 0, description: "Two classic refills a month ($55 each instead of $65)." },
       { businessId, name: "Lash Lift & Tint Membership", priceCents: 9000, includedServiceId: serviceIds.find((s) => s.name === "Korean Lash Lift (ECO) & Tint")!.id, includedSessions: 1, discountBps: 500, description: "One lash lift & tint a month and 5% off retail." },
+      { businessId, name: "Fill Club", priceCents: 5500, interval: "week", intervalCount: 2, includedServiceId: gel.id, includedSessions: 1, rolloverCap: 1, discountBps: 0, description: "A refill every two weeks; skip one and it carries over." },
+      { businessId, name: "Glow Year", priceCents: 99000, interval: "year", intervalCount: 1, includedServiceId: blowout.id, includedSessions: 12, discountBps: 1000, description: "Twelve facials a year and 10% off everything else." },
+      { businessId, name: "12-Week Lash Course", priceCents: 6000, interval: "week", intervalCount: 2, cycleCount: 6, includedServiceId: gel.id, includedSessions: 1, discountBps: 0, description: "Six fills over twelve weeks, then it ends on its own." },
     ]);
     for (const [i, c] of clientIds.slice(0, 3).entries()) await tx.insert(schema.giftCards).values({ businessId, code: `${PROFILE.giftPrefix}-GIFT-${1000 + i}`, initialCents: 10000, balanceCents: i === 0 ? 4500 : 10000, purchaserClientId: c.id, recipientName: `${c.first}'s friend`, locationId });
     await tx.insert(schema.promoCodes).values({ businessId, code: "WELCOME10", type: "percent", value: 10, maxUses: 100 });

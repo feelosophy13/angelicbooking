@@ -296,7 +296,8 @@ export const clientPackages = pgTable(
   (t) => [index("client_packages_client_idx").on(t.businessId, t.clientId), check("client_packages_remaining_ck", sql`${t.remaining} >= 0`)],
 );
 
-// Recurring plan: a price per month that includes N sessions of a service and/or a discount.
+// Recurring plan: a price per billing period (every N weeks / months / years) that includes
+// N sessions of a service and/or a discount.
 export const membershipPlans = pgTable(
   "membership_plans",
   {
@@ -304,8 +305,15 @@ export const membershipPlans = pgTable(
     businessId: businessId(),
     name: text("name").notNull(),
     priceCents: integer("price_cents").notNull(),
+    // Billing cadence: every `intervalCount` × `interval` (week | month | year).
+    interval: text("interval").notNull().default("month"),
+    intervalCount: integer("interval_count").notNull().default(1),
     includedServiceId: text("included_service_id"),
     includedSessions: integer("included_sessions").notNull().default(0), // per period
+    // Unused sessions that may carry into the next period (0 = none carry over).
+    rolloverCap: integer("rollover_cap").notNull().default(0),
+    // Fixed-length plans end after this many billed periods; null = ongoing until cancelled.
+    cycleCount: integer("cycle_count"),
     discountBps: integer("discount_bps").notNull().default(0), // off other services
     description: text("description"),
     // Where credits and discounts can be used. Empty = any location of the business.
@@ -318,7 +326,8 @@ export const membershipPlans = pgTable(
   (t) => [index("membership_plans_business_idx").on(t.businessId)],
 );
 
-export const membershipStatus = pgEnum("membership_status", ["active", "paused", "cancelled"]);
+// paused = frozen on purpose (frozenUntil set) or waiting on a failed card; ended = fixed-length plan ran its course.
+export const membershipStatus = pgEnum("membership_status", ["active", "paused", "cancelled", "ended"]);
 
 export const clientMemberships = pgTable(
   "client_memberships",
@@ -335,6 +344,11 @@ export const clientMemberships = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
     currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }).notNull(),
     creditsRemaining: integer("credits_remaining").notNull().default(0),
+    // Periods paid for so far (the sale counts as the first); fixed-length plans stop at plan.cycleCount.
+    cyclesBilled: integer("cycles_billed").notNull().default(1),
+    // A freeze: no charges and no credits until frozenUntil, then the membership resumes on its own.
+    frozenAt: timestamp("frozen_at", { withTimezone: true }),
+    frozenUntil: timestamp("frozen_until", { withTimezone: true }),
     // Sold at: the renewal subscription lives on this location's Stripe account.
     locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     stripeSubscriptionId: text("stripe_subscription_id"),

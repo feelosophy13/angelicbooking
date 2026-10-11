@@ -71,7 +71,7 @@ export default async function AccountPage({ params }: { params: Promise<{ slug: 
           {business.loyaltyEnabled ? <p><b>{data.points.toLocaleString()}</b> points · worth {formatMoney(data.points * business.loyaltyPointValueCents, business.currency)} at checkout{data.points < business.loyaltyMinRedeemPoints ? ` (redeem from ${business.loyaltyMinRedeemPoints})` : ""}</p> : null}
           {data.referralCode ? <p className="mt-1">Your referral code: <span className="font-mono font-semibold">{data.referralCode}</span>{business.referralBonusPoints ? ` · earn ${business.referralBonusPoints} points when a friend books with it` : ""}</p> : null}
           {data.packs.map((p) => <p key={p.id} className="mt-1">{p.name}: {p.remaining} session{p.remaining === 1 ? "" : "s"} left</p>)}
-          {data.memberships.map((m) => <p key={m.id} className="mt-1">{m.name}: {m.creditsRemaining} credit{m.creditsRemaining === 1 ? "" : "s"} · renews {day(m.currentPeriodEnd)}</p>)}
+          {data.memberships.map((m) => <p key={m.id} className="mt-1">{m.name}: {m.frozenUntil ? `frozen until ${day(m.frozenUntil)}` : m.status === "paused" ? "paused" : `${m.creditsRemaining} credit${m.creditsRemaining === 1 ? "" : "s"} · ${m.cycleCount && m.cyclesBilled >= m.cycleCount ? "ends" : m.autoRenew ? "renews" : "period ends"} ${day(m.currentPeriodEnd)}`}</p>)}
           {data.giftCards.map((g) => <p key={g.code} className="mt-1">Gift card {g.code}: {formatMoney(g.balanceCents, business.currency)} left</p>)}
         </section>
       ) : null}

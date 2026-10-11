@@ -26,7 +26,9 @@ import { clientStats } from "@/server/clients";
 import { reviewsForClient } from "@/server/reviews";
 import { adjustClientPoints, adjustClientStoreCredit, createReferralCode, sendReferralCodeAction } from "./loyalty-actions";
 import { getClientStoreCredit } from "@/server/store-credit";
-import { turnOffAutoRenew, turnOnAutoRenew } from "./membership-actions";
+import { freezeMembershipAction, resumeMembershipAction, turnOffAutoRenew, turnOnAutoRenew } from "./membership-actions";
+import { settleMemberships } from "@/server/offers";
+import { isMembershipInterval, periodNoun } from "@angelic/core";
 import { replyToClient } from "./messages-actions";
 import { clientThread } from "@/server/inbound";
 import { savedCardsFor } from "@/server/stripe-connect";
@@ -46,6 +48,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
     if (!client) return null;
     const now = new Date();
+    await settleMemberships(tx, clientId);
     const notes = await tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, clientId)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(100);
     const [visits, sales, packs, memberships] = await Promise.all([
       tx
@@ -65,7 +68,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
         .where(and(eq(schema.clientPackages.clientId, clientId), or(isNull(schema.clientPackages.expiresAt), gt(schema.clientPackages.expiresAt, now))))
         .orderBy(asc(schema.packages.name)),
       tx
-        .select({ id: schema.clientMemberships.id, name: schema.membershipPlans.name, status: schema.clientMemberships.status, creditsRemaining: schema.clientMemberships.creditsRemaining, currentPeriodEnd: schema.clientMemberships.currentPeriodEnd, autoRenew: schema.clientMemberships.autoRenew, paymentFailedAt: schema.clientMemberships.paymentFailedAt })
+        .select({ id: schema.clientMemberships.id, name: schema.membershipPlans.name, status: schema.clientMemberships.status, creditsRemaining: schema.clientMemberships.creditsRemaining, currentPeriodEnd: schema.clientMemberships.currentPeriodEnd, autoRenew: schema.clientMemberships.autoRenew, paymentFailedAt: schema.clientMemberships.paymentFailedAt, interval: schema.membershipPlans.interval, intervalCount: schema.membershipPlans.intervalCount, cycleCount: schema.membershipPlans.cycleCount, cyclesBilled: schema.clientMemberships.cyclesBilled, frozenUntil: schema.clientMemberships.frozenUntil })
         .from(schema.clientMemberships)
         .innerJoin(schema.membershipPlans, eq(schema.membershipPlans.id, schema.clientMemberships.planId))
         .where(eq(schema.clientMemberships.clientId, clientId)),
@@ -375,27 +378,56 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             <h2 className="mb-2 font-medium">Packages &amp; memberships</h2>
             {packs.length === 0 && memberships.length === 0 ? <p className="text-stone-500">None.</p> : null}
             {packs.map((p) => <p key={p.id}>{p.name} · {p.remaining} session{p.remaining === 1 ? "" : "s"} left{p.expiresAt ? ` · expires ${fmtDate.format(p.expiresAt)}` : ""}</p>)}
-            {memberships.map((m) => (
-              <div key={m.id} className="mt-1 rounded-lg border border-stone-200 p-2">
-                <p>{m.name} · {m.status}{m.status === "active" || m.status === "paused" ? ` · ${m.creditsRemaining} credit${m.creditsRemaining === 1 ? "" : "s"} · ${m.autoRenew ? "renews automatically" : "period ends"} ${fmtDate.format(m.currentPeriodEnd)}` : ""}</p>
-                {m.paymentFailedAt ? <p className="text-xs text-red-700">Last renewal payment failed {fmtDate.format(m.paymentFailedAt)}. Update the card and turn auto-renew on again.</p> : null}
-                {write && m.status !== "cancelled" ? (
-                  m.autoRenew ? (
-                    <form action={turnOffAutoRenew} className="mt-1 flex gap-2">
-                      <input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="membershipId" value={m.id} />
-                      <button className="text-xs underline">Turn off auto-renew</button>
-                      <ConfirmSubmit name="cancel" value="1" title="Cancel this membership?" body="Stops the renewal charges and ends the membership now." confirmLabel="Cancel membership" variant="ghost" className="text-xs">Cancel membership</ConfirmSubmit>
-                    </form>
-                  ) : stripeReady && savedCards.length ? (
-                    <form action={turnOnAutoRenew} className="mt-1 flex flex-wrap items-center gap-2">
-                      <input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="membershipId" value={m.id} />
-                      <select name="paymentMethodId" className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-xs">{savedCards.map((c) => <option key={c.id} value={c.id}>{c.brand.toUpperCase()} •••• {c.last4}</option>)}</select>
-                      <button className="rounded-lg border border-stone-300 bg-white px-2 py-1 text-xs hover:bg-stone-50">Auto-renew with this card</button>
-                    </form>
-                  ) : <p className="text-xs text-stone-500">{stripeReady ? "Save a card at checkout to turn on auto-renew." : "Connect Stripe to auto-renew memberships."}</p>
-                ) : null}
-              </div>
-            ))}
+            {memberships.map((m) => {
+              const period = periodNoun(isMembershipInterval(m.interval) ? m.interval : "month", m.intervalCount);
+              const frozen = m.status === "paused" && !!m.frozenUntil;
+              const lastPeriod = !!m.cycleCount && m.cyclesBilled >= m.cycleCount;
+              const live = m.status === "active" || m.status === "paused";
+              const line = [
+                m.name,
+                frozen ? `frozen until ${fmtDate.format(m.frozenUntil!)}` : m.status === "paused" ? "paused" : m.status === "active" ? `${m.creditsRemaining} credit${m.creditsRemaining === 1 ? "" : "s"}` : m.status,
+                live && !frozen ? (lastPeriod ? `ends ${fmtDate.format(m.currentPeriodEnd)}` : `${m.autoRenew ? "renews" : "period ends"} ${fmtDate.format(m.currentPeriodEnd)}`) : "",
+                live ? `billed every ${period}${m.cycleCount ? ` · ${m.cyclesBilled} of ${m.cycleCount} paid` : ""}` : "",
+              ].filter(Boolean).join(" · ");
+              return (
+                <div key={m.id} className="mt-1 rounded-lg border border-stone-200 p-2">
+                  <p>{line}</p>
+                  {m.paymentFailedAt && !frozen ? <p className="text-xs text-red-700">Last renewal payment failed {fmtDate.format(m.paymentFailedAt)}. Pick a card below to turn auto-renew on again.</p> : null}
+                  {write && live ? (
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      {frozen ? (
+                        <form action={resumeMembershipAction}>
+                          <input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="membershipId" value={m.id} />
+                          <button className="text-xs underline">Resume now</button>
+                        </form>
+                      ) : m.status === "active" ? (
+                        <form action={freezeMembershipAction} className="flex items-center gap-1 text-xs">
+                          <input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="membershipId" value={m.id} />
+                          <span>Freeze until</span>
+                          <input type="date" name="until" required className="h-7 rounded-lg border border-stone-300 bg-white px-1.5 text-xs" />
+                          <button className="underline">Freeze</button>
+                        </form>
+                      ) : null}
+                      {m.autoRenew ? (
+                        <form action={turnOffAutoRenew} className="flex gap-2">
+                          <input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="membershipId" value={m.id} />
+                          <button className="text-xs underline">Turn off auto-renew</button>
+                          <ConfirmSubmit name="cancel" value="1" title="Cancel this membership?" body="Stops the renewal charges and ends the membership now." confirmLabel="Cancel membership" variant="ghost" className="text-xs">Cancel membership</ConfirmSubmit>
+                        </form>
+                      ) : frozen ? null : lastPeriod ? (
+                        <span className="text-xs text-stone-500">Last period of a {m.cycleCount}-period plan; it ends on its own.</span>
+                      ) : stripeReady && savedCards.length ? (
+                        <form action={turnOnAutoRenew} className="flex flex-wrap items-center gap-2">
+                          <input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="membershipId" value={m.id} />
+                          <select name="paymentMethodId" className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-xs">{savedCards.map((c) => <option key={c.id} value={c.id}>{c.brand.toUpperCase()} •••• {c.last4}</option>)}</select>
+                          <button className="rounded-lg border border-stone-300 bg-white px-2 py-1 text-xs hover:bg-stone-50">Auto-renew with this card</button>
+                        </form>
+                      ) : <p className="text-xs text-stone-500">{stripeReady ? "Save a card at checkout to turn on auto-renew." : "Connect Stripe to auto-renew memberships."}</p>}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </Card>
           <p className="text-xs text-stone-400">Client since {fmtDate.format(client.createdAt)}{client.tags.length ? ` · ${client.tags.join(", ")}` : ""}</p>
         </div>

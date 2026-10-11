@@ -201,6 +201,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-11 (migration 0060): flexible memberships. Plans are billed every week / 2 weeks / month / 3 months /
+      6 months / year (`interval` + `interval_count`, calendar months so the 31st doesn't drift); unused sessions can
+      carry over up to `rollover_cap`; `cycle_count` makes a fixed-length plan that ends on its own ("1 of 6 paid",
+      Stripe subscription gets a cancel-at date). Freeze until a date from the client page (Stripe pause_collection
+      void; resumes on its own, or "Resume now"; members without card billing get the frozen time back). A membership
+      paused by a failed card can have auto-renew turned on again. Price/cadence edits clear the Stripe price so the
+      next setup makes a new one. Status enum gains `ended`. Demo seed has Fill Club (2-weekly, 1 carries over),
+      Glow Year and a 12-Week Lash Course (6 × 2 weeks).
 - [x] 2026-10-11: who-did-what on appointments and tickets. Both pages end with one grey line ("Booked by Demo
       Owner, Oct 11 · Ava cancelled it, Oct 11 (client sick) · Paid by Demo Owner, Oct 11") and a "Full history"
       disclosure listing every logged action newest-first (booked, confirmed, checked in, rescheduled, services

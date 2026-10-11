@@ -4,7 +4,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { ConfirmSubmit } from "@/components/form";
 import { dateTime } from "@/lib/format";
 import { notFound } from "next/navigation";
-import { can } from "@angelic/core";
+import { can, isMembershipInterval, periodNoun } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { getSale } from "@/server/sales";
 import { savedCardsFor } from "@/server/stripe-connect";
@@ -247,7 +247,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                   </form>
                   <form action={addOffer} className="space-y-2">
                     <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="kind" value="membership" />
-                    <Select name="refId" required>{(catalog?.plans ?? []).filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)}/mo</option>)}</Select>
+                    <Select name="refId" required>{(catalog?.plans ?? []).filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)} / {periodNoun(isMembershipInterval(p.interval) ? p.interval : "month", p.intervalCount)}</option>)}</Select>
                     <Button type="submit" size="sm" variant="secondary" disabled={!client || !catalog?.plans.some((p) => p.active)}>Add membership{!client ? " (needs client)" : ""}</Button>
                   </form>
                 </div>
