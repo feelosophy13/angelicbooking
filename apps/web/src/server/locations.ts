@@ -104,6 +104,21 @@ export function paymentContextsOf(business: Business, locations: Location[]): Pa
   return locations.map((l) => paymentContext(business, l));
 }
 
+/** One context per distinct Stripe account that is ready to charge: the main account once, plus each location with its own. */
+export async function readyAccountsOf(business: Business): Promise<PaymentContext[]> {
+  const locations = await listLocations(business.id);
+  const out = new Map<string, PaymentContext>();
+  for (const l of [...locations].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))) {
+    const p = paymentContext(business, l);
+    if (p.ready && p.accountId && !out.has(p.accountId)) out.set(p.accountId, p);
+  }
+  if (!locations.length) {
+    const p = paymentContext(business, null);
+    if (p.ready && p.accountId) out.set(p.accountId, p);
+  }
+  return [...out.values()];
+}
+
 /**
  * Webhook helper: which tenant (and location) a connected account belongs to.
  * Runs without tenant context, so locations are read with the jobs policy.

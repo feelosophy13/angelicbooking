@@ -143,7 +143,7 @@ export default async function CalendarPage({
           <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label="Next"><ChevronRight className="h-4 w-4" /></LinkButton>
         </div>
         {can(permissions, "appointments.write.any") ? (
-          <LinkButton href={`/app/${slug}/appointments/new?date=${date}`} variant="primary" size="sm"><Plus className="h-4 w-4" /> <span className="hidden sm:inline">New appointment</span><span className="sm:hidden">New</span></LinkButton>
+          <LinkButton href={`/app/${slug}/appointments/new?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}`} variant="primary" size="sm"><Plus className="h-4 w-4" /> <span className="hidden sm:inline">New appointment</span><span className="sm:hidden">New</span></LinkButton>
         ) : null}
       </PageHeader>
 

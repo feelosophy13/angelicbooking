@@ -16,6 +16,7 @@
  *   locations: "Angelic Beauty" and "Angelic Lashes by Tiffany" are created/renamed; sold items are not location-bound in the app.
  */
 import fs from "node:fs";
+import { resolveAppointmentLocation } from "../src/server/booking";
 import path from "node:path";
 import { and, eq, sql } from "drizzle-orm";
 import { db, getSql, schema, withTenant, type TenantDb } from "@angelic/db";
@@ -141,16 +142,20 @@ async function importStaff(tx: TenantDb, businessId: string, locations: Map<stri
   // Weekly hours (replace whatever exists for imported staff that have rows in the export).
   const hours = csv("employee_hours.csv");
   const withHours = new Set(hours.map((h) => norm(h.employee)));
+  // Re-runs keep the per-weekday location the owner set in Staff → Weekly hours; the export does not know it.
+  const keptLoc = new Map<string, Map<number, string | null>>();
   for (const n of withHours) {
     const staffId = byName.get(n);
     if (!staffId) { note("hours", `no staff row for ${n}`); continue; }
+    const rows = await tx.select({ weekday: schema.staffSchedules.weekday, locationId: schema.staffSchedules.locationId }).from(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, staffId));
+    keptLoc.set(staffId, new Map(rows.map((r) => [r.weekday, r.locationId])));
     await tx.delete(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, staffId));
   }
   for (const h of hours) {
     const staffId = byName.get(norm(h.employee));
     const wd = DOW[h.day.slice(0, 3).toLowerCase()];
     if (!staffId || wd === undefined || !h.start || !h.end) { R("hours").skipped++; continue; }
-    await tx.insert(schema.staffSchedules).values({ businessId, staffId, weekday: wd, startTime: h.start, endTime: h.end });
+    await tx.insert(schema.staffSchedules).values({ businessId, staffId, weekday: wd, startTime: h.start, endTime: h.end, locationId: keptLoc.get(staffId)?.get(wd) ?? null });
     R("hours").created++;
   }
   return byName;
@@ -286,8 +291,6 @@ async function importAppointments(tx: TenantDb, businessId: string, tz: string, 
         .from(schema.appointmentItems)
     ).map((i) => `${i.staffId}|${i.startAt.getTime()}|${norm(i.name)}`),
   );
-  const defaultLoc = await tx.query.locations.findFirst({ where: eq(schema.locations.isDefault, true) });
-  const staffRows = await tx.select().from(schema.staff);
   for (const r of rows) {
     const staffId = staffByName.get(norm(r.employee));
     if (!staffId || !/^\d{4}-\d{2}-\d{2}$/.test(r.date) || !/^\d{2}:\d{2}/.test(r.start)) { R("appointments").skipped++; note("appointments", `skipped: ${r.date} ${r.start} ${r.employee} ${r.service}`); continue; }
@@ -303,7 +306,7 @@ async function importAppointments(tx: TenantDb, businessId: string, tz: string, 
     const notes = [r.addons ? `Add-ons: ${r.addons}` : null, r.booked_via ? `Booked via ${r.booked_via}` : null, bool(r.recurring) ? "Recurring in Vagaro" : null].filter(Boolean).join(" · ") || null;
     const [appt] = await tx
       .insert(schema.appointments)
-      .values({ businessId, locationId: staffRows.find((s) => s.id === staffId)?.locationId ?? defaultLoc?.id ?? null, clientId, status, source: "import", notes, depositCents: bool(r.deposit) ? 0 : 0, createdAt: past ? startAt : undefined })
+      .values({ businessId, locationId: await resolveAppointmentLocation(tx, staffId, startAt, tz), clientId, status, source: "import", notes, depositCents: bool(r.deposit) ? 0 : 0, createdAt: past ? startAt : undefined })
       .returning({ id: schema.appointments.id });
     const item = { businessId, appointmentId: appt!.id, staffId, serviceId: serviceByName.get(norm(serviceName)) ?? null, serviceName: serviceName.slice(0, 120), startAt, endAt: endAt > startAt ? endAt : new Date(startAt.getTime() + 15 * 60_000), priceCents: cents(r.price), status };
     // History may overlap freely (Vagaro allowed it); future bookings are tried strictly first and

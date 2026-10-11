@@ -295,6 +295,13 @@
       "when": 1791684429767,
       "tag": "0041_schedule_location_set_null",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1791684874997,
+      "tag": "0042_waitlist_location_drop_legacy_customer",
+      "breakpoints": true
     }
   ]
 }

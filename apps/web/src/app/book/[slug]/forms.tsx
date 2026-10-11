@@ -36,13 +36,14 @@ export function BookingForm(props: { slug: string; serviceId: string; staffId: s
   );
 }
 
-export function WaitlistForm(props: { slug: string; serviceId: string; staffId: string; date: string }) {
+export function WaitlistForm(props: { slug: string; serviceId: string; staffId: string; date: string; locationId?: string | null }) {
   const [state, action] = useActionState<PublicState, FormData>(joinWaitlistAction, undefined);
   if (state?.ok) return <Notice kind="success">You're on the waitlist. We'll contact you if a spot opens up.</Notice>;
   return (
     <form action={action} className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
       <input type="hidden" name="slug" value={props.slug} />
       <input type="hidden" name="serviceId" value={props.serviceId} />
+      {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}
       <input type="hidden" name="staffId" value={props.staffId} />
       <input type="hidden" name="date" value={props.date} />
       <p className="text-sm font-medium">Join the waitlist for this day</p>

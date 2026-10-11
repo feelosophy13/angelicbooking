@@ -215,7 +215,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
             {!date ? <p className="text-sm text-stone-500">Select a highlighted day.</p> : slots.length === 0 ? (
               <div className="space-y-3">
                 <p className="text-sm text-stone-600">No openings on {formatDateLong(date)}.</p>
-                <WaitlistForm slug={slug} serviceId={service.id} staffId={staffChoice} date={date} />
+                <WaitlistForm slug={slug} serviceId={service.id} staffId={staffChoice} date={date} locationId={locId} />
               </div>
             ) : (
               <>

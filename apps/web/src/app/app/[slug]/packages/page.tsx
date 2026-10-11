@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { can } from "@angelic/core";
@@ -30,7 +31,7 @@ export default async function PackagesPage({ params }: { params: Promise<{ slug:
             {packages.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className={p.active ? "" : "text-stone-400 line-through"}>
-                  <p className="font-medium">{p.name}</p>
+                  <p className="font-medium">{manage ? <Link href={`/app/${slug}/packages/${p.id}`} className="hover:underline">{p.name}</Link> : p.name}</p>
                   <p className="text-xs text-stone-500">{p.sessions}× {p.serviceId ? svc(p.serviceId) : "any service"}{p.validDays ? ` · valid ${p.validDays} days` : ""}{validAtLabel(p.validLocationIds)}</p>
                 </div>
                 <span className="font-medium">{formatMoney(p.priceCents, business.currency)}</span>

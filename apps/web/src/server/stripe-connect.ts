@@ -119,6 +119,10 @@ export interface SavedCard {
   last4: string;
   expMonth: number;
   expYear: number;
+  /** Which connected account holds the card (set when listed across several). */
+  accountId?: string;
+  /** Merchant name for that account, for labelling. */
+  siteName?: string;
 }
 
 /** Saved cards for a client (lives on the connected account). */

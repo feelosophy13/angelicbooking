@@ -21,9 +21,9 @@ export class StoreError extends Error {}
 
 export const GIFT_PRESETS_CENTS = [2500, 5000, 7500, 10000, 15000, 20000];
 
-/** Online orders are taken at the default location (its Stripe account and tax rate). */
-export async function storeReady(business: PublicBusiness): Promise<boolean> {
-  const pay = await paymentContextFor(business, null);
+/** Online orders are taken at the chosen location (its Stripe account and tax rate), else the default one. */
+export async function storeReady(business: PublicBusiness, locationId?: string | null): Promise<boolean> {
+  const pay = await paymentContextFor(business, locationId);
   return pay.ready && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 }
 
@@ -46,9 +46,9 @@ export interface OrderInput {
 }
 
 /** Create the open sale and the PaymentIntent the browser confirms. */
-export async function startOrder(business: PublicBusiness, input: OrderInput) {
-  if (!(await storeReady(business))) throw new StoreError("Online payments aren't set up yet.");
-  const pay = await paymentContextFor(business, null);
+export async function startOrder(business: PublicBusiness, input: OrderInput, locationId?: string | null) {
+  if (!(await storeReady(business, locationId))) throw new StoreError("Online payments aren't set up yet.");
+  const pay = await paymentContextFor(business, locationId);
   if (!input.items.length && !input.giftCard) throw new StoreError("Your cart is empty.");
   if (input.giftCard && (input.giftCard.amountCents < 500 || input.giftCard.amountCents > 100000)) throw new StoreError("Gift cards are between $5 and $1,000.");
   if (input.fulfillment.method === "ship" && (!business.shippingFlatCents || !input.fulfillment.address)) throw new StoreError("Enter a shipping address.");

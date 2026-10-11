@@ -21,6 +21,7 @@ export async function startOrderAction(input: {
   buyer: Record<string, string>;
   method: "pickup" | "ship";
   address: string;
+  locationId?: string | null;
 }): Promise<StartOrderResult> {
   const business = await getPublicBusiness(input.slug);
   if (!business || !business.storeEnabled) return { error: "The store isn't open right now." };
@@ -33,7 +34,7 @@ export async function startOrderAction(input: {
     ? { amountCents: Math.round(input.giftCard.amountCents), recipientName: input.giftCard.recipientName.trim().slice(0, 80) || null, recipientEmail: /\S+@\S+\.\S+/.test(input.giftCard.recipientEmail) ? input.giftCard.recipientEmail.trim() : null, message: input.giftCard.message.trim().slice(0, 300) || null }
     : null;
   try {
-    const r = await startOrder(business, { items: items.data, giftCard: gift, buyer: { ...b.data, phone: b.data.phone ? normalizePhone(b.data.phone) : null }, fulfillment: { method: input.method, address: input.address.trim().slice(0, 300) || null } });
+    const r = await startOrder(business, { items: items.data, giftCard: gift, buyer: { ...b.data, phone: b.data.phone ? normalizePhone(b.data.phone) : null }, fulfillment: { method: input.method, address: input.address.trim().slice(0, 300) || null } }, input.locationId || null);
     return r;
   } catch (e) {
     if (e instanceof StoreError || e instanceof BookingError) return { error: e.message };

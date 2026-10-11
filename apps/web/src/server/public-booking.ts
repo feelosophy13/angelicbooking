@@ -264,21 +264,22 @@ export async function rescheduleOnline(slug: string, token: string, newStartAt: 
   await alertBusiness(m.business, m.appt.id, "rescheduled");
 }
 
-export async function joinWaitlist(business: PublicBusiness, input: { serviceId: string; staffId: string | null; date: string; firstName: string; lastName: string; email: string | null; phone: string | null; notes: string | null; smsConsent?: boolean }) {
+export async function joinWaitlist(business: PublicBusiness, input: { serviceId: string; staffId: string | null; date: string; firstName: string; lastName: string; email: string | null; phone: string | null; notes: string | null; smsConsent?: boolean; locationId?: string | null }) {
   const clientId = await findOrCreateClient(business.id, { ...input, startAt: new Date(), staffId: input.staffId ?? "" });
   await withTenant(business.id, (tx) =>
-    tx.insert(schema.waitlist).values({ businessId: business.id, clientId, serviceId: input.serviceId, staffId: input.staffId, date: input.date, notes: input.notes }),
+    tx.insert(schema.waitlist).values({ businessId: business.id, clientId, serviceId: input.serviceId, staffId: input.staffId, locationId: input.locationId ?? null, date: input.date, notes: input.notes }),
   );
 }
 
 export async function listWaitlist(businessId: string) {
   return withTenant(businessId, (tx) =>
     tx
-      .select({ id: schema.waitlist.id, date: schema.waitlist.date, notes: schema.waitlist.notes, status: schema.waitlist.status, createdAt: schema.waitlist.createdAt, clientFirst: schema.clients.firstName, clientLast: schema.clients.lastName, clientPhone: schema.clients.phone, clientId: schema.clients.id, serviceName: schema.services.name, serviceId: schema.services.id, staffName: schema.staff.displayName })
+      .select({ id: schema.waitlist.id, date: schema.waitlist.date, notes: schema.waitlist.notes, status: schema.waitlist.status, createdAt: schema.waitlist.createdAt, clientFirst: schema.clients.firstName, clientLast: schema.clients.lastName, clientPhone: schema.clients.phone, clientId: schema.clients.id, serviceName: schema.services.name, serviceId: schema.services.id, staffName: schema.staff.displayName, locationId: schema.waitlist.locationId, locationName: schema.locations.name })
       .from(schema.waitlist)
       .leftJoin(schema.clients, eq(schema.clients.id, schema.waitlist.clientId))
       .leftJoin(schema.services, eq(schema.services.id, schema.waitlist.serviceId))
       .leftJoin(schema.staff, eq(schema.staff.id, schema.waitlist.staffId))
+      .leftJoin(schema.locations, eq(schema.locations.id, schema.waitlist.locationId))
       .where(and(eq(schema.waitlist.status, "open"), gte(schema.waitlist.date, new Date().toISOString().slice(0, 10))))
       .orderBy(asc(schema.waitlist.date), asc(schema.waitlist.createdAt)),
   );

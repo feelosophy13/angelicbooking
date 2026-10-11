@@ -7,22 +7,43 @@ import { asc, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
+import { staffLocationIndex } from "@/server/locations";
 import { listRoles } from "@/server/roles";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
 
 export default async function StaffPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, permissions } = await requireBusiness(slug);
-  const [rows, locations, members] = await Promise.all([
+  const [rows, locations, members, locIndex] = await Promise.all([
     withTenant(business.id, (tx) => tx.select().from(schema.staff).orderBy(asc(schema.staff.active), asc(schema.staff.sortOrder), asc(schema.staff.displayName))),
     withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations)),
     db.select({ userId: schema.member.userId, role: schema.member.role }).from(schema.member).where(eq(schema.member.organizationId, business.id)),
+    withTenant(business.id, (tx) => staffLocationIndex(tx)),
   ]);
   const roles = await listRoles(business.id);
   const roleName = (key: string) => roles.find((r) => r.key === key)?.name ?? key;
   const roleByUser = new Map(members.map((m) => [m.userId, m.role]));
   const locationName = (id: string | null) => (id ? locations.find((l) => l.id === id)?.name ?? null : null);
   const multiLocation = locations.length > 1;
+  const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  /** "Sterling Mon–Wed · Fairfax Thu–Sat" from the weekly hours; falls back to the primary location. */
+  const whereWorks = (staffId: string, primary: string | null) => {
+    const days = locIndex.byDay.get(staffId);
+    if (!days?.size) return locationName(primary) ?? "any location";
+    const byLoc = new Map<string, number[]>();
+    for (const [wd, loc] of [...days.entries()].sort((a, b) => ((a[0] + 6) % 7) - ((b[0] + 6) % 7))) if (loc) byLoc.set(loc, [...(byLoc.get(loc) ?? []), wd]);
+    const span = (wds: number[]) => {
+      const out: string[] = [];
+      for (let i = 0; i < wds.length; ) {
+        let j = i;
+        while (j + 1 < wds.length && ((wds[j + 1]! - wds[j]! + 7) % 7) === 1) j++;
+        out.push(j > i + 1 ? `${DAY[wds[i]!]}–${DAY[wds[j]!]}` : wds.slice(i, j + 1).map((d) => DAY[d]).join(", "));
+        i = j + 1;
+      }
+      return out.join(", ");
+    };
+    return [...byLoc.entries()].map(([loc, wds]) => `${(locationName(loc) ?? "?").replace(/^.*? - /, "")} ${span(wds)}`).join(" · ");
+  };
   return (
     <>
       <PageHeader title="Staff">
@@ -40,7 +61,7 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
                   <div className="min-w-0 flex-1">
                     <p className={`font-medium ${s.active ? "" : "text-stone-400"}`}>{s.displayName}{s.active ? "" : " · inactive"}</p>
                     <p className="truncate text-xs text-stone-500">
-                      {[s.position, multiLocation ? (locationName(s.locationId) ?? "any location") : null, s.email ?? "no email", memberRole ? `${roleName(memberRole)} (has login)` : "no login yet", s.takesAppointments ? null : "no calendar column"].filter(Boolean).join(" · ")}
+                      {[s.position, multiLocation && s.takesAppointments ? whereWorks(s.id, s.locationId) : multiLocation ? locationName(s.locationId) : null, s.email ?? "no email", memberRole ? `${roleName(memberRole)} (has login)` : "no login yet", s.takesAppointments ? null : "no calendar column"].filter(Boolean).join(" · ")}
                     </p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-stone-300" />

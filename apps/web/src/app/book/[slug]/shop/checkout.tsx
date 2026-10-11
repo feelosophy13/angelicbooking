@@ -18,7 +18,7 @@ function money(c: number, currency: string) {
  * business's own Stripe account; the order is created before payment and
  * closed once Stripe confirms.
  */
-export function StoreCheckout(props: { slug: string; currency: string; products: CartProduct[]; shippingFlatCents: number; publishableKey: string; brand: string; gift?: { presets: number[] } | null; defaults?: { firstName: string; lastName: string; email: string | null; phone: string | null } | null }) {
+export function StoreCheckout(props: { slug: string; currency: string; products: CartProduct[]; shippingFlatCents: number; publishableKey: string; brand: string; gift?: { presets: number[] } | null; defaults?: { firstName: string; lastName: string; email: string | null; phone: string | null } | null; locationId?: string | null }) {
   const [qty, setQty] = useState<Record<string, number>>({});
   const [giftAmount, setGiftAmount] = useState<number>(props.gift?.presets[1] ?? 5000);
   const [giftCustom, setGiftCustom] = useState("");
@@ -55,7 +55,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
         e.preventDefault();
         setError(null);
         start(async () => {
-          const r = await startOrderAction({ slug: props.slug, items, giftCard: isGift ? { amountCents: giftCents, ...gift } : null, buyer, method: canShip ? method : "pickup", address });
+          const r = await startOrderAction({ slug: props.slug, items, giftCard: isGift ? { amountCents: giftCents, ...gift } : null, buyer, method: canShip ? method : "pickup", address, locationId: props.locationId ?? null });
           if ("error" in r) setError(r.error);
           else setStarted(r);
         });

@@ -314,6 +314,10 @@ export async function setAppointmentStatus(
       .update(schema.appointmentItems)
       .set({ status })
       .where(and(eq(schema.appointmentItems.appointmentId, appointmentId), sql`${schema.appointmentItems.status} <> 'cancelled'`));
+    if (status === "cancelled" || status === "no_show") {
+      const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId), columns: { clientId: true } });
+      await refreshHomeLocation(tx, appt?.clientId);
+    }
     await audit(tx, businessId, actorUserId, `appointment.${status}`, appointmentId, reason ? { reason } : undefined);
   });
 }

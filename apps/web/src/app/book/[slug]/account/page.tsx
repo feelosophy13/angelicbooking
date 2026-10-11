@@ -79,7 +79,7 @@ export default async function AccountPage({ params }: { params: Promise<{ slug: 
           <ul className="space-y-1">
             {data.cards.map((c) => (
               <li key={c.id} className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-2"><CreditCard className="h-4 w-4 text-stone-400" /> {c.brand.toUpperCase()} •••• {c.last4} <span className="text-xs text-stone-500">{c.expMonth}/{String(c.expYear).slice(2)}</span></span>
+                <span className="inline-flex items-center gap-2"><CreditCard className="h-4 w-4 text-stone-400" /> {c.brand.toUpperCase()} •••• {c.last4} <span className="text-xs text-stone-500">{c.expMonth}/{String(c.expYear).slice(2)}{new Set(data.cards.map((x) => x.accountId)).size > 1 && c.siteName ? ` · ${c.siteName}` : ""}</span></span>
                 <form action={removeCard}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="paymentMethodId" value={c.id} /><button className="text-xs text-stone-500 underline hover:text-red-600">Remove</button></form>
               </li>
             ))}

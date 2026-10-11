@@ -23,6 +23,19 @@ export const createPackage = formAction(
   },
 );
 
+export const updatePackage = formAction(
+  z.object({ slug: z.string(), id: z.string().min(1), name: f.text(1, 80), serviceId: z.string().optional().transform((v) => v || null), sessions: f.int(1, 100), price: f.money("price"), validDays: z.string().trim().optional() }),
+  async (d, raw) => {
+    const ctx = await requireAction(d.slug, "services.manage");
+    const validDays = d.validDays ? Number(d.validDays) : null;
+    if (d.validDays && (!Number.isInteger(validDays) || validDays! < 1)) throw new FormError("Enter a whole number of days", "validDays");
+    await withTenant(ctx.business.id, async (tx) => tx.update(schema.packages).set({ name: d.name, serviceId: d.serviceId, sessions: d.sessions, priceCents: d.price, validDays, validLocationIds: await validAtFromForm(tx, raw) }).where(eq(schema.packages.id, d.id)));
+    revalidatePath(`/app/${d.slug}/packages`);
+    revalidatePath(`/app/${d.slug}/packages/${d.id}`);
+    return "Package saved";
+  },
+);
+
 export async function togglePackage(formData: FormData) {
   const d = z.object({ slug: z.string(), id: z.string().min(1), active: z.string() }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "services.manage");
@@ -40,6 +53,18 @@ export const createPlan = formAction(
     await setFlash(`${d.name} added`);
     revalidatePath(`/app/${d.slug}/memberships`);
     redirect(`/app/${d.slug}/memberships`);
+  },
+);
+
+export const updatePlan = formAction(
+  z.object({ slug: z.string(), id: z.string().min(1), name: f.text(1, 80), price: f.money("monthly price"), includedServiceId: z.string().optional(), includedSessions: f.int(0, 31), discountPct: f.num(0, 100), description: f.optional(300) }),
+  async (d, raw) => {
+    const ctx = await requireAction(d.slug, "services.manage");
+    if (d.includedSessions > 0 && !d.includedServiceId) throw new FormError("Choose which service the sessions are for", "includedServiceId");
+    await withTenant(ctx.business.id, async (tx) => tx.update(schema.membershipPlans).set({ name: d.name, priceCents: d.price, includedServiceId: d.includedServiceId || null, includedSessions: d.includedSessions, discountBps: Math.round(d.discountPct * 100), description: d.description, validLocationIds: await validAtFromForm(tx, raw) }).where(eq(schema.membershipPlans.id, d.id)));
+    revalidatePath(`/app/${d.slug}/memberships`);
+    revalidatePath(`/app/${d.slug}/memberships/${d.id}`);
+    return "Plan saved";
   },
 );
 

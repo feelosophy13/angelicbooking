@@ -216,6 +216,8 @@ resolves all of that for a sale, appointment or location; every Stripe call goes
   number texted). Each extra number is billed through the same subscription item flow as the first.
 - `locations.timezone` is now applied to scheduling (availability, booking pages, messages, filtered calendar).
 - `valid_location_ids text[]` on `gift_cards`, `packages`, `membership_plans`: empty = any location.
+- Migration 0042: `waitlist.location_id`; `clients.stripe_customer_id` dropped (per-account customers live in
+  `client_stripe_customers`). Online shop / gift card pages accept `?location=`; without it the default site sells.
 
 ## Stripe webhook setup script
 

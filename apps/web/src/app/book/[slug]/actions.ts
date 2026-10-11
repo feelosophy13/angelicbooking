@@ -135,7 +135,7 @@ export async function rescheduleBooking(_prev: PublicState, formData: FormData):
 
 export async function joinWaitlistAction(_prev: PublicState, formData: FormData): Promise<PublicState> {
   const parsed = contact
-    .extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) })
+    .extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().optional(), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), locationId: z.string().optional().transform((v) => v || null) })
     .safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form" };
   const d = parsed.data;

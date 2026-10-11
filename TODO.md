@@ -167,12 +167,14 @@ apart use separate tenants.
       history show the location; texts and emails name the location when it has its own Stripe account; moving
       a visit to a day the provider works elsewhere re-derives the location (refused if a service on the ticket
       isn't offered there) and adding a service checks "offered at".
-- [ ] Follow-ups: the client's own account page shows saved cards for their home site's account only (a card
-      saved at the other site's account isn't listed); the online shop and gift cards always sell at the
-      default site; `clients.stripe_customer_id` is legacy (copied into `client_stripe_customers`, drop later);
-      `import-vagaro.ts` still assigns appointment locations from the staff's primary site; staff list shows
-      the primary location only; calendar's New appointment button drops the location filter; no per-location
-      embed snippet; waitlist ignores location; home location not refreshed on cancellation.
+- [x] Follow-ups closed (2026-10-10, migration 0042): the client's account page lists saved cards from every
+      Stripe account the business runs (labelled by site) and can remove any of them; the shop and gift card
+      pages take `?location=` with a "Buying from" switch so the chosen site takes the money; legacy
+      `clients.stripe_customer_id` dropped; `import-vagaro.ts` keeps per-day locations across re-runs and stamps
+      appointments from the provider's day; the staff list shows "Sterling Mon–Wed · Fairfax Thu–Sat"; the
+      calendar's New appointment button keeps the location filter; the waitlist records the location and the
+      Book link carries it; home location refreshes on cancellation/no-show. (Per-location embed snippets
+      already existed in Settings → Embed.)
 
 **Phase 2 — built 2026-10-10, migration 0040**
 - [x] Per-location text number: Settings → Text messaging lists the business number plus one optional number per
@@ -188,9 +190,8 @@ apart use separate tenants.
 - [x] "Valid at" on gift cards (manual issue), packages and membership plans: tick boxes on the create forms
       (empty/all = any location); redemption at checkout refuses and the sale page hides credits that aren't
       valid at the sale's location. Online-bought gift cards are valid anywhere.
-- [ ] Follow-ups: no edit form for existing packages/plans (validity is set at creation); day-view "today"
-      strip and month grid use the business clock; the reminder cron compares `scheduledAt` instants, so
-      nothing changes there.
+- [x] Follow-ups closed (2026-10-10): packages and membership plans have edit pages (name, price, sessions,
+      validity, "valid at"); the today strip and month grid already follow the filtered location's clock.
 
 **Phase 3 — dropped (2026-10-10).** The planned cross-tenant roll-up / shared client directory / one platform
 invoice per owner was built and then reverted (commit 70435d9 and its revert): the owner's two entities are one

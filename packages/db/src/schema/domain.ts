@@ -357,9 +357,6 @@ export const clients = pgTable(
     phone: text("phone"),
     notes: text("notes"), // general/private notes
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
-    // Legacy: Stripe customer on the business's main account. Superseded by client_stripe_customers
-    // (one customer per connected account); kept so nothing is lost until the next cleanup.
-    stripeCustomerId: text("stripe_customer_id"),
     // Derived: location of the most recent (non-cancelled) appointment. Clients are shared
     // across a business's locations; this only drives list filters, reports and audiences.
     homeLocationId: text("home_location_id").references(() => locations.id, { onDelete: "set null" }),
@@ -773,6 +770,7 @@ export const waitlist = pgTable(
     clientId: text("client_id").references(() => clients.id, { onDelete: "cascade" }),
     serviceId: text("service_id").references(() => services.id, { onDelete: "set null" }),
     staffId: text("staff_id").references(() => staff.id, { onDelete: "set null" }),
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     date: date("date").notNull(),
     notes: text("notes"),
     status: waitlistStatus("status").notNull().default("open"),
