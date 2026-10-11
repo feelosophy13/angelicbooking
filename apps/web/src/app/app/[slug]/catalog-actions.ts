@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
-import { MEMBERSHIP_CADENCES } from "@angelic/core";
+import { cadenceError, type MembershipInterval } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { issueGiftCardManually } from "@/server/offers";
 import { f, formAction, FormError } from "@/lib/form";
@@ -45,18 +45,18 @@ export async function togglePackage(formData: FormData) {
   revalidatePath(`/app/${d.slug}/packages`);
 }
 
-function cadenceOf(key: string) {
-  const c = MEMBERSHIP_CADENCES.find((x) => x.key === key);
-  if (!c) throw new FormError("Choose how often the plan is billed", "cadence");
-  return c;
+function cadenceOf(interval: string, count: number): { interval: MembershipInterval; count: number } {
+  const err = cadenceError(interval, count);
+  if (err) throw new FormError(err, "intervalCount");
+  return { interval: interval as MembershipInterval, count };
 }
 
 export const createPlan = formAction(
-  z.object({ slug: z.string(), name: f.text(1, 80), price: f.money("price"), cadence: z.string(), includedServiceId: z.string().optional(), includedSessions: f.int(0, 31), rolloverCap: f.int(0, 99), cycleCount: f.int(0, 120), discountPct: f.num(0, 100), description: f.optional(300) }),
+  z.object({ slug: z.string(), name: f.text(1, 80), price: f.money("price"), interval: z.string(), intervalCount: f.int(1, 52), includedServiceId: z.string().optional(), includedSessions: f.int(0, 31), rolloverCap: f.int(0, 99), cycleCount: f.int(0, 120), discountPct: f.num(0, 100), description: f.optional(300) }),
   async (d, raw) => {
     const ctx = await requireAction(d.slug, "services.manage");
     if (d.includedSessions > 0 && !d.includedServiceId) throw new FormError("Choose which service the sessions are for", "includedServiceId");
-    const cadence = cadenceOf(d.cadence);
+    const cadence = cadenceOf(d.interval, d.intervalCount);
     await withTenant(ctx.business.id, async (tx) => tx.insert(schema.membershipPlans).values({ businessId: ctx.business.id, name: d.name, priceCents: d.price, interval: cadence.interval, intervalCount: cadence.count, includedServiceId: d.includedServiceId || null, includedSessions: d.includedSessions, rolloverCap: d.rolloverCap, cycleCount: d.cycleCount || null, discountBps: Math.round(d.discountPct * 100), description: d.description, validLocationIds: await validAtFromForm(tx, raw) }));
     await setFlash(`${d.name} added`);
     revalidatePath(`/app/${d.slug}/memberships`);
@@ -65,11 +65,11 @@ export const createPlan = formAction(
 );
 
 export const updatePlan = formAction(
-  z.object({ slug: z.string(), id: z.string().min(1), name: f.text(1, 80), price: f.money("price"), cadence: z.string(), includedServiceId: z.string().optional(), includedSessions: f.int(0, 31), rolloverCap: f.int(0, 99), cycleCount: f.int(0, 120), discountPct: f.num(0, 100), description: f.optional(300) }),
+  z.object({ slug: z.string(), id: z.string().min(1), name: f.text(1, 80), price: f.money("price"), interval: z.string(), intervalCount: f.int(1, 52), includedServiceId: z.string().optional(), includedSessions: f.int(0, 31), rolloverCap: f.int(0, 99), cycleCount: f.int(0, 120), discountPct: f.num(0, 100), description: f.optional(300) }),
   async (d, raw) => {
     const ctx = await requireAction(d.slug, "services.manage");
     if (d.includedSessions > 0 && !d.includedServiceId) throw new FormError("Choose which service the sessions are for", "includedServiceId");
-    const cadence = cadenceOf(d.cadence);
+    const cadence = cadenceOf(d.interval, d.intervalCount);
     await withTenant(ctx.business.id, async (tx) => {
       const before = await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, d.id), columns: { priceCents: true, interval: true, intervalCount: true } });
       // A new price or cadence needs a new Stripe price; existing subscriptions keep the old one until set up again.

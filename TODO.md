@@ -201,8 +201,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
-- [x] 2026-10-11 (migration 0060): flexible memberships. Plans are billed every week / 2, 3, 5 or 6 weeks / month / 3 months /
-      6 months / year (`interval` + `interval_count`, calendar months so the 31st doesn't drift); unused sessions can
+- [x] 2026-10-11 (migration 0060): flexible memberships. Plans are billed "every N weeks / months / years" (any N up to a
+      year apart, Stripe's limit; `interval` + `interval_count`, calendar months so the 31st doesn't drift); unused sessions can
       carry over up to `rollover_cap`; `cycle_count` makes a fixed-length plan that ends on its own ("1 of 6 paid",
       Stripe subscription gets a cancel-at date). Freeze until a date from the client page (Stripe pause_collection
       void; resumes on its own, or "Resume now"; members without card billing get the frozen time back). A membership

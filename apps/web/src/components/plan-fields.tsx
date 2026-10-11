@@ -1,4 +1,4 @@
-import { MEMBERSHIP_CADENCES } from "@angelic/core";
+import { MEMBERSHIP_INTERVALS } from "@angelic/core";
 import { Input, Select, Textarea } from "@/components/ui";
 import { Field } from "@/components/form";
 
@@ -6,14 +6,17 @@ type Plan = { name: string; priceCents: number; interval: string; intervalCount:
 
 /** The shared body of the new / edit membership plan forms. */
 export function PlanFields({ plan, services }: { plan?: Plan; services: { id: string; name: string }[] }) {
-  const cadence = plan ? `${plan.interval}:${plan.intervalCount}` : "month:1";
+
   return (
     <>
       <Field label="Name" name="name" required><Input name="name" defaultValue={plan?.name} required placeholder="Lash Club" autoFocus /></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Price" name="price" required><Input name="price" inputMode="decimal" defaultValue={plan ? (plan.priceCents / 100).toFixed(2) : undefined} required placeholder="99" /></Field>
-        <Field label="Billed" name="cadence" required>
-          <Select name="cadence" defaultValue={cadence}>{MEMBERSHIP_CADENCES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}</Select>
+        <Field label="Billed every" name="intervalCount" required hint="Up to 52 weeks, 12 months or 1 year apart">
+          <div className="flex gap-2">
+            <Input name="intervalCount" type="number" min={1} max={52} defaultValue={plan?.intervalCount ?? 1} required className="w-20" />
+            <Select name="interval" defaultValue={plan?.interval ?? "month"} className="flex-1">{MEMBERSHIP_INTERVALS.map((i) => <option key={i} value={i}>{i}s</option>)}</Select>
+          </div>
         </Field>
       </div>
       <Field label="Included service" name="includedServiceId"><Select name="includedServiceId" defaultValue={plan?.includedServiceId ?? ""}><option value="">None</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>

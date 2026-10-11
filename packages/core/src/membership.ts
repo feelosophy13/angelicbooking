@@ -9,18 +9,16 @@ export type MembershipInterval = "week" | "month" | "year";
 
 export const MEMBERSHIP_INTERVALS: MembershipInterval[] = ["week", "month", "year"];
 
-/** The cadences offered in the plan form, as "interval:count" keys. */
-export const MEMBERSHIP_CADENCES: { key: string; interval: MembershipInterval; count: number; label: string }[] = [
-  { key: "week:1", interval: "week", count: 1, label: "Every week" },
-  { key: "week:2", interval: "week", count: 2, label: "Every 2 weeks" },
-  { key: "week:3", interval: "week", count: 3, label: "Every 3 weeks" },
-  { key: "month:1", interval: "month", count: 1, label: "Every month" },
-  { key: "week:5", interval: "week", count: 5, label: "Every 5 weeks" },
-  { key: "week:6", interval: "week", count: 6, label: "Every 6 weeks" },
-  { key: "month:3", interval: "month", count: 3, label: "Every 3 months" },
-  { key: "month:6", interval: "month", count: 6, label: "Every 6 months" },
-  { key: "year:1", interval: "year", count: 1, label: "Every year" },
-];
+/** Stripe bills at most once a year apart, so the count is capped per unit. */
+export const MAX_INTERVAL_COUNT: Record<MembershipInterval, number> = { week: 52, month: 12, year: 1 };
+
+/** Check an "every N units" cadence; returns a message when it is not billable. */
+export function cadenceError(interval: unknown, count: number): string | null {
+  if (!isMembershipInterval(interval)) return "Pick weeks, months or years";
+  if (!Number.isInteger(count) || count < 1) return "Enter how many";
+  if (count > MAX_INTERVAL_COUNT[interval]) return interval === "year" ? "Yearly plans bill once a year" : `At most ${MAX_INTERVAL_COUNT[interval]} ${interval}s apart`;
+  return null;
+}
 
 export function isMembershipInterval(x: unknown): x is MembershipInterval {
   return x === "week" || x === "month" || x === "year";

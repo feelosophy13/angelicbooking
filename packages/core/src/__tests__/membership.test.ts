@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addMembershipPeriod, periodLabel, periodNoun, renewedCredits } from "../membership";
+import { addMembershipPeriod, cadenceError, periodLabel, periodNoun, renewedCredits } from "../membership";
 
 const d = (s: string) => new Date(s);
 
@@ -34,5 +34,21 @@ describe("renewedCredits", () => {
     expect(renewedCredits(3, 2, 1)).toBe(3);
     expect(renewedCredits(0, 2, 5)).toBe(2);
     expect(renewedCredits(-1, 2, 5)).toBe(2);
+  });
+});
+
+describe("cadenceError", () => {
+  it("accepts any count up to a year apart", () => {
+    expect(cadenceError("week", 7)).toBeNull();
+    expect(cadenceError("week", 52)).toBeNull();
+    expect(cadenceError("month", 12)).toBeNull();
+    expect(cadenceError("year", 1)).toBeNull();
+  });
+  it("rejects longer gaps, zero and odd units", () => {
+    expect(cadenceError("week", 53)).toMatch(/52 weeks/);
+    expect(cadenceError("month", 13)).toMatch(/12 months/);
+    expect(cadenceError("year", 2)).toMatch(/once a year/);
+    expect(cadenceError("month", 0)).toMatch(/how many/);
+    expect(cadenceError("day", 1)).toMatch(/weeks, months or years/);
   });
 });
