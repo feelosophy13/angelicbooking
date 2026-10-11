@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { asc, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { listLocations } from "@/server/locations";
+import { serviceGroups } from "@/server/service-groups";
 import { getForm } from "@/server/forms";
 import { Button, Card, FormPage } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
@@ -18,10 +19,7 @@ export const metadata: Metadata = { title: "Edit form" };
 export default async function EditFormPage({ params }: { params: Promise<{ slug: string; formId: string }> }) {
   const { slug, formId } = await params;
   const { business } = await requireAction(slug, "business.manage");
-  const [form, services] = await Promise.all([
-    getForm(business.id, formId),
-    withTenant(business.id, (tx) => tx.select({ id: schema.services.id, name: schema.services.name }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name))),
-  ]);
+  const [form, groups] = await Promise.all([getForm(business.id, formId), serviceGroups(business, { meta: "none" })]);
   if (!form) notFound();
   const recent = await withTenant(business.id, (tx) =>
     tx
@@ -49,7 +47,7 @@ export default async function EditFormPage({ params }: { params: Promise<{ slug:
           </div>
         </div>
       </div>
-      <FormEditor action={updateForm} slug={slug} form={form} services={services} locations={await listLocations(business.id)} submitLabel="Save form" />
+      <FormEditor action={updateForm} slug={slug} form={form} groups={groups} locations={await listLocations(business.id)} submitLabel="Save form" />
       <div className="mt-6 border-t border-stone-200 pt-4">
         <div className="mb-2 flex items-center justify-between gap-3"><h2 className="text-sm font-semibold text-stone-600">Recent submissions</h2><span className="flex gap-3 text-xs"><Link href={`/app/${slug}/settings/forms/submissions?form=${form.id}`} className="text-brand-700 underline">All submissions</Link><Link href={`/app/${slug}/settings/forms/${form.id}/export`} className="text-brand-700 underline">Export CSV</Link></span></div>
         {recent.length === 0 ? <p className="text-sm text-stone-500">Nobody has completed this form yet.</p> : (
