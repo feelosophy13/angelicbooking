@@ -19,7 +19,8 @@ import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
 import { NoShowFeeForm } from "./no-show-form";
 import { savedCardsFor } from "@/server/stripe-connect";
-import { paymentContextForAppointment, tzFor } from "@/server/locations";
+import { listLocations, paymentContextForAppointment, tzFor } from "@/server/locations";
+import { MapPin } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   booked: "Booked",
@@ -59,6 +60,7 @@ export default async function AppointmentPage({
   const series = appointment.seriesId ? await getSeriesForAppointment(business.id, id) : null;
   const forms = await withTenant(business.id, (tx) => formsForAppointment(tx, id));
   const pay = await paymentContextForAppointment(business, id);
+  const multiLocation = (await listLocations(business.id)).length > 1;
   const stripeReady = pay.ready;
   const savedCards = await savedCardsFor(business.id, pay, client?.id);
   const tz = tzFor(business, pay.location);
@@ -125,7 +127,7 @@ export default async function AppointmentPage({
           <Card className="p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-sm text-stone-500">{formatDateLong(apptDate)}</p>
+                <p className="text-sm text-stone-500">{formatDateLong(apptDate)}{multiLocation && pay.location ? <> · <MapPin className="inline h-3.5 w-3.5 align-text-bottom" /> {pay.location.name}</> : null}</p>
                 <StatusBadge status={appointment.status} className="mt-1 text-sm" />
               </div>
               <p className="text-lg font-semibold">{formatMoney(total, business.currency)}</p>

@@ -288,6 +288,13 @@
       "when": 1791680748419,
       "tag": "0040_locations_phase2",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791684429767,
+      "tag": "0041_schedule_location_set_null",
+      "breakpoints": true
     }
   ]
 }

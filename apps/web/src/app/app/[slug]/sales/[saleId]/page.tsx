@@ -8,7 +8,8 @@ import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { getSale } from "@/server/sales";
 import { savedCardsFor } from "@/server/stripe-connect";
-import { paymentContextForSale, validAtLocation } from "@/server/locations";
+import { listLocations, paymentContextForSale, validAtLocation } from "@/server/locations";
+import { MapPin } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
 
@@ -36,6 +37,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const due = sale.totalCents - sale.paidCents;
   const open = sale.status === "open";
   const pay = await paymentContextForSale(business, sale.id);
+  const multiLocation = (await listLocations(business.id)).length > 1;
   const stripeReady = pay.ready;
   const savedCards = await savedCardsFor(business.id, pay, client?.id);
   const staffOnTicket = [...new Set(lines.filter((l) => l.kind === "service").map((l) => l.staffId).filter((x): x is string => !!x))]
@@ -52,6 +54,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   return (
     <>
       <PageHeader title={`Sale #${sale.number}`}>
+        {multiLocation && pay.location ? <span className="inline-flex items-center gap-1 rounded bg-stone-100 px-2 py-0.5 text-xs text-stone-700"><MapPin className="h-3.5 w-3.5" /> {pay.location.name}</span> : null}
         {sale.appointmentId ? <Link href={`/app/${slug}/appointments/${sale.appointmentId}`} className="text-sm text-brand-700 underline">Appointment</Link> : null}
         <Link href={`/app/${slug}/sales/${sale.id}/receipt`} className="text-sm text-brand-700 underline">Receipt</Link>
         {!open && client?.email ? (

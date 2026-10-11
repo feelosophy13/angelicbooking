@@ -160,6 +160,7 @@ export async function addServiceToAppointment(input: {
       if (appt.status === "cancelled" || appt.status === "completed" || appt.status === "no_show") {
         throw new BookingError(`Can't add a service to a ${appt.status.replace("_", " ")} appointment.`);
       }
+      if (!(await serviceOfferedAt(tx, input.serviceId, appt.locationId))) throw new BookingError("That service isn't offered at this appointment's location.");
       const [agg] = await tx
         .select({ max: sql<number>`coalesce(max(${schema.appointmentItems.sortOrder}), -1)` })
         .from(schema.appointmentItems)
@@ -222,6 +223,7 @@ export async function rescheduleService(input: {
           .set({ startAt: new Date(s.startAt.getTime() + deltaMs), endAt: new Date(s.endAt.getTime() + deltaMs), staffId })
           .where(eq(schema.appointmentItems.id, s.id));
       }
+      await followProviderLocation(tx, input.businessId, item.appointmentId);
       await audit(tx, input.businessId, input.actorUserId, "appointment.reschedule", item.appointmentId, {
         itemId: item.id,
         from: first.startAt,
@@ -233,6 +235,34 @@ export async function rescheduleService(input: {
   } catch (e) {
     translate(e);
   }
+}
+
+/**
+ * After a move, the visit happens wherever its (first) provider works on the new
+ * day. If that is a different site, every service on the ticket must be offered
+ * there; then the appointment and the client's home location follow.
+ */
+async function followProviderLocation(tx: Tx, businessId: string, appointmentId: string) {
+  const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId) });
+  if (!appt) return;
+  const live = await tx
+    .select({ staffId: schema.appointmentItems.staffId, serviceId: schema.appointmentItems.serviceId, startAt: schema.appointmentItems.startAt })
+    .from(schema.appointmentItems)
+    .where(and(eq(schema.appointmentItems.appointmentId, appointmentId), sql`${schema.appointmentItems.status} <> 'cancelled'`))
+    .orderBy(schema.appointmentItems.startAt);
+  const first = live[0];
+  if (!first) return;
+  const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId), columns: { timezone: true } });
+  const locationId = await resolveAppointmentLocation(tx, first.staffId, first.startAt, biz?.timezone ?? "America/New_York");
+  if (!locationId || locationId === appt.locationId) return;
+  for (const serviceId of new Set(live.map((i) => i.serviceId).filter((x): x is string => !!x))) {
+    if (!(await serviceOfferedAt(tx, serviceId, locationId))) {
+      const loc = await tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId), columns: { name: true } });
+      throw new BookingError(`That day the provider works at ${loc?.name ?? "another location"}, where one of these services isn't offered.`);
+    }
+  }
+  await tx.update(schema.appointments).set({ locationId }).where(eq(schema.appointments.id, appointmentId));
+  await refreshHomeLocation(tx, appt.clientId);
 }
 
 /** Remove one service (all its segments) from an appointment. Cancels the appointment if nothing is left. */

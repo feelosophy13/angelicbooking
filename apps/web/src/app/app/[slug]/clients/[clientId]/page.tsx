@@ -26,7 +26,7 @@ import { turnOffAutoRenew, turnOnAutoRenew } from "./membership-actions";
 import { replyToClient } from "./messages-actions";
 import { clientThread } from "@/server/inbound";
 import { savedCardsFor } from "@/server/stripe-connect";
-import { paymentContextFor } from "@/server/locations";
+import { listLocations, paymentContextFor } from "@/server/locations";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -45,10 +45,11 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
     const notes = await tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, clientId)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(100);
     const [visits, sales, packs, memberships] = await Promise.all([
       tx
-        .select({ id: schema.appointments.id, status: schema.appointments.status, startAt: schema.appointmentItems.startAt, serviceName: schema.appointmentItems.serviceName, staffName: schema.staff.displayName })
+        .select({ id: schema.appointments.id, status: schema.appointments.status, startAt: schema.appointmentItems.startAt, serviceName: schema.appointmentItems.serviceName, staffName: schema.staff.displayName, locationName: schema.locations.name })
         .from(schema.appointmentItems)
         .innerJoin(schema.appointments, eq(schema.appointments.id, schema.appointmentItems.appointmentId))
         .innerJoin(schema.staff, eq(schema.staff.id, schema.appointmentItems.staffId))
+        .leftJoin(schema.locations, eq(schema.locations.id, schema.appointments.locationId))
         .where(and(eq(schema.appointments.clientId, clientId), eq(schema.appointmentItems.sortOrder, 0)))
         .orderBy(desc(schema.appointmentItems.startAt))
         .limit(50),
@@ -72,6 +73,8 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const [submissions, loyalty, reviews, thread] = await Promise.all([listSubmissionsForClient(business.id, clientId), business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null), reviewsForClient(business.id, clientId), clientThread(business.id, clientId)]);
   // Cards are shown for the client's home location's Stripe account (else the default site's).
   const pay = await paymentContextFor(business, client.homeLocationId);
+  const multiLocation = (await listLocations(business.id)).length > 1;
+  const at = (v: { locationName: string | null }) => (multiLocation && v.locationName ? ` · ${v.locationName.replace(/^.*? - /, "")}` : "");
   const stripeReady = pay.ready;
   const savedCards = await savedCardsFor(business.id, pay, client.id);
   const authorIds = [...new Set(notes.map((n) => n.authorUserId).filter((x): x is string => !!x))];
@@ -138,7 +141,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             {upcoming.length === 0 ? <div className="p-4"><Empty title="Nothing booked" /></div> : (
               <ul className="divide-y divide-stone-100 text-sm">
                 {upcoming.reverse().map((v) => (
-                  <li key={v.id}><Link href={`/app/${slug}/appointments/${v.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span>{fmtDate.format(v.startAt)} · {formatTime(v.startAt, tz)} · {v.serviceName} with {v.staffName}</span><StatusBadge status={v.status} /></Link></li>
+                  <li key={v.id}><Link href={`/app/${slug}/appointments/${v.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span>{fmtDate.format(v.startAt)} · {formatTime(v.startAt, tz)} · {v.serviceName} with {v.staffName}{at(v)}</span><StatusBadge status={v.status} /></Link></li>
                 ))}
               </ul>
             )}
@@ -148,7 +151,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             {past.length === 0 ? <div className="p-4"><Empty title="No past visits" /></div> : (
               <ul className="divide-y divide-stone-100 text-sm">
                 {past.map((v) => (
-                  <li key={v.id}><Link href={`/app/${slug}/appointments/${v.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span className={v.status === "cancelled" || v.status === "no_show" ? "text-stone-400" : ""}>{fmtDate.format(v.startAt)} · {v.serviceName} with {v.staffName}</span><StatusBadge status={v.status} /></Link></li>
+                  <li key={v.id}><Link href={`/app/${slug}/appointments/${v.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span className={v.status === "cancelled" || v.status === "no_show" ? "text-stone-400" : ""}>{fmtDate.format(v.startAt)} · {v.serviceName} with {v.staffName}{at(v)}</span><StatusBadge status={v.status} /></Link></li>
                 ))}
               </ul>
             )}

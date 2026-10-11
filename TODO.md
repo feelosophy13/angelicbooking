@@ -162,10 +162,17 @@ apart use separate tenants.
       covered by a credit remember which package/membership and how much).
 - [x] Clients: derived "home location" (last non-cancelled appointment) on the client list (filter + badge),
       CSV export and campaign audiences ("Usually visits").
+- [x] Review fixes (2026-10-10, migration 0041): removing a location no longer deletes staff hours (rows keep
+      their times, location falls back to primary/default); the appointment page, sale page and client visit
+      history show the location; texts and emails name the location when it has its own Stripe account; moving
+      a visit to a day the provider works elsewhere re-derives the location (refused if a service on the ticket
+      isn't offered there) and adding a service checks "offered at".
 - [ ] Follow-ups: the client's own account page shows saved cards for their home site's account only (a card
       saved at the other site's account isn't listed); the online shop and gift cards always sell at the
       default site; `clients.stripe_customer_id` is legacy (copied into `client_stripe_customers`, drop later);
-      `import-vagaro.ts` still assigns appointment locations from the staff's primary site.
+      `import-vagaro.ts` still assigns appointment locations from the staff's primary site; staff list shows
+      the primary location only; calendar's New appointment button drops the location filter; no per-location
+      embed snippet; waitlist ignores location; home location not refreshed on cancellation.
 
 **Phase 2 — built 2026-10-10, migration 0040**
 - [x] Per-location text number: Settings → Text messaging lists the business number plus one optional number per

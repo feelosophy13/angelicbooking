@@ -206,7 +206,8 @@ export const staffSchedules = pgTable(
     staffId: text("staff_id")
       .notNull()
       .references(() => staff.id, { onDelete: "cascade" }),
-    locationId: text("location_id").references(() => locations.id, { onDelete: "cascade" }),
+    // Null = the staff member's primary location, else the default. Removing a location keeps the hours.
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     weekday: smallint("weekday").notNull(),
     startTime: time("start_time").notNull(),
     endTime: time("end_time").notNull(),

@@ -33,8 +33,10 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
   const client = appt.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, appt.clientId) }) : null;
   // Messages speak for the location of the visit: its phone, address and clock.
   const location = appt.locationId ? await tx.query.locations.findFirst({ where: eq(schema.locations.id, appt.locationId) }) : null;
+  // A location with its own Stripe account is its own business: texts and emails carry its name.
+  const ownEntity = !!location?.stripeAccountId;
   const ctx: ApptContext = {
-    businessName: business.name,
+    businessName: ownEntity ? location!.name : business.name,
     logoUrl: business.logoUrl,
     brandColor: business.brandColor,
     businessPhone: location?.phone ?? business.phone,
@@ -125,14 +127,14 @@ async function scheduleReminder(
     const preAt = new Date(ctx.startAt.getTime() - pre.hoursBefore * 3_600_000);
     if (preAt > new Date()) {
       const vars = appointmentVars(business, ctx);
-      const brand = { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address: business.addressLine };
+      const brand = { businessName: ctx.businessName, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: ctx.businessPhone, address: ctx.address };
       const wantEmail = pre.channel === "email" || pre.channel === "both";
       const wantSms = pre.channel === "sms" || pre.channel === "both";
       if (wantEmail && client.emailOptIn && client.email) {
         const t = marketingEmail(brand, { subject: renderText(pre.subject ?? "Getting ready for your visit", vars), text: renderText(pre.body, vars), ctaLabel: "Manage appointment", ctaUrl: ctx.manageUrl, unsubscribeUrl: unsubscribeUrl(business, client.id) });
         rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "email", template: "auto_pre_visit", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: preAt });
       }
-      if (wantSms && client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "sms", template: "auto_pre_visit", recipient: phone, body: await smsWithStopNotice(tx, client, `${business.name}: ${renderText(pre.body, vars)}`), scheduledAt: preAt });
+      if (wantSms && client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "sms", template: "auto_pre_visit", recipient: phone, body: await smsWithStopNotice(tx, client, `${ctx.businessName}: ${renderText(pre.body, vars)}`), scheduledAt: preAt });
     }
   }
   if (rows.length) await tx.insert(schema.notifications).values(rows);

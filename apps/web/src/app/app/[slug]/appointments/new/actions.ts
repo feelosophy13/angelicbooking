@@ -66,5 +66,5 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
     if (e instanceof BookingError) return { error: e.message };
     throw e;
   }
-  redirect(`/app/${d.slug}?date=${instantToISODate(startAt, ctx.business.timezone)}`);
+  redirect(`/app/${d.slug}?date=${instantToISODate(startAt, ctx.business.timezone)}${d.locationId ? `&location=${d.locationId}` : ""}`);
 }
