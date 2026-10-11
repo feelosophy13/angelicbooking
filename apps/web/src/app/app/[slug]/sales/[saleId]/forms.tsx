@@ -6,19 +6,21 @@ import type { SaleActionState } from "./actions";
 
 type Action = (prev: SaleActionState, fd: FormData) => Promise<SaleActionState>;
 
-export function DiscountForm({ action, slug, saleId, currentCents, note }: { action: Action; slug: string; saleId: string; currentCents: number; note: string | null }) {
+export function DiscountForm({ action, slug, saleId, currentCents, current, note }: { action: Action; slug: string; saleId: string; currentCents: number; current: { type: "amount" | "percent"; value: number } | null; note: string | null }) {
   const [state, act, pending] = useActionState(action, undefined);
+  const type = current?.type ?? (currentCents > 0 ? "amount" : "none");
+  const value = current ? (current.type === "percent" ? String(current.value) : (current.value / 100).toFixed(2)) : currentCents > 0 ? (currentCents / 100).toFixed(2) : "";
   return (
     <form action={act} className="space-y-2">
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
       <div className="grid grid-cols-[7rem_1fr] gap-2">
-        <Select name="type" defaultValue={currentCents > 0 ? "amount" : "none"}>
+        <Select name="type" defaultValue={type}>
           <option value="none">No discount</option>
           <option value="amount">$ off</option>
           <option value="percent">% off</option>
         </Select>
-        <Input name="value" placeholder="10" defaultValue={currentCents > 0 ? (currentCents / 100).toFixed(2) : ""} inputMode="decimal" />
+        <Input name="value" placeholder="10" defaultValue={value} inputMode="decimal" />
       </div>
       <Input name="note" placeholder="Reason (optional)" defaultValue={note ?? ""} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
@@ -133,8 +135,18 @@ export function PointsPayForm({ action, slug, saleId, balance, pointValueCents, 
   );
 }
 
-export function PromoForm({ action, slug, saleId }: { action: Action; slug: string; saleId: string }) {
+export function PromoForm({ action, slug, saleId, applied, removeAction }: { action: Action; slug: string; saleId: string; applied: string | null; removeAction: (fd: FormData) => Promise<void> }) {
   const [state, act, pending] = useActionState(action, undefined);
+  if (applied) {
+    return (
+      <form action={removeAction} className="flex items-center justify-between gap-2 text-sm">
+        <input type="hidden" name="slug" value={slug} />
+        <input type="hidden" name="saleId" value={saleId} />
+        <span>Code <span className="font-mono">{applied}</span> applied</span>
+        <Button type="submit" size="sm" variant="secondary">Remove code</Button>
+      </form>
+    );
+  }
   return (
     <form action={act} className="space-y-2">
       <input type="hidden" name="slug" value={slug} />

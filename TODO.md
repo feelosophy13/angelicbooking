@@ -92,6 +92,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (confirmed/manage/forms/review/unsubscribe/order/account) are `noindex`, the order page needs a signed key and a
       paid sale, review opt-out and unsubscribe confirm on POST instead of mutating on GET, slot re-validation uses the
       location's clock.
+- [x] Landed 2026-10-10 (batch 3, checkout money; migration 0046): the discount is stored as entered (percent or
+      amount) and re-applied as lines change; promo codes only discount their named services and never stored value
+      (gift cards, packages, memberships); "Remove code" on the sale page and a typed discount replaces a promo;
+      removing a credited line or voiding the sale gives the package session / membership credit back; expired
+      packages and lapsed memberships can't be redeemed; gift-card balance updates are atomic; two same-amount gift
+      cards (or packages) on one ticket both issue; refunds put money back on gift cards, trim the payment's tip, and a
+      full refund restocks products, takes back earned points, releases the promo use, deactivates unused gift cards
+      and removes untouched packages; "Sell a gift card…" errors show as a toast instead of an error page.
 
 - [x] Membership auto-billing (recurring charges on the business's Connect account). Done 2026-10-10 (client page → Auto-renew with saved card; Connect webhook `invoice.paid` / `invoice.payment_failed` / `customer.subscription.deleted`). Untested against Stripe until keys exist.
 - [ ] Tap to Pay / card reader support.

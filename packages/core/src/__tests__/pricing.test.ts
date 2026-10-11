@@ -22,6 +22,27 @@ describe("computeTotals", () => {
     expect(t.discountCents).toBe(8500);
     expect(t.totalCents).toBe(1000);
   });
+  it("never discounts gift cards, packages or memberships", () => {
+    const withCard = [...lines, { kind: "gift_card" as const, amountCents: 10000, taxable: false }];
+    const t = computeTotals(withCard, { type: "percent", value: 20 }, 0);
+    expect(t.subtotalCents).toBe(18500);
+    expect(t.discountCents).toBe(1700); // 20% of the 8500 of services + products only
+    const capped = computeTotals(withCard, { type: "amount", value: 99999 }, 0);
+    expect(capped.discountCents).toBe(8500);
+  });
+  it("restricts a service-scoped promo to the named services and taxes the rest in full", () => {
+    const ticket = [
+      { kind: "service" as const, amountCents: 6500, taxable: false, serviceId: "cut" },
+      { kind: "service" as const, amountCents: 12000, taxable: false, serviceId: "color" },
+      { kind: "product" as const, amountCents: 2000, taxable: true },
+    ];
+    const t = computeTotals(ticket, { type: "percent", value: 50, serviceIds: ["color"] }, 1000);
+    expect(t.discountCents).toBe(6000);
+    expect(t.taxCents).toBe(200); // the product is untouched
+    expect(t.totalCents).toBe(20500 - 6000 + 200);
+    const none = computeTotals(ticket, { type: "amount", value: 1000, serviceIds: ["wax"] }, 0);
+    expect(none.discountCents).toBe(0);
+  });
 });
 
 describe("allocateProportionally", () => {

@@ -14,7 +14,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 
 1. ✅ **P1 Lock down uploaded files** — `/api/files/[id]` serves intake attachments and signature PNGs to anyone with the
    id, with `Cache-Control: public, immutable`. Gate `kind in (form, signature)` behind a tenant session or signed URL.
-2. **P1 Money-moving correctness at checkout** — refunds don't restock, revoke loyalty points, promo uses, issued gift
+2. ✅ **P1 Money-moving correctness at checkout** — refunds don't restock, revoke loyalty points, promo uses, issued gift
    cards/packages or restore gift-card balances; deleting a credit-covered line loses the package session; expired
    packages/memberships can still be redeemed; two same-amount gift cards on one sale issue one; percent discounts
    freeze to dollars; promos discount ineligible lines; package-covered services pay $0 commission.
@@ -199,15 +199,15 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 
 ## 7. Memberships, packages, gift cards, loyalty, reviews
 
-- **P1 Expired packages / lapsed memberships can still be redeemed** [bug] — `redeemCredit` doesn't recheck
+- ✅ **P1 Expired packages / lapsed memberships can still be redeemed** [bug] — `redeemCredit` doesn't recheck
   `expiresAt`/`currentPeriodEnd` (`server/offers.ts:133-144`).
-- **P1 Removing or voiding a credited line doesn't return the session** [bug] — `server/sales.ts:211-219`; no
+- ✅ **P1 Removing or voiding a credited line doesn't return the session** [bug] — `server/sales.ts:211-219`; no
   "un-apply credit" either.
-- **P1 Gift-card refund doesn't restore balance; refund doesn't revoke sold packages/memberships** [bug] —
+- ✅ **P1 Gift-card refund doesn't restore balance; refund doesn't revoke sold packages/memberships** [bug] —
   `server/sales.ts:505-555` reverses loyalty only.
-- **P1 Two same-amount gift cards (or packages) on one sale fulfil one** [bug] — idempotency key is
+- ✅ **P1 Two same-amount gift cards (or packages) on one sale fulfil one** [bug] — idempotency key is
   `(saleId, initialCents)` (`offers.ts:81,86`); key on the line id.
-- **P1 Non-atomic gift-card balance update** [bug] — read-then-write at `offers.ts:118`; use
+- ✅ **P1 Non-atomic gift-card balance update** [bug] — read-then-write at `offers.ts:118`; use
   `balance_cents - amount where balance_cents >= amount`.
 - **P2 Plan price edits never reach new subscriptions** [bug] — `ensurePlanPrice` returns the cached
   `stripePriceId`; `updatePlan` doesn't clear it (`catalog-actions.ts:59-69`, `membership-billing.ts:19-25`).
@@ -232,14 +232,14 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
   client and staff; walk-in sales can't attach a client or carry notes.
 - **P1 Sales list page** [gap] — no `sales/page.tsx`; closed tickets are only reachable from Reports or a client's
   last 20. Add Open / Today / search by number or client.
-- **P1 Refunds reverse side effects** [bug] — stock (the `"refund"` movement in `server/inventory.ts:27` is never
+- ✅ **P1 Refunds reverse side effects** [bug] — stock (the `"refund"` movement in `server/inventory.ts:27` is never
   used), loyalty points, `promoCodes.usesCount`, issued gift cards/packages; Stripe-dashboard refunds and disputes
   are ignored (`server/webhooks.ts:82-86`); `payments.tipCents` not reduced.
-- **P1 Discount and promo math** [bug] — percent discounts stored as cents (`sales.ts:222-224`); promo can't be
+- ✅ **P1 Discount and promo math** [bug] — percent discounts stored as cents (`sales.ts:222-224`); promo can't be
   removed and is still counted (`sales.ts:304`); service-restricted promo discounts the whole ticket
   (`packages/core/src/pricing.ts:39-45`); discounts apply to gift card/package/membership lines (`offers.ts:81-83`).
 - **P1 Add or edit service lines on an open ticket** [gap] — price, qty, staff; upsells today go back to the appointment.
-- **P2 `addOffer` errors render the Next error page** [bug] — plain form action with no inline notice.
+- ✅ **P2 `addOffer` errors render the Next error page** [bug] — plain form action with no inline notice.
 - **P2 Card reader / Tap to Pay** [gap] — in-person card is a keyed-in Payment Element (`card-payment.tsx`);
   `paymentMethod` already has `"terminal"`.
 - **P2 Tip presets and client-facing tip prompt** [ux] — `forms.tsx:30-51` is a text field per provider.

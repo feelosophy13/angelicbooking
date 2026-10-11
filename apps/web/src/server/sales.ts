@@ -1,11 +1,11 @@
-import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, lt, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { allocateProportionally, computeTotals, type Discount } from "@angelic/core";
 import { after } from "next/server";
 import { db } from "@angelic/db";
 import { platformFeeBps, stripe } from "@/lib/stripe";
 import { ensureStripeCustomer } from "./stripe-connect";
-import { fulfilOfferLines } from "./offers";
+import { fulfilOfferLines, restoreCreditForLine } from "./offers";
 import { awardPointsForSale } from "./loyalty";
 import { queueReviewRequest } from "./reviews";
 import { decrementStockForSale } from "./inventory";
@@ -42,7 +42,7 @@ async function taxRateForSale(tx: TenantDb, saleId: string, businessDefaultBps: 
 async function recompute(tx: TenantDb, saleId: string, taxRateBps: number, discount: Discount | null, discountNote?: string | null) {
   const lines = await tx.select().from(schema.saleLines).where(eq(schema.saleLines.saleId, saleId));
   const t = computeTotals(
-    lines.map((l) => ({ kind: l.kind, amountCents: l.amountCents, taxable: l.taxable, staffId: l.staffId })),
+    lines.map((l) => ({ kind: l.kind, amountCents: l.amountCents, taxable: l.taxable, staffId: l.staffId, serviceId: l.serviceId })),
     discount,
     await taxRateForSale(tx, saleId, taxRateBps),
   );
@@ -204,7 +204,7 @@ export async function addProductLine(input: { businessId: string; saleId: string
       taxable: product.taxable,
       sortOrder: 100,
     });
-    await recompute(tx, sale.id, input.taxRateBps, currentDiscount(sale));
+    await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
   });
 }
 
@@ -213,22 +213,51 @@ export async function removeLine(input: { businessId: string; saleId: string; li
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
     if (!sale) throw new SaleError("Sale not found.");
     assertOpen(sale);
-    await tx.delete(schema.saleLines).where(and(eq(schema.saleLines.id, input.lineId), eq(schema.saleLines.saleId, sale.id)));
-    await recompute(tx, sale.id, input.taxRateBps, currentDiscount(sale));
+    const line = await tx.query.saleLines.findFirst({ where: and(eq(schema.saleLines.id, input.lineId), eq(schema.saleLines.saleId, sale.id)) });
+    if (!line) return;
+    // A line covered by a package session or membership credit gives the session back.
+    await restoreCreditForLine(tx, line);
+    await tx.delete(schema.saleLines).where(eq(schema.saleLines.id, line.id));
+    await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
   });
 }
 
-/** We persist the discount as cents; the UI may enter a percent which we resolve here. */
-function currentDiscount(sale: Sale): Discount | null {
+/**
+ * The discount currently on a sale, re-derived from what was entered so it
+ * follows line changes: a promo code (with its service scope), else the typed
+ * percent/amount, else (rows from before the type was stored) the cents.
+ */
+async function currentDiscount(tx: TenantDb, sale: Sale): Promise<Discount | null> {
+  if (sale.promoCodeId) {
+    const promo = await tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.id, sale.promoCodeId) });
+    if (promo) return { ...promoDiscount(promo), serviceIds: promo.serviceIds };
+  }
+  if ((sale.discountType === "percent" || sale.discountType === "amount") && sale.discountValue && sale.discountValue > 0) {
+    return { type: sale.discountType, value: sale.discountValue };
+  }
   return sale.discountCents > 0 ? { type: "amount", value: sale.discountCents } : null;
 }
 
+/** A typed discount replaces any promo code on the sale; "none" clears both. */
 export async function setDiscount(input: { businessId: string; saleId: string; discount: Discount | null; note: string | null; taxRateBps: number }) {
   await withTenant(input.businessId, async (tx) => {
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
     if (!sale) throw new SaleError("Sale not found.");
     assertOpen(sale);
+    await tx.update(schema.sales).set({ discountType: input.discount?.type ?? null, discountValue: input.discount?.value ?? null, promoCodeId: null }).where(eq(schema.sales.id, sale.id));
     await recompute(tx, sale.id, input.taxRateBps, input.discount, input.note);
+  });
+}
+
+export async function removePromoFromSale(input: { businessId: string; saleId: string; taxRateBps: number; actorUserId: string }) {
+  await withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+    if (!sale) throw new SaleError("Sale not found.");
+    assertOpen(sale);
+    if (!sale.promoCodeId) return;
+    await tx.update(schema.sales).set({ promoCodeId: null, discountType: null, discountValue: null }).where(eq(schema.sales.id, sale.id));
+    await recompute(tx, sale.id, input.taxRateBps, null, null);
+    await audit(tx, input.businessId, input.actorUserId, "sale.promo_removed", sale.id);
   });
 }
 
@@ -272,7 +301,7 @@ export async function setTips(input: { businessId: string; saleId: string; tips:
         })),
       );
     }
-    await recompute(tx, sale.id, input.taxRateBps, currentDiscount(sale));
+    await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
   });
 }
 
@@ -289,7 +318,7 @@ function tipShare(sale: Sale, amountCents: number) {
 async function closeIfPaid(tx: TenantDb, saleId: string, taxRateBps: number, actorUserId: string, businessId: string) {
   const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, saleId) });
   if (!sale) return;
-  const t = await recompute(tx, saleId, taxRateBps, currentDiscount(sale));
+  const t = await recompute(tx, saleId, taxRateBps, await currentDiscount(tx, sale));
   if (t.paidCents >= t.totalCents && sale.status === "open") {
     await tx.update(schema.sales).set({ status: "paid", closedAt: new Date() }).where(eq(schema.sales.id, saleId));
     if (sale.appointmentId) {
@@ -535,9 +564,11 @@ export async function refundPayment(input: {
       createdByUserId: input.actorUserId,
     });
     const newRefunded = p.refundedCents + amount;
+    // The tip part of the payment shrinks in proportion, so tip reports and payroll follow the refund.
+    const tipRefund = p.amountCents > 0 ? Math.min(p.tipCents, Math.round((p.tipCents * amount) / p.amountCents)) : 0;
     await tx
       .update(schema.payments)
-      .set({ refundedCents: newRefunded, status: newRefunded >= p.amountCents ? "refunded" : "partially_refunded" })
+      .set({ refundedCents: newRefunded, tipCents: p.tipCents - tipRefund, status: newRefunded >= p.amountCents ? "refunded" : "partially_refunded" })
       .where(eq(schema.payments.id, p.id));
     const sale = (await tx.query.sales.findFirst({ where: eq(schema.sales.id, p.saleId) }))!;
     // Refunding a points payment gives the points back.
@@ -546,12 +577,50 @@ export async function refundPayment(input: {
       const points = Math.round(amount / Math.max(1, biz?.loyaltyPointValueCents ?? 1));
       if (points > 0) await tx.insert(schema.loyaltyLedger).values({ businessId: input.businessId, clientId: sale.clientId, delta: points, reason: "adjust", saleId: sale.id, note: `Refund on sale #${sale.number}`, createdByUserId: input.actorUserId }).onConflictDoNothing();
     }
-    const t = await recompute(tx, sale.id, input.taxRateBps, currentDiscount(sale));
+    // Refunding a gift card payment puts the money back on the card.
+    if (p.method === "gift_card" && p.giftCardId) {
+      await tx.update(schema.giftCards).set({ balanceCents: sql`${schema.giftCards.balanceCents} + ${amount}`, active: true }).where(eq(schema.giftCards.id, p.giftCardId));
+    }
+    const t = await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
     if (t.refundedCents >= t.paidCents && t.paidCents > 0) {
       await tx.update(schema.sales).set({ status: "refunded" }).where(eq(schema.sales.id, sale.id));
+      await unwindPaidSale(tx, input.businessId, sale, input.actorUserId);
     }
     await audit(tx, input.businessId, input.actorUserId, "payment.refund", sale.id, { paymentId: p.id, amount });
   });
+}
+
+/**
+ * Everything closeIfPaid did for a sale, undone once it is fully refunded:
+ * stock back on the shelf, earned points taken back, the promo use released,
+ * unused gift cards deactivated and untouched packages removed. Idempotent.
+ * A partly used gift card or package is left alone (the owner decides).
+ */
+async function unwindPaidSale(tx: TenantDb, businessId: string, sale: Sale, actorUserId: string) {
+  const sold = await tx.select().from(schema.stockMovements).where(and(eq(schema.stockMovements.saleId, sale.id), eq(schema.stockMovements.reason, "sale")));
+  const returned = await tx.select({ id: schema.stockMovements.id }).from(schema.stockMovements).where(and(eq(schema.stockMovements.saleId, sale.id), eq(schema.stockMovements.reason, "refund")));
+  if (sold.length && !returned.length) {
+    for (const m of sold) {
+      await tx.insert(schema.stockMovements).values({ businessId, productId: m.productId, delta: -m.delta, reason: "refund", saleId: sale.id, note: `Refund of sale #${sale.number}`, createdByUserId: actorUserId });
+      await tx.update(schema.products).set({ stockQty: sql`${schema.products.stockQty} - ${m.delta}` }).where(eq(schema.products.id, m.productId));
+    }
+  }
+  if (sale.clientId) {
+    const earned = await tx.query.loyaltyLedger.findFirst({ where: and(eq(schema.loyaltyLedger.saleId, sale.id), eq(schema.loyaltyLedger.reason, "earn")) });
+    if (earned && earned.delta > 0) {
+      await tx.insert(schema.loyaltyLedger).values({ businessId, clientId: sale.clientId, delta: -earned.delta, reason: "refund", saleId: sale.id, note: `Refund of sale #${sale.number}`, createdByUserId: actorUserId }).onConflictDoNothing();
+    }
+  }
+  if (sale.promoCodeId) {
+    await tx.update(schema.promoCodes).set({ usesCount: sql`greatest(0, ${schema.promoCodes.usesCount} - 1)` }).where(eq(schema.promoCodes.id, sale.promoCodeId));
+  }
+  await tx.update(schema.giftCards).set({ active: false }).where(and(eq(schema.giftCards.saleId, sale.id), sql`${schema.giftCards.balanceCents} = ${schema.giftCards.initialCents}`));
+  const packs = await tx
+    .select({ id: schema.clientPackages.id })
+    .from(schema.clientPackages)
+    .innerJoin(schema.packages, eq(schema.packages.id, schema.clientPackages.packageId))
+    .where(and(eq(schema.clientPackages.saleId, sale.id), sql`${schema.clientPackages.remaining} = ${schema.packages.sessions}`));
+  if (packs.length) await tx.delete(schema.clientPackages).where(sql`${schema.clientPackages.id} in ${packs.map((x) => x.id)}`);
 }
 
 export async function voidSale(input: { businessId: string; saleId: string; actorUserId: string }) {
@@ -559,6 +628,9 @@ export async function voidSale(input: { businessId: string; saleId: string; acto
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
     if (!sale) throw new SaleError("Sale not found.");
     if (sale.paidCents > 0) throw new SaleError("Refund payments before voiding.");
+    // Sessions and credits applied to this ticket go back to the client.
+    const lines = await tx.select().from(schema.saleLines).where(and(eq(schema.saleLines.saleId, sale.id), gt(schema.saleLines.creditCents, 0)));
+    for (const l of lines) await restoreCreditForLine(tx, l);
     await tx.update(schema.sales).set({ status: "void", closedAt: new Date() }).where(eq(schema.sales.id, sale.id));
     await audit(tx, input.businessId, input.actorUserId, "sale.void", sale.id);
   });
@@ -707,8 +779,9 @@ export async function applyPromoToSale(input: { businessId: string; saleId: stri
     assertOpen(sale);
     const lines = await tx.select().from(schema.saleLines).where(eq(schema.saleLines.saleId, sale.id));
     const promo = await validatePromo(tx, input.code, { serviceIds: lines.filter((l) => l.kind === "service").map((l) => l.serviceId), subtotalCents: sale.subtotalCents });
-    await tx.update(schema.sales).set({ promoCodeId: promo.id }).where(eq(schema.sales.id, sale.id));
-    await recompute(tx, sale.id, input.taxRateBps, promoDiscount(promo), `Code ${promo.code}`);
+    const d = promoDiscount(promo);
+    await tx.update(schema.sales).set({ promoCodeId: promo.id, discountType: d.type, discountValue: d.value }).where(eq(schema.sales.id, sale.id));
+    await recompute(tx, sale.id, input.taxRateBps, { ...d, serviceIds: promo.serviceIds }, `Code ${promo.code}`);
     await audit(tx, input.businessId, input.actorUserId, "sale.promo", sale.id, { code: promo.code });
     return promo;
   });

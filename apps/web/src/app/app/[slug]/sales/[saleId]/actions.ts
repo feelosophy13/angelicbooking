@@ -22,7 +22,7 @@ import { stripe } from "@/lib/stripe";
 import { addOfferLine, redeemCredit, redeemGiftCard } from "@/server/offers";
 import { LoyaltyError, redeemPoints } from "@/server/loyalty";
 import { PromoError } from "@/server/promos";
-import { applyPromoToSale } from "@/server/sales";
+import { applyPromoToSale, removePromoFromSale } from "@/server/sales";
 import { schema as dbSchema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { queueOneOff } from "@/lib/notify";
@@ -200,7 +200,23 @@ export async function voidOpenSale(formData: FormData) {
 export async function addOffer(formData: FormData) {
   const d = base.extend({ kind: z.enum(["gift_card", "package", "membership"]), refId: z.string().optional(), amount: z.string().optional(), recipientName: z.string().optional() }).parse(Object.fromEntries(formData));
   const ctx = await ctxFor(d.slug);
-  await addOfferLine({ businessId: ctx.business.id, saleId: d.saleId, kind: d.kind, refId: d.refId || null, amountCents: d.amount ? parseMoney(d.amount) : null, recipientName: d.recipientName?.trim() || null });
+  try {
+    await addOfferLine({ businessId: ctx.business.id, saleId: d.saleId, kind: d.kind, refId: d.refId || null, amountCents: d.amount ? parseMoney(d.amount) : null, recipientName: d.recipientName?.trim() || null });
+  } catch (e) {
+    if (e instanceof SaleError) {
+      await setFlash(e.message, "error");
+      revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+      return;
+    }
+    throw e;
+  }
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+export async function removePromo(formData: FormData) {
+  const d = base.parse(Object.fromEntries(formData));
+  const ctx = await ctxFor(d.slug);
+  await removePromoFromSale({ businessId: ctx.business.id, saleId: d.saleId, taxRateBps: ctx.business.taxRateBps, actorUserId: ctx.user.id });
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
 

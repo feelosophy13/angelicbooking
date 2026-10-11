@@ -19,9 +19,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, applyDiscount, applyPromo, applyTips, deleteLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, setFulfillment, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, applyDiscount, applyPromo, applyTips, deleteLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
-import { withTenant } from "@angelic/db";
+import { schema, withTenant } from "@angelic/db";
+import { eq } from "drizzle-orm";
 import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
 import { pointsBalance } from "@/server/loyalty";
 import { CardPayment } from "./card-payment";
@@ -49,6 +50,9 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const catalog = open ? await getOffersCatalog(business.id) : null;
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
   const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
+  const promo = sale.promoCodeId ? await withTenant(business.id, (tx) => tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.id, sale.promoCodeId!), columns: { code: true } })) : null;
+  const typedDiscount: { type: "amount" | "percent"; value: number } | null =
+    !sale.promoCodeId && (sale.discountType === "percent" || sale.discountType === "amount") && sale.discountValue ? { type: sale.discountType, value: sale.discountValue } : null;
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
 
   return (
@@ -159,9 +163,9 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               </Card>
               <Card className="p-4">
                 <h2 className="mb-2 font-medium">Discount</h2>
-                <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}`} action={applyDiscount} slug={slug} saleId={sale.id} currentCents={sale.discountCents} note={sale.discountNote} />
+                <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}:${sale.promoCodeId ?? ""}`} action={applyDiscount} slug={slug} saleId={sale.id} currentCents={sale.promoCodeId ? 0 : sale.discountCents} current={typedDiscount} note={sale.promoCodeId ? null : sale.discountNote} />
                 <div className="mt-3 border-t border-stone-200 pt-3">
-                  <PromoForm key={`promo${sale.promoCodeId ?? ""}`} action={applyPromo} slug={slug} saleId={sale.id} />
+                  <PromoForm key={`promo${sale.promoCodeId ?? ""}`} action={applyPromo} slug={slug} saleId={sale.id} applied={promo?.code ?? null} removeAction={removePromo} />
                 </div>
               </Card>
               <Card className="p-4 md:col-span-2">

@@ -5,11 +5,24 @@ export interface PricingLine {
   amountCents: number;
   taxable: boolean;
   staffId?: string | null;
+  serviceId?: string | null;
 }
 
 export interface Discount {
   type: "amount" | "percent";
   value: number; // cents for amount, whole percent (e.g. 10) for percent
+  /** Only service lines for these services are discounted (a service-restricted promo). Empty/undefined = the whole ticket. */
+  serviceIds?: string[];
+}
+
+/** Stored value (gift cards, packages, memberships) is sold at face value and never discounted. */
+const STORED_VALUE: ReadonlySet<PricingLine["kind"]> = new Set(["gift_card", "package", "membership"]);
+
+/** Whether a discount reaches this line. */
+export function discountApplies(line: PricingLine, discount: Discount): boolean {
+  if (line.kind === "tip" || STORED_VALUE.has(line.kind)) return false;
+  if (discount.serviceIds?.length) return line.kind === "service" && !!line.serviceId && discount.serviceIds.includes(line.serviceId);
+  return true;
 }
 
 export interface Totals {
@@ -26,8 +39,10 @@ export function clampCents(n: number): number {
 }
 
 /**
- * Totals for a sale. The discount applies proportionally to taxable and
- * non-taxable goods, so tax is charged on the discounted taxable amount.
+ * Totals for a sale. The discount is computed on the lines it reaches (never
+ * stored value; only the named services for a restricted promo) and applies
+ * proportionally to the taxable and non-taxable part of that base, so tax is
+ * charged on the discounted taxable amount.
  */
 export function computeTotals(lines: PricingLine[], discount: Discount | null, taxRateBps: number): Totals {
   const goods = lines.filter((l) => l.kind !== "tip");
@@ -36,13 +51,20 @@ export function computeTotals(lines: PricingLine[], discount: Discount | null, t
   const tipCents = lines.filter((l) => l.kind === "tip").reduce((s, l) => s + clampCents(l.amountCents), 0);
 
   let discountCents = 0;
-  if (discount && subtotal > 0) {
-    discountCents =
-      discount.type === "percent"
-        ? Math.round((subtotal * Math.min(100, Math.max(0, discount.value))) / 100)
-        : Math.min(subtotal, clampCents(discount.value));
+  let taxableDiscount = 0;
+  if (discount) {
+    const reached = goods.filter((l) => discountApplies(l, discount));
+    const base = reached.reduce((s, l) => s + clampCents(l.amountCents), 0);
+    const taxableReached = reached.filter((l) => l.taxable).reduce((s, l) => s + clampCents(l.amountCents), 0);
+    if (base > 0) {
+      discountCents =
+        discount.type === "percent"
+          ? Math.round((base * Math.min(100, Math.max(0, discount.value))) / 100)
+          : Math.min(base, clampCents(discount.value));
+      taxableDiscount = Math.round((taxableReached * discountCents) / base);
+    }
   }
-  const discountedTaxable = subtotal > 0 ? Math.round(taxableBase * (1 - discountCents / subtotal)) : 0;
+  const discountedTaxable = Math.max(0, taxableBase - taxableDiscount);
   const taxCents = Math.round((discountedTaxable * Math.max(0, taxRateBps)) / 10_000);
   const totalCents = subtotal - discountCents + taxCents + tipCents;
   return { subtotalCents: subtotal, discountCents, taxCents, tipCents, totalCents };

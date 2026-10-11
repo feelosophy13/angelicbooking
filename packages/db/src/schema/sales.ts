@@ -99,6 +99,9 @@ export const sales = pgTable(
     paidCents: integer("paid_cents").notNull().default(0),
     refundedCents: integer("refunded_cents").notNull().default(0),
     discountNote: text("discount_note"),
+    // The discount as entered ("percent" 10 or "amount" 500), so it re-applies when lines change.
+    discountType: text("discount_type"), // amount | percent
+    discountValue: integer("discount_value"),
     promoCodeId: text("promo_code_id"),
     // pos (staff checkout) | online (store / gift card purchase on the booking site) | membership (auto-renewal)
     source: text("source").notNull().default("pos"),
