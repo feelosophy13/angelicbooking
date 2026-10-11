@@ -185,9 +185,10 @@ apart use separate tenants.
       strip and month grid use the business clock; the reminder cron compares `scheduledAt` instants, so
       nothing changes there.
 
-**Phase 3 (owners with several businesses)**
-- [ ] "All my businesses" dashboard: read-only roll-up of sales and upcoming appointments across tenants the
-      user belongs to; optional shared client directory; one platform invoice per owner.
+**Phase 3 — dropped (2026-10-10).** The planned cross-tenant roll-up / shared client directory / one platform
+invoice per owner was built and then reverted (commit 70435d9 and its revert): the owner's two entities are one
+tenant with two locations, so tying separate businesses together is not needed. Revisit only if a customer
+runs several salons on separate accounts.
 
 ### Needs a real Stripe/Twilio run before relying on it (2026-10-10)
 - [ ] Online deposit + card on file at booking (test cards on a connected test account), including the
