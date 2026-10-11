@@ -389,7 +389,11 @@ export default async function AppointmentPage({
                 <form action={refundDepositAction} className="mt-2">
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="appointmentId" value={id} />
-                  <ConfirmSubmit title="Refund the deposit?" body="The deposit goes back to the client's card through Stripe. This can't be undone." confirmLabel="Refund deposit" variant="secondary">Refund deposit</ConfirmSubmit>
+                  {business.depositRefundAs === "store_credit" ? (
+                    <ConfirmSubmit title="Return the deposit as store credit?" body="Your policy returns deposits as store credit: the client gets the amount to spend on a future visit and the money stays with you." confirmLabel="Give store credit" variant="secondary">Return as store credit</ConfirmSubmit>
+                  ) : (
+                    <ConfirmSubmit title="Refund the deposit?" body="The deposit goes back to the client's card through Stripe. This can't be undone." confirmLabel="Refund deposit" variant="secondary">Refund deposit</ConfirmSubmit>
+                  )}
                 </form>
               ) : null}
             </Card>

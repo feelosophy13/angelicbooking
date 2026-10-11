@@ -183,6 +183,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       bookings carry an "online" chip with when they came in). "New online booking" automation template (team
       group, on by default) emails the owner and the provider when a client books online; automations gain a
       "Booked online only" filter and templates added later are topped up on the next trigger.
+- [x] 2026-10-11 (migrations 0056–0057): store credit. `store_credit_ledger` + cached `clients.store_credit_cents`;
+      refund form offers "To original payment" or "As store credit" (money stays, client gets a balance; credit
+      given counts against what is still refundable); "Store credit" payment method at checkout (refunding it
+      restores the balance); client page card with history and manager adjustments; Reports "Store credit issued"
+      card; Settings → Booking rules "Returned deposits go: back to the card / to the client as store credit",
+      honoured by online cancellation and the staff deposit refund; client-facing copy follows the policy.
 - [x] 2026-10-11: Staff hours → "Add time off" button opens a team-wide form (pick the person, first/last day, type,
       hours, note) that returns to Staff hours after saving; the per-person Time off tab is unchanged.
 - [x] 2026-10-11: Reports: "Pay & commissions" card (payroll.view): service commissions, product commissions,

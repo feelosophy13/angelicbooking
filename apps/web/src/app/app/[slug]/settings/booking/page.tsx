@@ -2,7 +2,7 @@ import { requireAction } from "@/lib/tenant";
 import { appUrl } from "@/lib/stripe";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BackLink, Card, Input, PageHeader, Textarea, Checkbox } from "@/components/ui";
+import { BackLink, Card, Input, PageHeader, Textarea, Checkbox, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 
 export const metadata: Metadata = { title: "Online booking" };
@@ -38,6 +38,12 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <div className="mt-3 space-y-3">
                 <Field label="No-show fee ($)" name="noShowFee" hint="Charged to a saved card from the appointment page. Deposits are set per service."><Input name="noShowFee" inputMode="decimal" defaultValue={business.noShowFeeCents ? (business.noShowFeeCents / 100).toFixed(2) : ""} placeholder="0" className="max-w-[10rem]" /></Field>
                 <Checkbox name="requireCardOnline" defaultChecked={business.requireCardOnline} label="Require a card on file to book online" hint="Needs Stripe connected. Nothing is charged at booking; the card is kept for no-show fees." />
+                <Field label="Returned deposits go" name="depositRefundAs" hint="When a client cancels inside the window, or staff refund a deposit.">
+                  <Select name="depositRefundAs" defaultValue={business.depositRefundAs} className="max-w-xs">
+                    <option value="original">Back to the card</option>
+                    <option value="store_credit">To the client as store credit</option>
+                  </Select>
+                </Field>
               </div>
             </details>
             <details className="rounded-lg border border-stone-200 p-3" open={!!business.bookingPolicy || business.clientAccountsEnabled}>

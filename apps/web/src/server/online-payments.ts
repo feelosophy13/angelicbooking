@@ -9,7 +9,8 @@
  */
 import type Stripe from "stripe";
 import { eq, or } from "drizzle-orm";
-import { schema, withTenant } from "@angelic/db";
+import { db, schema, withTenant } from "@angelic/db";
+import { changeStoreCredit } from "./store-credit";
 import { platformFeeBps, stripe } from "@/lib/stripe";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { BookingError } from "./booking";
@@ -104,10 +105,19 @@ export async function appointmentForIntent(businessId: string, intentId: string)
  * inside the policy window, staff courtesy refund, or a booking that failed after
  * the charge). Idempotent: does nothing unless the deposit is in "paid".
  */
-export async function refundDeposit(input: { businessId: string; accountId: string | null; appointmentId: string; actorUserId: string; reason: string }) {
+export async function refundDeposit(input: { businessId: string; accountId: string | null; appointmentId: string; actorUserId: string; reason: string; /** Override the business policy (staff choosing explicitly). */ as?: "original" | "store_credit" }) {
   return withTenant(input.businessId, async (tx) => {
     const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, input.appointmentId) });
     if (!appt || appt.depositStatus !== "paid" || !appt.depositPaymentIntentId) return false;
+    const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { depositRefundAs: true } });
+    const as = input.as ?? (biz?.depositRefundAs === "store_credit" ? "store_credit" : "original");
+    // Under a store-credit policy the money stays on the account and the client gets a balance instead.
+    if (as === "store_credit" && appt.clientId) {
+      await changeStoreCredit(tx, { businessId: input.businessId, clientId: appt.clientId, deltaCents: appt.depositCents, reason: "deposit_refund", appointmentId: appt.id, note: input.reason, actorUserId: input.actorUserId === "client" ? null : input.actorUserId });
+      await tx.update(schema.appointments).set({ depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
+      await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.store_credit", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: appt.depositCents, reason: input.reason }) });
+      return true;
+    }
     if (!input.accountId) throw new BookingError("Stripe account not connected.");
     await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId, metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: input.accountId, idempotencyKey: `deposit_refund_${appt.id}` });
     await tx.update(schema.appointments).set({ depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));

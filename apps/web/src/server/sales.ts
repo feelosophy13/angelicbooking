@@ -6,6 +6,7 @@ import { db } from "@angelic/db";
 import { platformFeeBps, stripe } from "@/lib/stripe";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { fulfilOfferLines, restoreCreditForLine } from "./offers";
+import { changeStoreCredit, creditedAgainstPayment } from "./store-credit";
 import { awardPointsForSale } from "./loyalty";
 import { triggerAppointmentWorkflows } from "./workflows";
 import { decrementStockForSale } from "./inventory";
@@ -245,7 +246,8 @@ export async function getSale(businessId: string, saleId: string) {
     const refunds = pays.length
       ? await tx.select().from(schema.refunds).where(sql`${schema.refunds.paymentId} in ${pays.map((p) => p.id)}`)
       : [];
-    return { sale, lines, payments: pays, refunds, client: client ?? null, staff: staffRows, products };
+    const credits = await tx.select().from(schema.storeCreditLedger).where(eq(schema.storeCreditLedger.saleId, saleId)).orderBy(asc(schema.storeCreditLedger.createdAt));
+    return { sale, lines, payments: pays, refunds, credits, client: client ?? null, staff: staffRows, products };
   });
 }
 
@@ -491,6 +493,47 @@ export async function recordManualPayment(input: {
 }
 
 /**
+ * Refund as store credit: the money stays in the till and the client gets a balance to spend later.
+ * The payment is left as is (it really was collected); the ledger row points at it so a later card
+ * refund cannot double up.
+ */
+export async function refundToStoreCredit(input: { businessId: string; paymentId: string; amountCents: number; reason: string | null; actorUserId: string }) {
+  await withTenant(input.businessId, async (tx) => {
+    const p = await tx.query.payments.findFirst({ where: eq(schema.payments.id, input.paymentId) });
+    if (!p) throw new SaleError("Payment not found.");
+    if (p.method === "store_credit") throw new SaleError("This was paid with store credit; refund it to the original payment instead.");
+    const sale = (await tx.query.sales.findFirst({ where: eq(schema.sales.id, p.saleId) }))!;
+    if (!sale.clientId) throw new SaleError("Store credit needs a client on the ticket.");
+    const refundable = p.amountCents - p.refundedCents - (await creditedAgainstPayment(tx, p.id));
+    const amount = Math.min(input.amountCents, refundable);
+    if (amount <= 0) throw new SaleError("Nothing left to refund.");
+    await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale.clientId, deltaCents: amount, reason: "refund", saleId: sale.id, paymentId: p.id, note: input.reason ?? `Refund on sale #${sale.number}`, actorUserId: input.actorUserId });
+    await audit(tx, input.businessId, input.actorUserId, "payment.refund_store_credit", sale.id, { paymentId: p.id, amount, reason: input.reason });
+  });
+}
+
+/** Spend store credit on an open ticket. */
+export async function payWithStoreCredit(input: { businessId: string; saleId: string; amountCents: number; actorUserId: string; taxRateBps: number }) {
+  await withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+    if (!sale) throw new SaleError("Sale not found.");
+    assertOpen(sale);
+    if (!sale.clientId) throw new SaleError("Store credit needs a client on the ticket.");
+    const due = balance(sale);
+    if (input.amountCents <= 0) throw new SaleError("Enter an amount.");
+    const amount = Math.min(input.amountCents, due);
+    if (amount <= 0) throw new SaleError("Nothing left to pay.");
+    const [row] = await tx
+      .insert(schema.payments)
+      .values({ businessId: input.businessId, saleId: sale.id, method: "store_credit", status: "succeeded", amountCents: amount, tipCents: tipShare(sale, amount), note: "Store credit", createdByUserId: input.actorUserId })
+      .returning({ id: schema.payments.id });
+    await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale.clientId, deltaCents: -amount, reason: "payment", saleId: sale.id, paymentId: row!.id, note: `Sale #${sale.number}`, actorUserId: input.actorUserId });
+    await audit(tx, input.businessId, input.actorUserId, "payment.store_credit", sale.id, { amount });
+    await closeIfPaid(tx, sale.id, input.taxRateBps, input.actorUserId, input.businessId);
+  });
+}
+
+/**
  * Charge a saved card (off-session) on the business's Stripe account.
  * Money goes straight to the business; an optional platform fee is taken.
  */
@@ -652,7 +695,7 @@ export async function refundPayment(input: {
   await withTenant(input.businessId, async (tx) => {
     const p = await tx.query.payments.findFirst({ where: eq(schema.payments.id, input.paymentId) });
     if (!p) throw new SaleError("Payment not found.");
-    const refundable = p.amountCents - p.refundedCents;
+    const refundable = p.amountCents - p.refundedCents - (await creditedAgainstPayment(tx, p.id));
     const amount = Math.min(input.amountCents, refundable);
     if (amount <= 0) throw new SaleError("Nothing left to refund.");
     let stripeRefundId: string | null = null;
@@ -689,6 +732,10 @@ export async function refundPayment(input: {
     // Refunding a gift card payment puts the money back on the card.
     if (p.method === "gift_card" && p.giftCardId) {
       await tx.update(schema.giftCards).set({ balanceCents: sql`${schema.giftCards.balanceCents} + ${amount}`, active: true }).where(eq(schema.giftCards.id, p.giftCardId));
+    }
+    // Refunding a store-credit payment puts the credit back on the client's account.
+    if (p.method === "store_credit" && sale.clientId) {
+      await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale.clientId, deltaCents: amount, reason: "payment_refund", saleId: sale.id, paymentId: p.id, note: `Refund on sale #${sale.number}`, actorUserId: input.actorUserId });
     }
     const t = await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
     if (t.refundedCents >= t.paidCents && t.paidCents > 0) {

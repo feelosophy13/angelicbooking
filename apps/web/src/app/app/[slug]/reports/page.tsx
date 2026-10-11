@@ -8,7 +8,9 @@ import { can, instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { salesReport } from "@/server/sales";
 import { stockReport } from "@/server/inventory";
+import { withTenant } from "@angelic/db";
 import { runPayroll } from "@/server/payroll";
+import { storeCreditSummary } from "@/server/store-credit";
 import { formatDateLong, formatMoney, shiftISODate } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Empty, LinkButton } from "@/components/ui";
 import { LocationFilter } from "@/components/location-filter";
@@ -41,6 +43,10 @@ export default async function ReportsPage({
   const prevTo = shiftISODate(from, -1);
   const isPreset = (from === today && to === today) || (from === shiftISODate(today, -6) && to === today) || (from === `${today.slice(0, 8)}01` && to === today);
   const stock = await stockReport(business.id);
+  const [credit, creditBefore] = await withTenant(business.id, async (tx) => [
+    await storeCreditSummary(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
+    await storeCreditSummary(tx, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz)),
+  ]);
   const canPayroll = can(permissions, "payroll.view");
   const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation }, prev, categories, pay, payBefore] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter),
@@ -139,7 +145,7 @@ export default async function ReportsPage({
       </PageHeader>
       <p className="mb-4 text-sm text-stone-600">{from === to ? formatDateLong(from) : `${formatDateLong(from)} – ${formatDateLong(to)}`}{locationFilter ? ` · ${locName(locationFilter)}` : ""}</p>
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
         {(
           [
             ["Sales", sum("totalCents") - sum("tipCents"), sum("totalCents", prev.sales) - sum("tipCents", prev.sales), true],
@@ -147,6 +153,7 @@ export default async function ReportsPage({
             ["Discounts", sum("discountCents"), sum("discountCents", prev.sales), false],
             ["Tax collected", sum("taxCents"), sum("taxCents", prev.sales), true],
             ["Refunds", sum("refundedCents"), sum("refundedCents", prev.sales), false],
+            ["Store credit issued", credit.issuedCents, creditBefore.issuedCents, false],
           ] as [string, number, number, boolean][]
         ).map(([label, v, before, goodUp]) => {
           const d = delta(v, before);

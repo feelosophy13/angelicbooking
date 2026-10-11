@@ -32,7 +32,7 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
         <p className="text-stone-700">{day} at {formatTime(m.start, tz)}</p>
         <p className="text-stone-700">with {[...new Set(m.live.map((i) => i.staffName))].join(" & ")}</p>
         {m.client ? <p className="mt-2 text-sm text-stone-500">Booked for {m.client.firstName} {m.client.lastName}</p> : null}
-        {m.appt.depositStatus === "paid" ? <p className="mt-1 text-sm text-stone-500">Deposit of {formatMoney(m.appt.depositCents, m.business.currency)} paid. It comes off your bill, and is refunded if you cancel online more than {m.business.cancelWindowHours} hours ahead.</p> : m.appt.depositStatus === "refunded" ? <p className="mt-1 text-sm text-stone-500">Your deposit of {formatMoney(m.appt.depositCents, m.business.currency)} has been refunded.</p> : null}
+        {m.appt.depositStatus === "paid" ? <p className="mt-1 text-sm text-stone-500">Deposit of {formatMoney(m.appt.depositCents, m.business.currency)} paid. It comes off your bill, and is {m.business.depositRefundAs === "store_credit" ? "returned as store credit" : "refunded"} if you cancel online more than {m.business.cancelWindowHours} hours ahead.</p> : m.appt.depositStatus === "refunded" ? <p className="mt-1 text-sm text-stone-500">Your deposit of {formatMoney(m.appt.depositCents, m.business.currency)} has been {m.business.depositRefundAs === "store_credit" ? "returned as store credit for your next visit" : "refunded"}.</p> : null}
       </div>
 
       {status === "cancelled" ? (

@@ -73,6 +73,8 @@ export const businesses = pgTable("businesses", {
   minNoticeMin: integer("min_notice_min").notNull().default(120),
   maxAdvanceDays: integer("max_advance_days").notNull().default(60),
   cancelWindowHours: integer("cancel_window_hours").notNull().default(24),
+  // When a deposit comes back (cancellation inside policy, staff refund): to the card, or as store credit.
+  depositRefundAs: text("deposit_refund_as").notNull().default("original"), // original | store_credit
   requireCardOnline: boolean("require_card_online").notNull().default(false),
   noShowFeeCents: integer("no_show_fee_cents").notNull().default(0),
   bookingPolicy: text("booking_policy"),
@@ -385,6 +387,8 @@ export const clients = pgTable(
     phone: text("phone"),
     notes: text("notes"), // general/private notes
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    // Cached sum of store_credit_ledger for this client.
+    storeCreditCents: integer("store_credit_cents").notNull().default(0),
     // Derived: location of the most recent (non-cancelled) appointment. Clients are shared
     // across a business's locations; this only drives list filters, reports and audiences.
     homeLocationId: text("home_location_id").references(() => locations.id, { onDelete: "set null" }),
@@ -529,6 +533,31 @@ export const reviews = pgTable(
 // ---------------------------------------------------------------------------
 // Loyalty points ledger (balance = sum of deltas)
 // ---------------------------------------------------------------------------
+/**
+ * Store credit: money the business owes a client (a refund kept in-house, a goodwill credit). Spent at
+ * checkout as a "store_credit" payment. The balance is cached on the client row and kept in step here.
+ */
+export const storeCreditLedger = pgTable(
+  "store_credit_ledger",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    /** Positive = credit issued, negative = credit used. */
+    deltaCents: integer("delta_cents").notNull(),
+    reason: text("reason").notNull(), // refund | deposit_refund | payment | payment_refund | adjust
+    saleId: text("sale_id"),
+    paymentId: text("payment_id"),
+    appointmentId: text("appointment_id"),
+    note: text("note"),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("store_credit_client_idx").on(t.businessId, t.clientId, t.createdAt)],
+);
+
 export const loyaltyLedger = pgTable(
   "loyalty_ledger",
   {
@@ -1171,6 +1200,7 @@ export const TENANT_TABLES = [
   "sale_lines",
   "payments",
   "refunds",
+  "store_credit_ledger",
   "notifications",
   "waitlist",
   "time_entries",

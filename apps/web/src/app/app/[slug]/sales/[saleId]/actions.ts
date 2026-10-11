@@ -21,8 +21,9 @@ import {
 import { stripe } from "@/lib/stripe";
 import { addOfferLine, redeemCredit, redeemGiftCard } from "@/server/offers";
 import { LoyaltyError, redeemPoints } from "@/server/loyalty";
+import { StoreCreditError } from "@/server/store-credit";
 import { PromoError } from "@/server/promos";
-import { addServiceLine, applyPromoToSale, removePromoFromSale, setSaleClient, updateLine } from "@/server/sales";
+import { addServiceLine, applyPromoToSale, payWithStoreCredit, refundToStoreCredit, removePromoFromSale, setSaleClient, updateLine } from "@/server/sales";
 import { schema as dbSchema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { queueOneOff } from "@/lib/notify";
@@ -37,7 +38,7 @@ export type SaleActionState = { error?: string; ok?: boolean } | undefined;
 const base = z.object({ slug: z.string(), saleId: z.string().min(1) });
 
 function friendly(e: unknown): SaleActionState {
-  if (e instanceof SaleError || e instanceof StripeNotConfigured) return { error: e.message };
+  if (e instanceof SaleError || e instanceof StripeNotConfigured || e instanceof StoreCreditError) return { error: e.message };
   throw e;
 }
 
@@ -176,17 +177,36 @@ export async function finishCardPayment(input: { slug: string; saleId: string; p
 }
 
 export async function refund(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
-  const d = base.extend({ paymentId: z.string().min(1), amount: z.string(), reason: z.string().optional() }).parse(Object.fromEntries(formData));
+  const d = base.extend({ paymentId: z.string().min(1), amount: z.string(), reason: z.string().optional(), to: z.enum(["original", "store_credit"]).optional() }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "reports.view"); // managers/owners only
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter a refund amount." };
   try {
-    const pay = await paymentContextForSale(ctx.business, d.saleId);
-    await refundPayment({ businessId: ctx.business.id, accountId: pay.accountId, paymentId: d.paymentId, amountCents: cents, reason: d.reason?.trim() || null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    if (d.to === "store_credit") {
+      await refundToStoreCredit({ businessId: ctx.business.id, paymentId: d.paymentId, amountCents: cents, reason: d.reason?.trim() || null, actorUserId: ctx.user.id });
+    } else {
+      const pay = await paymentContextForSale(ctx.business, d.saleId);
+      await refundPayment({ businessId: ctx.business.id, accountId: pay.accountId, paymentId: d.paymentId, amountCents: cents, reason: d.reason?.trim() || null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    }
   } catch (e) {
     return friendly(e);
   }
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+  return { ok: true };
+}
+
+export async function payWithStoreCreditAction(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
+  const d = base.extend({ amount: z.string() }).parse(Object.fromEntries(formData));
+  const ctx = await ctxFor(d.slug);
+  const cents = parseMoney(d.amount);
+  if (cents === null || cents <= 0) return { error: "Enter an amount." };
+  try {
+    await payWithStoreCredit({ businessId: ctx.business.id, saleId: d.saleId, amountCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+  } catch (e) {
+    return friendly(e);
+  }
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+  revalidatePath(`/app/${d.slug}`);
   return { ok: true };
 }
 

@@ -21,7 +21,8 @@ import { relative } from "@/lib/format";
 import { listForms, listSubmissionsForClient } from "@/server/forms";
 import { getClientLoyalty } from "@/server/loyalty";
 import { reviewsForClient } from "@/server/reviews";
-import { adjustClientPoints, createReferralCode } from "./loyalty-actions";
+import { adjustClientPoints, adjustClientStoreCredit, createReferralCode } from "./loyalty-actions";
+import { getClientStoreCredit } from "@/server/store-credit";
 import { turnOffAutoRenew, turnOnAutoRenew } from "./membership-actions";
 import { replyToClient } from "./messages-actions";
 import { clientThread } from "@/server/inbound";
@@ -71,7 +72,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   if (!data) notFound();
   const { client, visits, sales, packs, memberships, notes } = data;
   const activeForms = (await listForms(business.id)).filter((f) => f.active);
-  const [submissions, loyalty, reviews, thread] = await Promise.all([listSubmissionsForClient(business.id, clientId), business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null), reviewsForClient(business.id, clientId), clientThread(business.id, clientId)]);
+  const [submissions, loyalty, reviews, thread, storeCredit] = await Promise.all([listSubmissionsForClient(business.id, clientId), business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null), reviewsForClient(business.id, clientId), clientThread(business.id, clientId), getClientStoreCredit(business.id, clientId)]);
   // Cards are shown for the client's home location's Stripe account (else the default site's).
   const pay = await paymentContextFor(business, client.homeLocationId);
   const multiLocation = (await listLocations(business.id)).length > 1;
@@ -198,6 +199,37 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               </details>
             ) : null}
           </Card>
+          {storeCredit.balance > 0 || storeCredit.history.length > 0 || write ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Store credit</h2>
+              <p className="text-2xl font-semibold">{money(storeCredit.balance)}</p>
+              <p className="text-xs text-stone-500">Spent at checkout like cash. Comes from refunds kept in-house, returned deposits and goodwill credits.</p>
+              {storeCredit.history.length ? (
+                <ul className="mt-2 max-h-32 space-y-0.5 overflow-y-auto text-xs text-stone-600">
+                  {storeCredit.history.slice(0, 10).map((h) => (
+                    <li key={h.id}>
+                      {fmtDate.format(h.createdAt)} · <span className={h.deltaCents >= 0 ? "text-emerald-700" : "text-red-700"}>{h.deltaCents > 0 ? "+" : "−"}{money(Math.abs(h.deltaCents))}</span> · {({ refund: "refund as credit", deposit_refund: "deposit returned as credit", payment: "used at checkout", payment_refund: "refund of a credit payment", adjust: "adjustment" } as Record<string, string>)[h.reason] ?? h.reason}
+                      {h.saleId ? <> · <Link href={`/app/${slug}/sales/${h.saleId}`} className="underline">sale</Link></> : null}{h.note ? ` · ${h.note}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {write ? (
+                <details className="mt-3 border-t border-stone-200 pt-3">
+                  <summary className="cursor-pointer select-none text-xs text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">Adjust store credit</summary>
+                  <ActionForm action={adjustClientStoreCredit} className="mt-2">
+                    <input type="hidden" name="slug" value={slug} />
+                    <input type="hidden" name="clientId" value={client.id} />
+                    <div className="grid grid-cols-[6rem_1fr] gap-2">
+                      <Field label="Amount" name="amount" hint="Negative removes"><Input name="amount" inputMode="decimal" placeholder="25.00" /></Field>
+                      <Field label="Reason" name="note"><Input name="note" placeholder="Goodwill after a late start" /></Field>
+                    </div>
+                    <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Apply</SubmitButton>
+                  </ActionForm>
+                </details>
+              ) : null}
+            </Card>
+          ) : null}
           {loyalty ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-1 font-medium">Loyalty points</h2>

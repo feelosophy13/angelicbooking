@@ -19,7 +19,7 @@ const businessId = () =>
 
 export const saleStatus = pgEnum("sale_status", ["open", "paid", "refunded", "void"]);
 export const saleLineKind = pgEnum("sale_line_kind", ["service", "product", "tip", "fee", "adjustment", "gift_card", "package", "membership"]);
-export const paymentMethod = pgEnum("payment_method", ["cash", "card", "card_on_file", "terminal", "other", "gift_card", "loyalty"]);
+export const paymentMethod = pgEnum("payment_method", ["cash", "card", "card_on_file", "terminal", "other", "gift_card", "loyalty", "store_credit"]);
 export const paymentStatus = pgEnum("payment_status", ["pending", "succeeded", "failed", "refunded", "partially_refunded"]);
 
 export const productCategories = pgTable(

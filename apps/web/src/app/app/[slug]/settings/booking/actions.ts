@@ -16,6 +16,7 @@ export const saveBookingSettings = formAction(
     maxAdvanceDays: f.int(1, 365),
     cancelWindowHours: f.int(0, 168),
     noShowFee: f.moneyOptional(),
+    depositRefundAs: z.enum(["original", "store_credit"]).default("original"),
     bookingPolicy: f.optional(1000),
     addressLine: f.optional(200),
   }),
@@ -31,6 +32,7 @@ export const saveBookingSettings = formAction(
         maxAdvanceDays: d.maxAdvanceDays,
         cancelWindowHours: d.cancelWindowHours,
         noShowFeeCents: d.noShowFee,
+        depositRefundAs: d.depositRefundAs,
         bookingPolicy: d.bookingPolicy,
         addressLine: d.addressLine,
       })

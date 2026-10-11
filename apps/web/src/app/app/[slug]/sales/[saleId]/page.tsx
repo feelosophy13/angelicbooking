@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, editLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, editLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, payWithStoreCreditAction, refund, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
 import { ClientPicker } from "@/components/client-picker";
 import { Disclosure } from "@/components/disclosure";
 import { quickCreateClient } from "../../clients/actions";
@@ -29,8 +29,9 @@ import { ServicePicker } from "@/components/service-picker";
 import { schema, withTenant } from "@angelic/db";
 import { asc, eq } from "drizzle-orm";
 import { instantToISODate } from "@angelic/core";
-import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
+import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, SavedCardForm, StoreCreditPayForm, TipsForm } from "./forms";
 import { pointsBalance } from "@/server/loyalty";
+import { storeCreditBalance } from "@/server/store-credit";
 import { CardPayment } from "./card-payment";
 
 export default async function SalePage({ params }: { params: Promise<{ slug: string; saleId: string }> }) {
@@ -38,7 +39,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const { business, permissions } = await requireAction(slug, "checkout.take");
   const data = await getSale(business.id, saleId);
   if (!data) notFound();
-  const { sale, lines, payments, refunds, client, staff, products } = data;
+  const { sale, lines, payments, refunds, credits: creditLedger, client, staff, products } = data;
   const cur = business.currency;
   const money = (c: number) => formatMoney(c, cur);
   const due = sale.totalCents - sale.paidCents;
@@ -56,6 +57,9 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const catalog = open ? await getOffersCatalog(business.id) : null;
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
   const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
+  const storeCredit = open && client ? await withTenant(business.id, (tx) => storeCreditBalance(tx, client.id)) : 0;
+  // Credit already given against a payment counts as refunded for what is left to refund.
+  const creditedFor = (paymentId: string) => creditLedger.filter((c) => c.paymentId === paymentId && c.reason === "refund").reduce((s, c) => s + c.deltaCents, 0);
   const rebookLine = lines.find((l) => l.kind === "service") ?? null;
   const serviceGroupsForSale = open ? await serviceGroups(business, { meta: "price" }) : [];
   const promo = sale.promoCodeId ? await withTenant(business.id, (tx) => tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.id, sale.promoCodeId!), columns: { code: true } })) : null;
@@ -252,7 +256,8 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               <h2 className="mb-2 font-medium">Payments</h2>
               <ul className="divide-y divide-stone-100 text-sm">
                 {payments.map((p) => {
-                  const refundable = p.amountCents - p.refundedCents;
+                  const credited = creditedFor(p.id);
+                  const refundable = p.amountCents - p.refundedCents - credited;
                   return (
                     <li key={p.id} className="py-2">
                       <div className="flex items-center justify-between">
@@ -261,13 +266,16 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                           <StatusBadge status={p.status} className="ml-2" />
                           {p.note ? <span className="ml-2 text-xs text-stone-500">{p.note}</span> : null}
                         </span>
-                        <span className="font-medium">{money(p.amountCents)}{p.refundedCents ? <span className="text-xs text-stone-500"> (−{money(p.refundedCents)})</span> : null}</span>
+                        <span className="font-medium">{money(p.amountCents)}{p.refundedCents || credited ? <span className="text-xs text-stone-500"> (−{money(p.refundedCents + credited)})</span> : null}</span>
                       </div>
                       {refunds.filter((r) => r.paymentId === p.id).map((r) => (
                         <p key={r.id} className="text-xs text-stone-500">Refunded {money(r.amountCents)}{r.reason ? ` · ${r.reason}` : ""}</p>
                       ))}
+                      {creditLedger.filter((c) => c.paymentId === p.id && c.reason === "refund").map((c) => (
+                        <p key={c.id} className="text-xs text-stone-500">Refunded {money(c.deltaCents)} as store credit{c.note ? ` · ${c.note}` : ""}</p>
+                      ))}
                       {p.status !== "pending" && p.status !== "failed" && refundable > 0 && can(permissions, "reports.view") ? (
-                        <RefundForm action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} />
+                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} />
                       ) : null}
                     </li>
                   );
@@ -293,6 +301,12 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       <h3 className="mb-1 text-sm font-medium text-stone-700">Gift card</h3>
                       <GiftCardPayForm key={`gc${due}`} action={payWithGiftCard} slug={slug} saleId={sale.id} dueCents={due} />
                     </div>
+                    {client && storeCredit > 0 ? (
+                      <div className="border-t border-stone-200 pt-4">
+                        <h3 className="mb-1 text-sm font-medium text-stone-700">Store credit</h3>
+                        <StoreCreditPayForm key={`sc${due}`} action={payWithStoreCreditAction} slug={slug} saleId={sale.id} balanceCents={storeCredit} dueCents={due} />
+                      </div>
+                    ) : null}
                     {business.loyaltyEnabled && client && points > 0 ? (
                       <div className="border-t border-stone-200 pt-4">
                         <h3 className="mb-1 text-sm font-medium text-stone-700">Loyalty points</h3>

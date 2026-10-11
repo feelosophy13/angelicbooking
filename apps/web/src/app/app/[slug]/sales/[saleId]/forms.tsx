@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { useActionState } from "react";
 import { Button, Field, Input, Notice, Select } from "@/components/ui";
 import { ConfirmSubmit, SubmitButton } from "@/components/form";
@@ -89,17 +90,49 @@ export function SavedCardForm({ action, slug, saleId, dueCents, cards }: { actio
   );
 }
 
-export function RefundForm({ action, slug, saleId, paymentId, maxCents }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number }) {
+/**
+ * Refund a payment. "Original payment" reverses it (card through Stripe, cash handed back); "Store
+ * credit" keeps the money and gives the client a balance to spend later (needs a client on the ticket).
+ */
+export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean }) {
   const [state, act, pending] = useActionState(action, undefined);
+  const [to, setTo] = useState<"original" | "store_credit">("original");
   return (
     <form action={act} className="mt-2 flex flex-wrap items-end gap-2">
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
       <input type="hidden" name="paymentId" value={paymentId} />
-      <Input name="amount" inputMode="decimal" defaultValue={(maxCents / 100).toFixed(2)} className="w-28" />
+      <Input name="amount" inputMode="decimal" defaultValue={(maxCents / 100).toFixed(2)} className="w-28" aria-label="Refund amount" />
+      <Select name="to" value={to} onChange={(e) => setTo(e.target.value as "original" | "store_credit")} className="w-44" aria-label="Refund to">
+        <option value="original">To original payment</option>
+        <option value="store_credit" disabled={!creditAllowed}>As store credit{creditAllowed ? "" : " (needs a client)"}</option>
+      </Select>
       <Input name="reason" placeholder="Reason" className="w-40" />
-      <ConfirmSubmit title="Issue this refund?" body="Card refunds go back to the original card through Stripe and can't be reversed." confirmLabel="Refund" variant="danger">Refund</ConfirmSubmit>
+      <ConfirmSubmit
+        title={to === "store_credit" ? "Refund as store credit?" : "Issue this refund?"}
+        body={to === "store_credit" ? "The money stays with you and the client gets the amount as store credit to spend on a future visit." : "Card refunds go back to the original card through Stripe and can't be reversed."}
+        confirmLabel={to === "store_credit" ? "Give store credit" : "Refund"}
+        variant={to === "store_credit" ? "primary" : "danger"}
+      >
+        {to === "store_credit" ? "Give credit" : "Refund"}
+      </ConfirmSubmit>
       {state?.error ? <Notice>{state.error}</Notice> : null}
+    </form>
+  );
+}
+
+/** Spend the client's store credit on the ticket. */
+export function StoreCreditPayForm({ action, slug, saleId, balanceCents, dueCents }: { action: Action; slug: string; saleId: string; balanceCents: number; dueCents: number }) {
+  const [state, act, pending] = useActionState(action, undefined);
+  const max = Math.min(balanceCents, dueCents);
+  return (
+    <form action={act} className="space-y-2">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="saleId" value={saleId} />
+      <p className="text-xs text-stone-500">{(balanceCents / 100).toFixed(2)} available.</p>
+      <Input name="amount" inputMode="decimal" defaultValue={(max / 100).toFixed(2)} aria-label="Store credit to apply" />
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+      <SubmitButton size="sm" pendingText="Applying…">Apply store credit</SubmitButton>
     </form>
   );
 }
