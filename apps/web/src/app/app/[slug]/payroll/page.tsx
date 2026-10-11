@@ -38,12 +38,17 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
     <>
       <PageHeader title="Payroll">
         <form className="flex flex-wrap items-center gap-2">
-          <Input type="date" name="start" defaultValue={start} className="w-40" />
+          <Input type="date" name="start" defaultValue={start} className="w-40" aria-label="Period start" />
           <span className="text-sm text-stone-500">to</span>
-          <Input type="date" name="end" defaultValue={end} className="w-40" />
-          <label className="flex items-center gap-1 text-sm"><input type="checkbox" name="overtime" value="1" defaultChecked={overtime} className="h-4 w-4 accent-brand-600" /> Overtime 1.5× over 40h/wk</label>
+          <Input type="date" name="end" defaultValue={end} className="w-40" aria-label="Period end" />
           {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
           <Button type="submit" variant="secondary" size="sm">Run</Button>
+          <details className="relative">
+            <summary className="cursor-pointer select-none rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden">Options{overtime ? " · overtime on" : ""}</summary>
+            <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-stone-200 bg-white p-3 text-sm shadow-lg">
+              <label className="flex items-start gap-2"><input type="checkbox" name="overtime" value="1" defaultChecked={overtime} className="mt-0.5 h-4 w-4 accent-brand-600" /> <span>Overtime at 1.5× over 40 h/week <span className="block text-xs text-stone-500">for hourly staff set to "follow the payroll run"</span></span></label>
+            </div>
+          </details>
         </form>
         <LocationFilter locations={locations} current={locationFilter} query={`start=${start}&end=${end}&overtime=${overtime ? 1 : 0}`} allLabel="All" />
       </PageHeader>

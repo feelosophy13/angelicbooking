@@ -31,23 +31,33 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <input type="checkbox" name="onlineBookingEnabled" defaultChecked={business.onlineBookingEnabled} className="h-4 w-4 accent-brand-600" />
               Allow clients to book online
             </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Minimum notice (minutes)" name="minNoticeMin" hint="Earliest a client can book from now."><Input name="minNoticeMin" type="number" min={0} defaultValue={business.minNoticeMin} /></Field>
-              <Field label="Book up to (days ahead)" name="maxAdvanceDays"><Input name="maxAdvanceDays" type="number" min={1} max={365} defaultValue={business.maxAdvanceDays} /></Field>
-              <Field label="Cancellation window (hours)" name="cancelWindowHours" hint="Clients can cancel/reschedule online until this many hours before."><Input name="cancelWindowHours" type="number" min={0} defaultValue={business.cancelWindowHours} /></Field>
-              <Field label="No-show fee" name="noShowFee" hint="Charged to a saved card from the appointment page. Deposits are set per service."><Input name="noShowFee" inputMode="decimal" defaultValue={business.noShowFeeCents ? (business.noShowFeeCents / 100).toFixed(2) : ""} placeholder="0" /></Field>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label="Minimum notice" name="minNoticeMin" hint="Minutes before a slot can still be booked."><Input name="minNoticeMin" type="number" min={0} defaultValue={business.minNoticeMin} /></Field>
+              <Field label="Book up to" name="maxAdvanceDays" hint="Days ahead."><Input name="maxAdvanceDays" type="number" min={1} max={365} defaultValue={business.maxAdvanceDays} /></Field>
+              <Field label="Cancellation window" name="cancelWindowHours" hint="Hours before the visit."><Input name="cancelWindowHours" type="number" min={0} defaultValue={business.cancelWindowHours} /></Field>
             </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="requireCardOnline" defaultChecked={business.requireCardOnline} className="h-4 w-4 accent-brand-600" />
-              Require a card on file to book online <span className="text-xs text-stone-500">(needs Stripe connected; nothing is charged at booking, the card is kept for no-show fees)</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="clientAccountsEnabled" defaultChecked={business.clientAccountsEnabled} className="h-4 w-4 accent-brand-600" />
-              Client accounts on the booking page <span className="text-xs text-stone-500">(sign in with a code by email or text: upcoming visits, rebook, saved cards, points)</span>
-            </label>
-            <p className="text-xs text-stone-500">Reminder timing and wording live under <Link href={`/app/${slug}/marketing/automations`} className="text-brand-700 underline">Marketing → Automations → Appointment reminder</Link>.</p>
-            <Field label="Address (shown on booking page and messages)" name="addressLine"><Input name="addressLine" defaultValue={business.addressLine ?? ""} placeholder="123 Main St, Springfield" /></Field>
-            <Field label="Booking policy" name="bookingPolicy" hint="Shown to clients when they book."><Textarea name="bookingPolicy" rows={3} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
+            <details className="rounded-lg border border-stone-200 p-3" open={business.requireCardOnline || business.noShowFeeCents > 0}>
+              <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">Cards and no-shows <span className="font-normal text-stone-500">· {business.noShowFeeCents > 0 ? `$${(business.noShowFeeCents / 100).toFixed(0)} fee` : "no fee"}{business.requireCardOnline ? " · card required" : ""}</span></summary>
+              <div className="mt-3 space-y-3">
+                <Field label="No-show fee ($)" name="noShowFee" hint="Charged to a saved card from the appointment page. Deposits are set per service."><Input name="noShowFee" inputMode="decimal" defaultValue={business.noShowFeeCents ? (business.noShowFeeCents / 100).toFixed(2) : ""} placeholder="0" className="max-w-[10rem]" /></Field>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" name="requireCardOnline" defaultChecked={business.requireCardOnline} className="mt-0.5 h-4 w-4 accent-brand-600" />
+                  <span>Require a card on file to book online <span className="block text-xs text-stone-500">Needs Stripe connected. Nothing is charged at booking; the card is kept for no-show fees.</span></span>
+                </label>
+              </div>
+            </details>
+            <details className="rounded-lg border border-stone-200 p-3" open={!!business.bookingPolicy || business.clientAccountsEnabled}>
+              <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">Policy, address and client accounts</summary>
+              <div className="mt-3 space-y-3">
+                <Field label="Booking policy" name="bookingPolicy" hint="Shown to clients when they book."><Textarea name="bookingPolicy" rows={3} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
+                <Field label="Address shown on the booking page and in messages" name="addressLine"><Input name="addressLine" defaultValue={business.addressLine ?? ""} placeholder="123 Main St, Springfield" /></Field>
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" name="clientAccountsEnabled" defaultChecked={business.clientAccountsEnabled} className="mt-0.5 h-4 w-4 accent-brand-600" />
+                  <span>Client accounts on the booking page <span className="block text-xs text-stone-500">Clients sign in with a code by email or text to see upcoming visits, rebook, and use saved cards and points.</span></span>
+                </label>
+              </div>
+            </details>
+            <p className="text-xs text-stone-500">Reminder timing and wording live under <Link href={`/app/${slug}/marketing/automations`} className="text-brand-700 underline">Automations → Appointment reminder</Link>.</p>
             <SubmitButton pendingText="Saving…">Save</SubmitButton>
           </ActionForm>
         </Card>
@@ -59,8 +69,9 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
           <img src={qr} alt="QR code for your booking link" className="mt-3 h-40 w-40 rounded-lg border border-stone-200" />
           <a href={qr} download={`book-${business.slug}.png`} className="mt-1 block text-xs text-brand-700 underline">Download QR code</a>
           {perLocation.length ? (
-            <div className="mt-4 space-y-3 border-t border-stone-200 pt-3">
-              <p className="text-sm font-medium">Per-location links</p>
+            <details className="mt-4 border-t border-stone-200 pt-3">
+              <summary className="cursor-pointer select-none text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">Per-location links</summary>
+              <div className="mt-2 space-y-3">
               <p className="text-xs text-stone-500">Skips the &ldquo;choose a location&rdquo; step. Use the right one on each site&apos;s Google listing, signage and social accounts.</p>
               {perLocation.map((l) => (
                 <div key={l.id} className="flex items-start gap-3">
@@ -72,9 +83,12 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            </details>
           ) : null}
-          <div className="mt-4 space-y-2 border-t border-stone-200 pt-3 text-xs text-stone-600">
+          <details className="mt-4 border-t border-stone-200 pt-3">
+            <summary className="cursor-pointer select-none text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">Where to put the link</summary>
+          <div className="mt-2 space-y-2 text-xs text-stone-600">
             <p><b>Instagram:</b> Edit profile → Links → add the link. Business accounts: Edit profile → Action buttons → Book now → “Other” → paste the link.</p>
             <p><b>Facebook page:</b> Add action button → Book now → Link to website → paste the link.</p>
             <p><b>Google Business Profile:</b> Edit profile → Booking → Add appointment link → paste the link. Google shows a Book button on your listing.</p>
@@ -82,6 +96,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
             <textarea readOnly rows={3} value={embed} className="w-full rounded border border-stone-300 bg-stone-50 p-2 font-mono text-[11px]" />
             {business.giftCardsOnline ? <p><b>Gift cards:</b> {appUrl(`/book/${business.slug}/gift`)}</p> : null}
           </div>
+          </details>
         </Card>
       </div>
     </>

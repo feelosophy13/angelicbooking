@@ -77,6 +77,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 ## 3. Product backlog
 
 ### App-wide evaluation (2026-10-10)
+- [x] Design pass (2026-10-11): progressive disclosure across the owner app. Secondary controls now sit behind
+      "details" sections that open on demand (Disclosure component): add-a-service / cancel on the appointment page;
+      add-to-ticket, discount/promo and gift-card/package/membership sales on the sale page; edit details, adjust
+      points and texting on the client page; clock-in PIN and calendar feed on the staff profile; cards/no-shows and
+      policy on Booking rules; overtime on Payroll; custom range and exports on Reports. The setup checklist is one
+      line (expandable, hideable per device); Settings is a grouped directory with status chips and business basics
+      moved to Business profile; staff pay shows only the fields for the chosen pay model.
 - [ ] Work through `ENHANCEMENTS.md` (full page-by-page review, ~250 items, P1/P2/P3). P1s first: public
       `/api/files/[id]`, checkout refund/credit/discount math, reminders after cancellation, open redirect via
       `?next=`, role sync, waitlist/time-off UTC "today", client picker cap, calendar hours/overlap/drag validation,

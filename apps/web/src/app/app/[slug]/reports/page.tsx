@@ -35,6 +35,7 @@ export default async function ReportsPage({
   const days = Math.max(1, Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1);
   const prevFrom = shiftISODate(from, -days);
   const prevTo = shiftISODate(from, -1);
+  const isPreset = (from === today && to === today) || (from === shiftISODate(today, -6) && to === today) || (from === `${today.slice(0, 8)}01` && to === today);
   const stock = await stockReport(business.id);
   const [{ sales, byStaff, byMethod, byService, appts, byLocation, crossLocation }, prev] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter),
@@ -53,21 +54,37 @@ export default async function ReportsPage({
 
   return (
     <>
-      <PageHeader title="Sales">
-        <form className="flex items-center gap-2">
-          <Input type="date" name="from" defaultValue={from} className="w-40" />
-          <span className="text-sm text-stone-500">to</span>
-          <Input type="date" name="to" defaultValue={to} className="w-40" />
-          {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
-          <Button type="submit" variant="secondary" size="sm">Show</Button>
-        </form>
+      <PageHeader title="Reports">
         <LocationFilter locations={locations} current={locationFilter} query={`from=${from}&to=${to}`} allLabel="All" />
-        <LinkButton href={`?from=${today}&to=${today}${lq}`} size="sm">Today</LinkButton>
-        <LinkButton href={`?from=${shiftISODate(today, -6)}&to=${today}${lq}`} size="sm">Last 7 days</LinkButton>
-        <LinkButton href={`?from=${today.slice(0, 8)}01&to=${today}${lq}`} size="sm">This month</LinkButton>
-        <LinkButton href={`?from=${prevFrom}&to=${prevTo}${lq}`} size="sm" aria-label="Previous period">‹ Prior</LinkButton>
-        <LinkButton href={`/app/${slug}/reports/export?kind=sales&from=${from}&to=${to}${lq}`} size="sm"><Download className="h-4 w-4" /> Sales CSV</LinkButton>
-        <LinkButton href={`/app/${slug}/reports/export?kind=appointments&from=${from}&to=${to}${lq}`} size="sm"><Download className="h-4 w-4" /> Appointments CSV</LinkButton>
+        <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Period">
+          {(
+            [
+              ["Today", today, today],
+              ["7 days", shiftISODate(today, -6), today],
+              ["This month", `${today.slice(0, 8)}01`, today],
+            ] as const
+          ).map(([label, f, t]) => (
+            <Link key={label} href={`?from=${f}&to=${t}${lq}`} className={`rounded-md px-3 py-1 ${from === f && to === t ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50"}`}>{label}</Link>
+          ))}
+          <details className="relative">
+            <summary className={`cursor-pointer select-none rounded-md px-3 py-1 marker:content-none [&::-webkit-details-marker]:hidden ${isPreset ? "text-stone-700 hover:bg-stone-50" : "bg-stone-900 text-white"}`}>Custom</summary>
+            <form className="absolute right-0 z-20 mt-1 flex w-max items-center gap-2 rounded-lg border border-stone-200 bg-white p-3 shadow-lg">
+              <Input type="date" name="from" defaultValue={from} className="w-40" aria-label="From" />
+              <span className="text-sm text-stone-500">to</span>
+              <Input type="date" name="to" defaultValue={to} className="w-40" aria-label="To" />
+              {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
+              <Button type="submit" variant="secondary" size="sm">Show</Button>
+            </form>
+          </details>
+        </div>
+        <LinkButton href={`?from=${prevFrom}&to=${prevTo}${lq}`} size="sm" variant="ghost" aria-label="Previous period">‹ Prior period</LinkButton>
+        <details className="relative">
+          <summary className="flex cursor-pointer select-none items-center gap-1 rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden"><Download className="h-4 w-4" /> Export</summary>
+          <div className="absolute right-0 z-20 mt-1 w-48 rounded-lg border border-stone-200 bg-white py-1 text-sm shadow-lg">
+            <a href={`/app/${slug}/reports/export?kind=sales&from=${from}&to=${to}${lq}`} className="block px-3 py-1.5 hover:bg-stone-50">Sales (CSV)</a>
+            <a href={`/app/${slug}/reports/export?kind=appointments&from=${from}&to=${to}${lq}`} className="block px-3 py-1.5 hover:bg-stone-50">Appointments (CSV)</a>
+          </div>
+        </details>
       </PageHeader>
       <p className="mb-4 text-sm text-stone-600">{from === to ? formatDateLong(from) : `${formatDateLong(from)} – ${formatDateLong(to)}`}{locationFilter ? ` · ${locName(locationFilter)}` : ""}</p>
 
