@@ -86,7 +86,7 @@ export function ImageField({ name, removeName, current, shape = "square", placeh
       ) : null}
       </div>
       <div className="space-y-1 text-xs text-stone-500">
-        {fileName ? <p className="text-stone-800">{fileName} <span className="text-stone-500">· saved when you save the form</span></p> : removed ? <p className="text-stone-800">Picture will be removed when you save. <button type="button" onClick={() => setRemoved(false)} className="text-brand-700 underline">Undo</button></p> : <p>{shown ? "Click the picture to change it, or the × to remove it." : "Click to choose a picture."}</p>}
+        {fileName ? <p className="text-stone-800">{fileName} <span className="text-stone-500">· saved when you save the form</span></p> : removed ? <p className="text-stone-800">Picture will be removed when you save. <button type="button" onClick={() => setRemoved(false)} className="text-brand-700 underline">Undo</button></p> : shown ? null : <p>Click to choose a picture.</p>}
         <p>PNG, JPEG or WebP up to 2 MB.</p>
       </div>
     </div>
