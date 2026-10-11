@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
-import { FormPage, Input, Textarea } from "@/components/ui";
+import { FormPage, Input, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { CategoryPicker } from "@/components/categories";
 import { createService } from "../actions";
@@ -35,7 +35,7 @@ export default async function NewServicePage({ params, searchParams }: { params:
         </div>
         <Field label="Deposit" name="deposit" hint="Charged when booking online (Stripe must be connected); comes off the bill at checkout and is refunded on cancellations inside the policy window."><Input name="deposit" inputMode="decimal" defaultValue="" placeholder="0" /></Field>
         <Field label="Group size" name="capacity" hint="1 = one client at a time. Higher numbers make this a class: you schedule sessions under Classes and several clients book the same one."><Input name="capacity" type="number" min={1} max={500} defaultValue={1} /></Field>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="bookableOnline" defaultChecked className="h-4 w-4 accent-brand-600" /> Bookable online</label>
+        <Checkbox name="bookableOnline" defaultChecked label="Bookable online" />
         <OfferedAt locations={locations} selected={[]} />
         <SubmitButton pendingText="Saving…">Create service</SubmitButton>
       </ActionForm>

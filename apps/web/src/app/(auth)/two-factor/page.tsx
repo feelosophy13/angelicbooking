@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
-import { Button, Card, Field, Input, Notice } from "@/components/ui";
+import { Button, Card, Field, Input, Notice, Checkbox } from "@/components/ui";
 import { Wordmark } from "@/components/brand";
 
 export default function TwoFactorPage() {
@@ -33,7 +33,7 @@ export default function TwoFactorPage() {
       <Card className="p-6">
         <form onSubmit={submit} className="space-y-4">
           <Field label={useBackup ? "Backup code" : "Code"}><Input name="code" inputMode={useBackup ? "text" : "numeric"} autoComplete="one-time-code" required autoFocus className="text-center text-lg tracking-widest" /></Field>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="trust" className="h-4 w-4 accent-brand-600" /> Trust this device for 30 days</label>
+          <Checkbox name="trust" label="Trust this device for 30 days" />
           {error ? <Notice>{error}</Notice> : null}
           <Button type="submit" className="w-full" disabled={busy}>{busy ? "Checking…" : "Continue"}</Button>
           <button type="button" onClick={() => setUseBackup((b) => !b)} className="w-full text-center text-xs text-brand-700 underline">{useBackup ? "Use authenticator app instead" : "Use a backup code"}</button>

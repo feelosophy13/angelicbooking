@@ -1,6 +1,6 @@
 "use client";
 import { useActionState } from "react";
-import { Field, Input, Notice } from "@/components/ui";
+import { Field, Input, Notice, Checkbox } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
 import { requestCode, saveClientProfile, verifyCode, type AccountState } from "./actions";
 
@@ -45,8 +45,8 @@ export function ProfileForm({ slug, client }: { slug: string; client: { firstNam
       <Field label="Mobile number"><Input name="phone" type="tel" defaultValue={client.phone ?? ""} /></Field>
       <Field label="Email"><Input name="email" type="email" defaultValue={client.email ?? ""} /></Field>
       <Field label="Birthday"><Input name="birthday" type="date" defaultValue={client.birthday ?? ""} /></Field>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="smsOptIn" defaultChecked={client.smsOptIn} className="h-4 w-4" /> Text me confirmations and reminders</label>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="emailOptIn" defaultChecked={client.emailOptIn} className="h-4 w-4" /> Email me confirmations and receipts</label>
+      <Checkbox name="smsOptIn" defaultChecked={client.smsOptIn} label="Text me confirmations and reminders" />
+      <Checkbox name="emailOptIn" defaultChecked={client.emailOptIn} label="Email me confirmations and receipts" />
       {state?.error ? <Notice>{state.error}</Notice> : state?.ok ? <Notice kind="success">Saved.</Notice> : null}
       <SubmitButton variant="secondary" pendingText="Saving…">Save details</SubmitButton>
     </form>

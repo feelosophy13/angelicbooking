@@ -2,7 +2,7 @@ import { requireAction } from "@/lib/tenant";
 import { appUrl } from "@/lib/stripe";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BackLink, Card, Input, PageHeader, Textarea } from "@/components/ui";
+import { BackLink, Card, Input, PageHeader, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 
 export const metadata: Metadata = { title: "Online booking" };
@@ -27,10 +27,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
         <Card className="p-4">
           <ActionForm action={saveBookingSettings}>
             <input type="hidden" name="slug" value={slug} />
-            <label className="flex items-center gap-2 text-sm font-medium">
-              <input type="checkbox" name="onlineBookingEnabled" defaultChecked={business.onlineBookingEnabled} className="h-4 w-4 accent-brand-600" />
-              Allow clients to book online
-            </label>
+            <Checkbox name="onlineBookingEnabled" defaultChecked={business.onlineBookingEnabled} label="Allow clients to book online" />
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Minimum notice" name="minNoticeMin" hint="Minutes before a slot can still be booked."><Input name="minNoticeMin" type="number" min={0} defaultValue={business.minNoticeMin} /></Field>
               <Field label="Book up to" name="maxAdvanceDays" hint="Days ahead."><Input name="maxAdvanceDays" type="number" min={1} max={365} defaultValue={business.maxAdvanceDays} /></Field>
@@ -40,10 +37,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">Cards and no-shows <span className="font-normal text-stone-500">· {business.noShowFeeCents > 0 ? `$${(business.noShowFeeCents / 100).toFixed(0)} fee` : "no fee"}{business.requireCardOnline ? " · card required" : ""}</span></summary>
               <div className="mt-3 space-y-3">
                 <Field label="No-show fee ($)" name="noShowFee" hint="Charged to a saved card from the appointment page. Deposits are set per service."><Input name="noShowFee" inputMode="decimal" defaultValue={business.noShowFeeCents ? (business.noShowFeeCents / 100).toFixed(2) : ""} placeholder="0" className="max-w-[10rem]" /></Field>
-                <label className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" name="requireCardOnline" defaultChecked={business.requireCardOnline} className="mt-0.5 h-4 w-4 accent-brand-600" />
-                  <span>Require a card on file to book online <span className="block text-xs text-stone-500">Needs Stripe connected. Nothing is charged at booking; the card is kept for no-show fees.</span></span>
-                </label>
+                <Checkbox name="requireCardOnline" defaultChecked={business.requireCardOnline} label="Require a card on file to book online" hint="Needs Stripe connected. Nothing is charged at booking; the card is kept for no-show fees." />
               </div>
             </details>
             <details className="rounded-lg border border-stone-200 p-3" open={!!business.bookingPolicy || business.clientAccountsEnabled}>
@@ -51,10 +45,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <div className="mt-3 space-y-3">
                 <Field label="Booking policy" name="bookingPolicy" hint="Shown to clients when they book."><Textarea name="bookingPolicy" rows={3} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
                 <Field label="Address shown on the booking page and in messages" name="addressLine"><Input name="addressLine" defaultValue={business.addressLine ?? ""} placeholder="123 Main St, Springfield" /></Field>
-                <label className="flex items-start gap-2 text-sm">
-                  <input type="checkbox" name="clientAccountsEnabled" defaultChecked={business.clientAccountsEnabled} className="mt-0.5 h-4 w-4 accent-brand-600" />
-                  <span>Client accounts on the booking page <span className="block text-xs text-stone-500">Clients sign in with a code by email or text to see upcoming visits, rebook, and use saved cards and points.</span></span>
-                </label>
+                <Checkbox name="clientAccountsEnabled" defaultChecked={business.clientAccountsEnabled} label="Client accounts on the booking page" hint="Clients sign in with a code by email or text to see upcoming visits, rebook, and use saved cards and points." />
               </div>
             </details>
             <p className="text-xs text-stone-500">Reminder timing and wording live under <Link href={`/app/${slug}/marketing/automations`} className="text-brand-700 underline">Automations → Appointment reminder</Link>.</p>

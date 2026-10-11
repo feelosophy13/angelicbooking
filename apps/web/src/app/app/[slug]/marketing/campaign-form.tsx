@@ -1,5 +1,5 @@
 import type { CampaignAudience } from "@angelic/db";
-import { Input, Select, Textarea } from "@/components/ui";
+import { Input, Select, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 
 type Action = Parameters<typeof ActionForm>[0]["action"];
@@ -39,7 +39,7 @@ export function CampaignForm({ action, slug, campaign, services, staff, location
               <Select name="locationId" defaultValue={a.locationId ?? ""}><option value="">Any location</option>{locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>
             </Field>
           ) : null}
-          <label className="mt-7 flex items-center gap-2 text-sm"><input type="checkbox" name="neverVisited" defaultChecked={!!a.neverVisited} className="h-4 w-4 accent-brand-600" /> Never completed a visit</label>
+          <Checkbox name="neverVisited" defaultChecked={!!a.neverVisited} label="Never completed a visit" className="mt-7" />
         </div>
       </fieldset>
       <SubmitButton pendingText="Saving…">{submitLabel}</SubmitButton>

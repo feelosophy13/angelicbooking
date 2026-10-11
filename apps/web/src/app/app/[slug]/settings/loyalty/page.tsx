@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
-import { BackLink, Card, Input, PageHeader } from "@/components/ui";
+import { BackLink, Card, Input, PageHeader, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { saveLoyaltySettings } from "./actions";
 
@@ -17,10 +17,7 @@ export default async function LoyaltySettingsPage({ params }: { params: Promise<
         <Card className="p-4">
           <ActionForm action={saveLoyaltySettings}>
             <input type="hidden" name="slug" value={slug} />
-            <label className="flex items-center gap-2 text-sm font-medium">
-              <input type="checkbox" name="loyaltyEnabled" defaultChecked={b.loyaltyEnabled} className="h-4 w-4 accent-brand-600" />
-              Clients earn points on every paid visit
-            </label>
+            <Checkbox name="loyaltyEnabled" defaultChecked={b.loyaltyEnabled} label="Clients earn points on every paid visit" />
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Points per $1 spent" name="loyaltyPointsPerDollar" hint="On services and products after discounts (not tips or tax)."><Input name="loyaltyPointsPerDollar" type="number" min={0} defaultValue={b.loyaltyPointsPerDollar} /></Field>
               <Field label="Bonus points per visit" name="loyaltyPointsPerVisit"><Input name="loyaltyPointsPerVisit" type="number" min={0} defaultValue={b.loyaltyPointsPerVisit} /></Field>

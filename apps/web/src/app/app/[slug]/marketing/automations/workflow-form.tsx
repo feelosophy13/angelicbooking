@@ -1,6 +1,6 @@
 import { ChevronDown, Zap } from "lucide-react";
 import type { WorkflowFilters, WorkflowTrigger } from "@angelic/db";
-import { Input, Select, Textarea } from "@/components/ui";
+import { Input, Select, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { flattenTree, buildTree, type AnyCategory } from "@/server/categories";
 import { TRIGGERS } from "@/lib/workflows-logic";
@@ -151,7 +151,7 @@ export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: strin
                 </div>
               ) : null}
               <Field label="Client has a tag" name="tags" hint="Comma-separated; any match counts."><Input name="tags" defaultValue={(f.tags ?? []).join(", ")} placeholder="VIP, Colour client" className="h-9" /></Field>
-              {apptTrigger || trigger === "client_created" ? <label className="flex items-center gap-2 self-center text-sm"><input type="checkbox" name="firstVisitOnly" defaultChecked={f.firstVisitOnly ?? false} className="h-4 w-4 accent-brand-600" /> First visit only</label> : null}
+              {apptTrigger || trigger === "client_created" ? <Checkbox name="firstVisitOnly" defaultChecked={f.firstVisitOnly ?? false} label="First visit only" /> : null}
             </div>
           </div>
         </details>
@@ -162,7 +162,7 @@ export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: strin
       </Section>
 
       <Section n={5} title="Options">
-        <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="exitOnBooking" defaultChecked={workflow?.exitOnBooking ?? false} className="mt-0.5 h-4 w-4 accent-brand-600" /><span>Stop if the client books again<span className="block text-xs text-stone-500">Remaining steps are dropped as soon as a new appointment is on the calendar. For rebook and we-miss-you flows.</span></span></label>
+        <Checkbox name="exitOnBooking" defaultChecked={workflow?.exitOnBooking ?? false} label="Stop if the client books again" hint="Remaining steps are dropped as soon as a new appointment is on the calendar. For rebook and we-miss-you flows." />
         <details className="mt-3 text-xs text-stone-500">
           <summary className="cursor-pointer select-none hover:text-stone-800">What is always applied</summary>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">

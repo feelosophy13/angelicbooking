@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
-import { FormPage, Input, Textarea } from "@/components/ui";
+import { FormPage, Input, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { CategoryPicker, CategoryThumb } from "@/components/categories";
 import { updateService } from "../actions";
@@ -43,7 +43,7 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
             <CategoryThumb imageUrl={service.imageUrl} name={service.name} icon="image" className="h-24 w-24 rounded-lg" />
             <div className="space-y-2">
               <input type="file" name="image" accept="image/*" className="block text-sm" />
-              {service.imageUrl ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="removeImage" className="h-4 w-4 accent-brand-600" /> Remove the current photo</label> : null}
+              {service.imageUrl ? <Checkbox name="removeImage" label="Remove the current photo" /> : null}
             </div>
           </div>
         </Field>
@@ -58,7 +58,7 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
         </div>
         <Field label="Deposit" name="deposit" hint="Charged when booking online (Stripe must be connected); comes off the bill at checkout and is refunded on cancellations inside the policy window."><Input name="deposit" inputMode="decimal" defaultValue={service.depositCents ? $(service.depositCents) : ""} placeholder="0" /></Field>
         <Field label="Group size" name="capacity" hint="1 = one client at a time. Higher numbers make this a class: you schedule sessions under Classes and several clients book the same one."><Input name="capacity" type="number" min={1} max={500} defaultValue={service.capacity} /></Field>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="bookableOnline" defaultChecked={service.bookableOnline} className="h-4 w-4 accent-brand-600" /> Bookable online</label>
+        <Checkbox name="bookableOnline" defaultChecked={service.bookableOnline} label="Bookable online" />
         <OfferedAt locations={locations} selected={offeredAt.map((r) => r.locationId)} />
         <SubmitButton pendingText="Saving…">Save service</SubmitButton>
       </ActionForm>

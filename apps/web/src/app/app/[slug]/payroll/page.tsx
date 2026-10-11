@@ -9,7 +9,7 @@ import { instantToISODate, rateLabel } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { defaultPeriod, getFinalizedRun, listPayrollRuns, runPayroll } from "@/server/payroll";
 import { formatDateLong, formatMoney } from "@/lib/utils";
-import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice } from "@/components/ui";
+import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice, Checkbox } from "@/components/ui";
 import { deleteAdjustment, finalize } from "./actions";
 import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
@@ -46,7 +46,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <details className="relative">
             <summary className="cursor-pointer select-none rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden">Options{overtime ? " · overtime on" : ""}</summary>
             <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-stone-200 bg-white p-3 text-sm shadow-lg">
-              <label className="flex items-start gap-2"><input type="checkbox" name="overtime" value="1" defaultChecked={overtime} className="mt-0.5 h-4 w-4 accent-brand-600" /> <span>Overtime at 1.5× over 40 h/week <span className="block text-xs text-stone-500">for hourly staff set to "follow the payroll run"</span></span></label>
+              <Checkbox name="overtime" value="1" defaultChecked={overtime} label="Overtime at 1.5× over 40 h/week" hint={'for hourly staff set to "follow the payroll run"'} />
             </div>
           </details>
         </form>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAction } from "@/lib/tenant";
 import { listCategories, subtreeIds } from "@/server/categories";
-import { Card, FormPage, Input, Textarea } from "@/components/ui";
+import { Card, FormPage, Input, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
 import { CategoryPicker, CategoryThumb } from "@/components/categories";
 import { removeCategory, updateServiceCategoryAction } from "../../../../categories-actions";
@@ -31,7 +31,7 @@ export default async function EditCategoryPage({ params }: { params: Promise<{ s
             <CategoryThumb imageUrl={me.imageUrl} name={me.name} className="h-24 w-40 rounded-lg text-2xl" />
             <div className="space-y-2">
               <input type="file" name="image" accept="image/*" className="block text-sm" />
-              {me.imageUrl ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="removeImage" className="h-4 w-4 accent-brand-600" /> Remove the current image</label> : null}
+              {me.imageUrl ? <Checkbox name="removeImage" label="Remove the current image" /> : null}
             </div>
           </div>
         </Field>

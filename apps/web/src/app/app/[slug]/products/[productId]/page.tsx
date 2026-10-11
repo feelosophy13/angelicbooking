@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
-import { Card, FormPage, Input, Select, Textarea } from "@/components/ui";
+import { Card, FormPage, Input, Select, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { CategoryPicker } from "@/components/categories";
 import { adjustStock, updateProduct } from "../actions";
@@ -58,17 +58,17 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
           <Field label="Price" name="price" required><Input name="price" inputMode="decimal" defaultValue={(product.priceCents / 100).toFixed(2)} required placeholder="24" /></Field>
           <Field label="SKU" name="sku"><Input name="sku" defaultValue={product.sku ?? ""} /></Field>
         </div>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="taxable" defaultChecked={product.taxable} className="h-4 w-4 accent-brand-600" /> Taxable</label>
+        <Checkbox name="taxable" defaultChecked={product.taxable} label="Taxable" />
         <fieldset className="rounded-lg border border-stone-200 p-3">
           <legend className="px-1 text-sm font-medium text-stone-700">Online store</legend>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="sellOnline" defaultChecked={product.sellOnline} className="h-4 w-4 accent-brand-600" /> Sell online (needs the store turned on under Settings → Online store)</label>
+          <Checkbox name="sellOnline" defaultChecked={product.sellOnline} label="Sell online (needs the store turned on under Settings → Online store)" />
           <Field label="Description" name="description" className="mt-2"><Textarea name="description" rows={2} defaultValue={product.description ?? ""} /></Field>
           <Field label="Photo" name="image" hint="PNG/JPEG/WebP up to 2 MB." className="mt-2"><input type="file" name="image" accept="image/*" className="block text-sm" /></Field>
           {product.imageUrl ? <img src={product.imageUrl} alt="" className="mt-2 h-20 w-20 rounded-lg border border-stone-200 object-cover" /> : null}
         </fieldset>
         <fieldset className="rounded-lg border border-stone-200 p-3">
           <legend className="px-1 text-sm font-medium text-stone-700">Inventory</legend>
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="trackStock" defaultChecked={product.trackStock} className="h-4 w-4 accent-brand-600" /> Track stock (sales reduce the count; low-stock warning)</label>
+          <Checkbox name="trackStock" defaultChecked={product.trackStock} label="Track stock (sales reduce the count; low-stock warning)" />
           <div className="mt-2 grid grid-cols-2 gap-3">
             <Field label="Low-stock warning at" name="lowStockThreshold"><Input name="lowStockThreshold" type="number" min={0} defaultValue={product.lowStockThreshold} /></Field>
             <Field label="Cost per unit" name="cost" hint="For the stock value report."><Input name="cost" inputMode="decimal" defaultValue={product.costCents ? (product.costCents / 100).toFixed(2) : ""} placeholder="0" /></Field>

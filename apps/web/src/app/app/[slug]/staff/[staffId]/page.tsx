@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { Card, Input, Select, Textarea } from "@/components/ui";
+import { Card, Input, Select, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { generateClockPin, resetCalendarToken, updateStaffProfile } from "../actions";
 import { ConfirmSubmit } from "@/components/form";
@@ -41,7 +41,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
             )}
             <div className="space-y-1">
               <input type="file" name="photo" accept="image/*" className="block text-sm" />
-              {person.photoUrl ? <label className="flex items-center gap-2 text-xs text-stone-600"><input type="checkbox" name="removePhoto" className="h-4 w-4 accent-brand-600" /> Remove photo</label> : null}
+              {person.photoUrl ? <Checkbox name="removePhoto" label="Remove photo" /> : null}
             </div>
           </div>
         </Field>
@@ -54,15 +54,15 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
             </Select>
           </Field>
         ) : null}
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="takesAppointments" defaultChecked={person.takesAppointments} className="h-4 w-4 accent-brand-600" /> Takes appointments <span className="text-xs text-stone-500">(has a calendar column; untick for front desk, managers or an owner login that doesn't see clients)</span></label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="bookableOnline" defaultChecked={person.bookableOnline} className="h-4 w-4 accent-brand-600" /> Bookable online</label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={person.active} className="h-4 w-4 accent-brand-600" /> Active (shown on the calendar)</label>
+        <Checkbox name="takesAppointments" defaultChecked={person.takesAppointments} label="Takes appointments" hint="Has a calendar column. Untick for front desk, managers or an owner login that doesn't see clients." />
+        <Checkbox name="bookableOnline" defaultChecked={person.bookableOnline} label="Bookable online" />
+        <Checkbox name="active" defaultChecked={person.active} label="Active (shown on the calendar)" />
         <details className="rounded-lg border border-stone-200 p-3">
           <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">Clock-in PIN <span className="font-normal text-stone-500">· {person.clockPinHash ? "set" : "not set"}</span></summary>
           <Field label="" name="clockPin" hint={person.clockPinHash ? "Type a new 4–6 digit PIN to change it, or tick Remove." : "4–6 digits typed on the clock-in QR page (Time clock → QR code). No PIN = can't use the kiosk."} className="mt-2">
             <div className="flex flex-wrap items-center gap-3">
               <Input name="clockPin" inputMode="numeric" pattern="\\d{4,6}" maxLength={6} placeholder={person.clockPinHash ? "••••" : "e.g. 4821"} className="w-32" autoComplete="off" />
-              {person.clockPinHash ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="clearPin" className="h-4 w-4 accent-brand-600" /> Remove PIN</label> : null}
+              {person.clockPinHash ? <Checkbox name="clearPin" label="Remove PIN" /> : null}
             </div>
           </Field>
         </details>

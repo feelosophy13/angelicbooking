@@ -102,6 +102,23 @@ export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<H
   );
 }
 
+/**
+ * One checkbox row for the whole app: a fixed 16px box aligned to the first
+ * line of text, the label beside it, and any explanation on its own line
+ * underneath (never wrapped around the box). Works controlled or uncontrolled.
+ */
+export function Checkbox({ label, hint, className, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: React.ReactNode; hint?: React.ReactNode }) {
+  return (
+    <label className={cn("flex items-start gap-2.5 text-sm", props.disabled && "opacity-60", className)}>
+      <input type="checkbox" className="mt-0.5 h-4 w-4 shrink-0 rounded border-stone-300 accent-brand-600" {...props} />
+      <span className="min-w-0">
+        <span className="block leading-5 text-stone-800">{label}</span>
+        {hint ? <span className="block text-xs leading-4 text-stone-500">{hint}</span> : null}
+      </span>
+    </label>
+  );
+}
+
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return <label className={cn("mb-1 block text-sm font-medium text-stone-700", className)} {...props} />;
 }

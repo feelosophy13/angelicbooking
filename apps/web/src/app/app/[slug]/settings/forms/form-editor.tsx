@@ -1,5 +1,5 @@
 import type { FormFieldDef } from "@angelic/db";
-import { Input, Select, Textarea } from "@/components/ui";
+import { Input, Select, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { FieldBuilder } from "./builder";
 import { OfferedAt } from "@/components/offered-at";
@@ -26,10 +26,10 @@ export function FormEditor({ action, slug, form, services, locations = [], submi
         <p className="mb-1 text-sm font-medium text-stone-700">Questions</p>
         <FieldBuilder initial={form?.fields ?? []} />
       </div>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="requireSignature" defaultChecked={form?.requireSignature ?? true} className="h-4 w-4 accent-brand-600" /> Require a typed signature</label>
+      <Checkbox name="requireSignature" defaultChecked={form?.requireSignature ?? true} label="Require a typed signature" />
       <fieldset className="rounded-lg border border-stone-200 p-3">
         <legend className="px-1 text-sm font-medium text-stone-700">Who has to complete it</legend>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="applyToAll" defaultChecked={form?.applyToAll ?? false} className="h-4 w-4 accent-brand-600" /> Every client, before any visit</label>
+        <Checkbox name="applyToAll" defaultChecked={form?.applyToAll ?? false} label="Every client, before any visit" />
         <p className="mt-2 text-xs text-stone-500">…or only before these services:</p>
         <div className="mt-1 grid gap-1 sm:grid-cols-2">
           {services.map((s) => (
@@ -40,7 +40,7 @@ export function FormEditor({ action, slug, form, services, locations = [], submi
       <OfferedAt locations={locations} selected={form?.locationIds ?? []} legend="Required at" hint="Untick a location if visits there don't need this form (e.g. a different legal entity with its own waiver)." />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Ask again after (days)" name="renewDays" hint="Blank = sign once, valid forever."><Input name="renewDays" type="number" min={1} defaultValue={form?.renewDays ?? ""} placeholder="365" /></Field>
-        {form ? <label className="mt-7 flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={form.active} className="h-4 w-4 accent-brand-600" /> Active</label> : <input type="hidden" name="active" value="on" />}
+        {form ? <Checkbox name="active" defaultChecked={form.active} label="Active" className="mt-7" /> : <input type="hidden" name="active" value="on" />}
       </div>
       <SubmitButton pendingText="Saving…">{submitLabel}</SubmitButton>
     </ActionForm>

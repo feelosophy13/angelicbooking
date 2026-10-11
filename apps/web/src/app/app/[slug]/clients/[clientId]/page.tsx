@@ -9,7 +9,7 @@ import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireAction, requireBusiness } from "@/lib/tenant";
 import { formatMoney, formatTime } from "@/lib/utils";
-import { BackLink, Card, Input, LinkButton, PageHeader, Textarea, Empty } from "@/components/ui";
+import { BackLink, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox } from "@/components/ui";
 import { updateClient } from "../actions";
 import { addNote, deleteNote, togglePin } from "./notes-actions";
 import { Pin, PinOff } from "lucide-react";
@@ -130,7 +130,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                   <input type="hidden" name="clientId" value={client.id} />
                   <Field label="Add a note" name="body"><NoteArea name="body" rows={2} placeholder="e.g. 7N + 8.1 equal parts, 20 vol, 35 min" required /></Field>
                   <div className="flex items-center justify-between">
-                    <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="pinned" className="h-4 w-4 accent-brand-600" /> Pin to top</label>
+                    <Checkbox name="pinned" label="Pin to top" />
                     <NoteSubmit size="sm" variant="secondary" pendingText="Saving…">Add note</NoteSubmit>
                   </div>
                 </ActionForm>
@@ -191,8 +191,8 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 <Field label="Email" name="email"><Input name="email" type="email" defaultValue={client.email ?? ""} /></Field>
                 <Field label="Birthday" name="birthday" hint="For birthday messages."><Input name="birthday" type="date" defaultValue={client.birthday ?? ""} /></Field>
                 <Field label="Notes" name="notes"><Textarea name="notes" rows={4} defaultValue={client.notes ?? ""} /></Field>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="smsOptIn" defaultChecked={client.smsOptIn} className="h-4 w-4 accent-brand-600" /> Text messages</label>
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="emailOptIn" defaultChecked={client.emailOptIn} className="h-4 w-4 accent-brand-600" /> Emails</label>
+                <Checkbox name="smsOptIn" defaultChecked={client.smsOptIn} label="Text messages" />
+                <Checkbox name="emailOptIn" defaultChecked={client.emailOptIn} label="Emails" />
                 <SubmitButton variant="secondary" pendingText="Saving…">Save</SubmitButton>
               </ActionForm>
               </details>
