@@ -4,7 +4,7 @@ import { schema, withTenant, type TenantDb } from "@angelic/db";
 /**
  * Refund reasons: a short managed list per business so refunds can be grouped by cause. Every
  * business starts with the defaults; owners rename, reorder, add and retire them under
- * Settings → Payments. A refund points at a reason and may carry a free-text note.
+ * Settings → Refund reasons. A refund points at a reason and may carry a free-text note.
  */
 
 export class RefundReasonError extends Error {}

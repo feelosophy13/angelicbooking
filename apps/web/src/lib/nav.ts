@@ -40,9 +40,10 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     // Bringing clients back: campaigns and promo codes, automated messages, and what clients say.
     { title: "Grow", items: [
       ...(ok("reports.view") ? [it(`${base}/marketing`, "Marketing", "Megaphone", { exclude: [`${base}/marketing/automations`] }), it(`${base}/marketing/automations`, "Automations", "Workflow")] : []),
+      ...(ok("business.manage") ? [it(`${base}/settings/loyalty`, "Loyalty & referrals", "Heart")] : []),
       it(`${base}/reviews`, "Reviews", "Star"),
     ] },
-    { title: "", items: ok("business.manage") ? [it(`${base}/settings`, "Settings", "Settings")] : [] },
+    { title: "", items: ok("business.manage") ? [it(`${base}/settings`, "Settings", "Settings", { exclude: [`${base}/settings/loyalty`] })] : [] },
   ].filter((s) => s.items.length > 0);
 }
 
@@ -88,6 +89,7 @@ export function settingsGroups(base: string, status?: SettingsStatusSource): Set
       title: "Payments & billing",
       entries: [
         { href: `${sb}/payments`, title: "Card payments", blurb: "Your Stripe account for cards, deposits and saved cards.", status: s ? (s.stripeChargesEnabled ? "connected" : "not connected") : undefined },
+        { href: `${sb}/refund-reasons`, title: "Refund reasons", blurb: "The list staff pick from when refunding; Reports group refunds by it." },
         { href: `${sb}/billing`, title: "Your plan", blurb: "Subscription, card on file and this month's usage." },
       ],
     },

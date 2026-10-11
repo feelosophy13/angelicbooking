@@ -86,6 +86,8 @@ wrong: fix the page.
 - A single cross-link is quiet (`text-sm text-brand-700 underline` in the page header). A hub that points to
   several related pages uses a row of small link cards (title + one line) above its own content, so the links
   read as part of the page rather than fine print. Never a second primary button.
+- A Settings page may also have a sidebar entry when it is a daily tool rather than setup (Loyalty & referrals under
+  Grow); give the Settings item an `exclude` for it so only one entry lights up.
 - A sidebar entry must be self-explanatory in its group. If it needs a sentence to justify where it sits (Forms
   under People), it does not belong there: leave it in Settings and rely on cross-links and ⌘K.
 - A sidebar item lights up only for its own pages: pass `exclude` when a sub-path belongs to another item

@@ -1,0 +1,50 @@
+import type { Metadata } from "next";
+import { requireAction } from "@/lib/tenant";
+import { listRefundReasons } from "@/server/refund-reasons";
+import { BackLink, Card, Input, PageHeader } from "@/components/ui";
+import { ActionForm, Field, SubmitButton } from "@/components/form";
+import { addRefundReason, moveRefundReasonAction, renameRefundReasonAction, setRefundReasonActiveAction } from "./actions";
+
+export const metadata: Metadata = { title: "Refund reasons" };
+
+/** The short list picked on every refund so Reports can group refunds by cause. */
+export default async function RefundReasonsPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const { business } = await requireAction(slug, "business.manage");
+  const reasons = await listRefundReasons(business.id, { includeRetired: true });
+  return (
+    <>
+      <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
+      <PageHeader title="Refund reasons" />
+      <Card className="max-w-2xl p-4">
+        <p className="mb-3 text-sm text-stone-600">Picked on every refund so Reports can group refunds by cause. Rename, reorder or retire; retired reasons keep their history on old refunds.</p>
+          <ul className="divide-y divide-stone-100 text-sm">
+            {reasons.map((r, i) => (
+              <li key={r.id} className={`flex flex-wrap items-center gap-2 py-2 ${r.active ? "" : "text-stone-400"}`}>
+                <ActionForm action={renameRefundReasonAction} className="flex min-w-0 flex-1 items-center gap-2">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="id" value={r.id} />
+                  <Input name="name" defaultValue={r.name} className="h-8 min-w-0 flex-1" aria-label={`Rename ${r.name}`} disabled={!r.active} />
+                  {r.active ? <SubmitButton size="sm" variant="ghost" pendingText="…">Rename</SubmitButton> : null}
+                </ActionForm>
+                <form action={moveRefundReasonAction} className="flex gap-0.5">
+                  <input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={r.id} />
+                  <button name="dir" value="up" disabled={i === 0} aria-label={`Move ${r.name} up`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↑</button>
+                  <button name="dir" value="down" disabled={i === reasons.length - 1} aria-label={`Move ${r.name} down`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↓</button>
+                </form>
+                <form action={setRefundReasonActiveAction}>
+                  <input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={r.id} /><input type="hidden" name="active" value={r.active ? "0" : "1"} />
+                  <button className="text-xs text-stone-500 underline hover:text-stone-800">{r.active ? "Retire" : "Restore"}</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+          <ActionForm action={addRefundReason} className="mt-3 flex items-end gap-2 border-t border-stone-200 pt-3">
+            <input type="hidden" name="slug" value={slug} />
+            <Field label="New reason" name="name"><Input name="name" placeholder="Allergic reaction" className="h-9" /></Field>
+            <SubmitButton size="sm" variant="secondary" pendingText="Adding…">Add</SubmitButton>
+          </ActionForm>
+      </Card>
+    </>
+  );
+}
