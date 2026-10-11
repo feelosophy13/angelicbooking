@@ -9,21 +9,14 @@ const t12 = (hhmm: string) => {
   return m ? `${hh}:${String(m).padStart(2, "0")}${ap}` : `${hh}${ap}`;
 };
 
-/** "Mon–Fri 10am–6pm · Sat 10am–3pm · Sun closed" style lines, grouping identical consecutive days. */
+/** One line per day, Monday first: "Mon 10am–6pm", …, "Sun Closed". */
 export function describeHours(hours: WeeklyHours | null | undefined): string[] {
   if (!hours) return [];
   const days = [1, 2, 3, 4, 5, 6, 0]; // Monday first
-  const label = (d: number) => { const h = hours[String(d)]; return h ? `${t12(h.open)}–${t12(h.close)}` : "Closed"; };
-  const out: string[] = [];
-  let i = 0;
-  while (i < days.length) {
-    let j = i;
-    while (j + 1 < days.length && label(days[j + 1]!) === label(days[i]!)) j++;
-    const name = (d: number) => WEEKDAYS[d]!.slice(0, 3);
-    out.push(`${i === j ? name(days[i]!) : `${name(days[i]!)}–${name(days[j]!)}`} ${label(days[i]!)}`);
-    i = j + 1;
-  }
-  return out;
+  return days.map((d) => {
+    const h = hours[String(d)];
+    return `${WEEKDAYS[d]!.slice(0, 3)} ${h ? `${t12(h.open)}–${t12(h.close)}` : "Closed"}`;
+  });
 }
 
 /** Parse the hours editor's fields (h{wd}_closed / h{wd}_open / h{wd}_close) into WeeklyHours; null when nothing was set. */
