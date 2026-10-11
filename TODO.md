@@ -133,6 +133,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       identifies themself, or is signed in). Demo tenant: `apps/web/scripts/seed-demo.ts` (see docs-ops.md).
       Form validation errors always show a top banner (never silent). Staff profile save could not be reproduced
       locally (profile, PIN and hours all save); production was 39 commits behind at the time, so retest after deploy.
+- [x] Landed 2026-10-11 (migration 0050): reviews store the visit's location (backfilled from appointments); the
+      Reviews page filters by location, provider and date range (quick ranges), with a star breakdown, answer rate
+      and per-provider averages that follow the filters.
 - [ ] Booking page follow-ups: service photos on the Shop/gift pages; a search box on the service step for large
       menus; show provider photos (staff have no photo field yet) and a short bio on the provider step.
 - [ ] Automations: decide between the fixed recipes (today) and a user-built trigger → delay → message builder

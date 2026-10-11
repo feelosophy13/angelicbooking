@@ -351,6 +351,13 @@
       "when": 1791690854911,
       "tag": "0049_service_images_nested_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1791693031912,
+      "tag": "0050_review_location",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,14 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { asc, eq } from "drizzle-orm";
+import { schema, withTenant } from "@angelic/db";
+import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { listReviews } from "@/server/reviews";
-import { Card, PageHeader, Empty } from "@/components/ui";
+import { listLocations } from "@/server/locations";
+import { shiftISODate } from "@/lib/utils";
+import { Button, Card, Input, PageHeader, Empty, Select } from "@/components/ui";
+import { LocationFilter } from "@/components/location-filter";
 
 export const metadata: Metadata = { title: "Reviews" };
 
@@ -10,34 +16,101 @@ function Stars({ n }: { n: number | null }) {
   return <span className="text-amber-400" aria-label={`${n ?? 0} stars`}>{"★".repeat(n ?? 0)}<span className="text-stone-300">{"★".repeat(5 - (n ?? 0))}</span></span>;
 }
 
-export default async function ReviewsPage({ params }: { params: Promise<{ slug: string }> }) {
+type SP = { location?: string; staff?: string; from?: string; to?: string };
+const isDate = (v?: string) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+export default async function ReviewsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
+  const sp = await searchParams;
   const { business } = await requireAction(slug, "clients.read");
-  const r = await listReviews(business.id);
+  const [locations, providers] = await Promise.all([
+    listLocations(business.id),
+    withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(eq(schema.staff.takesAppointments, true)).orderBy(asc(schema.staff.displayName))),
+  ]);
+  const locationId = locations.some((l) => l.id === sp.location) ? sp.location! : null;
+  const staffId = providers.some((p) => p.id === sp.staff) ? sp.staff! : null;
+  const from = isDate(sp.from) ? sp.from! : null;
+  const to = isDate(sp.to) ? sp.to! : null;
+  const r = await listReviews(business.id, {
+    locationId,
+    staffId,
+    from: from ? zonedToInstant(from, "00:00", business.timezone) : null,
+    to: to ? zonedToInstant(shiftISODate(to, 1), "00:00", business.timezone) : null,
+  });
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
+  const today = instantToISODate(new Date(), business.timezone);
+  const filtered = !!(locationId || staffId || from || to);
+  // Keep the other filters when switching location pills.
+  const otherQuery = [staffId ? `staff=${staffId}` : "", from ? `from=${from}` : "", to ? `to=${to}` : ""].filter(Boolean).join("&");
+  const quick = (label: string, f: string, t: string) => <Link href={`?${[locationId ? `location=${locationId}` : "", staffId ? `staff=${staffId}` : "", `from=${f}`, `to=${t}`].filter(Boolean).join("&")}`} className="rounded-md px-2 py-1 text-xs text-stone-600 hover:bg-stone-100">{label}</Link>;
+  const pct = (n: number) => (r.count ? Math.round((n / r.count) * 100) : 0);
   return (
     <>
       <PageHeader title="Reviews">
         <Link href={`/app/${slug}/settings/reviews`} className="text-sm text-brand-700 underline">Settings</Link>
       </PageHeader>
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+      <Card className="mb-4 p-3">
+        <form method="get" className="flex flex-wrap items-end gap-3">
+          {locationId ? <input type="hidden" name="location" value={locationId} /> : null}
+          <LocationFilter locations={locations} current={locationId} query={otherQuery} />
+          {providers.length > 1 ? (
+            <label className="text-sm">
+              <span className="mb-1 block text-xs font-medium text-stone-500">Provider</span>
+              <Select name="staff" defaultValue={staffId ?? ""} className="h-9 w-44">
+                <option value="">All providers</option>
+                {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </Select>
+            </label>
+          ) : null}
+          <label className="text-sm"><span className="mb-1 block text-xs font-medium text-stone-500">From</span><Input type="date" name="from" defaultValue={from ?? ""} max={today} className="h-9 w-40" /></label>
+          <label className="text-sm"><span className="mb-1 block text-xs font-medium text-stone-500">To</span><Input type="date" name="to" defaultValue={to ?? ""} max={today} className="h-9 w-40" /></label>
+          <Button type="submit" size="sm" variant="secondary">Apply</Button>
+          <div className="flex items-center gap-1">
+            {quick("Last 30 days", shiftISODate(today, -29), today)}
+            {quick("Last 90 days", shiftISODate(today, -89), today)}
+            {quick("This year", `${today.slice(0, 4)}-01-01`, today)}
+          </div>
+          {filtered ? <Link href="?" className="text-xs text-stone-500 underline">Clear filters</Link> : null}
+        </form>
+      </Card>
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="p-4"><p className="text-xs uppercase tracking-wide text-stone-500">Average</p><p className="text-xl font-semibold">{r.count ? r.average.toFixed(1) : "—"} <span className="text-sm font-normal text-stone-500">/ 5</span></p></Card>
-        <Card className="p-4"><p className="text-xs uppercase tracking-wide text-stone-500">Ratings</p><p className="text-xl font-semibold">{r.count}</p><p className="text-xs text-stone-500">of {r.requested} requested</p></Card>
-        <Card className="p-4"><p className="text-xs uppercase tracking-wide text-stone-500">By provider</p>{r.byStaff.length === 0 ? <p className="text-sm text-stone-500">—</p> : r.byStaff.map((s) => <p key={s.staffName} className="text-sm">{s.staffName}: <b>{s.avg.toFixed(1)}</b> ({s.n})</p>)}</Card>
+        <Card className="p-4"><p className="text-xs uppercase tracking-wide text-stone-500">Ratings</p><p className="text-xl font-semibold">{r.count}</p><p className="text-xs text-stone-500">of {r.requested} requested{r.requested ? ` · ${Math.round((r.count / r.requested) * 100)}% answered` : ""}</p></Card>
+        <Card className="p-4">
+          <p className="mb-1 text-xs uppercase tracking-wide text-stone-500">Breakdown</p>
+          {r.distribution.map((d) => (
+            <div key={d.star} className="flex items-center gap-2 text-xs">
+              <span className="w-6 text-stone-500">{d.star}★</span>
+              <span className="h-1.5 flex-1 overflow-hidden rounded bg-stone-100"><span className="block h-full bg-amber-400" style={{ width: `${pct(d.n)}%` }} /></span>
+              <span className="w-8 text-right text-stone-500">{d.n}</span>
+            </div>
+          ))}
+        </Card>
+        <Card className="p-4">
+          <p className="text-xs uppercase tracking-wide text-stone-500">By provider</p>
+          {r.byStaff.length === 0 ? <p className="text-sm text-stone-500">—</p> : r.byStaff.map((s) => (
+            <p key={s.staffId} className="text-sm">
+              <Link href={`?${[locationId ? `location=${locationId}` : "", `staff=${s.staffId}`, from ? `from=${from}` : "", to ? `to=${to}` : ""].filter(Boolean).join("&")}`} className="hover:underline">{s.staffName}</Link>: <b>{s.avg.toFixed(1)}</b> <span className="text-stone-500">({s.n})</span>
+            </p>
+          ))}
+        </Card>
       </div>
-      {r.rows.length === 0 ? <Empty title="No ratings yet" body="Clients are asked to rate each visit a couple of hours after checkout." /> : (
+      {r.rows.length === 0 ? (
+        <Empty title={filtered ? "No ratings match these filters" : "No ratings yet"} body={filtered ? "Try a wider date range or clear the filters." : "Clients are asked to rate each visit a couple of hours after checkout."} />
+      ) : (
         <Card>
           <ul className="divide-y divide-stone-100 text-sm">
-            {r.rows.map(({ r: rv, firstName, lastName, staffName }) => (
+            {r.rows.map(({ r: rv, firstName, lastName, staffName, locationName }) => (
               <li key={rv.id} className="px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span><Stars n={rv.rating} /> <span className="ml-2 font-medium">{firstName ? `${firstName} ${lastName ?? ""}`.trim() : "Client"}</span>{staffName ? <span className="text-stone-500"> · with {staffName}</span> : null}</span>
+                  <span><Stars n={rv.rating} /> <span className="ml-2 font-medium">{firstName ? `${firstName} ${lastName ?? ""}`.trim() : "Client"}</span>{staffName ? <span className="text-stone-500"> · with {staffName}</span> : null}{locations.length > 1 && locationName ? <span className="text-stone-500"> · {locationName.replace(/^.*? - /, "")}</span> : null}</span>
                   <span className="text-xs text-stone-500">{rv.submittedAt ? fmt.format(rv.submittedAt) : ""}{rv.clientId ? <> · <Link href={`/app/${slug}/clients/${rv.clientId}`} className="underline">client</Link></> : null}</span>
                 </div>
                 {rv.comment ? <p className="mt-1 whitespace-pre-line text-stone-700">{rv.comment}</p> : null}
               </li>
             ))}
           </ul>
+          {r.rows.length >= 200 ? <p className="px-4 py-2 text-xs text-stone-500">Showing the latest 200. Narrow the date range to see older ratings.</p> : null}
         </Card>
       )}
     </>

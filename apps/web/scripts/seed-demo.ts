@@ -283,7 +283,7 @@ async function main() {
           salesN++;
           if (chance(0.3)) {
             const rating = chance(0.8) ? 5 : chance(0.7) ? 4 : 3;
-            await tx.insert(schema.reviews).values({ businessId, clientId: client.id, appointmentId: appt!.id, staffId: p.id, rating, comment: chance(0.7) ? pick(COMMENTS) : null, requestedAt: closedAt, submittedAt: new Date(closedAt.getTime() + between(2, 30) * 3_600_000), createdAt: closedAt });
+            await tx.insert(schema.reviews).values({ businessId, clientId: client.id, appointmentId: appt!.id, staffId: p.id, locationId, rating, comment: chance(0.7) ? pick(COMMENTS) : null, requestedAt: closedAt, submittedAt: new Date(closedAt.getTime() + between(2, 30) * 3_600_000), createdAt: closedAt });
             reviewsN++;
             reviewClients.add(client.id);
           }

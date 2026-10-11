@@ -486,6 +486,9 @@ export const reviews = pgTable(
     clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
     staffId: text("staff_id").references(() => staff.id, { onDelete: "set null" }),
+    // Where the visit took place, copied from the appointment when the request is queued so
+    // the review can be filtered and reported even after the appointment is gone.
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     token: text("token")
       .notNull()
       .default(sql`encode(gen_random_bytes(18), 'hex')`)
@@ -498,6 +501,7 @@ export const reviews = pgTable(
   },
   (t) => [
     uniqueIndex("reviews_token_uq").on(t.token),
+    index("reviews_business_location_idx").on(t.businessId, t.locationId),
     uniqueIndex("reviews_appointment_uq").on(t.appointmentId),
     index("reviews_business_idx").on(t.businessId, t.submittedAt),
     check("reviews_rating_ck", sql`${t.rating} is null or (${t.rating} between 1 and 5)`),

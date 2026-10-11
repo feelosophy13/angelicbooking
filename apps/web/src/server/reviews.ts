@@ -3,7 +3,7 @@
  * with a one-tap rating link. High ratings are nudged on to Google when the
  * business has a review URL; every rating is kept on the client's record.
  */
-import { and, asc, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appointmentContext } from "@/lib/notify";
@@ -23,7 +23,7 @@ export async function queueReviewRequest(business: Business, appointmentId: stri
     const existing = await tx.query.reviews.findFirst({ where: eq(schema.reviews.appointmentId, appt.id) });
     if (existing) return;
     const item = await tx.query.appointmentItems.findFirst({ where: eq(schema.appointmentItems.appointmentId, appt.id) });
-    const [review] = await tx.insert(schema.reviews).values({ businessId: business.id, clientId: client.id, appointmentId: appt.id, staffId: item?.staffId ?? null }).returning();
+    const [review] = await tx.insert(schema.reviews).values({ businessId: business.id, clientId: client.id, appointmentId: appt.id, staffId: item?.staffId ?? null, locationId: appt.locationId ?? null }).returning();
     const url = appUrl(`/book/${business.slug}/review/${review!.token}`);
     const t = reviewRequestTemplate(ctx, url);
     const at = new Date(Date.now() + Math.max(0, business.reviewRequestDelayHours) * 3_600_000);
@@ -57,28 +57,44 @@ export async function submitReview(businessId: string, token: string, rating: nu
   });
 }
 
-export async function listReviews(businessId: string, limit = 200) {
+export type ReviewFilter = { locationId?: string | null; staffId?: string | null; from?: Date | null; to?: Date | null };
+
+/** Submitted reviews with summary numbers; every part respects the same filter. */
+export async function listReviews(businessId: string, f: ReviewFilter = {}, limit = 200) {
+  const conds = [isNotNull(schema.reviews.submittedAt)];
+  if (f.locationId) conds.push(eq(schema.reviews.locationId, f.locationId));
+  if (f.staffId) conds.push(eq(schema.reviews.staffId, f.staffId));
+  if (f.from) conds.push(gte(schema.reviews.submittedAt, f.from));
+  if (f.to) conds.push(lt(schema.reviews.submittedAt, f.to));
+  const where = and(...conds);
+  // "Requested" counts invitations in the same scope, whether or not they were answered.
+  const reqConds = [sql`true`];
+  if (f.locationId) reqConds.push(eq(schema.reviews.locationId, f.locationId));
+  if (f.staffId) reqConds.push(eq(schema.reviews.staffId, f.staffId));
+  if (f.from) reqConds.push(gte(schema.reviews.requestedAt, f.from));
+  if (f.to) reqConds.push(lt(schema.reviews.requestedAt, f.to));
   return withTenant(businessId, async (tx) => {
     const rows = await tx
-      .select({ r: schema.reviews, firstName: schema.clients.firstName, lastName: schema.clients.lastName, staffName: schema.staff.displayName })
+      .select({ r: schema.reviews, firstName: schema.clients.firstName, lastName: schema.clients.lastName, staffName: schema.staff.displayName, locationName: schema.locations.name })
       .from(schema.reviews)
       .leftJoin(schema.clients, eq(schema.clients.id, schema.reviews.clientId))
       .leftJoin(schema.staff, eq(schema.staff.id, schema.reviews.staffId))
-      .where(isNotNull(schema.reviews.submittedAt))
+      .leftJoin(schema.locations, eq(schema.locations.id, schema.reviews.locationId))
+      .where(where)
       .orderBy(desc(schema.reviews.submittedAt))
       .limit(limit);
-    const [agg] = await tx
-      .select({ n: sql<number>`count(*)`, avg: sql<number>`coalesce(avg(${schema.reviews.rating}), 0)`, requested: sql<number>`(select count(*) from reviews)` })
-      .from(schema.reviews)
-      .where(isNotNull(schema.reviews.submittedAt));
+    const [agg] = await tx.select({ n: sql<number>`count(*)`, avg: sql<number>`coalesce(avg(${schema.reviews.rating}), 0)` }).from(schema.reviews).where(where);
+    const [req] = await tx.select({ n: sql<number>`count(*)` }).from(schema.reviews).where(and(...reqConds));
     const byStaff = await tx
-      .select({ staffName: schema.staff.displayName, n: sql<number>`count(*)`, avg: sql<number>`avg(${schema.reviews.rating})` })
+      .select({ staffId: schema.staff.id, staffName: schema.staff.displayName, n: sql<number>`count(*)`, avg: sql<number>`avg(${schema.reviews.rating})` })
       .from(schema.reviews)
       .innerJoin(schema.staff, eq(schema.staff.id, schema.reviews.staffId))
-      .where(isNotNull(schema.reviews.submittedAt))
-      .groupBy(schema.staff.displayName)
+      .where(where)
+      .groupBy(schema.staff.id, schema.staff.displayName)
       .orderBy(asc(schema.staff.displayName));
-    return { rows, count: Number(agg?.n ?? 0), average: Number(agg?.avg ?? 0), requested: Number(agg?.requested ?? 0), byStaff: byStaff.map((b) => ({ ...b, n: Number(b.n), avg: Number(b.avg) })) };
+    const dist = await tx.select({ rating: schema.reviews.rating, n: sql<number>`count(*)` }).from(schema.reviews).where(where).groupBy(schema.reviews.rating);
+    const distribution = [5, 4, 3, 2, 1].map((star) => ({ star, n: Number(dist.find((d) => d.rating === star)?.n ?? 0) }));
+    return { rows, count: Number(agg?.n ?? 0), average: Number(agg?.avg ?? 0), requested: Number(req?.n ?? 0), byStaff: byStaff.map((b) => ({ ...b, n: Number(b.n), avg: Number(b.avg) })), distribution };
   });
 }
 
