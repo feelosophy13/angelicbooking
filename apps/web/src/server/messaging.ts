@@ -8,7 +8,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
-import { attachNumberItem, billingState, detachNumberItem } from "@/server/billing";
+import { attachNumberItem, billingState, detachNumberItem, payerOf } from "@/server/billing";
 import {
   createTollfreeVerification,
   fetchTollfreeVerification,
@@ -74,7 +74,7 @@ export async function buyNumber(business: Business, phoneNumber: string, locatio
   if (existing) throw new MessagingError(`You already have a number (${existing.phoneNumber}) for this. Release it first to pick a different one.`);
   const location = locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) })) : null;
   if (locationId && !location) throw new MessagingError("Location not found.");
-  if (!billingState(business).canBuyNumber) throw new MessagingError("Add a card under Settings → Billing first; the number is billed monthly.");
+  if (!billingState(await payerOf(business)).canBuyNumber) throw new MessagingError("Add a card under Settings → Billing first; the number is billed monthly.");
   let bought: { sid: string; phoneNumber: string };
   try {
     bought = await purchaseNumber(phoneNumber, { friendlyName: `${location ? location.name : business.name} (${business.slug})`, smsUrl: appUrl("/api/twilio/inbound") });

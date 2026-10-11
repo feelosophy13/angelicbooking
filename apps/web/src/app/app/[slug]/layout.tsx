@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone } from "lucide-react";
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
+import { payerOf } from "@/server/billing";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
 import { asc, desc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
@@ -18,6 +19,7 @@ type IconName = keyof typeof ICON;
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, user, role, permissions } = await requireBusiness(slug);
+  const payer = await payerOf(business);
   const [mine, roles, locations] = await Promise.all([listMyBusinesses(user.id), listRoles(business.id), withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations).orderBy(desc(schema.locations.isDefault), asc(schema.locations.name)))]);
   void permissionsForRole;
   const roleName = roles.find((r) => r.key === role)?.name ?? role.replace("_", " ");
@@ -95,7 +97,7 @@ export default async function AppLayout({ children, params }: { children: React.
           <UserMenu user={user} businesses={mine} currentSlug={slug} />
         </MobileNav>
         <main className="flex-1 p-4 pb-24 md:p-8 md:pb-8">
-          {isDelinquent(business.subscriptionStatus) ? (
+          {isDelinquent(payer.subscriptionStatus) ? (
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
               Your last payment failed.{" "}
               {can(permissions, "business.manage") ? <Link href={`${base}/settings/billing`} className="underline">Update your card</Link> : "Ask the owner to update the card"} to keep text messaging running.

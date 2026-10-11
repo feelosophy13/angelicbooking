@@ -4,19 +4,21 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { money } from "@/lib/format";
-import { billingState, completeCheckout } from "@/server/billing";
+import { billingState, completeCheckout, payerOf, possiblePayers } from "@/server/billing";
 import { listNumbers } from "@/server/messaging";
 import { StatusBadge } from "@/components/status-badge";
 import { BackLink, Card, Notice, PageHeader } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/form";
-import { openPortalAction, refreshBillingAction, startBillingAction } from "./actions";
+import { linkBillingAction, openPortalAction, refreshBillingAction, startBillingAction, unlinkBillingAction } from "./actions";
 
 export const metadata: Metadata = { title: "Billing" };
 
 export default async function BillingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ session_id?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  let { business } = await requireAction(slug, "business.manage");
+  const ctx = await requireAction(slug, "business.manage");
+  const user = ctx.user;
+  let business = ctx.business;
   let justSubscribed = false;
   if (sp.session_id) {
     await completeCheckout(business, sp.session_id).catch((e) => console.error("[billing] checkout sync failed", (e as Error).message));
@@ -24,8 +26,11 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
     business = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, business.id) })) ?? business;
     justSubscribed = true;
   }
-  const state = billingState(business);
+  const payer = await payerOf(business);
+  const linked = payer.id !== business.id;
+  const state = billingState(payer);
   const { config } = state;
+  const payers = linked || state.subscribed ? [] : await possiblePayers(user.id, business);
   const numbers = await withTenant(business.id, listNumbers);
   const number = numbers.find((n) => !n.locationId) ?? numbers[0] ?? null;
   const numberFees = numbers.reduce((t, n) => t + n.monthlyFeeCents, 0);
@@ -55,6 +60,30 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
       {!state.enabled ? <div className="mb-4"><Notice>Billing is not configured on this platform yet. Everything is free until it is.</Notice></div> : null}
 
       <div className="grid max-w-3xl gap-6">
+        {linked ? (
+          <Card className="p-5">
+            <h2 className="font-medium">Billed through {payer.name}</h2>
+            <p className="mt-1 text-sm text-stone-600">This business sits on <Link href={`/app/${payer.slug}/settings/billing`} className="text-brand-700 underline">{payer.name}</Link>&apos;s subscription: one invoice, one card. Its text number and messages are added to that invoice.</p>
+            <ActionForm action={unlinkBillingAction} className="mt-3 inline">
+              <input type="hidden" name="slug" value={slug} />
+              <SubmitButton variant="secondary" pendingText="Separating…">Bill separately</SubmitButton>
+            </ActionForm>
+          </Card>
+        ) : payers.length && state.enabled ? (
+          <Card className="p-5">
+            <h2 className="font-medium">One invoice for all your businesses?</h2>
+            <p className="mt-1 text-sm text-stone-600">You already pay for another business. Add this one to that invoice instead of setting up a second card{config.baseCents > 0 ? ` (one more ${money(config.baseCents)} seat on that plan)` : ""}.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {payers.map((p) => (
+                <ActionForm key={p.id} action={linkBillingAction} className="inline">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="payerId" value={p.id} />
+                  <SubmitButton variant="secondary" pendingText="Linking…">Bill through {p.name}</SubmitButton>
+                </ActionForm>
+              ))}
+            </div>
+          </Card>
+        ) : null}
         <Card className="p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -62,24 +91,24 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
               <div className="mt-1 text-2xl font-semibold">{config.baseCents > 0 ? `${money(config.baseCents)} / month` : "Free"}</div>
               <div className="mt-2 flex items-center gap-2">
                 {state.status === "none" ? <span className="text-xs text-stone-500">{state.enabled ? "No card on file" : "Nothing to pay"}</span> : <StatusBadge status={state.status} />}
-                {business.trialEndsAt && state.status === "trialing" ? <span className="text-xs text-stone-500">trial ends {fmt.format(business.trialEndsAt)}</span> : null}
-                {business.currentPeriodEnd && state.subscribed ? <span className="text-xs text-stone-500">next invoice {fmt.format(business.currentPeriodEnd)}</span> : null}
+                {payer.trialEndsAt && state.status === "trialing" ? <span className="text-xs text-stone-500">trial ends {fmt.format(payer.trialEndsAt)}</span> : null}
+                {payer.currentPeriodEnd && state.subscribed ? <span className="text-xs text-stone-500">next invoice {fmt.format(payer.currentPeriodEnd)}{linked ? ` (${payer.name})` : ""}</span> : null}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {state.enabled && !state.subscribed ? (
+              {state.enabled && !state.subscribed && !linked ? (
                 <ActionForm action={startBillingAction} className="inline">
                   <input type="hidden" name="slug" value={slug} />
                   <SubmitButton pendingText="Opening Stripe…">{config.baseCents > 0 ? "Start subscription" : "Add a card"}</SubmitButton>
                 </ActionForm>
               ) : null}
-              {state.enabled && business.stripeCustomerId ? (
+              {state.enabled && payer.stripeCustomerId ? (
                 <ActionForm action={openPortalAction} className="inline">
                   <input type="hidden" name="slug" value={slug} />
                   <SubmitButton variant="secondary" pendingText="Opening…">Manage card &amp; invoices</SubmitButton>
                 </ActionForm>
               ) : null}
-              {state.enabled && business.stripeCustomerId ? (
+              {state.enabled && business.stripeCustomerId && !linked ? (
                 <ActionForm action={refreshBillingAction} className="inline">
                   <input type="hidden" name="slug" value={slug} />
                   <SubmitButton variant="ghost" pendingText="Refreshing…">Refresh</SubmitButton>
@@ -98,7 +127,7 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
           <h2 className="font-medium">This month</h2>
           <table className="mt-3 w-full text-sm">
             <tbody className="divide-y divide-stone-200">
-              <tr><td className="py-2">Platform plan</td><td className="py-2 text-right tabular-nums">{money(state.subscribed ? config.baseCents : 0)}</td></tr>
+              <tr><td className="py-2">Platform plan{linked ? <span className="block text-xs text-stone-500">seat on {payer.name}&apos;s plan</span> : null}</td><td className="py-2 text-right tabular-nums">{money(state.subscribed ? config.baseCents : 0)}</td></tr>
               <tr>
                 <td className="py-2">
                   Dedicated text number{numbers.length > 1 ? ` × ${numbers.length}` : ""}{number ? <span className="block text-xs text-stone-500">{number.phoneNumber} · <StatusBadge status={number.status} /></span> : <span className="block text-xs text-stone-500">none · <Link href={`/app/${slug}/settings/messaging`} className="text-brand-700 underline">get one</Link></span>}

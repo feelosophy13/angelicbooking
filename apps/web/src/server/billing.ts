@@ -9,7 +9,7 @@
  * keyed by amount, so no dashboard setup is needed.
  */
 import type Stripe from "stripe";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { appUrl, isStripeConfigured, stripe } from "@/lib/stripe";
 import { billingConfig, canBuyNumber, isDelinquent, isSubscribed, lookupKeys, SMS_METER_EVENT, type BillingConfig } from "@/lib/billing-config";
@@ -111,6 +111,58 @@ export async function ensureCatalog(): Promise<Catalog> {
 // ---------------------------------------------------------------------------
 // Customer + subscription
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// One invoice per owner
+// ---------------------------------------------------------------------------
+
+/**
+ * The business whose subscription pays for `business`: itself, or the one it is
+ * billed through (same owner). A stale link (payer no longer subscribed) falls
+ * back to the business itself so it can set up its own billing.
+ */
+export async function payerOf(business: Business): Promise<Business> {
+  if (!business.billingBusinessId || business.billingBusinessId === business.id) return business;
+  const payer = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, business.billingBusinessId) });
+  return payer && isSubscribed(payer.subscriptionStatus) ? payer : business;
+}
+
+/** Businesses the user owns that have an active subscription of their own and could pay for `business`. */
+export async function possiblePayers(userId: string, business: Business): Promise<Business[]> {
+  const rows = await db
+    .select({ b: schema.businesses })
+    .from(schema.member)
+    .innerJoin(schema.businesses, eq(schema.businesses.id, schema.member.organizationId))
+    .where(and(eq(schema.member.userId, userId), eq(schema.member.role, "owner")));
+  return rows.map((r) => r.b).filter((b) => b.id !== business.id && !b.billingBusinessId && !!b.stripeSubscriptionId && isSubscribed(b.subscriptionStatus));
+}
+
+async function basePlanItem(subscriptionId: string): Promise<Stripe.SubscriptionItem | null> {
+  const baseKey = lookupKeys(billingConfig()).base.replace(/_\d+$/, "");
+  const sub = await stripe().subscriptions.retrieve(subscriptionId);
+  return sub.items.data.find((i) => i.price.lookup_key?.startsWith(baseKey)) ?? null;
+}
+
+/** Put `business` on `payer`'s invoice: one more seat on the payer's base plan, and this business stops billing itself. */
+export async function linkBillingTo(userId: string, business: Business, payer: Business): Promise<void> {
+  if (!billingEnabled()) throw new BillingError("Billing is not configured on this platform yet.");
+  if (!(await possiblePayers(userId, business)).some((p) => p.id === payer.id)) throw new BillingError("You can only bill through a business you own that already has a subscription.");
+  if (business.stripeSubscriptionId && isSubscribed(business.subscriptionStatus)) throw new BillingError("Cancel this business's own subscription in Stripe first, then bill it through the other one.");
+  const item = await basePlanItem(payer.stripeSubscriptionId!);
+  if (item && billingConfig().baseCents > 0) await stripe().subscriptionItems.update(item.id, { quantity: (item.quantity ?? 1) + 1, proration_behavior: "create_prorations" });
+  await db.update(schema.businesses).set({ billingBusinessId: payer.id }).where(eq(schema.businesses.id, business.id));
+}
+
+/** Take `business` off the payer's invoice again. It then has no billing until it sets up its own. */
+export async function unlinkBilling(business: Business): Promise<void> {
+  if (!business.billingBusinessId) return;
+  const payer = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, business.billingBusinessId) });
+  if (payer?.stripeSubscriptionId && billingEnabled()) {
+    const item = await basePlanItem(payer.stripeSubscriptionId).catch(() => null);
+    if (item && (item.quantity ?? 1) > 1) await stripe().subscriptionItems.update(item.id, { quantity: (item.quantity ?? 1) - 1, proration_behavior: "create_prorations" });
+  }
+  await db.update(schema.businesses).set({ billingBusinessId: null }).where(eq(schema.businesses.id, business.id));
+}
 
 export async function ensureCustomer(business: Business): Promise<string> {
   if (business.stripeCustomerId) return business.stripeCustomerId;
@@ -221,12 +273,14 @@ export async function portalUrl(business: Business, slug: string): Promise<strin
 // Add-ons and usage
 // ---------------------------------------------------------------------------
 
+/** Billing facts for a business. Pass `await payerOf(business)` for a business billed through another. */
 export function billingState(business: Business) {
   const config = billingConfig();
   const enabled = billingEnabled();
   return {
     enabled,
     config,
+    payerId: business.id,
     status: business.subscriptionStatus,
     subscribed: isSubscribed(business.subscriptionStatus),
     delinquent: isDelinquent(business.subscriptionStatus),
@@ -236,10 +290,11 @@ export function billingState(business: Business) {
 
 /** Add the monthly number fee to the subscription (prorated). No-op when billing is off or the fee is $0. */
 export async function attachNumberItem(business: Business, numberId: string): Promise<void> {
-  if (!billingEnabled() || !business.stripeSubscriptionId) return;
+  const payer = await payerOf(business);
+  if (!billingEnabled() || !payer.stripeSubscriptionId) return;
   const catalog = await ensureCatalog();
   if (catalog.config.numberCents === 0) return;
-  const item = await stripe().subscriptionItems.create({ subscription: business.stripeSubscriptionId, price: catalog.numberPriceId, quantity: 1, proration_behavior: "create_prorations" });
+  const item = await stripe().subscriptionItems.create({ subscription: payer.stripeSubscriptionId, price: catalog.numberPriceId, quantity: 1, proration_behavior: "create_prorations" });
   await withTenant(business.id, (tx) => tx.update(schema.messagingNumbers).set({ stripeItemId: item.id }).where(eq(schema.messagingNumbers.id, numberId)));
 }
 
@@ -261,8 +316,10 @@ export async function detachNumberItem(business: Business, number: { id: string;
  */
 export async function reportSmsUsage(businessId: string, notificationIds: string[]): Promise<number> {
   if (!billingEnabled() || !notificationIds.length) return 0;
-  const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId), columns: { stripeCustomerId: true, subscriptionStatus: true } });
-  if (!business?.stripeCustomerId || !isSubscribed(business.subscriptionStatus)) return 0;
+  const row = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
+  if (!row) return 0;
+  const business = await payerOf(row);
+  if (!business.stripeCustomerId || !isSubscribed(business.subscriptionStatus)) return 0;
   let n = 0;
   for (const id of notificationIds) {
     try {

@@ -1,0 +1,1 @@
+ALTER TABLE "businesses" ADD COLUMN "billing_business_id" text;

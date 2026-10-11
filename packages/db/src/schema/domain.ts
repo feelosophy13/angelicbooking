@@ -112,6 +112,9 @@ export const businesses = pgTable("businesses", {
   // Platform billing (Stripe Billing on the PLATFORM account, separate from the
   // business's own Connect account). See apps/web/src/server/billing.ts.
   plan: text("plan").notNull().default("trial"),
+  // Owners with several businesses can put them on one invoice: this business is billed
+  // through the subscription of `billing_business_id` (same owner). Null = bills itself.
+  billingBusinessId: text("billing_business_id"),
   stripeCustomerId: text("stripe_customer_id").unique(),
   stripeSubscriptionId: text("stripe_subscription_id").unique(),
   // none | trialing | active | past_due | unpaid | canceled | incomplete | incomplete_expired | paused

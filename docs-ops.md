@@ -217,6 +217,14 @@ resolves all of that for a sale, appointment or location; every Stripe call goes
 - `locations.timezone` is now applied to scheduling (availability, booking pages, messages, filtered calendar).
 - `valid_location_ids text[]` on `gift_cards`, `packages`, `membership_plans`: empty = any location.
 
+## Several businesses, one owner (added 2026-10-10)
+
+`/app` is the cross-business roll-up (`apps/web/src/server/overview.ts`); every business is read in its own
+tenant transaction. Billing: `businesses.billing_business_id` (migration 0041) points at the business whose
+platform subscription pays. `payerOf(business)` in `server/billing.ts` resolves it; the webhook keeps writing
+subscription state to the payer only, number add-ons and SMS meter events are posted against the payer, and
+the base plan item's quantity counts the businesses on it.
+
 ## Stripe webhook setup script
 
 `apps/web/scripts/stripe-production-setup.ts` (run with `packages/db/node_modules/.bin/tsx --env-file=../../.env` from
