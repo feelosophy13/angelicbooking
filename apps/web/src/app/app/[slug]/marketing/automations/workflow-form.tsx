@@ -43,23 +43,37 @@ function Section({ n, title, aside, children }: { n: number; title: string; asid
   );
 }
 
-/** A collapsible picker: "Service category · 2 selected" that opens into checkboxes. */
-function Picker({ name, label, items, selected }: { name: string; label: string; items: { id: string; name: string; depth?: number }[]; selected?: string[] }) {
-  const n = (selected ?? []).filter((id) => items.some((x) => x.id === id)).length;
+type PickItem = { id: string; name: string; depth?: number };
+
+/**
+ * A collapsible picker: "Service category · 2 selected" that opens into checkboxes.
+ * Items are grouped so a parent and its indented children always stay together in one
+ * column; a flat list is just a list of one-item groups.
+ */
+function Picker({ name, label, groups, selected }: { name: string; label: string; groups: PickItem[][]; selected?: string[] }) {
+  const all = groups.flat();
+  const n = (selected ?? []).filter((id) => all.some((x) => x.id === id)).length;
   return (
     <details className="group rounded-lg border border-stone-200 bg-white" open={n > 0}>
       <summary className="flex cursor-pointer select-none items-center justify-between px-3 py-2 text-sm"><span>{label}{n ? <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">{n} selected</span> : <span className="ml-2 text-xs text-stone-400">any</span>}</span><ChevronDown className="h-4 w-4 text-stone-400 transition group-open:rotate-180" /></summary>
-      <div className="grid max-h-44 gap-1 overflow-y-auto border-t border-stone-100 p-2 text-sm sm:grid-cols-2">
-        {items.map((x) => (
-          <label key={x.id} className="flex items-center gap-2" style={{ paddingLeft: `${(x.depth ?? 0) * 12}px` }}>
-            <input type="checkbox" name={name} value={x.id} defaultChecked={selected?.includes(x.id)} className="h-4 w-4 accent-brand-600" /> {x.name}
-          </label>
+      <div className="max-h-48 columns-1 gap-x-4 overflow-y-auto border-t border-stone-100 p-2 text-sm sm:columns-2">
+        {groups.map((g, gi) => (
+          <div key={g[0]?.id ?? gi} className="mb-1 break-inside-avoid space-y-1">
+            {g.map((x) => (
+              <label key={x.id} className="flex items-center gap-2" style={{ paddingLeft: `${(x.depth ?? 0) * 16}px` }}>
+                <input type="checkbox" name={name} value={x.id} defaultChecked={selected?.includes(x.id)} className="h-4 w-4 accent-brand-600" />
+                <span className={x.depth ? "text-stone-700" : "font-medium"}>{x.name}</span>
+              </label>
+            ))}
+          </div>
         ))}
-        {items.length === 0 ? <p className="text-xs text-stone-500">None yet.</p> : null}
+        {all.length === 0 ? <p className="text-xs text-stone-500">None yet.</p> : null}
       </div>
     </details>
   );
 }
+
+const flatGroups = (items: PickItem[]): PickItem[][] => items.map((x) => [x]);
 
 /** Shared create / edit form: name and switch, trigger, conditions (collapsed), steps timeline, options. */
 export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: string; workflow: Workflow | null; trigger: WorkflowTrigger; pickers: Pickers }) {
@@ -67,7 +81,8 @@ export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: strin
   const meta = TRIGGERS.find((t) => t.key === trigger)!;
   const apptTrigger = trigger.startsWith("appointment_");
   const showPickers = apptTrigger || trigger === "form_submitted" || trigger === "review_submitted";
-  const cats = flattenTree(buildTree(pickers.categories));
+  // One group per top-level category: the root followed by its sub-categories, depth-first.
+  const catGroups = buildTree(pickers.categories).map((root) => flattenTree([root]).map((c) => ({ id: c.id, name: c.name, depth: c.depth })));
   const chips = conditionChips(f, trigger, pickers);
   const hasConditions = chips.length > 0 || trigger === "no_visit";
   return (
@@ -117,17 +132,22 @@ export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: strin
           <div className="space-y-3 border-t border-stone-100 p-3">
             {showPickers ? (
               <div className="grid gap-2 lg:grid-cols-2">
-                <Picker name="categoryIds" label="Service category" items={cats} selected={f.categoryIds} />
-                <Picker name="serviceIds" label="Specific services" items={pickers.services} selected={f.serviceIds} />
-                <Picker name="staffIds" label="Provider" items={pickers.staff} selected={f.staffIds} />
-                {pickers.locations.length > 1 ? <Picker name="locationIds" label="Location" items={pickers.locations} selected={f.locationIds} /> : null}
+                <Picker name="categoryIds" label="Service category" groups={catGroups} selected={f.categoryIds} />
+                <Picker name="serviceIds" label="Specific services" groups={flatGroups(pickers.services)} selected={f.serviceIds} />
+                <Picker name="staffIds" label="Provider" groups={flatGroups(pickers.staff)} selected={f.staffIds} />
+                {pickers.locations.length > 1 ? <Picker name="locationIds" label="Location" groups={flatGroups(pickers.locations)} selected={f.locationIds} /> : null}
               </div>
             ) : null}
             <div className="grid gap-3 sm:grid-cols-2">
               {trigger === "review_submitted" ? (
-                <div className="flex items-end gap-2">
-                  <Field label="Rating from" name="minRating"><Select name="minRating" defaultValue={f.minRating ?? ""} className="h-9"><option value="">Any</option>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} ★</option>)}</Select></Field>
-                  <Field label="to" name="maxRating"><Select name="maxRating" defaultValue={f.maxRating ?? ""} className="h-9"><option value="">Any</option>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} ★</option>)}</Select></Field>
+                <div>
+                  <p className="mb-1 text-sm font-medium text-stone-700">Rating</p>
+                  <div className="flex items-center gap-2 text-sm text-stone-600">
+                    <span>from</span>
+                    <Select name="minRating" defaultValue={f.minRating ?? ""} className="h-9 w-24" aria-label="Lowest rating"><option value="">any</option>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} ★</option>)}</Select>
+                    <span>to</span>
+                    <Select name="maxRating" defaultValue={f.maxRating ?? ""} className="h-9 w-24" aria-label="Highest rating"><option value="">any</option>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n} ★</option>)}</Select>
+                  </div>
                 </div>
               ) : null}
               <Field label="Client has a tag" name="tags" hint="Comma-separated; any match counts."><Input name="tags" defaultValue={(f.tags ?? []).join(", ")} placeholder="VIP, Colour client" className="h-9" /></Field>
