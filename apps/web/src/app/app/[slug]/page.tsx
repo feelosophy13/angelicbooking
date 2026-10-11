@@ -55,7 +55,8 @@ export default async function CalendarPage({
   const missingForms = view === "day" ? await withTenant(business.id, (tx) => appointmentsMissingForms(tx, [...new Set(filtered.items.filter((i) => !i.classSessionId).map((i) => i.appointmentId))])) : new Set<string>();
   const formsFilter = sp.forms === "missing";
   const items = formsFilter ? filtered.items.filter((i) => missingForms.has(i.appointmentId)) : filtered.items;
-  const staffFilter = staff.some((s) => s.id === sp.staff) ? sp.staff! : null;
+  // The staff filter is a week-view control; day view shows every column, month view everyone.
+  const staffFilter = view === "week" && staff.some((s) => s.id === sp.staff) ? sp.staff! : null;
 
   const minuteOf = (d: Date) => {
     const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "numeric", hour12: false }).formatToParts(d);
@@ -116,6 +117,8 @@ export default async function CalendarPage({
     ];
   }
   const nav = (d: string) => `?view=${view}&date=${d}${staffFilter ? `&staff=${staffFilter}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${formsFilter ? "&forms=missing" : ""}`;
+  // Switching views keeps the location (and the staff pick when going to the week).
+  const viewHref = (v: "day" | "week" | "month") => `?view=${v}&date=${date}${v === "week" && sp.staff ? `&staff=${sp.staff}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}`;
   const step = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
   const title = view === "week" ? `Week of ${formatDateLong(from)}` : view === "month" ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(monthStart + "T00:00:00Z")) : formatDateLong(date);
 
@@ -123,9 +126,9 @@ export default async function CalendarPage({
     <>
       <PageHeader title={title}>
         <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm">
-          <a href={`?view=day&date=${date}`} className={`rounded-md px-3 py-1 ${view === "day" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Day</a>
-          <a href={`?view=week&date=${date}`} className={`rounded-md px-3 py-1 ${view === "week" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Week</a>
-          <a href={`?view=month&date=${date}`} className={`rounded-md px-3 py-1 ${view === "month" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Month</a>
+          <a href={viewHref("day")} className={`rounded-md px-3 py-1 ${view === "day" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Day</a>
+          <a href={viewHref("week")} className={`rounded-md px-3 py-1 ${view === "week" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Week</a>
+          <a href={viewHref("month")} className={`rounded-md px-3 py-1 ${view === "month" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Month</a>
         </div>
         {locations.length > 1 ? (
           <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffFilter ? `&staff=${staffFilter}` : ""}`} />
@@ -168,7 +171,7 @@ export default async function CalendarPage({
               unconfirmed: appts.filter((a) => a.status === "booked").length,
               completed: appts.filter((a) => a.status === "completed").length,
               noShows: appts.filter((a) => a.status === "no_show").length,
-              expected: money(live.reduce((s, i) => s + i.priceCents, 0), business.currency),
+              expected: money(live.filter((i) => i.status !== "no_show").reduce((s, i) => s + i.priceCents, 0), business.currency),
               nextUp: appts.filter((a) => a.startAt > new Date() && (a.status === "booked" || a.status === "confirmed")).sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0] ?? null,
               formsMissing: missingForms.size,
             };

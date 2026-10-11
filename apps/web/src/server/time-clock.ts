@@ -6,7 +6,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
-import { db, schema, withJobs, withTenant } from "@angelic/db";
+import { db, schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { instantToISODate } from "@angelic/core";
 import { tzFor } from "./locations";
 
@@ -62,6 +62,26 @@ export async function resolveClock(token: string) {
 
 export type Punch = { staffName: string; action: "in" | "out"; at: Date; minutes: number | null; timeZone: string };
 
+/** Longest shift a single clock-in can record. Anything longer was a forgotten clock-out. */
+export const MAX_SHIFT_MIN = 14 * 60;
+
+/**
+ * The staff member's open entry, if any. An entry left open longer than a full
+ * shift is closed at the cap and marked, so the next punch starts fresh instead
+ * of booking days of hours.
+ */
+export async function openEntryFor(tx: TenantDb, staffId: string, now: Date) {
+  const open = await tx.query.timeEntries.findFirst({ where: and(eq(schema.timeEntries.staffId, staffId), isNull(schema.timeEntries.clockOutAt), eq(schema.timeEntries.minutes, 0)) });
+  if (!open?.clockInAt) return null;
+  const elapsed = (now.getTime() - open.clockInAt.getTime()) / 60_000;
+  if (elapsed <= MAX_SHIFT_MIN) return open;
+  await tx
+    .update(schema.timeEntries)
+    .set({ clockOutAt: new Date(open.clockInAt.getTime() + MAX_SHIFT_MIN * 60_000), minutes: MAX_SHIFT_MIN, note: [open.note, "Auto clock-out: forgot to clock out"].filter(Boolean).join(" · ") })
+    .where(eq(schema.timeEntries.id, open.id));
+  return null;
+}
+
 /** Clock the PIN's owner in (no open entry) or out (closes the open entry). */
 export async function punchWithPin(token: string, pin: string): Promise<Punch> {
   const kiosk = await resolveClock(token);
@@ -74,7 +94,7 @@ export async function punchWithPin(token: string, pin: string): Promise<Punch> {
   return withTenant(business.id, async (tx) => {
     const person = await tx.query.staff.findFirst({ where: and(eq(schema.staff.clockPinHash, hash), eq(schema.staff.active, true)) });
     if (!person) throw new ClockError("PIN not recognised.");
-    const open = await tx.query.timeEntries.findFirst({ where: and(eq(schema.timeEntries.staffId, person.id), isNull(schema.timeEntries.clockOutAt), eq(schema.timeEntries.minutes, 0)) });
+    const open = await openEntryFor(tx, person.id, now);
     if (open?.clockInAt) {
       const minutes = Math.max(1, Math.round((now.getTime() - open.clockInAt.getTime()) / 60_000));
       await tx.update(schema.timeEntries).set({ clockOutAt: now, minutes }).where(eq(schema.timeEntries.id, open.id));

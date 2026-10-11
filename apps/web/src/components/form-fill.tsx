@@ -106,6 +106,7 @@ function SignaturePad() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dataUrl, setDataUrl] = useState("");
   const drawing = useRef(false);
+  const drew = useRef(false);
   const last = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => {
     const c = canvasRef.current;
@@ -137,12 +138,14 @@ function SignaturePad() {
     ctx.moveTo(last.current.x, last.current.y);
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
+    drew.current = true;
     last.current = p;
   };
   const up = (e: React.PointerEvent<HTMLCanvasElement>) => {
     drawing.current = false;
     last.current = null;
-    setDataUrl(e.currentTarget.toDataURL("image/png"));
+    // Only a pad that was actually drawn on posts an image; a pointer crossing it does not.
+    if (drew.current) setDataUrl(e.currentTarget.toDataURL("image/png"));
   };
   const clear = () => {
     const c = canvasRef.current;
@@ -152,6 +155,7 @@ function SignaturePad() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.restore();
+    drew.current = false;
     setDataUrl("");
   };
   return (

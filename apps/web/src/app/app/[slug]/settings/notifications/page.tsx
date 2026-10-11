@@ -10,7 +10,8 @@ import { BackLink, Card, PageHeader, Empty, Notice, Textarea } from "@/component
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { SMS_DEFAULTS, SMS_PLACEHOLDERS, SMS_TEMPLATE_KEYS } from "@/lib/notify/sms";
 import { listInbox } from "@/server/inbound";
-import { saveSmsTemplates } from "./actions";
+import { resendMessage, saveSmsTemplates } from "./actions";
+import { Button } from "@/components/ui";
 import Link from "next/link";
 
 export default async function NotificationsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -74,7 +75,17 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
                   <td className="px-4 py-2">{n.template}</td>
                   <td className="px-4 py-2">{n.recipient}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmt.format(n.scheduledAt)}</td>
-                  <td className="px-4 py-2"><StatusBadge status={n.status} />{n.error ? <span className="block text-xs text-stone-500">{n.error}</span> : null}</td>
+                  <td className="px-4 py-2">
+                    <StatusBadge status={n.status} />
+                    {n.error ? <span className="block text-xs text-stone-500">{n.error}</span> : null}
+                    {n.status === "failed" || n.status === "skipped" ? (
+                      <form action={resendMessage} className="mt-1">
+                        <input type="hidden" name="slug" value={slug} />
+                        <input type="hidden" name="id" value={n.id} />
+                        <Button type="submit" size="sm" variant="secondary">Send again</Button>
+                      </form>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>

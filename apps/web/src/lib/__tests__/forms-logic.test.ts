@@ -9,6 +9,10 @@ describe("fieldVisible", () => {
     expect(fieldVisible(dep, { a: true })).toBe(true);
     expect(fieldVisible(dep, { a: false })).toBe(false);
     expect(fieldVisible(dep, {})).toBe(false);
+    const unticked = { id: "d", type: "text" as const, label: "D", showIf: { fieldId: "a", equals: "false" } };
+    expect(fieldVisible(unticked, {})).toBe(true);
+    expect(fieldVisible(unticked, { a: false })).toBe(true);
+    expect(fieldVisible(unticked, { a: true })).toBe(false);
     const sel = { id: "c", type: "text" as const, label: "C", showIf: { fieldId: "s", equals: "Yes" } };
     expect(fieldVisible(sel, { s: "Yes" })).toBe(true);
     expect(fieldVisible(sel, { s: ["No", "Yes"] })).toBe(true);

@@ -1,14 +1,14 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
 import { instantToISODate } from "@angelic/core";
 import { requireBusiness, requireAction } from "@/lib/tenant";
 import { f, formAction } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
-import { resetClockToken } from "@/server/time-clock";
+import { openEntryFor, resetClockToken } from "@/server/time-clock";
 
 async function ownStaffId(businessId: string, userId: string) {
   return withTenant(businessId, async (tx) => (await tx.query.staff.findFirst({ where: eq(schema.staff.userId, userId) }))?.id ?? null);
@@ -22,7 +22,7 @@ export async function clockToggle(formData: FormData) {
   if (!staffId) return setFlash("You are not set up as a staff member here.", "error");
   const now = new Date();
   const out = await withTenant(ctx.business.id, async (tx) => {
-    const open = await tx.query.timeEntries.findFirst({ where: and(eq(schema.timeEntries.staffId, staffId), isNull(schema.timeEntries.clockOutAt), eq(schema.timeEntries.minutes, 0)) });
+    const open = await openEntryFor(tx, staffId, now);
     if (open && open.clockInAt) {
       const minutes = Math.max(1, Math.round((now.getTime() - open.clockInAt.getTime()) / 60_000));
       await tx.update(schema.timeEntries).set({ clockOutAt: now, minutes }).where(eq(schema.timeEntries.id, open.id));

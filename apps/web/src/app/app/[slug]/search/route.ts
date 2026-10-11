@@ -3,6 +3,7 @@ import { and, asc, eq, gte, ilike, or } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
+import { clientSearchWhere } from "@/server/clients";
 import { dateTime } from "@/lib/format";
 
 /** Backs the ⌘K palette. Returns up to ~15 hits across clients, appointments, services and pages. */
@@ -25,7 +26,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const like = `%${q}%`;
   const { clients, appts, services } = await withTenant(business.id, async (tx) => {
     const clients = can(permissions, "clients.read")
-      ? await tx.select().from(schema.clients).where(or(ilike(schema.clients.firstName, like), ilike(schema.clients.lastName, like), ilike(schema.clients.phone, like), ilike(schema.clients.email, like))).orderBy(asc(schema.clients.lastName)).limit(5)
+      ? await tx.select({ id: schema.clients.id, firstName: schema.clients.firstName, lastName: schema.clients.lastName, phone: schema.clients.phone, email: schema.clients.email }).from(schema.clients).where(clientSearchWhere(q)).orderBy(asc(schema.clients.lastName)).limit(5)
       : [];
     const appts = clients.length && can(permissions, "appointments.read.any")
       ? await tx

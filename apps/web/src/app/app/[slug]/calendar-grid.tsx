@@ -167,8 +167,13 @@ export function CalendarGrid(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drag?.key]);
 
+  const lastPointer = useRef<string>("mouse");
+
   function onPointerDown(e: React.PointerEvent, card: Card) {
     if (e.button !== 0) return;
+    lastPointer.current = e.pointerType;
+    // Touch scrolls the day; a tap opens the visit (onClick). Drag-to-move is a mouse/pen gesture.
+    if (e.pointerType === "touch") return;
     e.preventDefault();
     colWidth.current = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect().width;
     const d: Drag = { key: card.key, originX: e.clientX, originY: e.clientY, dx: 0, dy: 0, moved: false };
@@ -273,7 +278,9 @@ export function CalendarGrid(props: {
                       role="button"
                       tabIndex={0}
                       onPointerDown={draggable ? (e) => onPointerDown(e, card) : undefined}
-                      onClick={!draggable ? () => router.push(card.first.href) : undefined}
+                      onClick={() => {
+                        if (!draggable || lastPointer.current === "touch") router.push(card.first.href);
+                      }}
                       onKeyDown={(e) => e.key === "Enter" && router.push(card.first.href)}
                       title={`${card.first.title} · ${card.first.subtitle} · ${fmt(card.startMin)}–${fmt(card.endMin)}`}
                       data-card
@@ -286,7 +293,7 @@ export function CalendarGrid(props: {
                         </div>
                       ))}
                       {props.canEdit && height > 30 && (card.first.status === "booked" || card.first.status === "confirmed" || card.first.status === "checked_in") ? (
-                        <div className="absolute right-1 top-1 hidden gap-1 group-hover:flex">
+                        <div className="absolute right-1 top-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100">
                           {card.first.status !== "checked_in" ? (
                             <button
                               type="button"

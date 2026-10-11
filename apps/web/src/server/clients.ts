@@ -3,15 +3,33 @@ import { schema, withTenant } from "@angelic/db";
 
 export type ClientSort = "name" | "last_visit" | "spend" | "created";
 
+/**
+ * Search clients the way the desk types: part of a first or last name, "Jane Doe",
+ * "Doe, Jane", an email, or a phone in any format (digits are compared without punctuation).
+ */
+export function clientSearchWhere(q: string) {
+  const like = `%${q}%`;
+  const digits = q.replace(/\D/g, "");
+  const c = schema.clients;
+  const conds = [
+    ilike(c.firstName, like),
+    ilike(c.lastName, like),
+    ilike(c.email, like),
+    sql`(${c.firstName} || ' ' || ${c.lastName}) ilike ${like}`,
+    sql`(${c.lastName} || ' ' || ${c.firstName}) ilike ${like}`,
+    sql`(${c.lastName} || ', ' || ${c.firstName}) ilike ${like}`,
+    digits.length >= 3 ? sql`regexp_replace(coalesce(${c.phone}, ''), '\\D', '', 'g') like ${`%${digits}%`}` : ilike(c.phone, like),
+  ];
+  return or(...conds);
+}
+
 /** Paginated client list with last visit, visit count and lifetime spend. */
 export async function listClients(businessId: string, opts: { q?: string; sort?: ClientSort; dir?: "asc" | "desc"; page?: number; pageSize?: number; locationId?: string | null }) {
   const page = Math.max(1, opts.page ?? 1);
   const pageSize = Math.min(200, Math.max(10, opts.pageSize ?? 50));
   const q = opts.q?.trim();
   return withTenant(businessId, async (tx) => {
-    const search = q
-      ? or(ilike(schema.clients.firstName, `%${q}%`), ilike(schema.clients.lastName, `%${q}%`), ilike(schema.clients.phone, `%${q}%`), ilike(schema.clients.email, `%${q}%`))
-      : undefined;
+    const search = q ? clientSearchWhere(q) : undefined;
     // "Home location" = where the client was last seen; derived, never a silo.
     const where = opts.locationId ? and(search, eq(schema.clients.homeLocationId, opts.locationId)) : search;
     const visits = tx

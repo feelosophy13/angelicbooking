@@ -7,7 +7,7 @@ import { instantToISODate } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { getAppointmentDetail } from "@/server/appointments";
 import { getStaffAvailability, timingFor } from "@/server/availability";
-import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
+import { formatDateLong, formatMoney, formatTime, shiftISODate } from "@/lib/utils";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea } from "@/components/ui";
 import { addService, cancelSeries, changeStatus, moveService, refundDepositAction, removeService, saveNotes, startCheckout } from "./actions";
 import { getSeriesForAppointment } from "@/server/series";
@@ -20,7 +20,7 @@ import { SlotPickerForm } from "./slot-picker-form";
 import { NoShowFeeForm } from "./no-show-form";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForAppointment, tzFor } from "@/server/locations";
-import { MapPin } from "lucide-react";
+import { MapPin, CalendarPlus } from "lucide-react";
 
 const STATUS_LABEL: Record<string, string> = {
   booked: "Booked",
@@ -120,6 +120,15 @@ export default async function AppointmentPage({
     <>
       <PageHeader title={client ? `${client.firstName} ${client.lastName}`.trim() : "Walk-in"}>
         <Link href={`/app/${slug}?date=${apptDate}`} className="text-sm text-brand-700 underline">← Calendar</Link>
+        {client && first && can(permissions, "appointments.write.any") ? (
+          <Link
+            href={`/app/${slug}/appointments/new?clientId=${client.id}${first.serviceId ? `&serviceId=${first.serviceId}` : ""}&staffId=${first.staffId}&date=${shiftISODate(apptDate, 28)}${multiLocation && pay.location ? `&location=${pay.location.id}` : ""}`}
+            className="inline-flex h-8 items-center gap-1 rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-700 hover:bg-stone-50"
+            title="Book this client's next visit (same service and provider, four weeks out)"
+          >
+            <CalendarPlus className="h-4 w-4" /> Rebook
+          </Link>
+        ) : null}
       </PageHeader>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">

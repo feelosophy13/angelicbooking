@@ -6,6 +6,8 @@ import { db, schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { formAction } from "@/lib/form";
 import { SMS_TEMPLATE_KEYS } from "@/lib/notify/sms";
+import { resendNotification } from "@/lib/notify";
+import { setFlash } from "@/lib/flash";
 
 export const saveSmsTemplates = formAction(z.object({ slug: z.string() }), async (d, raw) => {
   const ctx = await requireAction(d.slug, "business.manage");
@@ -18,3 +20,11 @@ export const saveSmsTemplates = formAction(z.object({ slug: z.string() }), async
   revalidatePath(`/app/${d.slug}/settings/notifications`);
   return "Text wording saved";
 });
+
+export async function resendMessage(formData: FormData) {
+  const d = z.object({ slug: z.string(), id: z.string().min(1) }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "business.manage");
+  const r = await resendNotification(ctx.business.id, d.id);
+  await setFlash(r.sent ? "Sent" : r.failed ? "Still failing; see the error on the row" : r.skipped ? "Skipped: see the reason on the row" : "Nothing to send", r.sent ? "success" : "error");
+  revalidatePath(`/app/${d.slug}/settings/notifications`);
+}

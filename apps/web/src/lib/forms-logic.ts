@@ -7,7 +7,9 @@ export function fieldVisible(field: FormFieldDef, answers: Record<string, FormAn
   const want = field.showIf.equals;
   if (typeof v === "boolean") return String(v) === want;
   if (Array.isArray(v)) return v.includes(want);
-  return (v ?? "") === want;
+  // An untouched checkbox is "not ticked", so a question that depends on that shows from the start.
+  if (v === undefined || v === null) return want === "false" || want === "";
+  return v === want;
 }
 
 /** Human-readable answer for a field (statements excluded). */

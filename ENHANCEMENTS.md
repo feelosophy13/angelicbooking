@@ -53,13 +53,13 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - **P1 Validate drag-to-reschedule** [bug] — `actions.ts:27-54` → `server/booking.ts:186-238` checks only that the
   staff is active; a drag can land in the past, off-hours, on a day off or on an unqualified provider. Validate like the
   Move panel, or make it an explicit override with a confirm, and show why a drop was rejected.
-- **P1 Quick actions reachable on touch and keyboard** [a11y][bug] — Check in/Complete are `hidden group-hover:flex`
+- ✅ **P1 Quick actions reachable on touch and keyboard** [a11y][bug] — Check in/Complete are `hidden group-hover:flex`
   (`calendar-grid.tsx:289`). Show on `focus-within` and always on coarse pointers; add Confirm, Start, No-show.
-- **P1 Touch drag hijacks scrolling on iPad** [bug] — `onPointerDown` calls `preventDefault()` for every pointer type
+- ✅ **P1 Touch drag hijacks scrolling on iPad** [bug] — `onPointerDown` calls `preventDefault()` for every pointer type
   (`calendar-grid.tsx:170-177`); require long-press for `pointerType === "touch"`.
 - **P1 Block time from the calendar** [gap] — only whole-day time off exists (`staff/[staffId]/time-off`); no lunch,
   late start or "do not book" blocks, and blocks aren't drawn as cards.
-- **P2 Staff filter leaks into day view** [bug] — `staff=` applies in every view (`page.tsx:58,82`) but the select only
+- ✅ **P2 Staff filter leaks into day view** [bug] — `staff=` applies in every view (`page.tsx:58,82`) but the select only
   renders in week view; the Day/Week/Month toggle drops `staff`, `location` and `forms` params (`page.tsx:126-128`).
 - **P2 "Complete" without a sale** [ux] — calendar ✓ and the detail-page Completed button only set status; the today
   strip counts them as checked out (`page.tsx:170`). Make ✓ open checkout or label it "Done, no charge".
@@ -71,7 +71,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
   until they navigate (`calendar-grid.tsx:76` only ticks the now-line).
 - **P2 Keyboard shortcuts** [gap] — only ⌘K (`components/command-palette.tsx`); add N new, T today, ←/→ day, D/W/M.
 - **P3 "Show cancelled" toggle** [ux] — cancelled cards stay on day/week (`calendar-grid.tsx:38`).
-- **P3 "Expected" revenue includes no-shows** [bug] — `page.tsx:162` filters only `cancelled`.
+- ✅ **P3 "Expected" revenue includes no-shows** [bug] — `page.tsx:162` filters only `cancelled`.
 - **P3 Week staff filter needs a Go button** [polish] — `page.tsx:134-144`; navigate on change like location pills.
 - **P3 Month → day links drop location, causing a redirect flicker** [polish] — `month-grid.tsx:30,41`,
   `location-pills.tsx:24`.
@@ -105,7 +105,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
   queued reminders (`lib/notify/index.ts:78-82`); `removeService` on the last item (`server/booking.ts:287-291`,
   `actions.ts:96-102`) and `cancelSeriesFrom` (`actions.ts:177`, `series.ts:114`) bypass it, and `deliverDue`
   (`lib/notify/index.ts:280`) never re-checks status. The comment at `actions.ts:176` is wrong.
-- **P1 Rebook button** [gap] — prefill client, service, staff, date + N weeks; also on the sale page.
+- ✅ **P1 Rebook button** [gap] — prefill client, service, staff, date + N weeks; also on the sale page.
 - **P2 Attach a walk-in to a client afterwards** [gap] — no action sets `clientId`.
 - **P2 Status buttons allow regressions and can crash** [bug] — `page.tsx:259-268` offers Confirmed on a no-show/paid
   visit; re-activating items can hit the exclusion constraint outside `translate`, surfacing the generic error page.
@@ -132,7 +132,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - **P2 Class location/timezone** [bug] — `classes.ts:103` stores the instructor's primary site, not the weekday
   site; classes pages use `business.timezone`.
 - **P3 Roster bulk actions** [gap] — no per-seat no-show, check-in-all, bulk checkout (`[sessionId]/page.tsx:55-62`).
-- **P1 Forgotten clock-outs** [bug] — open entries persist; next punch closes with full elapsed time
+- ✅ **P1 Forgotten clock-outs** [bug] — open entries persist; next punch closes with full elapsed time
   (`server/time-clock.ts:78-81`, `time/actions.ts:26-28`). Add max-shift auto-close and manager edits.
 - **P2 Time clock management** [gap] — no entry editing, per-staff filter, pay-period presets, "who's in" board
   (`time/page.tsx:61-66`).
@@ -145,7 +145,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 
 - ✅ **P1 Enforce `clients.read` on list and detail** [bug][security] — both use `requireBusiness` only
   (`clients/page.tsx:25`, `[clientId]/page.tsx:40`) while search and CSV gate on it.
-- **P1 Search by full name and formatted phone** [bug] — `ilike` per column (`server/clients.ts:12-14`); "Jane Doe"
+- ✅ **P1 Search by full name and formatted phone** [bug] — `ilike` per column (`server/clients.ts:12-14`); "Jane Doe"
   and "555-123" match nothing. Add `pg_trgm` indexes; the ⌘K search also seq-scans all columns per keystroke
   (`search/route.ts:28`).
 - **P2 Duplicate warning on create and a merge tool** [gap] — `createClient` inserts blindly (`actions.ts:25-37`)
@@ -174,10 +174,10 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 ## 6. Forms (`app/app/[slug]/settings/forms/*`, `forms/fill/*`, `components/form-fill.tsx`, `server/forms.ts`)
 
 - ✅ **P1 Public file serving** — see top priority 1 (`app/api/files/[id]/route.ts:5-18`).
-- **P1 "Is not ticked" conditions never show on first load** [bug] — `fieldVisible` compares booleans only when the
+- ✅ **P1 "Is not ticked" conditions never show on first load** [bug] — `fieldVisible` compares booleans only when the
   value is boolean; unanswered checkboxes are `undefined` (`lib/forms-logic.ts:4-11`), so the dependent stays hidden
   and the server then rejects it as required. Treat `undefined` as `false`; add a test for `equals: "false"`.
-- **P1 Blank signatures stored** [bug] — `pointerleave` sets `dataUrl` even with no strokes
+- ✅ **P1 Blank signatures stored** [bug] — `pointerleave` sets `dataUrl` even with no strokes
   (`components/form-fill.tsx:142-146,163`); `storeSignaturePng` only rejects <200 bytes (`lib/files.ts:49-56`).
 - **P1 Enforce required forms** [gap] — `appointmentsMissingForms` only badges; prompt at check-in and `startCheckout`
   ("2 forms outstanding: complete here / skip"); online booking never asks.
@@ -395,7 +395,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 
 ## 14. Cross-cutting platform
 
-- **P1 Notification retries and "Send again"** [gap] — failed rows are never reclaimed
+- ✅ **P1 Notification retries and "Send again"** [gap] — failed rows are never reclaimed
   (`lib/notify/index.ts:241-265`); add `attempts` + backoff and a per-row resend on Settings → Messages.
 - **P2 Second reminder (24h + 2h)** [gap] — single `reminderHours` (`packages/db/src/schema/domain.ts:78`).
 - **P2 Staff notification preferences** [gap] — alerts go only to `business.email` (`public-booking.ts:301-302`).

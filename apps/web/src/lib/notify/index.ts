@@ -180,6 +180,9 @@ type Outcome = { id: string; status: "sent" | "failed" | "skipped"; providerId?:
 const STALE_CLAIM_MS = 10 * 60_000;
 /** Parallel provider calls per delivery run. Resend and Twilio both tolerate this comfortably. */
 const CONCURRENCY = 8;
+/** A send that errors is retried this many times in total, 5 min then 10 min then 20 min apart. */
+const MAX_ATTEMPTS = 3;
+const retryDelayMs = (attempt: number) => 5 * 60_000 * 2 ** Math.max(0, attempt - 1);
 
 /**
  * Atomically claim due rows for one business: queued rows that are due, plus
@@ -275,12 +278,21 @@ async function deliverClaimed(claimed: Claimed[]): Promise<Summary> {
     byBusiness.set(c.row.businessId, [...(byBusiness.get(c.row.businessId) ?? []), o]);
   });
   const smsById = new Map(claimed.filter((c) => c.row.channel === "sms").map((c) => [c.row.id, true]));
+  const rowById = new Map(claimed.map((c) => [c.row.id, c.row]));
   for (const [businessId, list] of byBusiness) {
     await withTenant(businessId, async (tx) => {
       for (const o of list) {
+        const attempts = (rowById.get(o.id)?.attempts ?? 0) + 1;
+        const patch =
+          o.status === "sent"
+            ? { status: "sent" as const, sentAt: new Date(), providerId: o.providerId, error: null, attempts }
+            : o.status === "failed" && attempts < MAX_ATTEMPTS
+              ? // A provider error (outage, rate limit) gets another go later; the error is kept visible meanwhile.
+                { status: "queued" as const, error: `${o.error} (retrying)`, attempts, claimedAt: null, scheduledAt: new Date(Date.now() + retryDelayMs(attempts)) }
+              : { status: o.status, error: o.error, attempts };
         await tx
           .update(schema.notifications)
-          .set(o.status === "sent" ? { status: "sent", sentAt: new Date(), providerId: o.providerId, error: null } : { status: o.status, error: o.error })
+          .set(patch)
           .where(and(eq(schema.notifications.id, o.id), eq(schema.notifications.status, "sending")));
       }
     });
@@ -291,6 +303,19 @@ async function deliverClaimed(claimed: Claimed[]): Promise<Summary> {
 }
 
 export type Summary = { processed: number; sent: number; failed: number; skipped: number };
+
+/** Put a failed or skipped message back in the queue and try it right away (Settings → Messages → Send again). */
+export async function resendNotification(businessId: string, id: string): Promise<Summary> {
+  const rows = await withTenant(businessId, (tx) =>
+    tx
+      .update(schema.notifications)
+      .set({ status: "queued", attempts: 0, error: null, claimedAt: null, scheduledAt: new Date() })
+      .where(and(eq(schema.notifications.id, id), inArray(schema.notifications.status, ["failed", "skipped"])))
+      .returning({ id: schema.notifications.id }),
+  );
+  if (!rows.length) return { processed: 0, sent: 0, failed: 0, skipped: 0 };
+  return deliverMany(businessId, [id]);
+}
 
 /** Deliver specific rows now (used right after a response). Rows not yet due are left queued. */
 export async function deliverMany(businessId: string, ids: string[]): Promise<Summary> {

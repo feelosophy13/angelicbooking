@@ -704,6 +704,8 @@ export const notifications = pgTable(
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     status: notificationStatus("status").notNull().default("queued"),
+    // Delivery attempts so far; a failed send is re-queued with backoff until MAX_ATTEMPTS.
+    attempts: integer("attempts").notNull().default(0),
     providerId: text("provider_id"),
     error: text("error"),
     campaignId: text("campaign_id"),

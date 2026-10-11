@@ -10,7 +10,7 @@ import { getSale } from "@/server/sales";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForSale, validAtLocation } from "@/server/locations";
 import { MapPin } from "lucide-react";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, shiftISODate } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Select } from "@/components/ui";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; saleId: string }> }): Promise<Metadata> {
@@ -23,6 +23,7 @@ import { addOffer, addProduct, applyDiscount, applyPromo, applyTips, deleteLine,
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
 import { schema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
+import { instantToISODate } from "@angelic/core";
 import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, SavedCardForm, TipsForm } from "./forms";
 import { pointsBalance } from "@/server/loyalty";
 import { CardPayment } from "./card-payment";
@@ -50,6 +51,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const catalog = open ? await getOffersCatalog(business.id) : null;
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
   const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
+  const rebookLine = lines.find((l) => l.kind === "service") ?? null;
   const promo = sale.promoCodeId ? await withTenant(business.id, (tx) => tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.id, sale.promoCodeId!), columns: { code: true } })) : null;
   const typedDiscount: { type: "amount" | "percent"; value: number } | null =
     !sale.promoCodeId && (sale.discountType === "percent" || sale.discountType === "amount") && sale.discountValue ? { type: sale.discountType, value: sale.discountValue } : null;
@@ -60,6 +62,9 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
       <PageHeader title={`Sale #${sale.number}`}>
         {multiLocation && pay.location ? <span className="inline-flex items-center gap-1 rounded bg-stone-100 px-2 py-0.5 text-xs text-stone-700"><MapPin className="h-3.5 w-3.5" /> {pay.location.name}</span> : null}
         {sale.appointmentId ? <Link href={`/app/${slug}/appointments/${sale.appointmentId}`} className="text-sm text-brand-700 underline">Appointment</Link> : null}
+        {client && rebookLine && can(permissions, "appointments.write.any") ? (
+          <Link href={`/app/${slug}/appointments/new?clientId=${client.id}${rebookLine.serviceId ? `&serviceId=${rebookLine.serviceId}` : ""}${rebookLine.staffId ? `&staffId=${rebookLine.staffId}` : ""}&date=${shiftISODate(instantToISODate(sale.closedAt ?? new Date(), business.timezone), 28)}${multiLocation && pay.location ? `&location=${pay.location.id}` : ""}`} className="text-sm text-brand-700 underline" title="Book the next visit: same service and provider, four weeks out">Rebook</Link>
+        ) : null}
         <Link href={`/app/${slug}/sales/${sale.id}/receipt`} className="text-sm text-brand-700 underline">Receipt</Link>
         {!open && client?.email ? (
           <form action={emailReceipt}>

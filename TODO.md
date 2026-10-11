@@ -100,6 +100,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       cards (or packages) on one ticket both issue; refunds put money back on gift cards, trim the payment's tip, and a
       full refund restocks products, takes back earned points, releases the promo use, deactivates unused gift cards
       and removes untouched packages; "Sell a gift card…" errors show as a toast instead of an error page.
+- [x] Landed 2026-10-10 (batch 4; migration 0047): form questions that depend on an unticked box show from the start;
+      an untouched signature pad never posts a blank image; an open time-clock entry older than 14 h is auto-closed at
+      the cap and marked; client search matches "Jane Doe", "Doe, Jane" and phone digits in any format (list, ⌘K);
+      calendar check-in/complete buttons show on touch screens and keyboard focus, touch no longer starts a drag (tap
+      opens the visit), the staff filter is week-only, view switches keep the location, "Expected" excludes no-shows;
+      Rebook link on the appointment and sale pages (same client/service/provider, four weeks out); failed sends retry
+      up to 3 times with backoff and Settings → Messages has "Send again" on failed/skipped rows.
 
 - [x] Membership auto-billing (recurring charges on the business's Connect account). Done 2026-10-10 (client page → Auto-renew with saved card; Connect webhook `invoice.paid` / `invoice.payment_failed` / `customer.subscription.deleted`). Untested against Stripe until keys exist.
 - [ ] Tap to Pay / card reader support.
