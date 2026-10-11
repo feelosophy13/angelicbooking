@@ -6,7 +6,7 @@ import { refundDeposit } from "@/server/online-payments";
 import { paymentContextForAppointment } from "@/server/locations";
 import { cancelSeriesFrom } from "@/server/series";
 import { formsForAppointment } from "@/server/forms";
-import { queueReviewRequest } from "@/server/reviews";
+import { triggerAppointmentWorkflows } from "@/server/workflows";
 import { cancelQueuedReminders, notifyAppointment } from "@/lib/notify";
 import { parseMoney } from "@angelic/core";
 import { schema as dbSchema, withTenant } from "@angelic/db";
@@ -35,7 +35,7 @@ export async function changeStatus(formData: FormData) {
   const reason = String(formData.get("reason") ?? "").trim() || null;
   await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id, reason);
   if (status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");
-  if (status === "completed") await queueReviewRequest(ctx.business, appointmentId);
+  if (status === "completed") await triggerAppointmentWorkflows(ctx.business, "appointment_completed", appointmentId);
   revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
   revalidatePath(`/app/${slug}`);
 }

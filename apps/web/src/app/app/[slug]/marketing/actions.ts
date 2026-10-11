@@ -8,7 +8,7 @@ import { zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
-import { MarketingError, saveAutomation, sendCampaign } from "@/server/marketing";
+import { MarketingError, sendCampaign } from "@/server/marketing";
 import { smsAvailableFor } from "@/server/messaging";
 
 const audienceFields = {
@@ -73,17 +73,6 @@ export async function deleteCampaign(formData: FormData) {
   revalidatePath(`/app/${d.slug}/marketing`);
   redirect(`/app/${d.slug}/marketing`);
 }
-
-export const saveAutomationAction = formAction(
-  z.object({ slug: z.string(), kind: z.enum(["pre_visit", "birthday", "win_back", "rebook"]), enabled: f.checkbox(), channel: z.enum(["email", "sms", "both"]), days: f.int(0, 730).default(0), hoursBefore: f.int(1, 720).default(48), subject: f.optional(150), body: f.text(1, 1000) }),
-  async (d) => {
-    const ctx = await requireAction(d.slug, "reports.view");
-    const channel = d.channel !== "email" && !(await smsAvailableFor(ctx.business.id)) ? "email" : d.channel;
-    await saveAutomation(ctx.business.id, d.kind, { enabled: d.enabled, channel, days: d.days, hoursBefore: d.hoursBefore, subject: d.subject, body: d.body });
-    revalidatePath(`/app/${d.slug}/marketing/automations`);
-    return d.enabled ? "Automation on" : "Saved (off)";
-  },
-);
 
 /** The standard reminder lead time lives on the business (also under Settings → Online booking). */
 export const saveReminderHours = formAction(z.object({ slug: z.string(), reminderHours: f.int(1, 168) }), async (d) => {

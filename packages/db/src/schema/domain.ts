@@ -721,6 +721,8 @@ export const notifications = pgTable(
     providerId: text("provider_id"),
     error: text("error"),
     campaignId: text("campaign_id"),
+    // Set when a workflow step queued this message (Marketing → Automations), for the "why did this send" trail.
+    workflowRunId: text("workflow_run_id"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -1014,6 +1016,121 @@ export const files = pgTable(
   (t) => [index("files_business_idx").on(t.businessId)],
 );
 
+// ---------------------------------------------------------------------------
+// Workflows: trigger → filters → ordered steps. Replaces the fixed automations
+// (which stay in `automations` only until their rows are converted). Guardrails
+// (consent, quiet hours, once per occasion, stop on rebook) live in code, not here.
+// ---------------------------------------------------------------------------
+export type WorkflowTrigger =
+  | "appointment_booked"
+  | "appointment_completed"
+  | "appointment_cancelled"
+  | "appointment_no_show"
+  | "client_created"
+  | "birthday"
+  | "no_visit"
+  | "form_submitted"
+  | "review_submitted"
+  | "membership_payment_failed";
+
+export interface WorkflowFilters {
+  /** Only visits that include one of these services / categories (categories include their sub-categories). */
+  serviceIds?: string[];
+  categoryIds?: string[];
+  locationIds?: string[];
+  staffIds?: string[];
+  /** Client must carry one of these tags. */
+  tags?: string[];
+  /** review_submitted: rating range (1..5). */
+  minRating?: number | null;
+  maxRating?: number | null;
+  /** appointment_* / client_created: only the client's first completed or booked visit. */
+  firstVisitOnly?: boolean;
+  /** no_visit: days since the last completed visit. */
+  days?: number | null;
+}
+
+export type WorkflowStep =
+  | { id: string; type: "wait"; mode: "delay" | "before_appointment" | "after_appointment"; hours: number }
+  | { id: string; type: "sms"; body: string }
+  | { id: string; type: "email"; subject: string; body: string; ctaLabel?: string | null }
+  | { id: string; type: "review_request" }
+  | { id: string; type: "tag"; tag: string }
+  | { id: string; type: "points"; points: number; note?: string | null }
+  | { id: string; type: "notify_staff"; to: "owner" | "provider"; body: string };
+
+export const workflows = pgTable(
+  "workflows",
+  {
+    id: id(),
+    businessId: businessId(),
+    // Set for the pre-built templates every business gets (pre_visit, rebook, …); null for custom workflows.
+    templateKey: text("template_key"),
+    name: text("name").notNull(),
+    description: text("description"),
+    trigger: text("trigger").$type<WorkflowTrigger>().notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    filters: jsonb("filters").$type<WorkflowFilters>().notNull().default(sql`'{}'::jsonb`),
+    steps: jsonb("steps").$type<WorkflowStep[]>().notNull().default(sql`'[]'::jsonb`),
+    // Stop the sequence as soon as the client books again (rebook / win-back style flows).
+    exitOnBooking: boolean("exit_on_booking").notNull().default(false),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("workflows_business_trigger_idx").on(t.businessId, t.trigger), uniqueIndex("workflows_business_template_uq").on(t.businessId, t.templateKey)],
+);
+
+export type WorkflowRunStatus = "active" | "done" | "cancelled";
+export interface WorkflowRunContext {
+  appointmentId?: string | null;
+  locationId?: string | null;
+  staffId?: string | null;
+  serviceIds?: string[];
+  categoryIds?: string[];
+  rating?: number | null;
+  formId?: string | null;
+  membershipId?: string | null;
+  /** Human-readable reason the run started, e.g. "Appointment completed". */
+  reason?: string;
+}
+export interface WorkflowRunLogEntry {
+  at: string; // ISO
+  step: number | null;
+  event: "started" | "waiting" | "sent" | "skipped" | "action" | "cancelled" | "done";
+  detail: string;
+}
+
+// One client going through one workflow. `dedupeKey` makes each occasion fire once
+// (an appointment id, a birthday year, a lapse period …).
+export const workflowRuns = pgTable(
+  "workflow_runs",
+  {
+    id: id(),
+    businessId: businessId(),
+    workflowId: text("workflow_id")
+      .notNull()
+      .references(() => workflows.id, { onDelete: "cascade" }),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
+    dedupeKey: text("dedupe_key").notNull(),
+    status: text("status").$type<WorkflowRunStatus>().notNull().default("active"),
+    stepIndex: integer("step_index").notNull().default(0),
+    // When the run should be looked at next (null = immediately / finished).
+    nextAt: timestamp("next_at", { withTimezone: true }),
+    context: jsonb("context").$type<WorkflowRunContext>().notNull().default(sql`'{}'::jsonb`),
+    log: jsonb("log").$type<WorkflowRunLogEntry[]>().notNull().default(sql`'[]'::jsonb`),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("workflow_runs_dedupe_uq").on(t.workflowId, t.dedupeKey),
+    index("workflow_runs_due_idx").on(t.businessId, t.status, t.nextAt),
+    index("workflow_runs_appointment_idx").on(t.appointmentId),
+    index("workflow_runs_client_idx").on(t.clientId),
+  ],
+);
+
 /** Names of every table guarded by tenant RLS. Used by the RLS migration and tests. */
 export const TENANT_TABLES = [
   "locations",
@@ -1056,6 +1173,8 @@ export const TENANT_TABLES = [
   "campaigns",
   "automations",
   "automation_sends",
+  "workflows",
+  "workflow_runs",
   "promo_codes",
   "inbound_messages",
   "stock_movements",

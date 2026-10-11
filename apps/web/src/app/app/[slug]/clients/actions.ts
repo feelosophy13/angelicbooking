@@ -1,4 +1,5 @@
 "use server";
+import { triggerWorkflows } from "@/server/workflows";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
@@ -31,6 +32,7 @@ export const createClient = formAction(fields, async (d) => {
       .values({ businessId: ctx.business.id, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, smsOptIn: true, emailOptIn: true })
       .returning({ id: schema.clients.id }),
   );
+  await triggerWorkflows(ctx.business, "client_created", { clientId: row!.id, dedupeKey: row!.id, facts: { firstVisit: true, clientTags: [] }, context: { reason: "New client (desk)" } });
   await setFlash(`${d.firstName} ${d.lastName}`.trim() + " added");
   revalidatePath(`/app/${d.slug}/clients`);
   redirect(`/app/${d.slug}/clients/${row!.id}`);
@@ -66,6 +68,7 @@ export async function quickCreateClient(input: { slug: string; firstName: string
   const [row] = await withTenant(ctx.business.id, (tx) =>
     tx.insert(schema.clients).values({ businessId: ctx.business.id, firstName: d.data.firstName, lastName: d.data.lastName, phone, email, smsOptIn: true, emailOptIn: true }).returning({ id: schema.clients.id }),
   );
+  await triggerWorkflows(ctx.business, "client_created", { clientId: row!.id, dedupeKey: row!.id, facts: { firstVisit: true, clientTags: [] }, context: { reason: "New client (desk)" } });
   revalidatePath(`/app/${d.data.slug}/clients`);
   return { id: row!.id, name: `${d.data.firstName} ${d.data.lastName}`.trim() };
 }

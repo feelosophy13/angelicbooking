@@ -7,7 +7,7 @@ import { platformFeeBps, stripe } from "@/lib/stripe";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { fulfilOfferLines, restoreCreditForLine } from "./offers";
 import { awardPointsForSale } from "./loyalty";
-import { queueReviewRequest } from "./reviews";
+import { triggerAppointmentWorkflows } from "./workflows";
 import { decrementStockForSale } from "./inventory";
 import { countPromoUse, promoDiscount, validatePromo, PromoError } from "./promos";
 import { locationOrDefault } from "./locations";
@@ -445,7 +445,7 @@ async function closeIfPaid(tx: TenantDb, saleId: string, taxRateBps: number, act
       await awardPointsForSale(tx, business, { ...sale, ...t, status: "paid" });
       if (sale.appointmentId) {
         const apptId = sale.appointmentId;
-        after(() => queueReviewRequest(business, apptId).catch((e) => console.error("[reviews] queue failed", apptId, (e as Error).message)));
+        after(() => triggerAppointmentWorkflows(business, "appointment_completed", apptId).catch((e) => console.error("[workflows] completed trigger failed", apptId, (e as Error).message)));
       }
     }
     await audit(tx, businessId, actorUserId, "sale.paid", saleId, { total: t.totalCents });

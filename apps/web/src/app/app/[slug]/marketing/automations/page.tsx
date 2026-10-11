@@ -1,82 +1,94 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Plus } from "lucide-react";
 import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
-import { listAutomations } from "@/server/marketing";
+import { listWorkflows, templateGroup, type WorkflowTemplate } from "@/server/workflows";
 import { smsAvailableFor } from "@/server/messaging";
-import { Card, Input, Select, Textarea } from "@/components/ui";
+import { summarizeSteps, triggerMeta } from "@/lib/workflows-logic";
+import { Button, Card, Input, LinkButton } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { saveAutomationAction, saveReminderHours } from "../actions";
+import { saveReminderHours } from "../actions";
+import { toggleWorkflow } from "./actions";
 
 export const metadata: Metadata = { title: "Automations" };
+
+const GROUPS: { key: WorkflowTemplate["group"]; title: string; blurb: string }[] = [
+  { key: "before", title: "Before the visit", blurb: "Confirmation and reminder always go out; add anything else that should reach clients ahead of time." },
+  { key: "after", title: "After the visit", blurb: "Ratings, aftercare and rebooking." },
+  { key: "touch", title: "Keep in touch", blurb: "New clients, birthdays, lapsed clients and memberships." },
+  { key: "team", title: "For your team", blurb: "Alerts to you or the provider rather than the client." },
+];
 
 export default async function AutomationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, permissions } = await requireAction(slug, "reports.view");
-  const [autos, sms] = await Promise.all([listAutomations(business.id), smsAvailableFor(business.id)]);
-  const byKind = Object.fromEntries(autos.map((a) => [a.kind, a]));
+  const [flows, sms] = await Promise.all([listWorkflows(business), smsAvailableFor(business.id)]);
   const manage = can(permissions, "business.manage");
-
-  const AutoCard = ({ kind }: { kind: keyof typeof byKind }) => {
-    const a = byKind[kind]!;
-    return (
-      <Card className="p-4">
-        <h3 className="font-medium">{a.title}</h3>
-        <p className="mb-3 text-xs text-stone-500">{a.description}</p>
-        <ActionForm action={saveAutomationAction}>
-          <input type="hidden" name="slug" value={slug} />
-          <input type="hidden" name="kind" value={a.kind} />
-          <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" name="enabled" defaultChecked={a.enabled} className="h-4 w-4 accent-brand-600" /> On</label>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Send by" name="channel" hint={sms ? undefined : "Texts need a verified number"}>
-              <Select name="channel" defaultValue={sms ? a.channel : "email"}><option value="email">Email</option>{sms ? <><option value="sms">Text</option><option value="both">Both</option></> : null}</Select>
-            </Field>
-            {a.kind === "pre_visit" ? <Field label="Hours before" name="hoursBefore"><Input name="hoursBefore" type="number" min={1} max={720} defaultValue={a.hoursBefore} /></Field> : a.kind !== "birthday" ? <Field label={a.kind === "win_back" ? "After (days)" : "Days after visit"} name="days"><Input name="days" type="number" min={1} max={730} defaultValue={a.days} /></Field> : null}
-          </div>
-          <Field label="Subject (email)" name="subject"><Input name="subject" defaultValue={a.subject ?? ""} /></Field>
-          <Field label="Message" name="body"><Textarea name="body" rows={4} defaultValue={a.body} /></Field>
-          <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Save</SubmitButton>
-        </ActionForm>
-      </Card>
-    );
-  };
-
+  const base = `/app/${slug}/marketing/automations`;
+  const usesSms = (steps: { type: string }[]) => steps.some((s) => s.type === "sms");
   return (
     <div className="space-y-8">
-      {!sms ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Automations go out by email until you have a verified text number. <Link href={`/app/${slug}/settings/messaging`} className="underline">Get a text number</Link>.</p> : null}
-      <section>
-        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-stone-500">Before the visit</h2>
-        <p className="mb-3 text-sm text-stone-600">Placeholders for these: {"{first_name} {service} {staff} {when} {manage_url} {forms_url} {business}"}.</p>
-        <div className="grid gap-6 lg:grid-cols-3">
-          <Card className="p-4">
-            <h3 className="font-medium">Confirmation</h3>
-            <p className="mb-3 text-xs text-stone-500">Always sent when an appointment is booked, by email and text (to clients who opted in), with the manage link, deposit and any forms to complete.</p>
-            <p className="text-sm text-stone-600">Edit the text wording under <Link href={`/app/${slug}/settings/notifications`} className="text-brand-700 underline">Settings → Messages</Link>.</p>
-          </Card>
-          <Card className="p-4">
-            <h3 className="font-medium">Reminder</h3>
-            <p className="mb-3 text-xs text-stone-500">Always on. Sent before each appointment by email and text; moved automatically when the appointment moves.</p>
-            {manage ? (
-              <ActionForm action={saveReminderHours}>
-                <input type="hidden" name="slug" value={slug} />
-                <Field label="Hours before" name="reminderHours"><Input name="reminderHours" type="number" min={1} max={168} defaultValue={business.reminderHours} className="w-32" /></Field>
-                <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Save</SubmitButton>
-              </ActionForm>
-            ) : <p className="text-sm">{business.reminderHours} hours before</p>}
-          </Card>
-          <AutoCard kind="pre_visit" />
-        </div>
-      </section>
-      <section>
-        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-stone-500">After the visit</h2>
-        <p className="mb-3 text-sm text-stone-600">Review requests are under <Link href={`/app/${slug}/settings/reviews`} className="text-brand-700 underline">Settings → Review requests</Link>. Placeholders: {"{first_name} {business} {booking_url}"}.</p>
-        <div className="grid gap-6 lg:grid-cols-3"><AutoCard kind="rebook" /></div>
-      </section>
-      <section>
-        <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-stone-500">Keep in touch</h2>
-        <p className="mb-3 text-sm text-stone-600">Checked every few minutes and sent between 9am and 8pm in your time zone; each client gets each message once per occasion.</p>
-        <div className="grid gap-6 lg:grid-cols-3"><AutoCard kind="birthday" /><AutoCard kind="win_back" /></div>
-      </section>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-2xl text-sm text-stone-600">Each automation is a workflow: it starts on an event, checks a few conditions, then runs its steps in order (waits, texts, emails, tags, points, alerts). Every business starts with the set below; edit them or add your own. Consent, opt-outs, quiet hours and once-per-occasion limits are enforced automatically.</p>
+        {manage ? <LinkButton href={`${base}/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> New workflow</LinkButton> : null}
+      </div>
+      {!sms ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Text steps are skipped until you have a verified text number; email steps still go out. <Link href={`/app/${slug}/settings/messaging`} className="underline">Get a text number</Link>.</p> : null}
+      {GROUPS.map((g) => {
+        const mine = flows.filter((w) => templateGroup(w) === g.key);
+        return (
+          <section key={g.key}>
+            <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-stone-500">{g.title}</h2>
+            <p className="mb-3 text-sm text-stone-600">{g.blurb}</p>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {g.key === "before" ? (
+                <>
+                  <Card className="p-4">
+                    <div className="mb-1 flex items-center justify-between"><h3 className="font-medium">Confirmation</h3><span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600">Always on</span></div>
+                    <p className="text-xs text-stone-500">Sent when an appointment is booked, by email and text (to clients who opted in), with the manage link, deposit and any forms to complete.</p>
+                    <p className="mt-2 text-xs text-stone-600">Wording: <Link href={`/app/${slug}/settings/notifications`} className="text-brand-700 underline">Settings → Messages</Link>.</p>
+                  </Card>
+                  <Card className="p-4">
+                    <div className="mb-1 flex items-center justify-between"><h3 className="font-medium">Reminder</h3><span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600">Always on</span></div>
+                    <p className="mb-2 text-xs text-stone-500">Before each appointment by email and text; moves with the appointment and is dropped when it is cancelled.</p>
+                    {manage ? (
+                      <ActionForm action={saveReminderHours} className="space-y-2">
+                        <input type="hidden" name="slug" value={slug} />
+                        <Field label="Hours before" name="reminderHours"><Input name="reminderHours" type="number" min={1} max={168} defaultValue={business.reminderHours} className="h-9 w-28" /></Field>
+                        <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Save</SubmitButton>
+                      </ActionForm>
+                    ) : <p className="text-sm">{business.reminderHours} hours before</p>}
+                  </Card>
+                </>
+              ) : null}
+              {mine.map((w) => (
+                <Card key={w.id} className={`flex flex-col p-4 ${w.enabled ? "" : "opacity-80"}`}>
+                  <div className="mb-1 flex items-start justify-between gap-2">
+                    <h3 className="font-medium"><Link href={`${base}/${w.id}`} className="hover:underline">{w.name}</Link></h3>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${w.enabled ? "bg-green-50 text-green-700" : "bg-stone-100 text-stone-500"}`}>{w.enabled ? "On" : "Off"}</span>
+                  </div>
+                  {w.description ? <p className="text-xs text-stone-500">{w.description}</p> : null}
+                  <p className="mt-2 text-xs text-stone-700"><span className="font-medium">{triggerMeta(w.trigger).label}</span> → {summarizeSteps(w.steps) || "no steps"}</p>
+                  {!sms && usesSms(w.steps) ? <p className="mt-1 text-[11px] text-amber-700">Text steps skipped until a number is verified.</p> : null}
+                  <p className="mt-2 text-[11px] text-stone-400">{w.sent30} sent in the last 30 days{w.active ? ` · ${w.active} in progress` : ""}{w.templateKey ? "" : " · custom"}</p>
+                  {manage ? (
+                    <div className="mt-3 flex items-center gap-2 border-t border-stone-100 pt-3">
+                      <form action={toggleWorkflow}>
+                        <input type="hidden" name="slug" value={slug} />
+                        <input type="hidden" name="workflowId" value={w.id} />
+                        <input type="hidden" name="enabled" value={w.enabled ? "false" : "true"} />
+                        <Button type="submit" size="sm" variant={w.enabled ? "ghost" : "primary"}>{w.enabled ? "Turn off" : "Turn on"}</Button>
+                      </form>
+                      <LinkButton href={`${base}/${w.id}`} size="sm">Edit steps</LinkButton>
+                    </div>
+                  ) : null}
+                </Card>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+      <p className="text-xs text-stone-500">Every message sent by a workflow is listed under <Link href={`/app/${slug}/settings/notifications`} className="underline">Settings → Messages</Link> with the workflow that sent it; each workflow's page shows its recent runs and why each step did or didn't send.</p>
     </div>
   );
 }

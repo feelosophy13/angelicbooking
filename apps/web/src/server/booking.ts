@@ -378,6 +378,14 @@ export async function setAppointmentStatus(
     }
     await audit(tx, businessId, actorUserId, `appointment.${status}`, appointmentId, reason ? { reason } : undefined);
   });
+  if (status === "no_show") {
+    const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
+    if (business) {
+      const wf = await import("@/server/workflows");
+      await wf.resyncAppointmentRuns(business, appointmentId, "cancelled");
+      await wf.triggerAppointmentWorkflows(business, "appointment_no_show", appointmentId);
+    }
+  }
 }
 
 export async function updateAppointmentNotes(businessId: string, appointmentId: string, notes: string | null, actorUserId: string) {

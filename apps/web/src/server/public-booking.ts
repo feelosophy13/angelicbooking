@@ -6,7 +6,9 @@ import { bookAppointment, BookingError, rescheduleService, setAppointmentStatus 
 import { refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
 import { findReferrer } from "./loyalty";
 import { validatePromo, PromoError } from "./promos";
+import { after } from "next/server";
 import { appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify";
+import { triggerWorkflows } from "@/server/workflows";
 import { staffAlertEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
 import { shiftISODate } from "@/lib/utils";
@@ -156,7 +158,8 @@ export interface OnlineBookingInput {
 
 /** Find a client by phone or email, else create one. Runs inside the tenant tx. */
 export async function findOrCreateClient(businessId: string, input: OnlineBookingInput) {
-  return withTenant(businessId, async (tx) => {
+  let created: string | null = null;
+  const clientId = await withTenant(businessId, async (tx) => {
     const phone = normalizePhone(input.phone) ?? input.phone;
     const conds = [];
     if (phone) conds.push(eq(schema.clients.phone, phone));
@@ -175,8 +178,18 @@ export async function findOrCreateClient(businessId: string, input: OnlineBookin
       .insert(schema.clients)
       .values({ businessId, firstName: input.firstName, lastName: input.lastName, email: input.email, phone, smsOptIn: input.smsConsent === true, referredByClientId: referrer?.id ?? null, birthday: input.birthday ?? null })
       .returning({ id: schema.clients.id });
+    created = row!.id;
     return row!.id;
   });
+  // "New client" workflows start once the row is committed (after the response is sent).
+  if (created) {
+    const id = created;
+    after(async () => {
+      const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
+      if (business) await triggerWorkflows(business, "client_created", { clientId: id, dedupeKey: id, facts: { firstVisit: true, clientTags: [] }, context: { reason: "New client (online)" } }).catch((e) => console.error("[workflows] client_created failed", (e as Error).message));
+    });
+  }
+  return clientId;
 }
 
 /** Checks a public booking can still be made at `startAt` (window + live availability). */

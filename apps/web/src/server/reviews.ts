@@ -4,40 +4,16 @@
  * business has a review URL; every rating is kept on the client's record.
  */
 import { and, asc, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
-import { schema, withTenant } from "@angelic/db";
-import { normalizePhone } from "@angelic/core";
-import { appointmentContext } from "@/lib/notify";
-import { reviewRequestTemplate } from "@/lib/notify/templates";
-import { smsBody, smsWithStopNotice } from "@/lib/notify/sms";
-import { appUrl } from "@/lib/stripe";
+import { db, schema, withTenant } from "@angelic/db";
+import { appointmentFacts, triggerWorkflows } from "@/server/workflows";
 
 type Business = typeof schema.businesses.$inferSelect;
 
-/** Queue the request once per appointment, `reviewRequestDelayHours` after completion. Idempotent. */
-export async function queueReviewRequest(business: Business, appointmentId: string) {
-  if (!business.reviewRequestEnabled) return;
-  await withTenant(business.id, async (tx) => {
-    const built = await appointmentContext(tx, business, appointmentId);
-    if (!built || !built.client || built.client.reviewOptOut) return;
-    const { appt, client, ctx } = built;
-    const existing = await tx.query.reviews.findFirst({ where: eq(schema.reviews.appointmentId, appt.id) });
-    if (existing) return;
-    const item = await tx.query.appointmentItems.findFirst({ where: eq(schema.appointmentItems.appointmentId, appt.id) });
-    const [review] = await tx.insert(schema.reviews).values({ businessId: business.id, clientId: client.id, appointmentId: appt.id, staffId: item?.staffId ?? null, locationId: appt.locationId ?? null }).returning();
-    const url = appUrl(`/book/${business.slug}/review/${review!.token}`);
-    const t = reviewRequestTemplate(ctx, url);
-    const at = new Date(Date.now() + Math.max(0, business.reviewRequestDelayHours) * 3_600_000);
-    const phone = normalizePhone(client.phone);
-    const rows: (typeof schema.notifications.$inferInsert)[] = [];
-    if (client.emailOptIn && client.email) rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "email", template: "review_request", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: at });
-    else if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "sms", template: "review_request", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "review_request", ctx, { review_url: url })), scheduledAt: at });
-    if (rows.length) await tx.insert(schema.notifications).values(rows);
-  });
-}
+// Review requests are sent by the "Ask for a rating" workflow (server/workflows.ts).
 
 /** Public: the review behind a token, with what to show. */
 export async function getReviewByToken(slug: string, token: string) {
-  const business = await import("@angelic/db").then(({ db }) => db.query.businesses.findFirst({ where: eq(schema.businesses.slug, slug) }));
+  const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, slug) });
   if (!business) return null;
   return withTenant(business.id, async (tx) => {
     const review = await tx.query.reviews.findFirst({ where: eq(schema.reviews.token, token) });
@@ -50,11 +26,18 @@ export async function getReviewByToken(slug: string, token: string) {
 }
 
 export async function submitReview(businessId: string, token: string, rating: number, comment: string | null) {
-  await withTenant(businessId, async (tx) => {
+  const review = await withTenant(businessId, async (tx) => {
     const review = await tx.query.reviews.findFirst({ where: eq(schema.reviews.token, token) });
     if (!review) throw new Error("Review not found.");
     await tx.update(schema.reviews).set({ rating, comment, submittedAt: new Date() }).where(eq(schema.reviews.id, review.id));
+    return review;
   });
+  // "Review received" workflows (e.g. low-rating alert to the owner).
+  const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
+  if (business && review.clientId) {
+    const facts = review.appointmentId ? await withTenant(businessId, (tx) => appointmentFacts(tx, review.appointmentId!)) : null;
+    await triggerWorkflows(business, "review_submitted", { clientId: review.clientId, appointmentId: review.appointmentId, dedupeKey: review.id, facts: { ...(facts ?? {}), rating, staffId: review.staffId, locationId: review.locationId }, context: { appointmentId: review.appointmentId, rating, staffId: review.staffId, locationId: review.locationId, reason: `Rated ${rating}/5` } }).catch((e) => console.error("[workflows] review_submitted failed", (e as Error).message));
+  }
 }
 
 export type ReviewFilter = { locationId?: string | null; staffId?: string | null; from?: Date | null; to?: Date | null };

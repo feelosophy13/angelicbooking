@@ -136,6 +136,17 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Landed 2026-10-11 (migration 0050): reviews store the visit's location (backfilled from appointments); the
       Reviews page filters by location, provider and date range (quick ranges), with a star breakdown, answer rate
       and per-provider averages that follow the filters.
+- [x] Landed 2026-10-11 (workflows; migration 0051): automations are workflows (trigger → filters → ordered steps)
+      with guardrails in code (consent, STOP notice, 9am–8pm quiet hours for marketing triggers, once per occasion,
+      stop-on-rebook, runs re-timed on reschedule and dropped on cancellation). Ten pre-built templates per business
+      (pre-visit, rating request, rebook, no-show follow-up, aftercare, welcome, birthday, we-miss-you, membership
+      payment failed, low-rating alert); the old fixed automations and the review-request switch were converted once
+      into them. Triggers: booked, completed, cancelled, no-show, new client, form submitted, review received,
+      membership payment failed, birthday, no visit for N days. Steps: wait (delay / before / after the visit), text,
+      email, rating request, tag, points, notify owner or provider. Filters: category, service, provider, location,
+      tag, rating range, first visit only. Marketing → Automations lists them with 30-day send counts; each workflow
+      page has the step editor and a run log that explains every step. Still to do: a "send me a test" button, a
+      projected-sends estimate before enabling, and dropping the unused `automations` table after a deploy.
 - [ ] Booking page follow-ups: service photos on the Shop/gift pages; a search box on the service step for large
       menus; show provider photos (staff have no photo field yet) and a short bio on the provider step.
 - [ ] Automations: decide between the fixed recipes (today) and a user-built trigger → delay → message builder

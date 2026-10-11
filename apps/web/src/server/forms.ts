@@ -10,6 +10,7 @@ import { instantToISODate, normalizePhone, zonedToInstant } from "@angelic/core"
 import { FileError, storeFormFile, storeSignaturePng } from "@/lib/files";
 import { fieldVisible } from "@/lib/forms-logic";
 import { shiftISODate } from "@/lib/utils";
+import { appointmentFacts, triggerWorkflows } from "@/server/workflows";
 
 export type Form = typeof schema.forms.$inferSelect;
 export type FormSubmission = typeof schema.formSubmissions.$inferSelect;
@@ -91,7 +92,18 @@ export function answersFromFormData(fields: FormFieldDef[], formData: FormData):
 }
 
 /** Validate answers against the form definition and store the signed submission. */
-export async function submitForm(input: {
+export async function submitForm(input: Parameters<typeof submitFormTx>[0]) {
+  const row = await submitFormTx(input);
+  const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId) });
+  if (business) {
+    const client = await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, input.clientId), columns: { tags: true } }));
+    const facts = input.appointmentId ? await withTenant(business.id, (tx) => appointmentFacts(tx, input.appointmentId!)) : null;
+    await triggerWorkflows(business, "form_submitted", { clientId: input.clientId, appointmentId: input.appointmentId, dedupeKey: row.id, facts: { ...(facts ?? {}), clientTags: client?.tags ?? [] }, context: { formId: input.formId, appointmentId: input.appointmentId, reason: "Form submitted" } }).catch((e) => console.error("[workflows] form_submitted failed", (e as Error).message));
+  }
+  return row;
+}
+
+async function submitFormTx(input: {
   businessId: string;
   formId: string;
   clientId: string;

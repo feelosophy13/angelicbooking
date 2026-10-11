@@ -5,6 +5,7 @@
  * client's saved card. Renewal invoices arrive on the Connect webhook and
  * extend the membership, reset its credits and record a paid sale.
  */
+import { triggerWorkflows } from "@/server/workflows";
 import type Stripe from "stripe";
 import { eq, sql } from "drizzle-orm";
 import { db, schema, withJobs, withTenant } from "@angelic/db";
@@ -117,6 +118,7 @@ export async function handleRenewalFailed(business: Business, invoice: Stripe.In
   const m = await withJobs((tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.stripeSubscriptionId, subId) }));
   if (!m || m.businessId !== business.id) return false;
   await withTenant(business.id, (tx) => tx.update(schema.clientMemberships).set({ paymentFailedAt: new Date(), status: "paused" }).where(eq(schema.clientMemberships.id, m.id)));
+  await triggerWorkflows(business, "membership_payment_failed", { clientId: m.clientId, dedupeKey: `${m.id}:${invoice.id}`, context: { membershipId: m.id, locationId: m.locationId, reason: "Membership payment failed" } }).catch((e) => console.error("[workflows] membership_payment_failed failed", (e as Error).message));
   return true;
 }
 

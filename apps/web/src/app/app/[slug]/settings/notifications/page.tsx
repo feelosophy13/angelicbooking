@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { StatusBadge } from "@/components/status-badge";
 
 export const metadata: Metadata = { title: "Messages" };
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { emailConfigured, smsConfigured } from "@/lib/notify/providers";
@@ -17,7 +17,15 @@ import Link from "next/link";
 export default async function NotificationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "business.manage");
-  const rows = await withTenant(business.id, (tx) => tx.select().from(schema.notifications).orderBy(desc(schema.notifications.createdAt)).limit(200));
+  const rows = await withTenant(business.id, (tx) =>
+    tx
+      .select({ n: schema.notifications, workflowName: schema.workflows.name, workflowId: schema.workflows.id })
+      .from(schema.notifications)
+      .leftJoin(schema.workflowRuns, eq(schema.workflowRuns.id, schema.notifications.workflowRunId))
+      .leftJoin(schema.workflows, eq(schema.workflows.id, schema.workflowRuns.workflowId))
+      .orderBy(desc(schema.notifications.createdAt))
+      .limit(200),
+  );
   const inbox = await listInbox(business.id, 50);
   const LABEL: Record<string, string> = { forms_nudge: "Forms still due (morning of the visit)", confirmation: "Confirmation", reminder: "Reminder", rescheduled: "Rescheduled", cancellation: "Cancellation", review_request: "Review request" };
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: business.timezone });
@@ -68,11 +76,11 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
           <div className="overflow-x-auto"><table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-2">Created</th><th className="px-4 py-2">Channel</th><th className="px-4 py-2">Type</th><th className="px-4 py-2">To</th><th className="px-4 py-2">Scheduled</th><th className="px-4 py-2">Status</th></tr></thead>
             <tbody className="divide-y divide-stone-200">
-              {rows.map((n) => (
+              {rows.map(({ n, workflowName, workflowId }) => (
                 <tr key={n.id} className="align-top">
                   <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmt.format(n.createdAt)}</td>
                   <td className="px-4 py-2 uppercase">{n.channel}</td>
-                  <td className="px-4 py-2">{n.template}</td>
+                  <td className="px-4 py-2">{workflowName ? <Link href={`/app/${slug}/marketing/automations/${workflowId}`} className="hover:underline">{workflowName}</Link> : n.template}</td>
                   <td className="px-4 py-2">{n.recipient}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmt.format(n.scheduledAt)}</td>
                   <td className="px-4 py-2">

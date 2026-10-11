@@ -12,8 +12,6 @@ import { addressOf, tzFor } from "@/server/locations";
 import { reportSmsUsage } from "@/server/billing";
 import { templates, type ApptContext, type TemplateName } from "./templates";
 import { smsBody, smsWithStopNotice } from "./sms";
-import { marketingEmail } from "./templates";
-import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing";
 
 type Row = typeof schema.notifications.$inferSelect;
 
@@ -89,6 +87,19 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
     return inserted.map((r) => r.id);
   });
   if (ids.length) after(() => deliverMany(business.id, ids));
+  // Workflows (Marketing → Automations) react to the same events. Imported lazily: that module
+  // uses this one for contexts and delivery.
+  const wf = await import("@/server/workflows");
+  if (template === "confirmation") {
+    await wf.triggerAppointmentWorkflows(business, "appointment_booked", appointmentId);
+    const appt = await withTenant(business.id, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId), columns: { clientId: true } }));
+    if (appt?.clientId) await wf.noteClientBooked(business, appt.clientId);
+  } else if (template === "cancellation") {
+    await wf.resyncAppointmentRuns(business, appointmentId, "cancelled");
+    await wf.triggerAppointmentWorkflows(business, "appointment_cancelled", appointmentId);
+  } else if (template === "rescheduled") {
+    await wf.resyncAppointmentRuns(business, appointmentId, "rescheduled");
+  }
 }
 
 /** Templates that are only meaningful while the visit is still on. */
@@ -124,6 +135,8 @@ export async function scheduleReminderFor(business: typeof schema.businesses.$in
     if (!built || !built.client) return;
     await scheduleReminder(tx, business, appointmentId, built.client, built.ctx, normalizePhone(built.client.phone), built.appt.locationId);
   });
+  const wf = await import("@/server/workflows");
+  await wf.triggerAppointmentWorkflows(business, "appointment_booked", appointmentId);
 }
 
 async function scheduleReminder(
@@ -147,22 +160,7 @@ async function scheduleReminder(
     if (client.emailOptIn && client.email) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "email", template: "reminder", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: at });
     if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", ctx)), scheduledAt: at });
   }
-  // Optional pre-visit message (Marketing → Automations), e.g. prep instructions 48h before.
-  const pre = await tx.query.automations.findFirst({ where: and(eq(schema.automations.kind, "pre_visit"), eq(schema.automations.enabled, true)) });
-  if (pre) {
-    const preAt = new Date(ctx.startAt.getTime() - pre.hoursBefore * 3_600_000);
-    if (preAt > new Date()) {
-      const vars = appointmentVars(business, ctx);
-      const brand = { businessName: ctx.businessName, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: ctx.businessPhone, address: ctx.address };
-      const wantEmail = pre.channel === "email" || pre.channel === "both";
-      const wantSms = pre.channel === "sms" || pre.channel === "both";
-      if (wantEmail && client.emailOptIn && client.email) {
-        const t = marketingEmail(brand, { subject: renderText(pre.subject ?? "Getting ready for your visit", vars), text: renderText(pre.body, vars), ctaLabel: "Manage appointment", ctaUrl: ctx.manageUrl, unsubscribeUrl: unsubscribeUrl(business, client.id) });
-        rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "email", template: "auto_pre_visit", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: preAt });
-      }
-      if (wantSms && client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "sms", template: "auto_pre_visit", recipient: phone, body: await smsWithStopNotice(tx, client, `${ctx.businessName}: ${renderText(pre.body, vars)}`), scheduledAt: preAt });
-    }
-  }
+  // Pre-visit messages are a workflow now (Marketing → Automations → Pre-visit instructions).
   if (rows.length) await tx.insert(schema.notifications).values(rows);
 }
 

@@ -15,7 +15,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db, getSql, schema, withTenant, type TenantDb } from "@angelic/db";
 import { zonedToInstant } from "@angelic/core";
 import { auth } from "../src/lib/auth";
-import { AUTOMATION_DEFAULTS } from "../src/server/marketing";
+import { ensureTemplates } from "../src/server/workflows";
 import { appUrl } from "../src/lib/stripe";
 
 const EMAIL = "demo@angelicbooking.com";
@@ -351,11 +351,12 @@ async function main() {
       { businessId, clientId: clientIds[5]!.id, serviceId: serviceIds.find((s) => s.name === "Full Balayage")!.id, staffId: providers[0]!.id, locationId, date: addDays(today, 3), notes: "Any time after 2pm" },
       { businessId, clientId: clientIds[9]!.id, serviceId: gel.id, locationId, date: addDays(today, 1), notes: "Lunchtime if possible" },
     ]);
-    for (const kind of ["birthday", "win_back", "rebook"] as const) {
-      const d = AUTOMATION_DEFAULTS[kind];
-      await tx.insert(schema.automations).values({ businessId, kind, enabled: true, channel: "email", days: d.days, hoursBefore: d.hoursBefore, subject: d.subject, body: d.body });
-    }
   });
+
+  // Workflows: every template exists; turn on the ones a busy salon would use.
+  const biz = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) }))!;
+  await ensureTemplates(biz);
+  await withTenant(businessId, (tx) => tx.update(schema.workflows).set({ enabled: true }).where(sql`${schema.workflows.templateKey} in ('pre_visit','review_request','rebook','no_show_follow_up','welcome','birthday','win_back','membership_save','low_rating_alert')`));
 
   console.log(`\nDone. Sign in at ${appUrl("/sign-in")}\n  email:    ${EMAIL}\n  password: ${PASSWORD}\n  business: ${appUrl(`/app/${SLUG}`)}\n  booking:  ${appUrl(`/book/${SLUG}`)}`);
   await pg.end();
