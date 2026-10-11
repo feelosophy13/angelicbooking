@@ -19,6 +19,7 @@ import { zonedToInstant } from "@angelic/core";
 import { auth } from "../src/lib/auth";
 import { ensureTemplates } from "../src/server/workflows";
 import { appUrl } from "../src/lib/stripe";
+import { PACKAGE_BLURBS, PACKAGE_PHOTOS, productArt } from "./demo-art";
 
 const RESET = process.argv.includes("--reset");
 const PROFILE_KEY = process.argv.includes("--profile") ? (process.argv[process.argv.indexOf("--profile") + 1] ?? "luxe") : "luxe";
@@ -71,7 +72,7 @@ const today = isoDate(new Date());
 // Placeholder images: a soft gradient tile with an emoji, stored like any upload.
 // ---------------------------------------------------------------------------
 const PALETTES = [["#f5d0fe", "#a21caf"], ["#fde68a", "#b45309"], ["#bbf7d0", "#15803d"], ["#bfdbfe", "#1d4ed8"], ["#fecaca", "#b91c1c"], ["#ddd6fe", "#6d28d9"], ["#fbcfe8", "#be185d"], ["#99f6e4", "#0f766e"], ["#fed7aa", "#c2410c"], ["#e7e5e4", "#44403c"]];
-async function tile(businessId: string, kind: "category" | "service", label: string, emoji: string, i: number): Promise<string> {
+async function tile(businessId: string, kind: "category" | "service" | "package", label: string, emoji: string, i: number): Promise<string> {
   const [a, b] = PALETTES[i % PALETTES.length]!;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="500" height="300" viewBox="0 0 500 300"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="500" height="300" fill="url(#g)"/><circle cx="420" cy="60" r="90" fill="#fff" fill-opacity="0.12"/><circle cx="60" cy="260" r="70" fill="#fff" fill-opacity="0.1"/><text x="250" y="165" font-size="110" text-anchor="middle" dominant-baseline="middle">${emoji}</text><text x="250" y="262" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="22" font-weight="600" fill="#fff" fill-opacity="0.9" text-anchor="middle">${label.replace(/&/g, "&amp;")}</text></svg>`;
   const data = Buffer.from(svg, "utf8");
@@ -85,7 +86,7 @@ async function tile(businessId: string, kind: "category" | "service", label: str
 const IMG = "https://angelicbeauty.s3.us-east-2.amazonaws.com/images/";
 const fetched = new Map<string, Promise<{ data: Buffer; type: string } | null>>();
 /** Store one of the studio's photos as an uploaded file; falls back to a gradient tile if it can't be fetched. */
-async function photo(businessId: string, kind: "category" | "service", path: string | undefined, label: string, emoji: string, i: number): Promise<string> {
+async function photo(businessId: string, kind: "category" | "service" | "package", path: string | undefined, label: string, emoji: string, i: number): Promise<string> {
   if (!path) return tile(businessId, kind, label, emoji, i);
   if (!fetched.has(path)) {
     fetched.set(path, (async () => {
@@ -431,7 +432,9 @@ async function main() {
       prodCats.set(name, row!.id);
     }
     for (const [i, p] of PRODUCTS.entries()) {
-      const [row] = await tx.insert(schema.products).values({ businessId, categoryId: prodCats.get(p.cat)!, name: p.name, sku: `LX-${String(100 + i)}`, priceCents: p.price, costCents: p.cost, taxable: true, sellOnline: true, trackStock: true, stockQty: p.qty, lowStockThreshold: 3, description: "Salon-grade, recommended by our team." }).returning({ id: schema.products.id });
+      const art = Buffer.from(productArt(p.name, i), "utf8");
+      const [file] = await db.insert(schema.files).values({ businessId, kind: "product", contentType: "image/svg+xml", size: art.length, data: art }).returning({ id: schema.files.id });
+      const [row] = await tx.insert(schema.products).values({ businessId, categoryId: prodCats.get(p.cat)!, name: p.name, sku: `LX-${String(100 + i)}`, priceCents: p.price, costCents: p.cost, taxable: true, sellOnline: true, trackStock: true, stockQty: p.qty, lowStockThreshold: 3, description: "Salon-grade, recommended by our team.", imageUrl: appUrl(`/api/files/${file!.id}`) }).returning({ id: schema.products.id });
       await tx.insert(schema.stockMovements).values({ businessId, productId: row!.id, delta: p.qty, reason: "received", note: "Opening stock" });
     }
 
@@ -455,10 +458,13 @@ async function main() {
     const blowout = serviceIds.find((s) => s.name === "Glow Facial")!;
     const facial = serviceIds.find((s) => s.name === "Korean Skin Science Facial")!;
     const gel = serviceIds.find((s) => s.name === "Classic 2 Week Fill")!;
-    await tx.insert(schema.packages).values([
-      { businessId, name: "Signature Glow & Lift (3 facials)", serviceId: blowout.id, sessions: 3, priceCents: 45000, validDays: 180 },
-      { businessId, name: "Radiant Glow & Booster (6 facials)", serviceId: facial.id, sessions: 6, priceCents: 80000, validDays: 365 },
-    ]);
+    for (const pk of [
+      { name: "Signature Glow & Lift (3 facials)", serviceId: blowout.id, sessions: 3, priceCents: 45000, validDays: 180 },
+      { name: "Radiant Glow & Booster (6 facials)", serviceId: facial.id, sessions: 6, priceCents: 80000, validDays: 365 },
+    ]) {
+      const imageUrl = await photo(businessId, "package", PACKAGE_PHOTOS[pk.name], pk.name, "💆", 3);
+      await tx.insert(schema.packages).values({ businessId, ...pk, description: PACKAGE_BLURBS[pk.name] ?? null, imageUrl });
+    }
     await tx.insert(schema.membershipPlans).values([
       { businessId, name: "Classic Lash Membership", priceCents: 11000, includedServiceId: gel.id, includedSessions: 2, discountBps: 0, description: "Two classic refills a month ($55 each instead of $65)." },
       { businessId, name: "Lash Lift & Tint Membership", priceCents: 9000, includedServiceId: serviceIds.find((s) => s.name === "Korean Lash Lift (ECO) & Tint")!.id, includedSessions: 1, discountBps: 500, description: "One lash lift & tint a month and 5% off retail." },

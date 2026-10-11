@@ -6,7 +6,8 @@ import { requireAction } from "@/lib/tenant";
 import { serviceGroups } from "@/server/service-groups";
 import { ServicePicker } from "@/components/service-picker";
 import { listLocations } from "@/server/locations";
-import { FormPage, Input, Select } from "@/components/ui";
+import { FormPage, Input, Textarea } from "@/components/ui";
+import { ImageField } from "@/components/image-field";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { ValidAt } from "@/components/offered-at";
 import { updatePackage } from "../../catalog-actions";
@@ -23,7 +24,7 @@ export default async function EditPackagePage({ params }: { params: Promise<{ sl
   ]);
   if (!p) notFound();
   return (
-    <FormPage title={p.name} backHref={`/app/${slug}/packages`} backLabel="Packages" width="max-w-lg">
+    <FormPage title={p.name} backHref={`/app/${slug}/packages`} backLabel="Packages">
       <p className="mb-3 text-xs text-stone-500">Changes apply to packages sold from now on; sessions already bought keep their count and expiry.</p>
       <ActionForm action={updatePackage}>
         <input type="hidden" name="slug" value={slug} />
@@ -35,6 +36,8 @@ export default async function EditPackagePage({ params }: { params: Promise<{ sl
           <Field label="Price" name="price" required><Input name="price" inputMode="decimal" defaultValue={(p.priceCents / 100).toFixed(2)} required /></Field>
         </div>
         <Field label="Valid for (days)" name="validDays" hint="Leave blank if sessions never expire."><Input name="validDays" type="number" min={1} defaultValue={p.validDays ?? ""} /></Field>
+        <Field label="Description" name="description"><Textarea name="description" rows={3} defaultValue={p.description ?? ""} /></Field>
+        <Field label="Photo" name="image" className="mt-2"><ImageField name="image" removeName="removeImage" current={p.imageUrl} /></Field>
         <ValidAt locations={locations} selected={p.validLocationIds} what="package sessions" />
         <SubmitButton pendingText="Saving…">Save package</SubmitButton>
       </ActionForm>

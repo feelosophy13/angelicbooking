@@ -428,6 +428,13 @@
       "when": 1791747719122,
       "tag": "0060_membership_cadence",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1791749189058,
+      "tag": "0061_package_image",
+      "breakpoints": true
     }
   ]
 }

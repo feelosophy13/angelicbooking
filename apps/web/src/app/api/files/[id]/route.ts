@@ -3,7 +3,7 @@ import { db, schema } from "@angelic/db";
 import { getSession } from "@/lib/session";
 import { getClientSessionId } from "@/lib/client-session";
 
-const PUBLIC_KINDS = new Set(["logo", "cover", "product", "service", "category", "staff"]);
+const PUBLIC_KINDS = new Set(["logo", "cover", "product", "package", "service", "category", "staff"]);
 const PRIVATE_KINDS = new Set(["form", "signature"]);
 
 /**

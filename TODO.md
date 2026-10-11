@@ -201,6 +201,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-11 (migration 0061): packages get a photo and a description (form, list thumbnail, served publicly
+      like product pictures); product and package lists show a small thumbnail. Demo tenants: every product has a
+      drawn SVG packshot (`scripts/demo-art.ts`, picked by name: bottle, tube, dropper, brush, mask, pillow, box) and
+      each package one of the studio's facial photos; `scripts/demo-images.ts` applies them to existing demo data and
+      the seed does it from scratch.
 - [x] 2026-10-11 (migration 0060): flexible memberships. Plans are billed "every N weeks / months / years" (any N up to a
       year apart, Stripe's limit; `interval` + `interval_count`, calendar months so the 31st doesn't drift); unused sessions can
       carry over up to `rollover_cap`; `cycle_count` makes a fixed-length plan that ends on its own ("1 of 6 paid",

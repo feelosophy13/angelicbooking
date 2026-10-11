@@ -10,14 +10,25 @@ import { issueGiftCardManually } from "@/server/offers";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { validAtFromForm } from "@/server/locations";
+import { deleteFileByUrl, FileError, uploadedImageFrom } from "@/lib/files";
+
+async function packageImage(businessId: string, raw: FormData) {
+  try {
+    return await uploadedImageFrom(businessId, "package", raw);
+  } catch (e) {
+    if (e instanceof FileError) throw new FormError(e.message, "image");
+    throw e;
+  }
+}
 
 export const createPackage = formAction(
-  z.object({ slug: z.string(), name: f.text(1, 80), serviceId: z.string().optional().transform((v) => v || null), sessions: f.int(1, 100), price: f.money("price"), validDays: z.string().trim().optional() }),
+  z.object({ slug: z.string(), name: f.text(1, 80), serviceId: z.string().optional().transform((v) => v || null), sessions: f.int(1, 100), price: f.money("price"), validDays: z.string().trim().optional(), description: f.optional(300) }),
   async (d, raw) => {
     const ctx = await requireAction(d.slug, "services.manage");
     const validDays = d.validDays ? Number(d.validDays) : null;
     if (d.validDays && (!Number.isInteger(validDays) || validDays! < 1)) throw new FormError("Enter a whole number of days", "validDays");
-    await withTenant(ctx.business.id, async (tx) => tx.insert(schema.packages).values({ businessId: ctx.business.id, name: d.name, serviceId: d.serviceId, sessions: d.sessions, priceCents: d.price, validDays, validLocationIds: await validAtFromForm(tx, raw) }));
+    const imageUrl = await packageImage(ctx.business.id, raw);
+    await withTenant(ctx.business.id, async (tx) => tx.insert(schema.packages).values({ businessId: ctx.business.id, name: d.name, serviceId: d.serviceId, sessions: d.sessions, priceCents: d.price, validDays, description: d.description, imageUrl, validLocationIds: await validAtFromForm(tx, raw) }));
     await setFlash(`${d.name} added`);
     revalidatePath(`/app/${d.slug}/packages`);
     redirect(`/app/${d.slug}/packages`);
@@ -25,12 +36,18 @@ export const createPackage = formAction(
 );
 
 export const updatePackage = formAction(
-  z.object({ slug: z.string(), id: z.string().min(1), name: f.text(1, 80), serviceId: z.string().optional().transform((v) => v || null), sessions: f.int(1, 100), price: f.money("price"), validDays: z.string().trim().optional() }),
+  z.object({ slug: z.string(), id: z.string().min(1), name: f.text(1, 80), serviceId: z.string().optional().transform((v) => v || null), sessions: f.int(1, 100), price: f.money("price"), validDays: z.string().trim().optional(), description: f.optional(300) }),
   async (d, raw) => {
     const ctx = await requireAction(d.slug, "services.manage");
     const validDays = d.validDays ? Number(d.validDays) : null;
     if (d.validDays && (!Number.isInteger(validDays) || validDays! < 1)) throw new FormError("Enter a whole number of days", "validDays");
-    await withTenant(ctx.business.id, async (tx) => tx.update(schema.packages).set({ name: d.name, serviceId: d.serviceId, sessions: d.sessions, priceCents: d.price, validDays, validLocationIds: await validAtFromForm(tx, raw) }).where(eq(schema.packages.id, d.id)));
+    const image = await packageImage(ctx.business.id, raw);
+    const removeImage = raw.get("removeImage") === "on";
+    await withTenant(ctx.business.id, async (tx) => {
+      const current = await tx.query.packages.findFirst({ where: eq(schema.packages.id, d.id), columns: { imageUrl: true } });
+      await tx.update(schema.packages).set({ name: d.name, serviceId: d.serviceId, sessions: d.sessions, priceCents: d.price, validDays, description: d.description, validLocationIds: await validAtFromForm(tx, raw), ...(image ? { imageUrl: image } : removeImage ? { imageUrl: null } : {}) }).where(eq(schema.packages.id, d.id));
+      if ((image || removeImage) && current?.imageUrl) await deleteFileByUrl(current.imageUrl);
+    });
     revalidatePath(`/app/${d.slug}/packages`);
     revalidatePath(`/app/${d.slug}/packages/${d.id}`);
     return "Package saved";

@@ -10,6 +10,7 @@ import { requireBusiness } from "@/lib/tenant";
 import { formatMoney } from "@/lib/utils";
 import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 import { RowLink, rowClass, rowControl } from "@/components/row";
+import { Thumb } from "@/components/thumb";
 import { toggleProductActive } from "./actions";
 
 export default async function ProductsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -42,6 +43,7 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
             <ul className="divide-y divide-stone-200">
               {list.map(({ p }) => (
                 <li key={p.id} className={`flex items-center gap-3 px-4 py-3 ${manage ? rowClass : ""}`}>
+                  <Thumb src={p.imageUrl} />
                   <div className="min-w-0 flex-1">
                     {manage ? (
                       <RowLink href={`/app/${slug}/products/${p.id}`} className={`font-medium ${p.active ? "" : "text-stone-400 line-through"}`}>{p.name}</RowLink>

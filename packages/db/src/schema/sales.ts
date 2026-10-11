@@ -267,6 +267,8 @@ export const packages = pgTable(
     sessions: integer("sessions").notNull(),
     priceCents: integer("price_cents").notNull(),
     validDays: integer("valid_days"), // null = never expires
+    description: text("description"),
+    imageUrl: text("image_url"),
     // Where sessions can be redeemed. Empty = any location of the business.
     validLocationIds: text("valid_location_ids").array().notNull().default(sql`'{}'::text[]`),
     active: boolean("active").notNull().default(true),
