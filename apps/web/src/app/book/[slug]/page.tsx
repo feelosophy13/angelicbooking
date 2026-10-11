@@ -185,8 +185,16 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           {providers.map((s) => (
             <li key={s.id}>
               <Link href={q({ staff: s.id })} className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm transition hover:border-[var(--brand-ring)] hover:shadow-md">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white" style={{ background: s.color }}>{s.displayName.slice(0, 1)}</span>
-                <span className="block font-semibold text-stone-900">{s.displayName}</span>
+                {s.photoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={s.photoUrl} alt="" className="h-14 w-14 shrink-0 rounded-full border border-stone-200 object-cover" />
+                ) : (
+                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white" style={{ background: s.color }}>{s.displayName.slice(0, 1)}</span>
+                )}
+                <span className="min-w-0">
+                  <span className="block font-semibold text-stone-900">{s.displayName}</span>
+                  {s.bio ? <span className="line-clamp-2 block text-xs text-stone-500">{s.bio}</span> : null}
+                </span>
               </Link>
             </li>
           ))}

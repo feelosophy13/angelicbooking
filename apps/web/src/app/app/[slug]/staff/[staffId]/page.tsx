@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { Card, Input, Select } from "@/components/ui";
+import { Card, Input, Select, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { generateClockPin, resetCalendarToken, updateStaffProfile } from "../actions";
 import { ConfirmSubmit } from "@/components/form";
@@ -30,6 +30,21 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
         <Field label="Email" name="email"><Input name="email" type="email" defaultValue={person.email ?? ""} /></Field>
         <Field label="Phone" name="phone"><Input name="phone" defaultValue={person.phone ?? ""} /></Field>
         <Field label="Calendar colour" name="color"><Input name="color" type="color" defaultValue={person.color} className="h-10 w-24 p-1" /></Field>
+        <Field label="Photo" name="photo" hint="Shown to clients when they pick a provider, and on the staff list. PNG/JPEG/WebP up to 2 MB; a square crop looks best.">
+          <div className="flex items-center gap-3">
+            {person.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={person.photoUrl} alt="" className="h-16 w-16 shrink-0 rounded-full border border-stone-200 object-cover" />
+            ) : (
+              <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-xl font-semibold text-white" style={{ background: person.color }}>{person.displayName.slice(0, 1)}</span>
+            )}
+            <div className="space-y-1">
+              <input type="file" name="photo" accept="image/*" className="block text-sm" />
+              {person.photoUrl ? <label className="flex items-center gap-2 text-xs text-stone-600"><input type="checkbox" name="removePhoto" className="h-4 w-4 accent-brand-600" /> Remove photo</label> : null}
+            </div>
+          </div>
+        </Field>
+        <Field label="Bio" name="bio" hint="A sentence or two clients see on the booking page: specialties, years of experience."><Textarea name="bio" rows={2} defaultValue={person.bio ?? ""} maxLength={300} placeholder="Balayage specialist with 8 years behind the chair." /></Field>
         {locations.length > 1 ? (
           <Field label="Primary location" name="locationId">
             <Select name="locationId" defaultValue={person.locationId ?? ""}>

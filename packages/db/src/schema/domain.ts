@@ -167,6 +167,9 @@ export const staff = pgTable(
     email: text("email"),
     phone: text("phone"),
     color: text("color").notNull().default("#6366f1"),
+    // Shown on the booking page's provider step and the staff list.
+    photoUrl: text("photo_url"),
+    bio: text("bio"),
     locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }), // primary location
     bookableOnline: boolean("bookable_online").notNull().default(true),
     // Has a calendar column and can be booked by staff. Off for receptionists, managers

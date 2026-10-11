@@ -57,7 +57,12 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
             return (
               <li key={s.id}>
                 <Link href={`/app/${slug}/staff/${s.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50">
-                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: s.color }} />
+                  {s.photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={s.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-full border border-stone-200 object-cover" />
+                  ) : (
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white" style={{ background: s.color }}>{s.displayName.slice(0, 1)}</span>
+                  )}
                   <div className="min-w-0 flex-1">
                     <p className={`font-medium ${s.active ? "" : "text-stone-400"}`}>{s.displayName}{s.active ? "" : " · inactive"}</p>
                     <p className="truncate text-xs text-stone-500">

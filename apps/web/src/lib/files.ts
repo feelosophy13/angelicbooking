@@ -13,7 +13,7 @@ const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "
 
 export class FileError extends Error {}
 
-export async function storeImage(businessId: string, kind: "logo" | "cover" | "product" | "service" | "category", file: File): Promise<{ id: string; url: string }> {
+export async function storeImage(businessId: string, kind: "logo" | "cover" | "product" | "service" | "category" | "staff", file: File): Promise<{ id: string; url: string }> {
   if (!file || file.size === 0) throw new FileError("Choose an image file.");
   if (!ALLOWED.has(file.type)) throw new FileError("Use a PNG, JPEG, WebP, GIF or SVG image.");
   if (file.size > MAX_FILE_BYTES) throw new FileError("Images must be 2 MB or smaller.");

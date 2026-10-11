@@ -13,6 +13,7 @@ import { queueOneOff } from "@/lib/notify";
 import { listRoles } from "@/server/roles";
 import { inviteEmail } from "@/lib/notify/templates";
 import { ClockError, randomPin, setClockPin } from "@/server/time-clock";
+import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
 
 const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -23,6 +24,8 @@ const profileSchema = z.object({
   email: f.email(),
   phone: f.optional(30),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Pick a colour"),
+  bio: f.optional(300),
+  removePhoto: f.checkbox(),
   bookableOnline: f.checkbox(),
   takesAppointments: f.checkbox(),
   active: f.checkbox(),
@@ -50,15 +53,28 @@ export const createStaff = formAction(profileSchema, async (d) => {
   redirect(`/app/${d.slug}/staff/${id}/hours`);
 });
 
-export const updateStaffProfile = formAction(profileSchema, async (d) => {
+export const updateStaffProfile = formAction(profileSchema, async (d, raw) => {
   const ctx = await requireAction(d.slug, "staff.manage");
   if (!d.staffId) throw new FormError("Missing staff member.");
+  const current = await withTenant(ctx.business.id, (tx) => tx.query.staff.findFirst({ where: eq(schema.staff.id, d.staffId!), columns: { photoUrl: true } }));
+  // Photo: a new upload replaces the old file; "Remove photo" clears it.
+  let photoUrl: string | null | undefined = undefined;
+  const file = raw.get("photo");
+  if (file instanceof File && file.size > 0) {
+    try {
+      photoUrl = (await storeImage(ctx.business.id, "staff", file)).url;
+    } catch (e) {
+      if (e instanceof FileError) throw new FormError(e.message, "photo");
+      throw e;
+    }
+  } else if (d.removePhoto) photoUrl = null;
   await withTenant(ctx.business.id, (tx) =>
     tx
       .update(schema.staff)
-      .set({ displayName: d.displayName, email: d.email, phone: d.phone, color: d.color, bookableOnline: d.bookableOnline && d.takesAppointments, takesAppointments: d.takesAppointments, active: d.active, locationId: d.locationId || null })
+      .set({ displayName: d.displayName, email: d.email, phone: d.phone, color: d.color, bio: d.bio, bookableOnline: d.bookableOnline && d.takesAppointments, takesAppointments: d.takesAppointments, active: d.active, locationId: d.locationId || null, ...(photoUrl !== undefined ? { photoUrl } : {}) })
       .where(eq(schema.staff.id, d.staffId!)),
   );
+  if (photoUrl !== undefined && current?.photoUrl) await deleteFileByUrl(current.photoUrl);
   if (d.clearPin) await setClockPin(ctx.business.id, d.staffId, null);
   else if (d.clockPin) {
     try {
