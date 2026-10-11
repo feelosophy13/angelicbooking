@@ -254,10 +254,15 @@ Current state (2026-10-10): sandbox endpoints exist and the sandbox keys are on 
 any other tenant). From `apps/web`:
 
 ```
-../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts [--reset]
+../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts [--profile luxe|glow] [--reset]
 ```
 
-Creates user `demo@angelicbooking.com` (password `demo-salon-2026`) and business `demo-salon` ("Luxe Beauty Studio"):
+Two profiles, same password `demo-salon-2026`:
+- `luxe` (default): `demo@angelicbooking.com`, business `demo-salon` ("Luxe Beauty Studio"), one studio.
+- `glow`: `demo2@angelicbooking.com`, business `demo-twosites` ("Glow Collective"), two locations (Arlington, Reston) with
+  staff, hours, appointments, sales, reviews and time entries split between them; the booking page asks for a location.
+
+Each profile creates its user and business:
 nested service menu with placeholder images, six staff across every pay model, 40 clients, eight weeks of completed
 visits with sales/tips/reviews, three weeks of upcoming bookings, time-clock entries, products with stock, two forms,
 packages, membership plans, gift cards, a promo code, waitlist entries and enabled automations. `--reset` deletes and

@@ -153,6 +153,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       with each tenant's existing lead time, restarted when an appointment moves and dropped when it is cancelled.
       The pre-visit template and the separate reminder-hours settings are gone. `businesses.reminder_hours` is only
       read once, at template creation; drop it after a deploy.
+- [x] 2026-10-11: second demo tenant `demo-twosites` (Glow Collective, two locations) via `seed-demo.ts --profile glow`.
 - [ ] Booking page follow-ups: service photos on the Shop/gift pages; a search box on the service step for large
       menus; show provider photos (staff have no photo field yet) and a short bio on the provider step.
 - [ ] Automations: decide between the fixed recipes (today) and a user-built trigger → delay → message builder

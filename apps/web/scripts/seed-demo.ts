@@ -6,10 +6,12 @@
  * promo code, waitlist and automations.
  *
  * Usage (from apps/web, against whatever DATABASE_URL points at):
- *   ../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts [--reset]
+ *   ../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts [--profile luxe|glow] [--reset]
  *
- * Login: demo@angelicbooking.com / demo-salon-2026   Business slug: demo-salon
- * --reset deletes the demo business first (never any other tenant) and rebuilds it.
+ * Profiles:
+ *   luxe (default)  demo@angelicbooking.com  / demo-salon-2026  slug demo-salon     one studio
+ *   glow            demo2@angelicbooking.com / demo-salon-2026  slug demo-twosites  two locations (Arlington, Reston)
+ * --reset deletes that demo business first (never any other tenant) and rebuilds it.
  */
 import { and, eq, sql } from "drizzle-orm";
 import { db, getSql, schema, withTenant, type TenantDb } from "@angelic/db";
@@ -18,15 +20,45 @@ import { auth } from "../src/lib/auth";
 import { ensureTemplates } from "../src/server/workflows";
 import { appUrl } from "../src/lib/stripe";
 
-const EMAIL = "demo@angelicbooking.com";
-const PASSWORD = "demo-salon-2026";
-const SLUG = "demo-salon";
-const NAME = "Luxe Beauty Studio";
-const TZ = "America/New_York";
 const RESET = process.argv.includes("--reset");
+const PROFILE_KEY = process.argv[process.argv.indexOf("--profile") + 1] && process.argv.includes("--profile") ? process.argv[process.argv.indexOf("--profile") + 1]! : "luxe";
+
+type LocationDef = { name: string; address1: string; city: string; state: string; phone: string; hours: Record<string, { open: string; close: string } | null> };
+type Profile = {
+  email: string; password: string; slug: string; name: string; tz: string; brandColor: string; tagline: string; about: string; website: string; instagram: string; phone: string; contactEmail: string; addressLine: string; coverEmoji: string; giftPrefix: string;
+  locations: LocationDef[];
+  /** Which staff (by index into STAFF) work at which location; everyone else goes to location 0. */
+  staffLocation: Record<number, number>;
+};
+const WEEK = { "0": null, "1": { open: "10:00", close: "18:00" }, "2": { open: "09:00", close: "19:00" }, "3": { open: "09:00", close: "19:00" }, "4": { open: "09:00", close: "20:00" }, "5": { open: "09:00", close: "19:00" }, "6": { open: "09:00", close: "17:00" } };
+const PROFILES: Record<string, Profile> = {
+  // One studio, every pay model, the richest history.
+  luxe: {
+    email: "demo@angelicbooking.com", password: "demo-salon-2026", slug: "demo-salon", name: "Luxe Beauty Studio", tz: "America/New_York", brandColor: "#be185d",
+    tagline: "Hair, nails, lashes, skin and massage under one roof",
+    about: "A calm, light-filled studio in the heart of Sterling. Our team of specialists has been making clients feel their best since 2019. Walk-ins welcome when the calendar allows; booking online guarantees your spot.",
+    website: "https://luxebeauty.demo", instagram: "luxebeautystudio", phone: "(703) 555-0142", contactEmail: "hello@luxebeauty.demo", addressLine: "128 Market Street, Sterling, VA 20164", coverEmoji: "🌿", giftPrefix: "LUXE",
+    locations: [{ name: "Luxe Beauty Studio", address1: "128 Market Street", city: "Sterling", state: "VA", phone: "(703) 555-0142", hours: WEEK }],
+    staffLocation: {},
+  },
+  // Two sites: the booking page asks for a location, reports and reviews filter by it, staff and hours differ per site.
+  glow: {
+    email: "demo2@angelicbooking.com", password: "demo-salon-2026", slug: "demo-twosites", name: "Glow Collective", tz: "America/New_York", brandColor: "#0f766e",
+    tagline: "Two studios, one team: Arlington and Reston",
+    about: "Glow Collective started as a two-chair studio in Arlington and opened its Reston location in 2023. Book at whichever is closer; your history, packages and points follow you.",
+    website: "https://glowcollective.demo", instagram: "glowcollective", phone: "(571) 555-0190", contactEmail: "hello@glowcollective.demo", addressLine: "Arlington & Reston, VA", coverEmoji: "✨", giftPrefix: "GLOW",
+    locations: [
+      { name: "Glow Collective - Arlington", address1: "2200 Clarendon Blvd", city: "Arlington", state: "VA", phone: "(571) 555-0190", hours: WEEK },
+      { name: "Glow Collective - Reston", address1: "11900 Market Street", city: "Reston", state: "VA", phone: "(571) 555-0191", hours: { ...WEEK, "0": { open: "10:00", close: "16:00" }, "1": null } },
+    ],
+    staffLocation: { 2: 1, 3: 1, 4: 1 },
+  },
+};
+const PROFILE: Profile = PROFILES[PROFILE_KEY] ?? (() => { throw new Error(`Unknown profile "${PROFILE_KEY}". Known: ${Object.keys(PROFILES).join(", ")}`); })();
+const { email: EMAIL, password: PASSWORD, slug: SLUG, name: NAME, tz: TZ } = PROFILE;
 
 // Deterministic pseudo-random so re-runs look the same.
-let seed = 20261010;
+let seed = PROFILE_KEY === "luxe" ? 20261010 : 20261011;
 const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
 const pick = <T,>(arr: readonly T[]): T => arr[Math.floor(rnd() * arr.length)]!;
 const chance = (p: number) => rnd() < p;
@@ -164,22 +196,32 @@ async function main() {
   console.log(`Created ${NAME} (${businessId})`);
 
   // --- Business profile and settings
-  const logoUrl = await tile(businessId, "category", "Luxe", "✨", 5);
-  const coverUrl = await tile(businessId, "category", NAME, "🌿", 7);
+  const logoUrl = await tile(businessId, "category", NAME.split(" ")[0]!, "✨", PROFILE_KEY === "luxe" ? 5 : 7);
+  const coverUrl = await tile(businessId, "category", NAME, PROFILE.coverEmoji, PROFILE_KEY === "luxe" ? 7 : 2);
   await db.update(schema.businesses).set({
-    phone: "(703) 555-0142", email: "hello@luxebeauty.demo", addressLine: "128 Market Street, Sterling, VA 20164", tagline: "Hair, nails, lashes, skin and massage under one roof",
-    about: "A calm, light-filled studio in the heart of Sterling. Our team of specialists has been making clients feel their best since 2019. Walk-ins welcome when the calendar allows; booking online guarantees your spot.",
-    website: "https://luxebeauty.demo", instagram: "luxebeautystudio", brandColor: "#be185d", logoUrl, coverUrl,
+    phone: PROFILE.phone, email: PROFILE.contactEmail, addressLine: PROFILE.addressLine, tagline: PROFILE.tagline,
+    about: PROFILE.about,
+    website: PROFILE.website, instagram: PROFILE.instagram, brandColor: PROFILE.brandColor, logoUrl, coverUrl,
     bookingPolicy: "Please arrive 5 minutes early. Cancellations inside 24 hours may be charged 50% of the service.", cancelWindowHours: 24, reminderHours: 24, maxAdvanceDays: 60,
     reviewRequestEnabled: true, reviewRequestDelayHours: 2, googleReviewUrl: "https://g.page/r/demo/review", loyaltyEnabled: true, loyaltyPointsPerDollar: 1, loyaltyMinRedeemPoints: 500, referralBonusPoints: 500, referralFriendBonusPoints: 250,
     clientAccountsEnabled: true, storeEnabled: true, giftCardsOnline: true, shippingFlatCents: 795, taxRateBps: 600,
   }).where(eq(schema.businesses.id, businessId));
 
   await withTenant(businessId, async (tx) => {
-    const [loc] = await tx.select().from(schema.locations);
-    const locationId = loc!.id;
-    const hours = { "0": null, "1": { open: "10:00", close: "18:00" }, "2": { open: "09:00", close: "19:00" }, "3": { open: "09:00", close: "19:00" }, "4": { open: "09:00", close: "20:00" }, "5": { open: "09:00", close: "19:00" }, "6": { open: "09:00", close: "17:00" } };
-    await tx.update(schema.locations).set({ name: NAME, addressLine1: "128 Market Street", city: "Sterling", state: "VA", phone: "(703) 555-0142", hours }).where(eq(schema.locations.id, locationId));
+    // Locations: the hook made "Main location"; rename it and add the rest.
+    const [first] = await tx.select().from(schema.locations);
+    const locIds: string[] = [];
+    for (const [li, L] of PROFILE.locations.entries()) {
+      if (li === 0) {
+        await tx.update(schema.locations).set({ name: L.name, addressLine1: L.address1, city: L.city, state: L.state, phone: L.phone, hours: L.hours }).where(eq(schema.locations.id, first!.id));
+        locIds.push(first!.id);
+      } else {
+        const [row] = await tx.insert(schema.locations).values({ businessId, name: L.name, addressLine1: L.address1, city: L.city, state: L.state, phone: L.phone, hours: L.hours, isDefault: false }).returning({ id: schema.locations.id });
+        locIds.push(row!.id);
+      }
+    }
+    const multi = locIds.length > 1;
+    const locationId = locIds[0]!; // default site: products, packages, the owner
 
     // --- Menu: nested categories with images, services with images
     const serviceIds: { id: string; name: string; min: number; price: number; gap: number; finish: number; group: string; capacity: number }[] = [];
@@ -207,16 +249,17 @@ async function main() {
     const owner = (await tx.select().from(schema.staff))[0]!;
     await tx.update(schema.staff).set({ displayName: "Demo Owner", takesAppointments: false, bookableOnline: false, position: "Owner", payType: "salary", color: "#0f172a" }).where(eq(schema.staff.id, owner.id));
     await tx.delete(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, owner.id));
-    const staffRows: { id: string; name: string; skills: string[]; days: number[]; hourly: boolean; frontDesk: boolean }[] = [];
+    const staffRows: { id: string; name: string; skills: string[]; days: number[]; hourly: boolean; frontDesk: boolean; locationId: string }[] = [];
     for (const [i, s] of STAFF.entries()) {
+      const staffLoc = locIds[PROFILE.staffLocation[i] ?? 0]!;
       const [row] = await tx.insert(schema.staff).values({
-        businessId, displayName: s.name, email: s.email, color: s.color, locationId, position: s.position, payType: s.payType, mainCommissionBps: s.main ?? 0, productCommissionBps: s.product, ccTipFeeBps: 300,
+        businessId, displayName: s.name, email: s.email, color: s.color, locationId: staffLoc, position: s.position, payType: s.payType, mainCommissionBps: s.main ?? 0, productCommissionBps: s.product, ccTipFeeBps: 300,
         hourlyRateCents: s.hourly ?? 0, salaryPerPeriodCents: s.salary ?? 0, takesAppointments: !s.frontDesk, bookableOnline: !s.frontDesk, sortOrder: i,
       }).returning({ id: schema.staff.id });
-      await tx.insert(schema.staffSchedules).values(s.days.map((weekday) => ({ businessId, staffId: row!.id, weekday, startTime: weekday === 1 ? "10:00" : "09:00", endTime: weekday === 6 ? "17:00" : "18:00", locationId: null })));
+      await tx.insert(schema.staffSchedules).values(s.days.map((weekday) => ({ businessId, staffId: row!.id, weekday, startTime: weekday === 1 ? "10:00" : "09:00", endTime: weekday === 6 ? "17:00" : "18:00", locationId: multi ? staffLoc : null })));
       const mine = serviceIds.filter((sv) => s.skills.includes(sv.group));
       if (mine.length) await tx.insert(schema.staffServices).values(mine.map((sv) => ({ businessId, staffId: row!.id, serviceId: sv.id })));
-      staffRows.push({ id: row!.id, name: s.name, skills: s.skills, days: s.days, hourly: s.payType !== "commission", frontDesk: !!s.frontDesk });
+      staffRows.push({ id: row!.id, name: s.name, skills: s.skills, days: s.days, hourly: s.payType !== "commission", frontDesk: !!s.frontDesk, locationId: staffLoc });
     }
 
     // --- Clients
@@ -229,7 +272,7 @@ async function main() {
         businessId, firstName: first, lastName: last, email: chance(0.85) ? `${first.toLowerCase()}.${last.toLowerCase()}@example.com` : null, phone: `+1703555${String(1000 + i).padStart(4, "0")}`,
         birthday: chance(0.6) ? `${between(1970, 2002)}-${String(between(1, 12)).padStart(2, "0")}-${String(between(1, 28)).padStart(2, "0")}` : null,
         tags: chance(0.3) ? [pick(["VIP", "Colour client", "Referred", "Bridal"])] : [], notes: chance(0.25) ? pick(["Allergic to PPD – patch test done 2026-03.", "Prefers quiet appointments.", "Always books with Ava.", "Sensitive scalp; use gentle line."]) : null,
-        referralCode: `LUXE${String(100 + i)}`, createdAt, homeLocationId: locationId,
+        referralCode: `${PROFILE.giftPrefix}${String(100 + i)}`, createdAt, homeLocationId: locIds[i % locIds.length]!,
       }).returning({ id: schema.clients.id });
       clientIds.push({ id: c!.id, first, last });
     }
@@ -258,7 +301,7 @@ async function main() {
           const total = svc.min + svc.gap + svc.finish;
           const endAt = new Date(startAt.getTime() + total * 60_000);
           const status = past ? (chance(0.9) ? "completed" : chance(0.5) ? "no_show" : "cancelled") : chance(0.5) ? "confirmed" : "booked";
-          const [appt] = await tx.insert(schema.appointments).values({ businessId, locationId, clientId: client.id, status, source: chance(0.6) ? "online" : "staff", createdAt: new Date(startAt.getTime() - between(1, 20) * 86_400_000), cancelledAt: status === "cancelled" ? new Date(startAt.getTime() - 86_400_000 * 2) : null, notes: chance(0.15) ? pick(["Wants to go a shade lighter", "Running 5 min late last time", "Bring inspiration photos"]) : null }).returning({ id: schema.appointments.id });
+          const [appt] = await tx.insert(schema.appointments).values({ businessId, locationId: p.locationId, clientId: client.id, status, source: chance(0.6) ? "online" : "staff", createdAt: new Date(startAt.getTime() - between(1, 20) * 86_400_000), cancelledAt: status === "cancelled" ? new Date(startAt.getTime() - 86_400_000 * 2) : null, notes: chance(0.15) ? pick(["Wants to go a shade lighter", "Running 5 min late last time", "Bring inspiration photos"]) : null }).returning({ id: schema.appointments.id });
           const [item] = await tx.insert(schema.appointmentItems).values({ businessId, appointmentId: appt!.id, staffId: p.id, serviceId: svc.id, serviceName: svc.name, startAt, endAt, priceCents: svc.price, status, allowOverlap: true }).returning({ id: schema.appointmentItems.id });
           cursorMin += total + pick([10, 15, 30, 45, 60]);
           if (!past) { upcoming++; continue; }
@@ -274,7 +317,7 @@ async function main() {
           const numRows = await tx.execute<{ n: number }>(sql`select next_sale_number(${businessId}) as n`);
           const number = Number(numRows[0]!.n);
           const closedAt = new Date(endAt.getTime() + 5 * 60_000);
-          const [sale] = await tx.insert(schema.sales).values({ businessId, number, appointmentId: appt!.id, locationId, clientId: client.id, status: "paid", subtotalCents: subtotal, taxCents: tax, tipCents: tip, totalCents, paidCents: totalCents, closedAt, createdAt: closedAt, createdByUserId: user!.id }).returning({ id: schema.sales.id });
+          const [sale] = await tx.insert(schema.sales).values({ businessId, number, appointmentId: appt!.id, locationId: p.locationId, clientId: client.id, status: "paid", subtotalCents: subtotal, taxCents: tax, tipCents: tip, totalCents, paidCents: totalCents, closedAt, createdAt: closedAt, createdByUserId: user!.id }).returning({ id: schema.sales.id });
           await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "service", staffId: p.id, serviceId: svc.id, appointmentItemId: item!.id, name: svc.name, quantity: 1, unitCents: svc.price, amountCents: svc.price, taxable: false, sortOrder: 0 });
           if (retail) await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "product", staffId: p.id, name: retail.name, quantity: 1, unitCents: retail.price, amountCents: retail.price, taxable: true, sortOrder: 1 });
           if (tip) await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "tip", staffId: p.id, name: "Tip", quantity: 1, unitCents: tip, amountCents: tip, taxable: false, sortOrder: 2 });
@@ -283,7 +326,7 @@ async function main() {
           salesN++;
           if (chance(0.3)) {
             const rating = chance(0.8) ? 5 : chance(0.7) ? 4 : 3;
-            await tx.insert(schema.reviews).values({ businessId, clientId: client.id, appointmentId: appt!.id, staffId: p.id, locationId, rating, comment: chance(0.7) ? pick(COMMENTS) : null, requestedAt: closedAt, submittedAt: new Date(closedAt.getTime() + between(2, 30) * 3_600_000), createdAt: closedAt });
+            await tx.insert(schema.reviews).values({ businessId, clientId: client.id, appointmentId: appt!.id, staffId: p.id, locationId: p.locationId, rating, comment: chance(0.7) ? pick(COMMENTS) : null, requestedAt: closedAt, submittedAt: new Date(closedAt.getTime() + between(2, 30) * 3_600_000), createdAt: closedAt });
             reviewsN++;
             reviewClients.add(client.id);
           }
@@ -301,7 +344,7 @@ async function main() {
         if (!p.days.includes(weekday)) continue;
         const start = zonedToInstant(day, weekday === 1 ? "09:55" : "08:52", TZ);
         const minutes = between(420, 500);
-        await tx.insert(schema.timeEntries).values({ businessId, staffId: p.id, date: day, minutes, locationId, clockInAt: start, clockOutAt: new Date(start.getTime() + minutes * 60_000) });
+        await tx.insert(schema.timeEntries).values({ businessId, staffId: p.id, date: day, minutes, locationId: p.locationId, clockInAt: start, clockOutAt: new Date(start.getTime() + minutes * 60_000) });
       }
     }
 
@@ -345,11 +388,11 @@ async function main() {
       { businessId, name: "Glow Monthly", priceCents: 9900, includedServiceId: facial.id, includedSessions: 1, discountBps: 1000, description: "One Signature Facial a month plus 10% off everything else." },
       { businessId, name: "Polished Club", priceCents: 7900, includedServiceId: gel.id, includedSessions: 2, discountBps: 500, description: "Two gel manicures a month and 5% off retail." },
     ]);
-    for (const [i, c] of clientIds.slice(0, 3).entries()) await tx.insert(schema.giftCards).values({ businessId, code: `LUXE-GIFT-${1000 + i}`, initialCents: 10000, balanceCents: i === 0 ? 4500 : 10000, purchaserClientId: c.id, recipientName: `${c.first}'s friend`, locationId });
+    for (const [i, c] of clientIds.slice(0, 3).entries()) await tx.insert(schema.giftCards).values({ businessId, code: `${PROFILE.giftPrefix}-GIFT-${1000 + i}`, initialCents: 10000, balanceCents: i === 0 ? 4500 : 10000, purchaserClientId: c.id, recipientName: `${c.first}'s friend`, locationId });
     await tx.insert(schema.promoCodes).values({ businessId, code: "WELCOME10", type: "percent", value: 10, maxUses: 100 });
     await tx.insert(schema.waitlist).values([
-      { businessId, clientId: clientIds[5]!.id, serviceId: serviceIds.find((s) => s.name === "Full Balayage")!.id, staffId: providers[0]!.id, locationId, date: addDays(today, 3), notes: "Any time after 2pm" },
-      { businessId, clientId: clientIds[9]!.id, serviceId: gel.id, locationId, date: addDays(today, 1), notes: "Lunchtime if possible" },
+      { businessId, clientId: clientIds[5]!.id, serviceId: serviceIds.find((s) => s.name === "Full Balayage")!.id, staffId: providers[0]!.id, locationId: providers[0]!.locationId, date: addDays(today, 3), notes: "Any time after 2pm" },
+      { businessId, clientId: clientIds[9]!.id, serviceId: gel.id, locationId: locIds[locIds.length - 1]!, date: addDays(today, 1), notes: "Lunchtime if possible" },
     ]);
   });
 
