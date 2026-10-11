@@ -16,7 +16,8 @@ export default async function AddTimeOffPage({ params, searchParams }: { params:
   const people = await withTenant(business.id, (tx) =>
     tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
   );
-  const preset = people.some((p) => p.id === sp.staff) ? sp.staff! : people[0]?.id ?? "";
+  // Nobody is picked by default: choosing the wrong person silently is worse than being asked.
+  const preset = people.some((p) => p.id === sp.staff) ? sp.staff! : "";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : "";
   return (
     <FormPage title="Add time off" backHref={`/app/${slug}/staff-hours`} backLabel="Staff hours" width="max-w-lg">
@@ -25,6 +26,7 @@ export default async function AddTimeOffPage({ params, searchParams }: { params:
         <input type="hidden" name="returnTo" value={`/app/${slug}/staff-hours`} />
         <Field label="Who" name="staffId" required>
           <Select name="staffId" defaultValue={preset} required>
+            <option value="" disabled>Choose a person</option>
             {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </Select>
         </Field>
