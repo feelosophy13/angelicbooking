@@ -13,7 +13,10 @@ export const MEMBERSHIP_INTERVALS: MembershipInterval[] = ["week", "month", "yea
 export const MEMBERSHIP_CADENCES: { key: string; interval: MembershipInterval; count: number; label: string }[] = [
   { key: "week:1", interval: "week", count: 1, label: "Every week" },
   { key: "week:2", interval: "week", count: 2, label: "Every 2 weeks" },
+  { key: "week:3", interval: "week", count: 3, label: "Every 3 weeks" },
   { key: "month:1", interval: "month", count: 1, label: "Every month" },
+  { key: "week:5", interval: "week", count: 5, label: "Every 5 weeks" },
+  { key: "week:6", interval: "week", count: 6, label: "Every 6 weeks" },
   { key: "month:3", interval: "month", count: 3, label: "Every 3 months" },
   { key: "month:6", interval: "month", count: 6, label: "Every 6 months" },
   { key: "year:1", interval: "year", count: 1, label: "Every year" },
