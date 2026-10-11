@@ -9,6 +9,7 @@ import { getOffersCatalog } from "@/server/offers";
 import { listLocations } from "@/server/locations";
 import { formatMoney } from "@/lib/utils";
 import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
+import { RowLink, rowClass, rowControl } from "@/components/row";
 import { togglePlan } from "../catalog-actions";
 
 export default async function MembershipsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -29,13 +30,13 @@ export default async function MembershipsPage({ params }: { params: Promise<{ sl
         <Card>
           <ul className="divide-y divide-stone-100 text-sm">
             {plans.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <li key={p.id} className={`flex items-center justify-between gap-3 px-4 py-3 ${manage ? rowClass : ""}`}>
                 <div className={p.active ? "" : "text-stone-400 line-through"}>
-                  <p className="font-medium">{manage ? <Link href={`/app/${slug}/memberships/${p.id}`} className="hover:underline">{p.name}</Link> : p.name}</p>
+                  <p className="font-medium">{manage ? <RowLink href={`/app/${slug}/memberships/${p.id}`}>{p.name}</RowLink> : p.name}</p>
                   <p className="text-xs text-stone-500">{p.includedSessions ? `${p.includedSessions}× ${svc(p.includedServiceId)} per month` : ""}{p.includedSessions && p.discountBps ? " · " : ""}{p.discountBps ? `${p.discountBps / 100}% off other services` : ""}{p.description ? ` · ${p.description}` : ""}{validAtLabel(p.validLocationIds)}</p>
                 </div>
                 <span className="font-medium">{formatMoney(p.priceCents, business.currency)}/mo</span>
-                {manage ? <form action={togglePlan}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={p.id} /><input type="hidden" name="active" value={p.active ? "false" : "true"} /><Button size="sm" variant="ghost" type="submit">{p.active ? "Hide" : "Show"}</Button></form> : null}
+                {manage ? <form action={togglePlan} className={rowControl}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={p.id} /><input type="hidden" name="active" value={p.active ? "false" : "true"} /><Button size="sm" variant="ghost" type="submit">{p.active ? "Hide" : "Show"}</Button></form> : null}
               </li>
             ))}
           </ul>

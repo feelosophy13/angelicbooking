@@ -77,6 +77,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 ## 3. Product backlog
 
 ### App-wide evaluation (2026-10-10)
+- [x] 2026-10-11: `DESIGN.md` added (page anatomy, lists, forms, disclosure, colour, copy, done-checklist). Full-row
+      clickable lists everywhere (products, packages, memberships, clients, sales, automations, locations, services)
+      via `components/row.tsx`; one `Checkbox`, `Textarea` default height, `ImageField` for every picture.
 - [x] Design pass (2026-10-11): progressive disclosure across the owner app. Secondary controls now sit behind
       "details" sections that open on demand (Disclosure component): add-a-service / cancel on the appointment page;
       add-to-ticket, discount/promo and gift-card/package/membership sales on the sale page; edit details, adjust

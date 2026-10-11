@@ -57,3 +57,5 @@ See [docs-ops.md](docs-ops.md) for CI, environments, monitoring, rate limits, an
 | `pnpm db:studio` | Drizzle Studio |
 | `pnpm --filter @angelic/web e2e` | Playwright smoke test (install browsers first: `pnpm --filter @angelic/web exec playwright install chromium`) |
 | `apps/web/scripts/payroll-check.mts` | Dev check: run payroll for a slug and period, write the workbook, print the Summary tab (see file header) |
+
+UI conventions live in [DESIGN.md](DESIGN.md); read it before adding or changing a page.

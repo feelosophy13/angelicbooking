@@ -9,6 +9,7 @@ import { staffLocationIndex } from "@/server/locations";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { BackLink, Button, Card, LinkButton, PageHeader } from "@/components/ui";
+import { RowLink, rowClass, rowControl } from "@/components/row";
 import { deleteLocation, setDefaultLocation } from "./actions";
 import { describeHours } from "@/lib/hours";
 
@@ -31,15 +32,15 @@ export default async function LocationsPage({ params }: { params: Promise<{ slug
       <Card>
         <ul className="divide-y divide-stone-100">
           {rows.map((l) => (
-            <li key={l.id} className="relative flex flex-wrap items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-stone-50">
+            <li key={l.id} className={`flex flex-wrap items-center gap-3 px-4 py-3 text-sm ${rowClass}`}>
               <div className="min-w-0 flex-1">
                 {/* The name link covers the whole row (after:inset-0); the action buttons sit above it. */}
-                <p className="font-medium"><Link href={`/app/${slug}/settings/locations/${l.id}`} className="after:absolute after:inset-0 after:content-['']">{l.name}</Link>{l.isDefault ? <span className="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-xs text-brand-800">default</span> : null}</p>
+                <p className="font-medium"><RowLink href={`/app/${slug}/settings/locations/${l.id}`}>{l.name}</RowLink>{l.isDefault ? <span className="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-xs text-brand-800">default</span> : null}</p>
                 <p className="text-xs text-stone-500">{[l.addressLine1, l.city, l.state, l.postalCode].filter(Boolean).join(", ") || "No address"}{l.phone ? ` · ${l.phone}` : ""}{l.timezone ? ` · ${l.timezone}` : ""}</p>
                 <p className="text-xs text-stone-500">{l.hours ? describeHours(l.hours).join(" · ") : "No opening hours set"}</p>
                 {rows.length > 1 ? <p className="text-xs text-stone-500">{staffAt(l.id, l.isDefault) === 1 ? "1 staff member" : `${staffAt(l.id, l.isDefault)} staff members`} work here</p> : null}
               </div>
-              <div className="relative z-10 flex items-center gap-1">
+              <div className={`flex items-center gap-1 ${rowControl}`}>
                 {!l.isDefault ? (
                   <>
                     <form action={setDefaultLocation}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={l.id} /><Button size="sm" variant="ghost" type="submit">Make default</Button></form>

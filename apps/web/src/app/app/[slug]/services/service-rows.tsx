@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { formatMoney } from "@/lib/utils";
 import { duration } from "@/lib/format";
 import { Button, Card } from "@/components/ui";
+import { RowLink, rowClass, rowControl } from "@/components/row";
 import { CategoryThumb } from "@/components/categories";
 import { moveService, toggleServiceActive } from "./actions";
 
@@ -30,9 +31,9 @@ export function ServiceRows({ slug, title, titleHref, services, currency, manage
       {list.length === 0 ? <p className="px-4 py-6 text-center text-sm text-stone-500">{emptyText ?? "No services here yet."}</p> : null}
       <ul className="divide-y divide-stone-200">
         {list.map((s, idx) => (
-          <li key={s.id} className={`relative flex items-center gap-3 px-4 py-3 ${manage ? "transition-colors hover:bg-stone-50" : ""}`}>
+          <li key={s.id} className={`flex items-center gap-3 px-4 py-3 ${manage ? rowClass : ""}`}>
             {manage && list.length > 1 ? (
-              <div className="relative z-10 -my-1 flex flex-col">
+              <div className={`-my-1 flex flex-col ${rowControl}`}>
                 <form action={moveService}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="serviceId" value={s.id} /><input type="hidden" name="dir" value="up" /><button aria-label={`Move ${s.name} up`} disabled={idx === 0} className="rounded p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"><ChevronUp className="h-3.5 w-3.5" /></button></form>
                 <form action={moveService}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="serviceId" value={s.id} /><input type="hidden" name="dir" value="down" /><button aria-label={`Move ${s.name} down`} disabled={idx === list.length - 1} className="rounded p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"><ChevronDown className="h-3.5 w-3.5" /></button></form>
               </div>
@@ -41,7 +42,7 @@ export function ServiceRows({ slug, title, titleHref, services, currency, manage
             <div className="min-w-0 flex-1">
               {manage ? (
                 // Stretches over the whole row (after:inset-0); the arrows and Hide/Show sit above it.
-                <Link href={`/app/${slug}/services/${s.id}`} className={`font-medium after:absolute after:inset-0 after:content-[''] ${s.active ? "" : "text-stone-400 line-through"}`}>{s.name}</Link>
+                <RowLink href={`/app/${slug}/services/${s.id}`} className={`font-medium ${s.active ? "" : "text-stone-400 line-through"}`}>{s.name}</RowLink>
               ) : (
                 <p className={s.active ? "font-medium" : "font-medium text-stone-400 line-through"}>{s.name}</p>
               )}
@@ -58,7 +59,7 @@ export function ServiceRows({ slug, title, titleHref, services, currency, manage
             </div>
             <span className="font-medium">{formatMoney(s.priceCents, currency)}</span>
             {manage ? (
-              <form action={toggleServiceActive} className="relative z-10">
+              <form action={toggleServiceActive} className={rowControl}>
                 <input type="hidden" name="slug" value={slug} />
                 <input type="hidden" name="serviceId" value={s.id} />
                 <input type="hidden" name="active" value={s.active ? "false" : "true"} />

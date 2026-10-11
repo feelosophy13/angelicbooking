@@ -6,6 +6,7 @@ import { requireAction } from "@/lib/tenant";
 import { listClients, type ClientSort } from "@/server/clients";
 import { dateShort, money } from "@/lib/format";
 import { Button, Card, Input, LinkButton, PageHeader, Empty } from "@/components/ui";
+import { LinkRow } from "@/components/table-row";
 import { cn } from "@/lib/utils";
 import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
@@ -70,7 +71,7 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
             </thead>
             <tbody className="divide-y divide-stone-100">
               {r.rows.map((c) => (
-                <tr key={c.id} className="hover:bg-stone-50">
+                <LinkRow key={c.id} href={`/app/${slug}/clients/${c.id}`}>
                   <td className="px-4 py-2">
                     <Link href={`/app/${slug}/clients/${c.id}`} className="font-medium hover:underline">{c.firstName} {c.lastName}</Link>
                     <p className="truncate text-xs text-stone-500">{[c.phone, c.email].filter(Boolean).join(" · ") || "no contact info"}{locations.length > 1 && c.homeLocationName ? ` · ${c.homeLocationName.replace(/^.*? - /, "")}` : ""}</p>
@@ -80,7 +81,7 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
                   <td className="px-4 py-2 text-stone-600">{dateShort(c.createdAt, business.timezone)}</td>
                   <td className="px-4 py-2 text-right">{Number(c.visitCount)}{Number(c.noShows) ? <span className="ml-1 text-xs text-red-600" title="No-shows">({Number(c.noShows)} NS)</span> : null}</td>
                   <td className="px-2 py-2 text-right"><Link href={`/app/${slug}/clients/${c.id}`} aria-label="Open"><ChevronRight className="h-4 w-4 text-stone-300" /></Link></td>
-                </tr>
+                </LinkRow>
               ))}
             </tbody>
           </table></div>

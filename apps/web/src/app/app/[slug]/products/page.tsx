@@ -9,6 +9,7 @@ import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { formatMoney } from "@/lib/utils";
 import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
+import { RowLink, rowClass, rowControl } from "@/components/row";
 import { toggleProductActive } from "./actions";
 
 export default async function ProductsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -40,10 +41,10 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">{cat}</h2>
             <ul className="divide-y divide-stone-200">
               {list.map(({ p }) => (
-                <li key={p.id} className="flex items-center gap-3 px-4 py-3">
+                <li key={p.id} className={`flex items-center gap-3 px-4 py-3 ${manage ? rowClass : ""}`}>
                   <div className="min-w-0 flex-1">
                     {manage ? (
-                      <Link href={`/app/${slug}/products/${p.id}`} className={`font-medium hover:underline ${p.active ? "" : "text-stone-400 line-through"}`}>{p.name}</Link>
+                      <RowLink href={`/app/${slug}/products/${p.id}`} className={`font-medium ${p.active ? "" : "text-stone-400 line-through"}`}>{p.name}</RowLink>
                     ) : (
                       <p className={p.active ? "font-medium" : "font-medium text-stone-400 line-through"}>{p.name}</p>
                     )}
@@ -51,7 +52,7 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
                   </div>
                   <span className="font-medium">{formatMoney(p.priceCents, business.currency)}</span>
                   {manage ? (
-                    <form action={toggleProductActive}>
+                    <form action={toggleProductActive} className={rowControl}>
                       <input type="hidden" name="slug" value={slug} />
                       <input type="hidden" name="productId" value={p.id} />
                       <input type="hidden" name="active" value={p.active ? "false" : "true"} />

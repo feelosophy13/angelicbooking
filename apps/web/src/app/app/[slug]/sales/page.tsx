@@ -8,6 +8,7 @@ import { listSales } from "@/server/sales";
 import { listLocations } from "@/server/locations";
 import { formatMoney, shiftISODate, cn } from "@/lib/utils";
 import { Button, Card, Empty, Input, PageHeader, Select } from "@/components/ui";
+import { LinkRow } from "@/components/table-row";
 import { StatusBadge } from "@/components/status-badge";
 import { ClientPicker } from "@/components/client-picker";
 import { quickCreateClient } from "../clients/actions";
@@ -76,7 +77,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
               </thead>
               <tbody className="divide-y divide-stone-200">
                 {rows.map(({ sale, clientFirst, clientLast, locationName }) => (
-                  <tr key={sale.id} className="hover:bg-stone-50">
+                  <LinkRow key={sale.id} href={`/app/${slug}/sales/${sale.id}`}>
                     <td className="px-4 py-2"><Link href={`/app/${slug}/sales/${sale.id}`} className="font-medium text-brand-700 hover:underline">#{sale.number}</Link></td>
                     <td className="px-4 py-2">{clientFirst || clientLast ? `${clientFirst ?? ""} ${clientLast ?? ""}`.trim() : <span className="text-stone-500">Walk-in</span>}</td>
                     <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmt.format(sale.closedAt ?? sale.createdAt)}</td>
@@ -84,7 +85,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
                     <td className="px-4 py-2 text-right">{money(sale.totalCents)}</td>
                     <td className="px-4 py-2 text-right">{sale.status === "open" && sale.totalCents - sale.paidCents > 0 ? money(sale.totalCents - sale.paidCents) : ""}</td>
                     <td className="px-4 py-2"><StatusBadge status={sale.status} /></td>
-                  </tr>
+                  </LinkRow>
                 ))}
               </tbody>
             </table>

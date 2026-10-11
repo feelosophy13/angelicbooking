@@ -7,6 +7,7 @@ import { listWorkflows, templateGroup, type WorkflowTemplate } from "@/server/wo
 import { smsAvailableFor } from "@/server/messaging";
 import { summarizeSteps, triggerMeta } from "@/lib/workflows-logic";
 import { Button, Card, LinkButton, PageHeader } from "@/components/ui";
+import { RowLink, rowClass, rowControl } from "@/components/row";
 import { toggleWorkflow } from "./actions";
 
 export const metadata: Metadata = { title: "Automations" };
@@ -50,9 +51,9 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
                 </>
               ) : null}
               {mine.map((w) => (
-                <Card key={w.id} className={`flex flex-col p-4 ${w.enabled ? "" : "opacity-80"}`}>
+                <Card key={w.id} className={`flex flex-col p-4 ${rowClass} ${w.enabled ? "" : "opacity-80"}`}>
                   <div className="mb-1 flex items-start justify-between gap-2">
-                    <h3 className="font-medium"><Link href={`${base}/${w.id}`} className="hover:underline">{w.name}</Link></h3>
+                    <h3 className="font-medium"><RowLink href={`${base}/${w.id}`}>{w.name}</RowLink></h3>
                     <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${w.enabled ? "bg-green-50 text-green-700" : "bg-stone-100 text-stone-500"}`}>{w.enabled ? "On" : "Off"}</span>
                   </div>
                   {w.description ? <p className="text-xs text-stone-500">{w.description}</p> : null}
@@ -60,7 +61,7 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
                   {!sms && usesSms(w.steps) ? <p className="mt-1 text-[11px] text-amber-700">Text steps skipped until a number is verified.</p> : null}
                   <p className="mt-2 text-[11px] text-stone-400">{w.sent30} sent in the last 30 days{w.active ? ` · ${w.active} in progress` : ""}{w.templateKey ? "" : " · custom"}</p>
                   {manage ? (
-                    <div className="mt-3 flex items-center gap-2 border-t border-stone-100 pt-3">
+                    <div className={`mt-3 flex items-center gap-2 border-t border-stone-100 pt-3 ${rowControl}`}>
                       <form action={toggleWorkflow}>
                         <input type="hidden" name="slug" value={slug} />
                         <input type="hidden" name="workflowId" value={w.id} />
