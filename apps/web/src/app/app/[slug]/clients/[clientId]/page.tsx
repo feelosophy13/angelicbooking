@@ -170,9 +170,17 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
         </div>
         <div className="space-y-6">
           <Card className="p-4">
-            <h2 className="mb-3 font-medium">Details</h2>
+            <h2 className="mb-2 font-medium">Contact</h2>
+            <div className="space-y-1 text-sm">
+              {client.phone ? <p>{client.phone}{client.smsOptIn ? "" : <span className="ml-2 text-xs text-stone-400">no texts</span>}</p> : <p className="text-stone-400">No phone</p>}
+              {client.email ? <p className="truncate">{client.email}{client.emailOptIn ? "" : <span className="ml-2 text-xs text-stone-400">no emails</span>}</p> : <p className="text-stone-400">No email</p>}
+              {client.birthday ? <p className="text-stone-600">Birthday {client.birthday.slice(5).replace("-", "/")}</p> : null}
+              {client.notes ? <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">{client.notes}</p> : null}
+            </div>
             {write ? (
-              <ActionForm action={updateClient}>
+              <details className="group mt-3 border-t border-stone-200 pt-3">
+                <summary className="cursor-pointer select-none text-sm text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">Edit details</summary>
+              <ActionForm action={updateClient} className="mt-3">
                 <input type="hidden" name="slug" value={slug} />
                 <input type="hidden" name="clientId" value={client.id} />
                 <div className="grid grid-cols-2 gap-3">
@@ -187,13 +195,8 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="emailOptIn" defaultChecked={client.emailOptIn} className="h-4 w-4 accent-brand-600" /> Emails</label>
                 <SubmitButton variant="secondary" pendingText="Saving…">Save</SubmitButton>
               </ActionForm>
-            ) : (
-              <div className="space-y-1 text-sm">
-                {client.phone ? <p>{client.phone}</p> : null}
-                {client.email ? <p>{client.email}</p> : null}
-                {client.notes ? <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">{client.notes}</p> : null}
-              </div>
-            )}
+              </details>
+            ) : null}
           </Card>
           {loyalty ? (
             <Card className="p-4 text-sm">
@@ -205,15 +208,18 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 </ul>
               ) : null}
               {write ? (
-                <ActionForm action={adjustClientPoints} className="mt-3 border-t border-stone-200 pt-3">
-                  <input type="hidden" name="slug" value={slug} />
-                  <input type="hidden" name="clientId" value={client.id} />
-                  <div className="grid grid-cols-[6rem_1fr] gap-2">
-                    <Field label="Adjust" name="delta"><Input name="delta" inputMode="numeric" placeholder="+50" /></Field>
-                    <Field label="Reason" name="note"><Input name="note" placeholder="Birthday bonus" /></Field>
-                  </div>
-                  <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Apply</SubmitButton>
-                </ActionForm>
+                <details className="mt-3 border-t border-stone-200 pt-3">
+                  <summary className="cursor-pointer select-none text-xs text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">Adjust points</summary>
+                  <ActionForm action={adjustClientPoints} className="mt-2">
+                    <input type="hidden" name="slug" value={slug} />
+                    <input type="hidden" name="clientId" value={client.id} />
+                    <div className="grid grid-cols-[6rem_1fr] gap-2">
+                      <Field label="Adjust" name="delta"><Input name="delta" inputMode="numeric" placeholder="+50" /></Field>
+                      <Field label="Reason" name="note"><Input name="note" placeholder="Birthday bonus" /></Field>
+                    </div>
+                    <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Apply</SubmitButton>
+                  </ActionForm>
+                </details>
               ) : null}
               <div className="mt-3 border-t border-stone-200 pt-3">
                 <p className="text-xs text-stone-500">Referral code</p>
@@ -237,12 +243,15 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               </ul>
             )}
             {write && client.phone ? (
-              <ActionForm action={replyToClient} className="mt-2">
-                <input type="hidden" name="slug" value={slug} />
-                <input type="hidden" name="clientId" value={client.id} />
-                <Field label="" name="body"><Textarea name="body" rows={2} placeholder={client.smsOptIn ? "Reply by text…" : "Client opted out of texts"} disabled={!client.smsOptIn} /></Field>
-                <SubmitButton size="sm" variant="secondary" pendingText="Sending…" disabled={!client.smsOptIn}>Send text</SubmitButton>
-              </ActionForm>
+              <details className="mt-2" open={thread.length > 0}>
+                <summary className="cursor-pointer select-none text-xs text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">{thread.length ? "Reply" : "Send a text"}</summary>
+                <ActionForm action={replyToClient} className="mt-2">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="clientId" value={client.id} />
+                  <Field label="" name="body"><Textarea name="body" rows={2} placeholder={client.smsOptIn ? "Reply by text…" : "Client opted out of texts"} disabled={!client.smsOptIn} /></Field>
+                  <SubmitButton size="sm" variant="secondary" pendingText="Sending…" disabled={!client.smsOptIn}>Send text</SubmitButton>
+                </ActionForm>
+              </details>
             ) : null}
           </Card>
           <Card className="p-4 text-sm">

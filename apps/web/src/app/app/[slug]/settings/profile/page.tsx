@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
 import { appUrl } from "@/lib/stripe";
-import { BackLink, Card, Input, PageHeader, Textarea } from "@/components/ui";
+import { BackLink, Card, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { TIMEZONES } from "@/lib/utils";
+import { updateBusiness } from "../actions";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { saveProfile } from "./actions";
 
@@ -15,7 +17,31 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Business profile" />
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-6">
         <Card className="p-5">
+          <h2 className="mb-3 font-medium">Basics</h2>
+          <ActionForm action={updateBusiness}>
+            <input type="hidden" name="slug" value={slug} />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Business name" name="name" required><Input name="name" defaultValue={business.name} required /></Field>
+              <Field label="Timezone" name="timezone">
+                <Select name="timezone" defaultValue={business.timezone}>
+                  {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+                </Select>
+              </Field>
+              <Field label="Phone" name="phone"><Input name="phone" defaultValue={business.phone ?? ""} /></Field>
+              <Field label="Email" name="email" hint="Where booking alerts and client replies go."><Input name="email" type="email" defaultValue={business.email ?? ""} /></Field>
+              <Field label="Booking grid" name="slotIntervalMin" hint="Appointments start on these intervals.">
+                <Select name="slotIntervalMin" defaultValue={String(business.slotIntervalMin)}>
+                  {[5, 10, 15, 20, 30, 60].map((n) => <option key={n} value={n}>{n} minutes</option>)}
+                </Select>
+              </Field>
+            </div>
+            <SubmitButton pendingText="Saving…">Save basics</SubmitButton>
+          </ActionForm>
+        </Card>
+        <Card className="p-5">
+          <h2 className="mb-3 font-medium">Booking page</h2>
           <ActionForm action={saveProfile}>
             <input type="hidden" name="slug" value={slug} />
             <Field label="Tagline" name="tagline" hint="One line under your name on the booking page."><Input name="tagline" defaultValue={business.tagline ?? ""} placeholder="Lashes, brows and skin in Sterling, VA" /></Field>
@@ -41,6 +67,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
             <SubmitButton pendingText="Saving…">Save profile</SubmitButton>
           </ActionForm>
         </Card>
+        </div>
         <Card className="p-4 text-sm">
           <h2 className="mb-1 font-medium">Where this shows</h2>
           <ul className="list-disc space-y-1 pl-5 text-stone-600">

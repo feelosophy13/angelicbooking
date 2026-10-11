@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { Ban, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { instantToISODate, weekdayOf } from "@angelic/core";
 
@@ -117,7 +118,8 @@ export default async function CalendarPage({
     }));
 
   let setup: SetupStep[] = [];
-  if (can(permissions, "business.manage")) {
+  const setupHidden = (await cookies()).get(`setup-hidden-${business.id}`)?.value === "1";
+  if (can(permissions, "business.manage") && !setupHidden) {
     const counts = await withTenant(business.id, async (tx) => {
       const [svc] = await tx.select({ n: sql<number>`count(*)` }).from(schema.services);
       const [st] = await tx.select({ n: sql<number>`count(*)` }).from(schema.staff);

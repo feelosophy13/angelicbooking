@@ -1,137 +1,89 @@
 import Link from "next/link";
-import { requireAction } from "@/lib/tenant";
+import type { Metadata } from "next";
+import { ChevronRight } from "lucide-react";
 import { asc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { describeHours } from "@/lib/hours";
-import { TIMEZONES } from "@/lib/utils";
-import type { Metadata } from "next";
-import { Card, Input, PageHeader, Select } from "@/components/ui";
-import { ActionForm, Field, SubmitButton } from "@/components/form";
+import { requireAction } from "@/lib/tenant";
+import { Card, PageHeader } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Settings" };
-import { updateBusiness } from "./actions";
 
+type Entry = { href: string; title: string; blurb: string; status?: string };
+
+/** A short, grouped directory. Each page explains itself; this one just helps you find it. */
 export default async function SettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "business.manage");
-  const locations = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.isDefault), asc(schema.locations.name)));
+  const locations = await withTenant(business.id, (tx) => tx.select({ id: schema.locations.id }).from(schema.locations).orderBy(asc(schema.locations.name)));
+  const base = `/app/${slug}/settings`;
+  const groups: { title: string; entries: Entry[] }[] = [
+    {
+      title: "Your business",
+      entries: [
+        { href: `${base}/profile`, title: "Business profile", blurb: "Name, timezone, logo, colours, about text and links." },
+        { href: `${base}/locations`, title: "Locations", blurb: "Addresses, opening hours and tax rates.", status: locations.length === 1 ? "1 location" : `${locations.length} locations` },
+        { href: `${base}/roles`, title: "Roles & permissions", blurb: "What each role can see and do." },
+      ],
+    },
+    {
+      title: "Online booking",
+      entries: [
+        { href: `${base}/booking`, title: "Booking rules", blurb: "Notice, cancellation window, reminders, deposits and no-show fee.", status: business.onlineBookingEnabled ? "on" : "off" },
+        { href: `${base}/forms`, title: "Forms", blurb: "Intake questionnaires and waivers." },
+        { href: `${base}/reviews`, title: "Reviews", blurb: "Rating requests and your Google review link." },
+        { href: `${base}/loyalty`, title: "Loyalty & referrals", blurb: "Points, redemption value and referral bonuses.", status: business.loyaltyEnabled ? "on" : "off" },
+        { href: `${base}/store`, title: "Online store", blurb: "Gift cards and products on your booking page.", status: business.storeEnabled ? "on" : business.giftCardsOnline ? "gift cards" : "off" },
+        { href: `${base}/embed`, title: "Embed & buttons", blurb: "Put booking on your own website." },
+        { href: `${base}/domain`, title: "Custom domain", blurb: "Serve the booking page from your hostname.", status: business.customDomain ?? undefined },
+      ],
+    },
+    {
+      title: "Payments & billing",
+      entries: [
+        { href: `${base}/payments`, title: "Card payments", blurb: "Your Stripe account for cards, deposits and saved cards.", status: business.stripeChargesEnabled ? "connected" : "not connected" },
+        { href: `${base}/billing`, title: "Your plan", blurb: "Subscription, card on file and this month's usage." },
+      ],
+    },
+    {
+      title: "Messaging",
+      entries: [
+        { href: `${base}/messaging`, title: "Text number", blurb: "Your own toll-free number for confirmations and reminders." },
+        { href: `${base}/notifications`, title: "Messages", blurb: "Text wording, replies from clients and the delivery log." },
+      ],
+    },
+    {
+      title: "Data",
+      entries: [
+        { href: `${base}/import`, title: "Import", blurb: "Bring clients, services and appointments from Vagaro." },
+        { href: `${base}/audit`, title: "Activity log", blurb: "Who changed what, and when." },
+      ],
+    },
+  ];
   return (
     <>
       <PageHeader title="Settings" />
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="p-4">
-          <h2 className="mb-3 font-medium">Business</h2>
-          <ActionForm action={updateBusiness}>
-            <input type="hidden" name="slug" value={slug} />
-            <Field label="Name" name="name" required><Input name="name" defaultValue={business.name} required /></Field>
-            <Field label="Timezone" name="timezone">
-              <Select name="timezone" defaultValue={business.timezone}>
-                {TIMEZONES.map((tz) => <option key={tz} value={tz}>{tz}</option>)}
-              </Select>
-            </Field>
-            <Field label="Booking grid" name="slotIntervalMin" hint="Appointments start on these intervals.">
-              <Select name="slotIntervalMin" defaultValue={String(business.slotIntervalMin)}>
-                {[5, 10, 15, 20, 30, 60].map((n) => <option key={n} value={n}>{n} minutes</option>)}
-              </Select>
-            </Field>
-            <Field label="Phone" name="phone"><Input name="phone" defaultValue={business.phone ?? ""} /></Field>
-            <Field label="Email" name="email"><Input name="email" type="email" defaultValue={business.email ?? ""} /></Field>
-            <SubmitButton pendingText="Saving…">Save</SubmitButton>
-          </ActionForm>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Business profile</h2>
-          <p className="mb-3 text-sm text-stone-600">Logo, colours, about text, hours and links shown on your booking page and in messages.</p>
-          <Link href={`/app/${slug}/settings/profile`} className="text-sm text-brand-700 underline">Edit profile →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Roles &amp; permissions</h2>
-          <p className="mb-3 text-sm text-stone-600">Define what each role can see and do, and create your own roles.</p>
-          <Link href={`/app/${slug}/settings/roles`} className="text-sm text-brand-700 underline">Manage roles →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Payments</h2>
-          <p className="mb-3 text-sm text-stone-600">
-            Connect your own Stripe account to take card payments, save cards on file and charge no-show fees. Payments go
-            directly to you.
-          </p>
-          <Link href={`/app/${slug}/settings/payments`} className="text-sm text-brand-700 underline">
-            {business.stripeChargesEnabled ? "Stripe connected · manage →" : "Set up payments →"}
-          </Link>
-          
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Online booking</h2>
-          <p className="mb-3 text-sm text-stone-600">Your public booking link, notice and cancellation rules, reminders and no-show fee.</p>
-          <Link href={`/app/${slug}/settings/booking`} className="text-sm text-brand-700 underline">Booking settings →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Embed on your website</h2>
-          <p className="mb-3 text-sm text-stone-600">A snippet that puts the booking steps, or a Book now button, on your own site.</p>
-          <Link href={`/app/${slug}/settings/embed`} className="text-sm text-brand-700 underline">Get the snippet →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Online store</h2>
-          <p className="mb-3 text-sm text-stone-600">Sell gift cards and products from your booking page, for pickup or flat-rate shipping.</p>
-          <Link href={`/app/${slug}/settings/store`} className="text-sm text-brand-700 underline">Store settings →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Forms</h2>
-          <p className="mb-3 text-sm text-stone-600">Intake questionnaires and consent waivers clients sign before their visit.</p>
-          <Link href={`/app/${slug}/settings/forms`} className="text-sm text-brand-700 underline">Forms →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Review requests</h2>
-          <p className="mb-3 text-sm text-stone-600">Ask for a star rating after each visit and send happy clients to Google.</p>
-          <Link href={`/app/${slug}/settings/reviews`} className="text-sm text-brand-700 underline">Review settings →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Loyalty &amp; referrals</h2>
-          <p className="mb-3 text-sm text-stone-600">Points per dollar, redemption value and referral bonuses.</p>
-          <Link href={`/app/${slug}/settings/loyalty`} className="text-sm text-brand-700 underline">Loyalty settings →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Billing</h2>
-          <p className="mb-3 text-sm text-stone-600">Your plan, card on file, add-ons and this month's usage.</p>
-          <Link href={`/app/${slug}/settings/billing`} className="text-sm text-brand-700 underline">Billing →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Text messaging</h2>
-          <p className="mb-3 text-sm text-stone-600">Get your own toll-free number so confirmations and reminders come from your salon.</p>
-          <Link href={`/app/${slug}/settings/messaging`} className="text-sm text-brand-700 underline">Text number →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Messages</h2>
-          <p className="mb-3 text-sm text-stone-600">Every confirmation, reminder and cancellation sent to clients, with delivery status.</p>
-          <Link href={`/app/${slug}/settings/notifications`} className="text-sm text-brand-700 underline">Message log →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Locations <span className="text-sm font-normal text-stone-500">· {locations.length}</span></h2>
-          <ul className="mb-3 space-y-1 text-sm">
-            {[...locations].reverse().map((l) => (
-              <li key={l.id}>
-                <Link href={`/app/${slug}/settings/locations/${l.id}`} className="font-medium hover:underline">{l.name}</Link>{l.isDefault ? <span className="ml-1 text-xs text-stone-400">default</span> : null}
-                <p className="text-xs text-stone-500">{[[l.addressLine1, l.city].filter(Boolean).join(", ") || null, l.hours ? describeHours(l.hours).join(" · ") : "no hours set"].filter(Boolean).join(" · ")}</p>
-              </li>
-            ))}
-          </ul>
-          <Link href={`/app/${slug}/settings/locations`} className="text-sm text-brand-700 underline">Manage locations →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Custom domain</h2>
-          <p className="mb-3 text-sm text-stone-600">Serve the booking page from your own hostname.</p>
-          <Link href={`/app/${slug}/settings/domain`} className="text-sm text-brand-700 underline">Custom domain →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Import from Vagaro</h2>
-          <p className="mb-3 text-sm text-stone-600">Bring over clients, services and upcoming appointments from CSV or Excel exports.</p>
-          <Link href={`/app/${slug}/settings/import`} className="text-sm text-brand-700 underline">Import data →</Link>
-        </Card>
-        <Card className="p-4">
-          <h2 className="mb-1 font-medium">Activity log</h2>
-          <p className="mb-3 text-sm text-stone-600">Every booking, reschedule and status change, with who did it.</p>
-          <Link href={`/app/${slug}/settings/audit`} className="text-sm text-brand-700 underline">View activity log →</Link>
-        </Card>
+        {groups.map((g) => (
+          <section key={g.title}>
+            <h2 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-stone-500">{g.title}</h2>
+            <Card>
+              <ul className="divide-y divide-stone-100">
+                {g.entries.map((e) => (
+                  <li key={e.href}>
+                    <Link href={e.href} className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50">
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-stone-900">{e.title}</span>
+                        <span className="block truncate text-xs text-stone-500">{e.blurb}</span>
+                      </span>
+                      {e.status ? <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">{e.status}</span> : null}
+                      <ChevronRight className="h-4 w-4 shrink-0 text-stone-300" aria-hidden />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          </section>
+        ))}
       </div>
     </>
   );

@@ -21,6 +21,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 import { addOffer, addProduct, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, editLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, refund, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
 import { ClientPicker } from "@/components/client-picker";
+import { Disclosure } from "@/components/disclosure";
 import { quickCreateClient } from "../../clients/actions";
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
 import { schema, withTenant } from "@angelic/db";
@@ -157,61 +158,69 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           </Card>
 
           {open ? (
-            <div className="grid gap-6 md:grid-cols-2">
-              <Card className="p-4">
-                <h2 className="mb-2 font-medium">Add product</h2>
-                {products.length === 0 ? (
-                  <p className="text-sm text-stone-500">No products yet. Add some under <Link className="underline" href={`/app/${slug}/products`}>Products</Link>.</p>
-                ) : (
-                  <form action={addProduct} className="space-y-2">
-                    <input type="hidden" name="slug" value={slug} />
-                    <input type="hidden" name="saleId" value={sale.id} />
-                    <Select name="productId">
-                      {[...new Set(products.map((p) => p.category ?? "Other"))].map((cat) => (
-                        <optgroup key={cat} label={cat}>
-                          {products.filter((p) => (p.category ?? "Other") === cat).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)}</option>)}
-                        </optgroup>
-                      ))}
-                    </Select>
-                    <div className="grid grid-cols-[5rem_1fr] gap-2">
-                      <input name="quantity" type="number" min={1} max={99} defaultValue={1} className="h-10 rounded-lg border border-stone-300 px-3 text-sm" />
-                      <Select name="staffId" defaultValue={staffOnTicket[0]?.id ?? ""}>
-                        <option value="">No staff credit</option>
-                        {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
-                      </Select>
-                    </div>
-                    <Button type="submit" size="sm" variant="secondary">Add</Button>
-                  </form>
-                )}
-              </Card>
-              <Card className="p-4">
-                <h2 className="mb-2 font-medium">Add service</h2>
-                <form action={addServiceToSale} className="space-y-2">
-                  <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />
-                  <Select name="serviceId" required defaultValue="">
-                    <option value="" disabled>Choose a service</option>
-                    {servicesForSale.map((s) => <option key={s.id} value={s.id}>{s.name} · {money(s.priceCents)}</option>)}
-                  </Select>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Select name="staffId" defaultValue={staffOnTicket[0]?.id ?? ""}>
-                      <option value="">No staff credit</option>
-                      {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
-                    </Select>
-                    <Input name="price" inputMode="decimal" placeholder="Price (optional)" />
+            <div className="space-y-3">
+              <Disclosure title="Add to this ticket" hint="product, retail or an extra service">
+                <div className="grid gap-6 md:grid-cols-2">
+                  <div>
+                    <h3 className="mb-2 text-sm font-medium text-stone-700">Product</h3>
+                    {products.length === 0 ? (
+                      <p className="text-sm text-stone-500">No products yet. Add some under <Link className="underline" href={`/app/${slug}/products`}>Products</Link>.</p>
+                    ) : (
+                      <form action={addProduct} className="space-y-2">
+                        <input type="hidden" name="slug" value={slug} />
+                        <input type="hidden" name="saleId" value={sale.id} />
+                        <Select name="productId">
+                          {[...new Set(products.map((p) => p.category ?? "Other"))].map((cat) => (
+                            <optgroup key={cat} label={cat}>
+                              {products.filter((p) => (p.category ?? "Other") === cat).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)}</option>)}
+                            </optgroup>
+                          ))}
+                        </Select>
+                        <div className="grid grid-cols-[5rem_1fr] gap-2">
+                          <input name="quantity" type="number" min={1} max={99} defaultValue={1} className="h-10 rounded-lg border border-stone-300 px-3 text-sm" aria-label="Quantity" />
+                          <Select name="staffId" defaultValue={staffOnTicket[0]?.id ?? ""}>
+                            <option value="">No staff credit</option>
+                            {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                          </Select>
+                        </div>
+                        <Button type="submit" size="sm" variant="secondary">Add product</Button>
+                      </form>
+                    )}
                   </div>
-                  <Button type="submit" size="sm" variant="secondary">Add service</Button>
-                </form>
-              </Card>
-              <Card className="p-4">
-                <h2 className="mb-2 font-medium">Discount</h2>
-                <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}:${sale.promoCodeId ?? ""}`} action={applyDiscount} slug={slug} saleId={sale.id} currentCents={sale.promoCodeId ? 0 : sale.discountCents} current={typedDiscount} note={sale.promoCodeId ? null : sale.discountNote} />
-                <div className="mt-3 border-t border-stone-200 pt-3">
-                  <PromoForm key={`promo${sale.promoCodeId ?? ""}`} action={applyPromo} slug={slug} saleId={sale.id} applied={promo?.code ?? null} removeAction={removePromo} />
+                  <div>
+                    <h3 className="mb-2 text-sm font-medium text-stone-700">Service</h3>
+                    <form action={addServiceToSale} className="space-y-2">
+                      <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />
+                      <Select name="serviceId" required defaultValue="">
+                        <option value="" disabled>Choose a service</option>
+                        {servicesForSale.map((s) => <option key={s.id} value={s.id}>{s.name} · {money(s.priceCents)}</option>)}
+                      </Select>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Select name="staffId" defaultValue={staffOnTicket[0]?.id ?? ""}>
+                          <option value="">No staff credit</option>
+                          {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                        </Select>
+                        <Input name="price" inputMode="decimal" placeholder="Price (optional)" />
+                      </div>
+                      <Button type="submit" size="sm" variant="secondary">Add service</Button>
+                    </form>
+                  </div>
                 </div>
-              </Card>
-              <Card className="p-4 md:col-span-2">
-                <h2 className="mb-2 font-medium">Sell a gift card, package or membership</h2>
-                <div className="grid gap-3 md:grid-cols-3">
+              </Disclosure>
+              <Disclosure title="Discount or promo code" hint={promo ? `code ${promo.code} applied` : sale.discountCents > 0 ? `${money(sale.discountCents)} off` : undefined} open={!!promo || sale.discountCents > 0}>
+                <div className="grid gap-6 md:grid-cols-2">
+                  <div>
+                    <h3 className="mb-2 text-sm font-medium text-stone-700">Discount</h3>
+                    <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}:${sale.promoCodeId ?? ""}`} action={applyDiscount} slug={slug} saleId={sale.id} currentCents={sale.promoCodeId ? 0 : sale.discountCents} current={typedDiscount} note={sale.promoCodeId ? null : sale.discountNote} />
+                  </div>
+                  <div>
+                    <h3 className="mb-2 text-sm font-medium text-stone-700">Promo code</h3>
+                    <PromoForm key={`promo${sale.promoCodeId ?? ""}`} action={applyPromo} slug={slug} saleId={sale.id} applied={promo?.code ?? null} removeAction={removePromo} />
+                  </div>
+                </div>
+              </Disclosure>
+              <Disclosure title="Sell a gift card, package or membership">
+                <div className="grid gap-4 md:grid-cols-3">
                   <form action={addOffer} className="space-y-2">
                     <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="kind" value="gift_card" />
                     <Input name="amount" inputMode="decimal" placeholder="Gift card amount" required />
@@ -229,15 +238,13 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                     <Button type="submit" size="sm" variant="secondary" disabled={!client || !catalog?.plans.some((p) => p.active)}>Add membership{!client ? " (needs client)" : ""}</Button>
                   </form>
                 </div>
-              </Card>
-              <Card className="p-4 md:col-span-2">
-                <h2 className="mb-2 font-medium">Tips</h2>
-                {staffOnTicket.length === 0 ? (
-                  <p className="text-sm text-stone-500">Add a service line to assign tips.</p>
-                ) : (
+              </Disclosure>
+              {staffOnTicket.length > 0 ? (
+                <Card className="p-4">
+                  <h2 className="mb-2 font-medium">Tips</h2>
                   <TipsForm key={JSON.stringify(currentTips)} action={applyTips} slug={slug} saleId={sale.id} staff={staffOnTicket} current={currentTips} />
-                )}
-              </Card>
+                </Card>
+              ) : null}
             </div>
           ) : null}
 

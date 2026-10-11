@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { z } from "zod";
 import { schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
@@ -62,4 +63,12 @@ export async function quickStatus(input: { slug: string; appointmentId: string; 
   if (parsed.data.status === "completed") await triggerAppointmentWorkflows(ctx.business, "appointment_completed", parsed.data.appointmentId);
   revalidatePath(`/app/${parsed.data.slug}`);
   return { ok: true };
+}
+
+/** The owner has seen the setup checklist enough; keep it off the calendar on this device. */
+export async function hideSetupChecklist(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const ctx = await requireAction(slug, "business.manage");
+  (await cookies()).set(`setup-hidden-${ctx.business.id}`, "1", { path: "/", maxAge: 365 * 86_400, sameSite: "lax" });
+  revalidatePath(`/app/${slug}`);
 }

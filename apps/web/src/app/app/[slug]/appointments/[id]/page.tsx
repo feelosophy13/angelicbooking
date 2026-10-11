@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { StatusBadge } from "@/components/status-badge";
+import { Disclosure } from "@/components/disclosure";
 import { ConfirmSubmit } from "@/components/form";
 import { notFound } from "next/navigation";
 import { instantToISODate } from "@angelic/core";
@@ -200,7 +201,7 @@ export default async function AppointmentPage({
           </Card>
 
           {moveItem ? (
-            <Card className="p-4">
+            <Card className="p-4 ring-2 ring-brand-200">
               <h2 className="mb-1 font-medium">Move {moveItem.serviceName.replace(" (finish)", "")}</h2>
               <form className="mb-3 grid grid-cols-[1fr_1fr_auto] items-end gap-2">
                 <input type="hidden" name="moveItemId" value={moveItem.id} />
@@ -224,8 +225,7 @@ export default async function AppointmentPage({
           ) : null}
 
           {!locked ? (
-            <Card className="p-4">
-              <h2 className="mb-3 font-medium">Add a service</h2>
+            <Disclosure title="Add a service" hint="another service on this visit" open={!!addSvc}>
               <form className="mb-3 grid grid-cols-[2fr_1fr_1fr_auto] items-end gap-2">
                 <Field label="Service">
                   <Select name="addServiceId" defaultValue={addSvc?.id ?? ""} required>
@@ -252,7 +252,7 @@ export default async function AppointmentPage({
               ) : (
                 <p className="text-sm text-stone-500">Times right after the current services are listed first.</p>
               )}
-            </Card>
+            </Disclosure>
           ) : null}
 
           <Card className="p-4">
@@ -318,13 +318,16 @@ export default async function AppointmentPage({
                 ))}
             </form>
             {appointment.status !== "cancelled" ? (
-              <form action={changeStatus} className="mt-4 space-y-2 border-t border-stone-200 pt-3">
-                <input type="hidden" name="slug" value={slug} />
-                <input type="hidden" name="appointmentId" value={id} />
-                <input type="hidden" name="status" value="cancelled" />
-                <Input name="reason" placeholder="Cancellation reason (optional)" />
-                <ConfirmSubmit title="Cancel this appointment?" body="The client is notified if they have messages turned on. The time becomes available again." confirmLabel="Cancel appointment" variant="danger" className="w-full">Cancel appointment</ConfirmSubmit>
-              </form>
+              <details className="group mt-3 border-t border-stone-200 pt-3">
+                <summary className="cursor-pointer select-none text-sm text-stone-500 hover:text-stone-800 marker:content-none [&::-webkit-details-marker]:hidden">Cancel this appointment…</summary>
+                <form action={changeStatus} className="mt-2 space-y-2">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="appointmentId" value={id} />
+                  <input type="hidden" name="status" value="cancelled" />
+                  <Input name="reason" placeholder="Reason (optional)" />
+                  <ConfirmSubmit title="Cancel this appointment?" body="The client is notified if they have messages turned on. The time becomes available again." confirmLabel="Cancel appointment" variant="danger" className="w-full">Cancel appointment</ConfirmSubmit>
+                </form>
+              </details>
             ) : (
               <p className="mt-3 text-sm text-stone-500">
                 Cancelled{appointment.cancellationReason ? `: ${appointment.cancellationReason}` : ""}.
