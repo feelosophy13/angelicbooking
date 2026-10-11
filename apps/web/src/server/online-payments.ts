@@ -113,7 +113,7 @@ export async function refundDeposit(input: { businessId: string; accountId: stri
     const as = input.as ?? (biz?.depositRefundAs === "store_credit" ? "store_credit" : "original");
     // Under a store-credit policy the money stays on the account and the client gets a balance instead.
     if (as === "store_credit" && appt.clientId) {
-      await changeStoreCredit(tx, { businessId: input.businessId, clientId: appt.clientId, deltaCents: appt.depositCents, reason: "deposit_refund", appointmentId: appt.id, note: input.reason, actorUserId: input.actorUserId === "client" ? null : input.actorUserId });
+      await changeStoreCredit(tx, { businessId: input.businessId, clientId: appt.clientId, deltaCents: appt.depositCents, reason: "deposit_refund", appointmentId: appt.id, note: input.reason, actorUserId: input.actorUserId });
       await tx.update(schema.appointments).set({ depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
       await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.store_credit", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: appt.depositCents, reason: input.reason }) });
       return true;

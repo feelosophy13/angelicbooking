@@ -22,6 +22,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 import { addOffer, addProduct, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, editLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, payWithStoreCreditAction, refund, changeRefundReason, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
 import { ClientPicker } from "@/components/client-picker";
 import { Disclosure } from "@/components/disclosure";
+import { ActivityTrail } from "@/components/activity-trail";
+import { saleActivity } from "@/server/activity";
 import { quickCreateClient } from "../../clients/actions";
 import { getClientCredits, getOffersCatalog } from "@/server/offers";
 import { serviceGroups } from "@/server/service-groups";
@@ -69,6 +71,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const creditedFor = (paymentId: string) => creditLedger.filter((c) => c.paymentId === paymentId && c.reason === "refund").reduce((s, c) => s + c.deltaCents, 0);
   const rebookLine = lines.find((l) => l.kind === "service") ?? null;
   const serviceGroupsForSale = open ? await serviceGroups(business, { meta: "price" }) : [];
+  const activity = await saleActivity(business, sale.id);
   const promo = sale.promoCodeId ? await withTenant(business.id, (tx) => tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.id, sale.promoCodeId!), columns: { code: true } })) : null;
   const typedDiscount: { type: "amount" | "percent"; value: number } | null =
     !sale.promoCodeId && (sale.discountType === "percent" || sale.discountType === "amount") && sale.discountValue ? { type: sale.discountType, value: sale.discountValue } : null;
@@ -296,6 +299,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               </ul>
             </Card>
           ) : null}
+          <ActivityTrail summary={activity.summary} events={activity.events} timeZone={business.timezone} mode="sale" />
         </div>
 
         <div className="space-y-6">

@@ -46,10 +46,11 @@ async function assertQualified(tx: Tx, staffRow: { id: string; displayName: stri
   if (mapped.length && !mapped.some((m) => m.staffId === staffRow.id)) throw new BookingError(`${staffRow.displayName} doesn't perform ${service.name}. Assign it under Staff → Services first.`);
 }
 
-async function audit(tx: Tx, businessId: string, actorUserId: string, action: string, entityId: string, diff?: unknown) {
+/** Every log row names who did it: a user id, or the literal "client" for self-service actions online. */
+async function audit(tx: Tx, businessId: string, actorUserId: string | null, action: string, entityId: string, diff?: unknown) {
   await tx.insert(schema.auditLog).values({
     businessId,
-    actorUserId,
+    actorUserId: actorUserId ?? "client",
     action,
     entity: "appointment",
     entityId,
@@ -76,7 +77,7 @@ export interface BookAppointmentInput {
   staffId: string;
   startAt: Date;
   notes?: string | null;
-  createdByUserId: string;
+  createdByUserId: string | null;
   source?: "staff" | "online";
   /** Standing-appointment series this occurrence belongs to. */
   seriesId?: string | null;
@@ -138,7 +139,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
         .returning({ id: schema.appointments.id });
       await insertServiceItems(tx, { ...input, appointmentId: appt!.id, sortOrderBase: 0 });
       await refreshHomeLocation(tx, input.clientId);
-      await audit(tx, input.businessId, input.createdByUserId, "appointment.create", appt!.id, {
+      await audit(tx, input.businessId, input.source === "online" ? "client" : input.createdByUserId, "appointment.create", appt!.id, {
         serviceId: input.serviceId,
         staffId: input.staffId,
         startAt: input.startAt,

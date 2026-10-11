@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { StatusBadge } from "@/components/status-badge";
 import { Disclosure } from "@/components/disclosure";
+import { ActivityTrail } from "@/components/activity-trail";
+import { appointmentActivity } from "@/server/activity";
 import { ConfirmSubmit } from "@/components/form";
 import { notFound } from "next/navigation";
 import { instantToISODate } from "@angelic/core";
@@ -59,6 +61,7 @@ export default async function AppointmentPage({
   const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, id), ne(schema.sales.status, "void")), orderBy: desc(schema.sales.createdAt) }));
   // The rating request for this visit, if one went out: submitted or still waiting.
   const review = await withTenant(business.id, (tx) => tx.query.reviews.findFirst({ where: eq(schema.reviews.appointmentId, id), orderBy: desc(schema.reviews.requestedAt) }));
+  const activity = await appointmentActivity(business, id);
   const fmtDay = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
   const pinnedNotes = client ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
   const series = appointment.seriesId ? await getSeriesForAppointment(business.id, id) : null;
@@ -441,10 +444,7 @@ export default async function AppointmentPage({
             )}
           </Card>
 
-          <p className="text-xs text-stone-400">
-            Booked via {appointment.source} · created {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: tz }).format(appointment.createdAt)}
-            {appointment.createdByUserId === user.id ? " by you" : ""}
-          </p>
+          <ActivityTrail summary={activity.summary} events={activity.events} timeZone={tz} mode="appointment" />
         </div>
       </div>
     </>

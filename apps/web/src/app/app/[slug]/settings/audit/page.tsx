@@ -44,7 +44,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
               {rows.slice(0, PAGE).map((r) => (
                 <tr key={r.id} className="align-top">
                   <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmt.format(r.at)}</td>
-                  <td className="whitespace-nowrap px-4 py-2">{r.actorUserId ? (nameById.get(r.actorUserId) ?? "unknown") : "system"}</td>
+                  <td className="whitespace-nowrap px-4 py-2">{r.actorUserId === "client" ? "the client" : r.actorUserId ? (nameById.get(r.actorUserId) ?? "former member") : "system"}</td>
                   <td className="whitespace-nowrap px-4 py-2 font-medium">{r.action.replace(/[._]/g, " ")}</td>
                   <td className="whitespace-nowrap px-4 py-2">
                     {r.entity === "appointment" && r.entityId ? (

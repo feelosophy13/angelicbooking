@@ -231,7 +231,7 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
       staffId: input.staffId,
       startAt: input.startAt,
       notes: input.notes,
-      createdByUserId: null as unknown as string, // online bookings have no staff actor
+      createdByUserId: null, // self-service: the activity log records "client" as the actor
       source: "online",
       deposit: paid?.kind === "deposit" ? { paymentIntentId: paid.paymentIntentId, cents: paid.cents, cardLabel: paid.cardLabel } : null,
       cardSetupIntentId: paid?.kind === "card" ? paid.setupIntentId : null,

@@ -161,7 +161,7 @@ export async function insertSeat(tx: TenantDb, input: { businessId: string; sess
     priceCents: session.priceCents,
     classSessionId: session.id,
   });
-  await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.createdByUserId, action: "class.enrol", entity: "appointment", entityId: appt!.id, diff: JSON.stringify({ sessionId: session.id, clientId: input.clientId }) });
+  await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.createdByUserId ?? "client", action: "class.enrol", entity: "appointment", entityId: appt!.id, diff: JSON.stringify({ sessionId: session.id, clientId: input.clientId }) });
   return { appointmentId: appt!.id, manageToken: appt!.manageToken };
 }
 

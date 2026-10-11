@@ -382,6 +382,9 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - **P2 Staff can't open their own profile/hours/feed; list shows everyone's email and login to any member**
   [security] — `staff/[staffId]/layout.tsx:19`, `staff/page.tsx:16`. Pay tab gated by `members.manage`, not
   `payroll.view` (`pay/page.tsx:11`).
+- ✅ **P2 Who did what on an appointment/ticket** [ux] — one-line summary (booked / last status change / paid,
+  each with the person and time) plus a "Full history" disclosure on both pages; online actions attributed to
+  "the client" (`server/activity.ts`).
 - **P2 Audit log gaps** [security] — nothing for settings, Stripe connect, role/member changes, invitations, pay
   rates, numbers, domain, client edits, service prices, gift-card adjustments; page has no filters and shows raw JSON
   diff (`settings/audit/page.tsx:50-56`).

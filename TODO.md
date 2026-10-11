@@ -201,6 +201,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-11: who-did-what on appointments and tickets. Both pages end with one grey line ("Booked by Demo
+      Owner, Oct 11 · Ava cancelled it, Oct 11 (client sick) · Paid by Demo Owner, Oct 11") and a "Full history"
+      disclosure listing every logged action newest-first (booked, confirmed, checked in, rescheduled, services
+      added/removed, notes, ticket opened/paid/voided, each payment and refund with amount, deposit returns).
+      Self-service actions (online booking, online cancel/reschedule, class sign-up) are logged as "the client";
+      seeded or imported appointments that predate the log get a reconstructed "booked" and "cancelled" entry
+      from the row itself. `server/activity.ts`, `components/activity-trail.tsx`.
 - [x] 2026-10-11: sidebar Grow group gains "Loyalty & referrals" (links to the settings page; Settings item excludes
       it so one entry lights up).
 - [x] 2026-10-11 (migrations 0058–0059): refund reasons. `refund_reasons` per business (seeded with Service issue,
