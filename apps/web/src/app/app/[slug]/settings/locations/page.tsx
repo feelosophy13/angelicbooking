@@ -21,7 +21,7 @@ export default async function LocationsPage({ params }: { params: Promise<{ slug
       <PageHeader title="Locations">
         <LinkButton href={`/app/${slug}/settings/locations/new`} variant="primary"><Plus className="h-4 w-4" /> New location</LinkButton>
       </PageHeader>
-      <Card className="max-w-3xl">
+      <Card>
         <ul className="divide-y divide-stone-100">
           {rows.map((l) => (
             <li key={l.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">

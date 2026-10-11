@@ -18,7 +18,7 @@ export default async function RolesPage({ params }: { params: Promise<{ slug: st
         <LinkButton href={`/app/${slug}/settings/roles/new`} variant="primary"><Plus className="h-4 w-4" /> New role</LinkButton>
       </PageHeader>
       <p className="mb-3 max-w-2xl text-sm text-stone-600">A role is a named set of permissions. Assign one to each person with a login on their staff page under Access. Built-in roles can be edited; Owner is locked.</p>
-      <Card className="max-w-3xl">
+      <Card>
         <ul className="divide-y divide-stone-100">
           {roles.map((r) => (
             <li key={r.id}>
