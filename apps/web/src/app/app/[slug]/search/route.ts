@@ -5,6 +5,7 @@ import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { clientSearchWhere } from "@/server/clients";
 import { dateTime } from "@/lib/format";
+import { searchPages } from "@/lib/nav";
 
 /** Backs the ⌘K palette. Returns up to ~15 hits across clients, appointments, services and pages. */
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
@@ -12,15 +13,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const { business, permissions } = await requireBusiness(slug);
   const q = (new URL(req.url).searchParams.get("q") ?? "").trim();
   const base = `/app/${slug}`;
-  const pages = [
-    { title: "Calendar", href: base }, { title: "New appointment", href: `${base}/appointments/new` }, { title: "Clients", href: `${base}/clients` }, { title: "New client", href: `${base}/clients/new` },
-    { title: "Staff", href: `${base}/staff` }, { title: "Services", href: `${base}/services` }, { title: "Products", href: `${base}/products` }, { title: "Packages", href: `${base}/packages` },
-    { title: "Gift cards", href: `${base}/gift-cards` }, { title: "Waitlist", href: `${base}/waitlist` }, { title: "Time clock", href: `${base}/time` },
-    ...(can(permissions, "reports.view") ? [{ title: "Sales", href: `${base}/reports` }] : []),
-    ...(can(permissions, "payroll.view") ? [{ title: "Payroll", href: `${base}/payroll` }] : []),
-    ...(can(permissions, "business.manage") ? [{ title: "Settings", href: `${base}/settings` }, { title: "Online booking settings", href: `${base}/settings/booking` }, { title: "Roles & permissions", href: `${base}/settings/roles` }, { title: "Payments", href: `${base}/settings/payments` }] : []),
-  ];
-  const pageHits = pages.filter((p) => !q || p.title.toLowerCase().includes(q.toLowerCase())).slice(0, q ? 4 : 8).map((p) => ({ kind: "page" as const, title: p.title, href: p.href }));
+  const pages = searchPages(base, permissions);
+  const ql = q.toLowerCase();
+  // Title matches first, then keyword matches (section name, settings blurb).
+  const pageHits = [...pages.filter((p) => !q || p.title.toLowerCase().includes(ql)), ...(q ? pages.filter((p) => !p.title.toLowerCase().includes(ql) && p.keywords?.toLowerCase().includes(ql)) : [])].slice(0, q ? 5 : 8).map((p) => ({ kind: "page" as const, title: p.title, href: p.href }));
   if (q.length < 2) return NextResponse.json({ hits: pageHits });
 
   const like = `%${q}%`;

@@ -360,6 +360,9 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - ✅ **P1 Import staging in `os.tmpdir()`** [bug] — `settings/import/actions.ts:15-16,41`; stage in `importJobs`.
 - ✅ **P2 Breaks and split shifts; time-off date ranges** [gap] — one block per day (`staff/[staffId]/hours`,
   `staff/actions.ts:104-139`); one date per submission (`time-off`, `staff/actions.ts:159-190`).
+- ✅ **P2 Findability of schedule pages** [ux] — Schedule → Staff hours overview; Forms under People; Marketing ↔
+  Automations/Loyalty cross-links; Payroll/Sales/Reviews ↔ Reports with filters; ⌘K indexes every sidebar and
+  Settings page from `lib/nav.ts`.
 - ✅ **P2 Rotating schedules** [gap] — hours repeat every 2–4 weeks (every other Saturday, early/late weeks):
   `staff.rotation_weeks` + `rotation_anchor`, `staff_schedules.week_index`, Week tabs on the hours page.
 - ✅ **P2 Time-off "upcoming" uses UTC today** [bug] — `time-off/page.tsx:12`.

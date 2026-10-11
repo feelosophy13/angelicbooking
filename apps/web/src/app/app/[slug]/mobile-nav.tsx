@@ -82,8 +82,8 @@ export function MobileNav({ sections, businessName, userName, tabs, bookingUrl, 
   );
 }
 
-import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, Receipt } from "lucide-react";
-const ICONS: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, Receipt };
+import { CalendarDays, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, Receipt, GraduationCap, Star, Megaphone, Workflow, FileText } from "lucide-react";
+const ICONS: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, Receipt, GraduationCap, Star, Megaphone, Workflow, FileText };
 function Icon({ name, className }: { name: string; className?: string }) {
   const C = ICONS[name] ?? CalendarDays;
   return <C className={className} />;

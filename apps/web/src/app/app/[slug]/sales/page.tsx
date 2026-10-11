@@ -35,7 +35,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
   return (
     <>
       <PageHeader title="Sales">
-        {can(permissions, "reports.view") ? <Link href={`/app/${slug}/reports`} className="text-sm text-brand-700 underline">Reports</Link> : null}
+        {can(permissions, "reports.view") ? <Link href={`/app/${slug}/reports?from=${today}&to=${today}`} className="text-sm text-brand-700 underline">Today&apos;s report</Link> : null}
       </PageHeader>
       <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_360px]">
         <Card className="p-3">

@@ -2,7 +2,8 @@ import type { WeeklyHours } from "@angelic/core";
 
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
-const t12 = (hhmm: string) => {
+/** "09:00" → "9am", "17:30" → "5:30pm". */
+export const time12 = (hhmm: string) => {
   const [h, m] = hhmm.split(":").map(Number);
   const ap = h! >= 12 ? "pm" : "am";
   const hh = ((h! + 11) % 12) + 1;
@@ -15,7 +16,7 @@ export function describeHours(hours: WeeklyHours | null | undefined): string[] {
   const days = [1, 2, 3, 4, 5, 6, 0]; // Monday first
   return days.map((d) => {
     const h = hours[String(d)];
-    return `${WEEKDAYS[d]!.slice(0, 3)} ${h ? `${t12(h.open)}–${t12(h.close)}` : "Closed"}`;
+    return `${WEEKDAYS[d]!.slice(0, 3)} ${h ? `${time12(h.open)}–${time12(h.close)}` : "Closed"}`;
   });
 }
 

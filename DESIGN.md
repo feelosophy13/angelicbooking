@@ -69,6 +69,19 @@ wrong: fix the page.
 - Location pills (`LocationFilter`) appear only for businesses with more than one site.
 - Filters remember each other when you change one (carry the other query params).
 
+## Navigation and findability
+
+- Every page has one home in the sidebar. The sidebar, the Settings directory and the ⌘K page list are all built
+  from `lib/nav.ts`; add a page there and it is findable everywhere at once. Never hand-list pages elsewhere.
+- A page that serves two jobs is reached from both, by a cross-link where the second job happens, not by a
+  second sidebar entry. Staff hours and time off live under each person (edit) and on Schedule → Staff hours
+  (overview); Forms sit in Settings and under People; Marketing links to Automations and Loyalty; Payroll,
+  Sales and Reviews link to the matching report slice with their period and location carried over.
+- Cross-links are quiet (`text-sm text-brand-700 underline` in the page header, or a "Also:" line), never a
+  second button.
+- A sidebar item lights up only for its own pages: pass `exclude` when a sub-path belongs to another item
+  (Settings excludes Forms, Staff excludes Staff hours).
+
 ## Status, colour and type
 
 - Brand purple for the primary action, links and focus rings. Stone greys for everything structural. Emerald for

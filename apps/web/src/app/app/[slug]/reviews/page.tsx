@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { instantToISODate, zonedToInstant } from "@angelic/core";
+import { can, instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { listReviews } from "@/server/reviews";
 import { listLocations } from "@/server/locations";
@@ -22,7 +22,7 @@ const isDate = (v?: string) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
 export default async function ReviewsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "clients.read");
+  const { business, permissions } = await requireAction(slug, "clients.read");
   const [locations, providers] = await Promise.all([
     listLocations(business.id),
     withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(eq(schema.staff.takesAppointments, true)).orderBy(asc(schema.staff.displayName))),
@@ -50,7 +50,8 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
   return (
     <>
       <PageHeader title="Reviews">
-        <Link href={`/app/${slug}/settings/reviews`} className="text-sm text-brand-700 underline">Settings</Link>
+        {can(permissions, "reports.view") && (from || to) ? <Link href={`/app/${slug}/reports?from=${from ?? to}&to=${to ?? from}${locationId ? `&location=${locationId}` : ""}`} className="text-sm text-brand-700 underline">Sales for these dates</Link> : null}
+        {can(permissions, "business.manage") ? <Link href={`/app/${slug}/settings/reviews`} className="text-sm text-brand-700 underline">Settings</Link> : null}
       </PageHeader>
       <Card className="mb-4 p-3">
         <form method="get" className="flex flex-wrap items-end gap-3">

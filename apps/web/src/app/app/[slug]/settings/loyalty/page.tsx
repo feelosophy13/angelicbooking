@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
+import Link from "next/link";
 import { BackLink, Card, Input, PageHeader, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { saveLoyaltySettings } from "./actions";
@@ -12,7 +13,9 @@ export default async function LoyaltySettingsPage({ params }: { params: Promise<
   return (
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
-      <PageHeader title="Loyalty & referrals" />
+      <PageHeader title="Loyalty & referrals">
+        <Link href={`/app/${slug}/marketing`} className="text-sm text-brand-700 underline">Marketing</Link>
+      </PageHeader>
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         <Card className="p-4">
           <ActionForm action={saveLoyaltySettings}>

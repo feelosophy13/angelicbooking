@@ -5,7 +5,7 @@ import { ConfirmSubmit } from "@/components/form";
 import { dateShort } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Payroll" };
-import { instantToISODate, rateLabel } from "@angelic/core";
+import { can, instantToISODate, rateLabel } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { defaultPeriod, getFinalizedRun, listPayrollRuns, runPayroll } from "@/server/payroll";
 import { formatDateLong, formatMoney } from "@/lib/utils";
@@ -17,7 +17,7 @@ import { listLocations } from "@/server/locations";
 export default async function PayrollPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ start?: string; end?: string; overtime?: string; location?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "payroll.view");
+  const { business, permissions } = await requireAction(slug, "payroll.view");
   const today = instantToISODate(new Date(), business.timezone);
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
   const def = defaultPeriod(today);
@@ -37,6 +37,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   return (
     <>
       <PageHeader title="Payroll">
+        {can(permissions, "reports.view") ? <Link href={`/app/${slug}/reports?from=${start}&to=${end}${locationFilter ? `&location=${locationFilter}` : ""}`} className="text-sm text-brand-700 underline">Sales report for this period</Link> : null}
         <form className="flex flex-wrap items-center gap-2">
           <Input type="date" name="start" defaultValue={start} className="w-40" aria-label="Period start" />
           <span className="text-sm text-stone-500">to</span>

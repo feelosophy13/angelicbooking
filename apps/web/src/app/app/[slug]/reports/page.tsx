@@ -4,7 +4,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Download } from "lucide-react";
 
 export const metadata: Metadata = { title: "Sales" };
-import { instantToISODate, zonedToInstant } from "@angelic/core";
+import { can, instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { salesReport } from "@/server/sales";
 import { stockReport } from "@/server/inventory";
@@ -22,7 +22,7 @@ export default async function ReportsPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "reports.view");
+  const { business, permissions } = await requireAction(slug, "reports.view");
   const locations = await listLocations(business.id);
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
   const locName = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "Unknown") : "No location");
@@ -147,7 +147,10 @@ export default async function ReportsPage({
           </Card>
         ) : null}
         <Card>
-          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By staff</h2>
+          <h2 className="flex items-center justify-between border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">
+            By staff
+            {can(permissions, "payroll.view") ? <Link href={`/app/${slug}/payroll?start=${from}&end=${to}${lq}`} className="text-xs font-normal text-brand-700 hover:underline">Payroll for this period</Link> : null}
+          </h2>
           {byStaff.length === 0 ? <div className="p-4"><Empty title="No closed sales in this range" /></div> : (
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Staff</th><th className="px-4 py-2 text-right">Services</th><th className="px-4 py-2 text-right">Products</th><th className="px-4 py-2 text-right">Tips</th></tr></thead>
