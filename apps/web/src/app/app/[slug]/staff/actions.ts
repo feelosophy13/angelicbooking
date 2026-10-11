@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { headers } from "next/headers";
 import { schema, withTenant } from "@angelic/db";
@@ -118,37 +118,40 @@ export async function toggleStaffActive(formData: FormData) {
   revalidatePath(`/app/${slug}/staff`);
 }
 
-const scheduleSchema = z.array(
-  z.object({
-    weekday: z.number().int().min(0).max(6),
-    on: z.boolean(),
-    start: z.string().regex(timeRe),
-    end: z.string().regex(timeRe),
-    locationId: z.string().nullable(),
-  }),
-);
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const blockSchema = z.object({ start: z.string().regex(timeRe), end: z.string().regex(timeRe) });
 
 export async function saveSchedule(formData: FormData) {
   const slug = String(formData.get("slug"));
   const staffId = String(formData.get("staffId"));
   const ctx = await requireAction(slug, "staff.manage");
-  const rows = scheduleSchema.parse(
-    Array.from({ length: 7 }, (_, weekday) => ({
-      weekday,
-      on: formData.get(`on_${weekday}`) === "on",
-      start: String(formData.get(`start_${weekday}`) ?? "09:00"),
-      end: String(formData.get(`end_${weekday}`) ?? "17:00"),
-      locationId: (formData.get(`loc_${weekday}`) as string | null) || null,
-    })),
-  );
-  for (const r of rows) if (r.on && r.start >= r.end) { await setFlash("Start time must be before end time.", "error"); return; }
+  // Any number of blocks per weekday (lunch break, split shift): start_{wd}_{i} / end_{wd}_{i}, plus one loc_{wd}.
+  const days: { weekday: number; blocks: { start: string; end: string }[]; locationId: string | null }[] = [];
+  for (let weekday = 0; weekday < 7; weekday++) {
+    const blocks: { start: string; end: string }[] = [];
+    if (formData.get(`on_${weekday}`) === "on") {
+      for (let i = 0; i < 12 && formData.has(`start_${weekday}_${i}`); i++) {
+        const parsed = blockSchema.safeParse({ start: String(formData.get(`start_${weekday}_${i}`) ?? ""), end: String(formData.get(`end_${weekday}_${i}`) ?? "") });
+        if (!parsed.success) { await setFlash(`${DAY_NAMES[weekday]}: enter a start and end time for every block.`, "error"); return; }
+        blocks.push(parsed.data);
+      }
+      if (!blocks.length) { await setFlash(`${DAY_NAMES[weekday]}: add at least one block or untick the day.`, "error"); return; }
+    }
+    blocks.sort((a, b) => a.start.localeCompare(b.start));
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i]!;
+      if (b.start >= b.end) { await setFlash(`${DAY_NAMES[weekday]}: start time must be before end time.`, "error"); return; }
+      if (i > 0 && b.start < blocks[i - 1]!.end) { await setFlash(`${DAY_NAMES[weekday]}: blocks overlap.`, "error"); return; }
+    }
+    days.push({ weekday, blocks, locationId: (formData.get(`loc_${weekday}`) as string | null) || null });
+  }
 
   await withTenant(ctx.business.id, async (tx) => {
     // Only locations of this business are accepted; a single-location business stores null (= the only one).
     const locs = await tx.select({ id: schema.locations.id }).from(schema.locations);
     const locId = (id: string | null) => (locs.length > 1 && id && locs.some((l) => l.id === id) ? id : null);
     await tx.delete(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, staffId));
-    const values = rows.filter((r) => r.on).map((r) => ({ businessId: ctx.business.id, staffId, weekday: r.weekday, startTime: r.start, endTime: r.end, locationId: locId(r.locationId) }));
+    const values = days.flatMap((d) => d.blocks.map((b) => ({ businessId: ctx.business.id, staffId, weekday: d.weekday, startTime: b.start, endTime: b.end, locationId: locId(d.locationId) })));
     if (values.length) await tx.insert(schema.staffSchedules).values(values);
   });
   await setFlash("Hours saved");
@@ -178,12 +181,17 @@ const overrideSchema = z
     slug: z.string(),
     staffId: z.string(),
     date: f.isoDate(),
+    // Optional last day: every date from `date` to `to` gets the same entry.
+    to: z.string().optional().transform((v) => v || undefined),
     kind: z.enum(["off", "hours"]),
     start: z.string().optional(),
     end: z.string().optional(),
     note: f.optional(200),
   })
   .superRefine((o, ctx) => {
+    if (o.to !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(o.to)) ctx.addIssue({ code: "custom", path: ["to"], message: "Pick a date" });
+    else if (o.to && o.to < o.date) ctx.addIssue({ code: "custom", path: ["to"], message: "Must be on or after the first day" });
+    else if (o.to && datesBetween(o.date, o.to).length > 366) ctx.addIssue({ code: "custom", path: ["to"], message: "At most a year at a time" });
     if (o.kind === "hours") {
       if (!o.start || !timeRe.test(o.start)) ctx.addIssue({ code: "custom", path: ["start"], message: "Pick a start time" });
       if (!o.end || !timeRe.test(o.end)) ctx.addIssue({ code: "custom", path: ["end"], message: "Pick an end time" });
@@ -191,29 +199,40 @@ const overrideSchema = z
     }
   });
 
+/** Inclusive list of ISO dates from `from` to `to` (calendar days, no time zone involved). */
+function datesBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  const d = new Date(from + "T00:00:00Z");
+  const last = new Date(to + "T00:00:00Z");
+  for (let i = 0; d <= last && i < 400; i++, d.setUTCDate(d.getUTCDate() + 1)) out.push(d.toISOString().slice(0, 10));
+  return out;
+}
+
 export const addOverride = formAction(overrideSchema, async (o) => {
   const ctx = await requireAction(o.slug, "staff.manage");
+  const dates = datesBetween(o.date, o.to ?? o.date);
+  const fields = { isOff: o.kind === "off", startTime: o.kind === "hours" ? o.start! : null, endTime: o.kind === "hours" ? o.end! : null, note: o.note };
   await withTenant(ctx.business.id, (tx) =>
     tx
       .insert(schema.staffScheduleOverrides)
-      .values({ businessId: ctx.business.id, staffId: o.staffId, date: o.date, isOff: o.kind === "off", startTime: o.kind === "hours" ? o.start! : null, endTime: o.kind === "hours" ? o.end! : null, note: o.note })
-      .onConflictDoUpdate({
-        target: [schema.staffScheduleOverrides.businessId, schema.staffScheduleOverrides.staffId, schema.staffScheduleOverrides.date],
-        set: { isOff: o.kind === "off", startTime: o.kind === "hours" ? o.start! : null, endTime: o.kind === "hours" ? o.end! : null, note: o.note },
-      }),
+      .values(dates.map((date) => ({ businessId: ctx.business.id, staffId: o.staffId, date, ...fields })))
+      .onConflictDoUpdate({ target: [schema.staffScheduleOverrides.businessId, schema.staffScheduleOverrides.staffId, schema.staffScheduleOverrides.date], set: fields }),
   );
   revalidatePath(`/app/${o.slug}/staff/${o.staffId}/time-off`);
-  return o.kind === "off" ? "Day off added" : "Custom hours added";
+  const span = dates.length > 1 ? ` for ${dates.length} days` : "";
+  return o.kind === "off" ? `Time off added${span}` : `Custom hours added${span}`;
 });
 
 export async function deleteOverride(formData: FormData) {
   const slug = String(formData.get("slug"));
   const staffId = String(formData.get("staffId"));
-  const overrideId = String(formData.get("overrideId"));
+  const ids = formData.getAll("overrideId").map(String).filter(Boolean);
   const ctx = await requireAction(slug, "staff.manage");
-  await withTenant(ctx.business.id, (tx) =>
-    tx.delete(schema.staffScheduleOverrides).where(eq(schema.staffScheduleOverrides.id, overrideId)),
-  );
+  if (ids.length) {
+    await withTenant(ctx.business.id, (tx) =>
+      tx.delete(schema.staffScheduleOverrides).where(and(eq(schema.staffScheduleOverrides.staffId, staffId), inArray(schema.staffScheduleOverrides.id, ids))),
+    );
+  }
   await setFlash("Removed");
   revalidatePath(`/app/${slug}/staff/${staffId}/time-off`);
 }

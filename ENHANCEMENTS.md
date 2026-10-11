@@ -32,7 +32,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 8. ✅ **P1 Import staging on `os.tmpdir()`** breaks on Render (ephemeral disk, restarts).
 9. ✅ **P2 Findability** — no Sales list page, gift cards capped at 50 with no search, products/memberships/reviews
    unsearchable, ⌘K misses sales, gift cards, products and most settings pages.
-10. **P2 Staff schedules** — one block per day (no lunch/split shift), time off one date at a time.
+10. ✅ **P2 Staff schedules** — one block per day (no lunch/split shift), time off one date at a time.
 11. **P2 Notifications** — failed sends never retried and no "send again", one reminder only (PLAN promises 24h + 2h),
     no staff notification preferences, no SMS segment counter.
 12. **P2 Client record ergonomics** — search misses "Jane Doe" and formatted phones, no duplicate warning or merge,
@@ -358,7 +358,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
 - ✅ **P1 System-role edits never sync to Better Auth org roles** [security] — `server/roles.ts:104-106`; a Manager
   stripped of `members.manage` can still invite via `/api/auth/organization/invite-member`.
 - ✅ **P1 Import staging in `os.tmpdir()`** [bug] — `settings/import/actions.ts:15-16,41`; stage in `importJobs`.
-- **P2 Breaks and split shifts; time-off date ranges** [gap] — one block per day (`staff/[staffId]/hours`,
+- ✅ **P2 Breaks and split shifts; time-off date ranges** [gap] — one block per day (`staff/[staffId]/hours`,
   `staff/actions.ts:104-139`); one date per submission (`time-off`, `staff/actions.ts:159-190`).
 - ✅ **P2 Time-off "upcoming" uses UTC today** [bug] — `time-off/page.tsx:12`.
 - **P2 Staff can't open their own profile/hours/feed; list shows everyone's email and login to any member**

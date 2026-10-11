@@ -164,6 +164,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       The pre-visit template and the separate reminder-hours settings are gone. `businesses.reminder_hours` is only
       read once, at template creation; drop it after a deploy.
 - [x] 2026-10-11: second demo tenant `demo-twosites` (Glow Collective, two locations) via `seed-demo.ts --profile glow`.
+- [x] 2026-10-11: staff weekly hours take any number of blocks per day (press + for a lunch break or split
+      shift; blocks must not overlap); time off / custom hours take a first and last day and write one override per
+      date, listed as one range with a single Remove.
 - [ ] Booking page follow-ups: service photos on the Shop/gift pages; a search box on the service step for large
       menus; show provider photos (staff have no photo field yet) and a short bio on the provider step.
 - [ ] Automations: decide between the fixed recipes (today) and a user-built trigger → delay → message builder
