@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
-import { rowClass, rowControl, RowLink } from "@/components/row";
+import { rowClass, RowLink } from "@/components/row";
+import { HistoryTimeline } from "./history-timeline";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, gt, isNull, or } from "drizzle-orm";
@@ -194,33 +195,27 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             )}
           </Card>
           <Card>
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-2">
-              <h2 className="text-sm font-semibold text-stone-600">History</h2>
-              {reviews.length ? <p className="text-xs text-stone-500"><span className="text-amber-400">★</span> {reviewAverage.toFixed(1)} average over {reviews.length} {reviews.length === 1 ? "rating" : "ratings"}</p> : null}
-            </div>
-            {timeline.length === 0 ? <div className="p-4"><Empty title="No past visits or purchases" /></div> : (
-              <ul className="divide-y divide-stone-100 text-sm">
-                {timeline.map((t) => {
-                  const dim = t.kind === "visit" && (t.status === "cancelled" || t.status === "no_show");
-                  return (
-                    <li key={t.key} className={`${rowClass} px-4 py-2`}>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className={`min-w-0 ${dim ? "text-stone-400" : ""}`}>
-                          <RowLink href={t.href} className="hover:underline">{fmtDate.format(t.at)} · {t.title}</RowLink>
-                          {t.meta ? <span className="text-stone-500"> {t.meta}</span> : null}
-                        </span>
-                        <span className="flex shrink-0 items-center gap-2">
-                          {t.sale ? <Link href={`/app/${slug}/sales/${t.sale.id}`} className={`${rowControl} tabular-nums ${t.sale.status === "open" ? "font-medium text-amber-700" : "text-stone-700"}`} title={`Ticket #${t.sale.number}`}>{money(t.sale.totalCents)}{t.sale.status === "open" ? " due" : t.sale.status === "refunded" ? " refunded" : ""}</Link> : null}
-                          <StatusBadge status={t.status} />
-                        </span>
-                      </div>
-                      {t.review ? (
-                        <p className="mt-0.5 line-clamp-2 text-xs text-stone-600" title={t.review.comment ?? undefined}><span className="text-amber-400">{"★".repeat(t.review.rating ?? 0)}</span>{t.review.comment ? ` “${t.review.comment}”` : ""}</p>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
+            {timeline.length === 0 ? (
+              <>
+                <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">History</h2>
+                <div className="p-4"><Empty title="No past visits or purchases" /></div>
+              </>
+            ) : (
+              <HistoryTimeline
+                ratingCount={reviews.length}
+                ratingAverage={reviewAverage}
+                items={timeline.map((t) => ({
+                  key: t.key,
+                  when: fmtDate.format(t.at),
+                  title: t.title,
+                  meta: t.meta,
+                  href: t.href,
+                  status: t.status,
+                  dim: t.kind === "visit" && (t.status === "cancelled" || t.status === "no_show"),
+                  sale: t.sale ? { href: `/app/${slug}/sales/${t.sale.id}`, label: `${money(t.sale.totalCents)}${t.sale.status === "open" ? " due" : t.sale.status === "refunded" ? " refunded" : ""}`, open: t.sale.status === "open", title: `Ticket #${t.sale.number}` } : null,
+                  review: t.review ? { rating: t.review.rating ?? 0, comment: t.review.comment } : null,
+                }))}
+              />
             )}
           </Card>
         </div>
