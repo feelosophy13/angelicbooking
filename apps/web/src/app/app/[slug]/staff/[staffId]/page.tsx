@@ -4,7 +4,7 @@ import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { Card, Input, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { resetCalendarToken, updateStaffProfile } from "../actions";
+import { generateClockPin, resetCalendarToken, updateStaffProfile } from "../actions";
 import { ConfirmSubmit } from "@/components/form";
 import { appUrl } from "@/lib/stripe";
 
@@ -41,8 +41,19 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="takesAppointments" defaultChecked={person.takesAppointments} className="h-4 w-4 accent-brand-600" /> Takes appointments <span className="text-xs text-stone-500">(has a calendar column; untick for front desk, managers or an owner login that doesn't see clients)</span></label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="bookableOnline" defaultChecked={person.bookableOnline} className="h-4 w-4 accent-brand-600" /> Bookable online</label>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="active" defaultChecked={person.active} className="h-4 w-4 accent-brand-600" /> Active (shown on the calendar)</label>
+        <Field label="Clock-in PIN" name="clockPin" hint={person.clockPinHash ? "A PIN is set. Type a new 4–6 digit PIN to change it, or tick Remove." : "4–6 digits typed on the clock-in QR page (Time clock → QR code). No PIN = can't use the kiosk."}>
+          <div className="flex flex-wrap items-center gap-3">
+            <Input name="clockPin" inputMode="numeric" pattern="\\d{4,6}" maxLength={6} placeholder={person.clockPinHash ? "••••" : "e.g. 4821"} className="w-32" autoComplete="off" />
+            {person.clockPinHash ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="clearPin" className="h-4 w-4 accent-brand-600" /> Remove PIN</label> : null}
+          </div>
+        </Field>
         <SubmitButton pendingText="Saving…">Save profile</SubmitButton>
       </ActionForm>
+      <form action={generateClockPin} className="mt-2">
+        <input type="hidden" name="slug" value={slug} />
+        <input type="hidden" name="staffId" value={staffId} />
+        <button type="submit" className="text-xs text-brand-700 underline">Generate a random clock-in PIN</button>
+      </form>
     </Card>
     <Card className="p-4 text-sm">
       <h2 className="mb-1 font-medium">Calendar feed</h2>

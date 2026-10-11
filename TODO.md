@@ -198,6 +198,14 @@ invoice per owner was built and then reverted (commit 70435d9 and its revert): t
 tenant with two locations, so tying separate businesses together is not needed. Revisit only if a customer
 runs several salons on separate accounts.
 
+### Time clock kiosk (built 2026-10-10, migration 0043)
+- [x] QR clock-in: Time clock shows a printable QR code per location (`/clock/<token>`, rotatable). Staff scan
+      it, type a 4–6 digit PIN (set or generated on their staff profile, stored hashed, unique per business) and
+      are clocked in or out; no app login needed. Entries record the location and are noted "Kiosk". The page
+      is rate limited (10 posts/min per IP). Logged-in staff can still clock in from Time clock as before.
+- [ ] Follow-ups: no photo/geofence check (anyone with the PIN can punch from anywhere the QR is known); no
+      break tracking; a manager can't see who is currently clocked in at a glance (only via the open entries).
+
 ### Needs a real Stripe/Twilio run before relying on it (2026-10-10)
 - [ ] Online deposit + card on file at booking (test cards on a connected test account), including the
       automatic refund when a slot is taken after the charge and the refund on online cancellation.

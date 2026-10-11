@@ -8,6 +8,7 @@ import { instantToISODate } from "@angelic/core";
 import { requireBusiness, requireAction } from "@/lib/tenant";
 import { f, formAction } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
+import { resetClockToken } from "@/server/time-clock";
 
 async function ownStaffId(businessId: string, userId: string) {
   return withTenant(businessId, async (tx) => (await tx.query.staff.findFirst({ where: eq(schema.staff.userId, userId) }))?.id ?? null);
@@ -52,5 +53,14 @@ export async function deleteTimeEntry(formData: FormData) {
   const ctx = await requireAction(d.slug, "staff.manage");
   await withTenant(ctx.business.id, (tx) => tx.delete(schema.timeEntries).where(eq(schema.timeEntries.id, d.id)));
   await setFlash("Entry removed");
+  revalidatePath(`/app/${d.slug}/time`);
+}
+
+/** Invalidate a location's printed QR code and issue a new one. */
+export async function rotateClockToken(formData: FormData) {
+  const d = z.object({ slug: z.string(), locationId: z.string().min(1) }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "staff.manage");
+  await resetClockToken(ctx.business.id, d.locationId);
+  await setFlash("New clock-in code issued. Reprint the QR code; the old one no longer works.");
   revalidatePath(`/app/${d.slug}/time`);
 }

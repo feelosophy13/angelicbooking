@@ -146,6 +146,8 @@ export const locations = pgTable(
     stripeChargesEnabled: boolean("stripe_charges_enabled").notNull().default(false),
     stripeDetailsSubmitted: boolean("stripe_details_submitted").notNull().default(false),
     taxRateBps: integer("tax_rate_bps"),
+    // Secret in the printed clock-in QR code for this site (/clock/<token>). Null until first shown.
+    clockToken: text("clock_token").unique(),
     isDefault: boolean("is_default").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -171,6 +173,8 @@ export const staff = pgTable(
     takesAppointments: boolean("takes_appointments").notNull().default(true),
     active: boolean("active").notNull().default(true),
     sortOrder: integer("sort_order").notNull().default(0),
+    // Hash of the 4–6 digit PIN typed on the clock-in page (QR kiosk). Null = can't use the kiosk.
+    clockPinHash: text("clock_pin_hash"),
     // ---- Pay configuration (see packages/core/payroll.ts). Percentages in basis points.
     position: text("position"), // e.g. Lash Artist, Esthetician, Receptionist
     payType: payType("pay_type").notNull().default("commission"),
@@ -713,6 +717,7 @@ export const timeEntries = pgTable(
       .references(() => staff.id, { onDelete: "cascade" }),
     date: date("date").notNull(), // local calendar date the hours belong to
     minutes: integer("minutes").notNull().default(0),
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }), // where they clocked in
     clockInAt: timestamp("clock_in_at", { withTimezone: true }),
     clockOutAt: timestamp("clock_out_at", { withTimezone: true }),
     note: text("note"),

@@ -12,6 +12,7 @@ import { setFlash } from "@/lib/flash";
 import { queueOneOff } from "@/lib/notify";
 import { listRoles } from "@/server/roles";
 import { inviteEmail } from "@/lib/notify/templates";
+import { ClockError, randomPin, setClockPin } from "@/server/time-clock";
 
 const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -26,6 +27,9 @@ const profileSchema = z.object({
   takesAppointments: f.checkbox(),
   active: f.checkbox(),
   locationId: z.string().optional(),
+  // Clock-in kiosk PIN: blank keeps the current one; "clearPin" removes it.
+  clockPin: z.string().trim().optional(),
+  clearPin: f.checkbox(),
 });
 
 export const createStaff = formAction(profileSchema, async (d) => {
@@ -55,10 +59,37 @@ export const updateStaffProfile = formAction(profileSchema, async (d) => {
       .set({ displayName: d.displayName, email: d.email, phone: d.phone, color: d.color, bookableOnline: d.bookableOnline && d.takesAppointments, takesAppointments: d.takesAppointments, active: d.active, locationId: d.locationId || null })
       .where(eq(schema.staff.id, d.staffId!)),
   );
+  if (d.clearPin) await setClockPin(ctx.business.id, d.staffId, null);
+  else if (d.clockPin) {
+    try {
+      await setClockPin(ctx.business.id, d.staffId, d.clockPin);
+    } catch (e) {
+      if (e instanceof ClockError) throw new FormError(e.message, "clockPin");
+      throw e;
+    }
+  }
   revalidatePath(`/app/${d.slug}/staff`);
   revalidatePath(`/app/${d.slug}/staff/${d.staffId}`);
-  return "Profile saved";
+  return d.clockPin && !d.clearPin ? "Profile saved. Clock-in PIN set." : "Profile saved";
 });
+
+/** Pick a random PIN for the kiosk and show it once. */
+export async function generateClockPin(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const staffId = String(formData.get("staffId"));
+  const ctx = await requireAction(slug, "staff.manage");
+  for (let i = 0; i < 20; i++) {
+    const pin = randomPin();
+    try {
+      await setClockPin(ctx.business.id, staffId, pin);
+      await setFlash(`Clock-in PIN is ${pin}. Write it down for them; it isn't shown again.`, "info");
+      break;
+    } catch (e) {
+      if (!(e instanceof ClockError)) throw e;
+    }
+  }
+  revalidatePath(`/app/${slug}/staff/${staffId}`);
+}
 
 export async function toggleStaffActive(formData: FormData) {
   const slug = String(formData.get("slug"));

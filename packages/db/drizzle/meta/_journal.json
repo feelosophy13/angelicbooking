@@ -302,6 +302,13 @@
       "when": 1791684874997,
       "tag": "0042_waitlist_location_drop_legacy_customer",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1791685239942,
+      "tag": "0043_clock_kiosk",
+      "breakpoints": true
     }
   ]
 }
