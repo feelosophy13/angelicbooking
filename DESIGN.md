@@ -44,7 +44,7 @@ wrong: fix the page.
 
 - `ActionForm` + `Field` for every form. `Field` owns the label, hint and error; never add your own label.
 - Inputs: `Input`, `Select`, `Textarea` (defaults to four lines, resizable), `Checkbox` (box aligned to the first
-  line, hint underneath), `ImageField` (click the picture to pick, preview in place, Remove with Undo).
+  line, hint underneath), `ImageField` (click the picture to pick, preview in place, an × on the picture corner removes it, with Undo).
 - Group related fields in a two-column grid on wide screens; one column on phones.
 - Show only the fields that apply. When a choice changes what matters (pay model, trigger type), the other fields
   hide, and rarely-used ones sit under "More options".
