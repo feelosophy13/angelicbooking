@@ -257,7 +257,7 @@ export async function appointmentFacts(tx: TenantDb, appointmentId: string): Pro
  * caller's response via the returned promise, or on the next cron run regardless.
  */
 export async function triggerWorkflows(business: Business, trigger: WorkflowTrigger, input: TriggerInput): Promise<number> {
-  // A business that has never opened Marketing → Automations still gets the defaults (e.g. rating requests).
+  // A business that has never opened Automations still gets the defaults (e.g. rating requests).
   const [cnt] = await withTenant(business.id, (tx) => tx.select({ n: sql<number>`count(*)` }).from(schema.workflows));
   if (Number(cnt?.n ?? 0) === 0) await ensureTemplates(business);
   const ids = await withTenant(business.id, async (tx) => {
@@ -500,7 +500,7 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       const clientName = `${client.firstName} ${client.lastName}`.trim();
       const link = run.appointmentId ? appUrl(`/app/${business.slug}/appointments/${run.appointmentId}`) : appUrl(`/app/${business.slug}/clients/${client.id}`);
       const subject = `${w.name}: ${clientName}`;
-      const t = brandedEmail({ ...v.brand, businessName: business.name }, subject, `${textToHtml(renderText(step.body, v.vars))}<p style="margin-top:16px"><a href="${link}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">${run.appointmentId ? "Open appointment" : "Open client"}</a></p><p style="font-size:12px;color:#78716c">Sent by the “${w.name}” workflow (Marketing → Automations).</p>`);
+      const t = brandedEmail({ ...v.brand, businessName: business.name }, subject, `${textToHtml(renderText(step.body, v.vars))}<p style="margin-top:16px"><a href="${link}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">${run.appointmentId ? "Open appointment" : "Open client"}</a></p><p style="font-size:12px;color:#78716c">Sent by the “${w.name}” workflow (Automations).</p>`);
       const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: "workflow_staff", recipient: to, subject, body: t, scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });
       out.push(row!.id);
       note(i, "action", `Notified ${who} at ${to}`);

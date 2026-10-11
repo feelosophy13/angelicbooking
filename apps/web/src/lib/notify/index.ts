@@ -87,7 +87,7 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
     return inserted.map((r) => r.id);
   });
   if (ids.length) after(() => deliverMany(business.id, ids));
-  // Workflows (Marketing → Automations) react to the same events. Imported lazily: that module
+  // Workflows (Automations) react to the same events. Imported lazily: that module
   // uses this one for contexts and delivery.
   const wf = await import("@/server/workflows");
   if (template === "confirmation") {
@@ -160,7 +160,7 @@ async function scheduleReminder(
     if (client.emailOptIn && client.email) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "email", template: "reminder", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: at });
     if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", ctx)), scheduledAt: at });
   }
-  // Pre-visit messages are a workflow now (Marketing → Automations → Pre-visit instructions).
+  // Pre-visit messages are a workflow now (Automations → Pre-visit instructions).
   if (rows.length) await tx.insert(schema.notifications).values(rows);
 }
 

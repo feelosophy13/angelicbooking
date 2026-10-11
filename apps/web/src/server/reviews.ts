@@ -40,11 +40,12 @@ export async function submitReview(businessId: string, token: string, rating: nu
   }
 }
 
-export type ReviewFilter = { locationId?: string | null; staffId?: string | null; from?: Date | null; to?: Date | null };
+export type ReviewFilter = { locationId?: string | null; staffId?: string | null; from?: Date | null; to?: Date | null; /** Only this star rating (1–5). */ rating?: number | null };
 
 /** Submitted reviews with summary numbers; every part respects the same filter. */
 export async function listReviews(businessId: string, f: ReviewFilter = {}, limit = 200) {
   const conds = [isNotNull(schema.reviews.submittedAt)];
+  if (f.rating) conds.push(eq(schema.reviews.rating, f.rating));
   if (f.locationId) conds.push(eq(schema.reviews.locationId, f.locationId));
   if (f.staffId) conds.push(eq(schema.reviews.staffId, f.staffId));
   if (f.from) conds.push(gte(schema.reviews.submittedAt, f.from));
@@ -66,16 +67,17 @@ export async function listReviews(businessId: string, f: ReviewFilter = {}, limi
       .where(where)
       .orderBy(desc(schema.reviews.submittedAt))
       .limit(limit);
-    const [agg] = await tx.select({ n: sql<number>`count(*)`, avg: sql<number>`coalesce(avg(${schema.reviews.rating}), 0)` }).from(schema.reviews).where(where);
+    const scope = and(...conds.filter((c) => c !== conds[1] || !f.rating)); // everything except the star filter
+    const [agg] = await tx.select({ n: sql<number>`count(*)`, avg: sql<number>`coalesce(avg(${schema.reviews.rating}), 0)` }).from(schema.reviews).where(scope);
     const [req] = await tx.select({ n: sql<number>`count(*)` }).from(schema.reviews).where(and(...reqConds));
     const byStaff = await tx
       .select({ staffId: schema.staff.id, staffName: schema.staff.displayName, n: sql<number>`count(*)`, avg: sql<number>`avg(${schema.reviews.rating})` })
       .from(schema.reviews)
       .innerJoin(schema.staff, eq(schema.staff.id, schema.reviews.staffId))
-      .where(where)
+      .where(scope)
       .groupBy(schema.staff.id, schema.staff.displayName)
       .orderBy(asc(schema.staff.displayName));
-    const dist = await tx.select({ rating: schema.reviews.rating, n: sql<number>`count(*)` }).from(schema.reviews).where(where).groupBy(schema.reviews.rating);
+    const dist = await tx.select({ rating: schema.reviews.rating, n: sql<number>`count(*)` }).from(schema.reviews).where(scope).groupBy(schema.reviews.rating);
     const distribution = [5, 4, 3, 2, 1].map((star) => ({ star, n: Number(dist.find((d) => d.rating === star)?.n ?? 0) }));
     return { rows, count: Number(agg?.n ?? 0), average: Number(agg?.avg ?? 0), requested: Number(req?.n ?? 0), byStaff: byStaff.map((b) => ({ ...b, n: Number(b.n), avg: Number(b.avg) })), distribution };
   });

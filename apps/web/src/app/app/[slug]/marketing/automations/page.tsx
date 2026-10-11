@@ -6,7 +6,7 @@ import { requireAction } from "@/lib/tenant";
 import { listWorkflows, templateGroup, type WorkflowTemplate } from "@/server/workflows";
 import { smsAvailableFor } from "@/server/messaging";
 import { summarizeSteps, triggerMeta } from "@/lib/workflows-logic";
-import { Button, Card, Input, LinkButton } from "@/components/ui";
+import { Button, Card, Input, LinkButton, PageHeader } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { saveReminderHours } from "../actions";
 import { toggleWorkflow } from "./actions";
@@ -29,6 +29,7 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
   const usesSms = (steps: { type: string }[]) => steps.some((s) => s.type === "sms");
   return (
     <div className="space-y-8">
+      <PageHeader title="Automations" />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="max-w-2xl text-sm text-stone-600">Each automation is a workflow: it starts on an event, checks a few conditions, then runs its steps in order (waits, texts, emails, tags, points, alerts). Every business starts with the set below; edit them or add your own. Consent, opt-outs, quiet hours and once-per-occasion limits are enforced automatically.</p>
         {manage ? <LinkButton href={`${base}/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> New workflow</LinkButton> : null}

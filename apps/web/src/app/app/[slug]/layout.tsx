@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt } from "lucide-react";
+import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow } from "lucide-react";
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
@@ -13,7 +13,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { NavLink } from "./nav-link";
 import { MobileNav, type NavSection } from "./mobile-nav";
 
-const ICON = { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, Receipt } as const;
+const ICON = { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, Receipt, Workflow } as const;
 type IconName = keyof typeof ICON;
 
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
@@ -51,6 +51,7 @@ export default async function AppLayout({ children, params }: { children: React.
       ...(can(permissions, "reports.view") ? [it(`${base}/reports`, "Reports", "BarChart3"), it(`${base}/marketing`, "Marketing", "Megaphone")] : []),
       ...(can(permissions, "payroll.view") ? [it(`${base}/payroll`, "Payroll", "Wallet")] : []),
     ] },
+    { title: "Automation", items: can(permissions, "reports.view") ? [it(`${base}/marketing/automations`, "Automations", "Workflow")] : [] },
     { title: "", items: can(permissions, "business.manage") ? [it(`${base}/settings`, "Settings", "Settings")] : [] },
   ].filter((s) => s.items.length > 0);
   const tabs: Item[] = [
