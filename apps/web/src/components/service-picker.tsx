@@ -71,7 +71,7 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
             <Search className="pointer-events-none absolute left-4.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" aria-hidden />
             <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a service…" aria-label="Find a service" className="h-9 w-full rounded-lg border border-stone-300 bg-white pl-8 pr-3 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-2 focus:outline-offset-0 focus:outline-brand-500" />
           </div>
-          <ul role="listbox" className="max-h-80 overflow-y-auto py-1 text-sm">
+          <ul role="listbox" className="max-h-80 overflow-y-auto pb-1 text-sm">
             {noneLabel && !needle ? (
               <li role="option" aria-selected={!value}>
                 <button type="button" onClick={() => pick("")} className={cn("w-full px-3 py-1.5 text-left text-stone-600 hover:bg-stone-50", !value && "bg-brand-50 text-brand-700")}>{noneLabel}</button>
