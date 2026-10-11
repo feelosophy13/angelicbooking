@@ -5,7 +5,7 @@ import { listNumbers, numberMonthlyFeeCents, searchTollFree, twilioConfigured } 
 import { schema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { billingState, payerOf } from "@/server/billing";
+import { billingState } from "@/server/billing";
 import { Button, FormPage, Input, Notice } from "@/components/ui";
 import { ActionForm, ConfirmSubmit } from "@/components/form";
 import { buyNumberAction } from "../actions";
@@ -19,7 +19,7 @@ export default async function NewNumberPage({ params, searchParams }: { params: 
   const location = locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) })) : null;
   const existing = await withTenant(business.id, listNumbers);
   if (existing.some((n) => (n.locationId ?? null) === (location?.id ?? null))) redirect(`/app/${slug}/settings/messaging`);
-  if (!billingState(await payerOf(business)).canBuyNumber) redirect(`/app/${slug}/settings/billing`);
+  if (!billingState(business).canBuyNumber) redirect(`/app/${slug}/settings/billing`);
   const fee = numberMonthlyFeeCents();
   let numbers: { phoneNumber: string; friendlyName: string }[] = [];
   let error: string | null = null;

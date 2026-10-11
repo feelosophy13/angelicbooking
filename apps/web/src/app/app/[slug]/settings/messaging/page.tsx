@@ -4,7 +4,7 @@ import { requireAction } from "@/lib/tenant";
 import { money } from "@/lib/format";
 import { listNumbers, numberMonthlyFeeCents, twilioConfigured, type MessagingNumber } from "@/server/messaging";
 import { listLocations } from "@/server/locations";
-import { billingState, payerOf } from "@/server/billing";
+import { billingState } from "@/server/billing";
 import { StatusBadge } from "@/components/status-badge";
 import { BackLink, Card, LinkButton, Notice, PageHeader } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, SubmitButton } from "@/components/form";
@@ -27,7 +27,7 @@ export default async function MessagingPage({ params, searchParams }: { params: 
   const { business } = await requireAction(slug, "business.manage");
   const [numbers, locations] = await Promise.all([withTenant(business.id, listNumbers), listLocations(business.id)]);
   const fee = numberMonthlyFeeCents();
-  const billing = billingState(await payerOf(business));
+  const billing = billingState(business);
   const multi = locations.length > 1;
   const main = numbers.find((n) => !n.locationId) ?? null;
   const locName = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "Unknown location") : null);

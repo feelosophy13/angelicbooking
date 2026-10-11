@@ -185,22 +185,9 @@ apart use separate tenants.
       strip and month grid use the business clock; the reminder cron compares `scheduledAt` instants, so
       nothing changes there.
 
-**Phase 3 (owners with several businesses) — built 2026-10-10, migration 0041**
-- [x] "All my businesses" at `/app` (also "All my businesses" in the user menu; signing in with several
-      businesses lands there): one card per business with today's appointments, next up, next 7 days, sales
-      today / month-to-date and open tickets. Each card is read inside that tenant with that membership's
-      permissions (sales only with `reports.view`). Read-only.
-- [x] Shared client directory: "Find a client anywhere" on the same page searches name / phone / email across
-      every business where the user has `clients.read` and links into each business's own client record.
-      Records are not merged or copied.
-- [x] One platform invoice per owner: `businesses.billing_business_id`. Settings → Billing of a business with
-      no subscription offers "Bill through <other business>" for businesses the same user owns that already
-      subscribe; linking adds a seat to the payer's base plan (prorated) and the linked business's text numbers
-      and SMS usage go on the payer's subscription/customer. "Bill separately" undoes it. Delinquency banners and
-      "can buy a number" follow the payer.
-- [ ] Follow-ups: the overview sums money across businesses in the first business's currency; a business with
-      its own live subscription must cancel it in Stripe before it can be billed through another (no automatic
-      migration); linking is not surfaced in the onboarding flow for a second business.
+**Phase 3 (owners with several businesses)**
+- [ ] "All my businesses" dashboard: read-only roll-up of sales and upcoming appointments across tenants the
+      user belongs to; optional shared client directory; one platform invoice per owner.
 
 ### Needs a real Stripe/Twilio run before relying on it (2026-10-10)
 - [ ] Online deposit + card on file at booking (test cards on a connected test account), including the

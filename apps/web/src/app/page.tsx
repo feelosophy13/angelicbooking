@@ -10,8 +10,6 @@ export default async function Home() {
     const mine = await listMyBusinesses(session.user.id);
     if (mine.length === 1) redirect(`/app/${mine[0]!.slug}`);
     if (mine.length === 0) redirect("/onboarding");
-    // Several businesses: the roll-up page, which also lists them.
-    redirect("/app");
     return (
       <main className="mx-auto max-w-md p-8">
         <h1 className="mb-4 text-xl font-semibold">Choose a business</h1>
