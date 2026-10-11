@@ -172,8 +172,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       "This week is Week N" and Copy Week 1; availability, calendar shading, booking location and the per-weekday
       location index all pick the active week (`rowsForDate` / `rotationWeekIndex` in core).
 - [x] 2026-10-11: findability pass. Schedule → Staff hours overview (business hours per location with Edit, who
-      works when with rotation weeks and sites, time off in the next 90 days, Block time); Forms under People;
-      Marketing header links to Automations, Loyalty and review requests, Loyalty links back; Payroll, Sales and
+      works when with rotation weeks and sites, time off in the next 90 days, Block time); Marketing opens with
+      link cards for Automations, Loyalty and review requests, Loyalty links back; Payroll, Sales and
       Reviews link to the matching report slice (period + location carried), Reports → Payroll; sidebar, Settings
       directory and ⌘K pages come from one definition (`lib/nav.ts`, see DESIGN.md → Navigation).
 - [ ] Booking page follow-ups: service photos on the Shop/gift pages; a search box on the service step for large

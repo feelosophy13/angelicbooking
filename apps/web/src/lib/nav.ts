@@ -25,7 +25,6 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       it(`${base}/clients`, "Clients", "Users"),
       it(`${base}/reviews`, "Reviews", "Star"),
       it(`${base}/staff`, "Staff", "UserCog", { exclude: [`${base}/staff-hours`] }),
-      ...(ok("business.manage") ? [it(`${base}/settings/forms`, "Forms", "FileText")] : []),
     ] },
     { title: "Catalog", items: [
       it(`${base}/services`, "Services", "Scissors"),
@@ -40,7 +39,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       ...(ok("payroll.view") ? [it(`${base}/payroll`, "Payroll", "Wallet")] : []),
     ] },
     { title: "Automation", items: ok("reports.view") ? [it(`${base}/marketing/automations`, "Automations", "Workflow")] : [] },
-    { title: "", items: ok("business.manage") ? [it(`${base}/settings`, "Settings", "Settings", { exclude: [`${base}/settings/forms`] })] : [] },
+    { title: "", items: ok("business.manage") ? [it(`${base}/settings`, "Settings", "Settings")] : [] },
   ].filter((s) => s.items.length > 0);
 }
 

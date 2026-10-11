@@ -18,7 +18,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ slug
     <>
       <div className="mb-4 flex items-center justify-between gap-3">
         <p className="text-sm text-stone-600">One-off emails or texts to a filtered list of clients. Opted-out clients are skipped automatically; every email carries an unsubscribe link and every text says how to stop.</p>
-        <LinkButton href={`/app/${slug}/marketing/campaigns/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> New campaign</LinkButton>
+        <LinkButton href={`/app/${slug}/marketing/campaigns/new`} variant="primary" size="sm" className="shrink-0 whitespace-nowrap"><Plus className="h-4 w-4" /> New campaign</LinkButton>
       </div>
       {!emailConfigured() ? <div className="mb-4"><Notice>Email sending is off on this platform (RESEND_API_KEY). Campaigns are recorded but marked skipped.</Notice></div> : null}
       {rows.length === 0 ? <Empty title="No campaigns yet" body="Announce a new service, fill a quiet week, or win back clients you haven't seen in a while." action={{ href: `/app/${slug}/marketing/campaigns/new`, label: "Create a campaign" }} /> : (

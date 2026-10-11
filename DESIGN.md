@@ -75,12 +75,15 @@ wrong: fix the page.
   from `lib/nav.ts`; add a page there and it is findable everywhere at once. Never hand-list pages elsewhere.
 - A page that serves two jobs is reached from both, by a cross-link where the second job happens, not by a
   second sidebar entry. Staff hours and time off live under each person (edit) and on Schedule → Staff hours
-  (overview); Forms sit in Settings and under People; Marketing links to Automations and Loyalty; Payroll,
-  Sales and Reviews link to the matching report slice with their period and location carried over.
-- Cross-links are quiet (`text-sm text-brand-700 underline` in the page header, or a "Also:" line), never a
-  second button.
+  (overview); Marketing opens with cards for Automations, Loyalty and Review requests; Payroll, Sales and
+  Reviews link to the matching report slice with their period and location carried over.
+- A single cross-link is quiet (`text-sm text-brand-700 underline` in the page header). A hub that points to
+  several related pages uses a row of small link cards (title + one line) above its own content, so the links
+  read as part of the page rather than fine print. Never a second primary button.
+- A sidebar entry must be self-explanatory in its group. If it needs a sentence to justify where it sits (Forms
+  under People), it does not belong there: leave it in Settings and rely on cross-links and ⌘K.
 - A sidebar item lights up only for its own pages: pass `exclude` when a sub-path belongs to another item
-  (Settings excludes Forms, Staff excludes Staff hours).
+  (Staff excludes Staff hours).
 
 ## Status, colour and type
 
