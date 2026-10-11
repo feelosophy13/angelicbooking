@@ -74,7 +74,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
             <Field label="Recipient's name"><Input value={gift.recipientName} onChange={(e) => setGift({ ...gift, recipientName: e.target.value })} /></Field>
             <Field label="Send to (email)"><Input type="email" value={gift.recipientEmail} onChange={(e) => setGift({ ...gift, recipientEmail: e.target.value })} placeholder="Leave blank to send it to you" /></Field>
           </div>
-          <Field label="Message (optional)"><Textarea rows={2} value={gift.message} onChange={(e) => setGift({ ...gift, message: e.target.value })} /></Field>
+          <Field label="Message (optional)"><Textarea rows={4} value={gift.message} onChange={(e) => setGift({ ...gift, message: e.target.value })} /></Field>
         </div>
       ) : (
         <ul className="divide-y divide-stone-200 overflow-hidden rounded-xl border border-stone-200 bg-white">
@@ -110,7 +110,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
               <label className="flex items-center gap-1"><input type="radio" name="method" checked={method === "ship"} onChange={() => setMethod("ship")} /> Ship ({money(props.shippingFlatCents, props.currency)})</label>
             </div>
           ) : !isGift ? <p className="text-xs text-stone-500">Pick up in store.</p> : null}
-          {method === "ship" && canShip ? <Field label="Shipping address"><Textarea rows={2} value={address} onChange={(e) => setAddress(e.target.value)} required /></Field> : null}
+          {method === "ship" && canShip ? <Field label="Shipping address"><Textarea rows={4} value={address} onChange={(e) => setAddress(e.target.value)} required /></Field> : null}
           <div className="grid grid-cols-2 gap-3">
             <Field label="First name"><Input value={buyer.firstName} onChange={(e) => setBuyer({ ...buyer, firstName: e.target.value })} required /></Field>
             <Field label="Last name"><Input value={buyer.lastName} onChange={(e) => setBuyer({ ...buyer, lastName: e.target.value })} /></Field>

@@ -49,7 +49,7 @@ export default async function NotificationsPage({ params }: { params: Promise<{ 
           <ActionForm action={saveSmsTemplates}>
             <input type="hidden" name="slug" value={slug} />
             {SMS_TEMPLATE_KEYS.map((k) => (
-              <Field key={k} label={LABEL[k] ?? k} name={`t_${k}`} hint={`Default: ${SMS_DEFAULTS[k]}`}><Textarea name={`t_${k}`} rows={2} defaultValue={business.smsTemplates?.[k] ?? ""} placeholder={SMS_DEFAULTS[k]} /></Field>
+              <Field key={k} label={LABEL[k] ?? k} name={`t_${k}`} hint={`Default: ${SMS_DEFAULTS[k]}`}><Textarea name={`t_${k}`} rows={4} defaultValue={business.smsTemplates?.[k] ?? ""} placeholder={SMS_DEFAULTS[k]} /></Field>
             ))}
             <SubmitButton size="sm" pendingText="Saving…">Save wording</SubmitButton>
           </ActionForm>

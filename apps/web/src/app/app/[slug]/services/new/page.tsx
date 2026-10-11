@@ -21,9 +21,9 @@ export default async function NewServicePage({ params, searchParams }: { params:
         <input type="hidden" name="slug" value={slug} />
         <Field label="Name" name="name" required><Input name="name" defaultValue="" required placeholder="Women's haircut" autoFocus /></Field>
         <Field label="Category" name="categoryIdNew"><CategoryPicker name="categoryId" categories={categories} value={categories.some((c) => c.id === category) ? category : null} /></Field>
-        <Field label="Description" name="description" hint="Shown on the booking page."><Textarea name="description" rows={2} defaultValue="" /></Field>
+        <Field label="Description" name="description" hint="Shown on the booking page."><Textarea name="description" rows={4} defaultValue="" /></Field>
         <Field label="Photo" name="image" hint="PNG/JPEG/WebP up to 2 MB. Shown next to the service on the booking page."><input type="file" name="image" accept="image/*" className="block text-sm" /></Field>
-        <Field label="Before your visit" name="prepNotes" hint="Prep instructions sent with the confirmation and the reminder, e.g. “Arrive with clean, dry hair.” Leave empty to use the category's note."><Textarea name="prepNotes" rows={2} defaultValue="" /></Field>
+        <Field label="Before your visit" name="prepNotes" hint="Prep instructions sent with the confirmation and the reminder, e.g. “Arrive with clean, dry hair.” Leave empty to use the category's note."><Textarea name="prepNotes" rows={4} defaultValue="" /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Duration (min)" name="durationMin" required><Input name="durationMin" type="number" min={5} step={5} defaultValue={45} required /></Field>
           <Field label="Price" name="price" required><Input name="price" inputMode="decimal" defaultValue="" placeholder="65" required /></Field>

@@ -45,7 +45,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
             </div>
           </div>
         </Field>
-        <Field label="Bio" name="bio" hint="A sentence or two clients see on the booking page: specialties, years of experience."><Textarea name="bio" rows={2} defaultValue={person.bio ?? ""} maxLength={300} placeholder="Balayage specialist with 8 years behind the chair." /></Field>
+        <Field label="Bio" name="bio" hint="A sentence or two clients see on the booking page: specialties, years of experience."><Textarea name="bio" rows={4} defaultValue={person.bio ?? ""} maxLength={300} placeholder="Balayage specialist with 8 years behind the chair." /></Field>
         {locations.length > 1 ? (
           <Field label="Primary location" name="locationId">
             <Select name="locationId" defaultValue={person.locationId ?? ""}>

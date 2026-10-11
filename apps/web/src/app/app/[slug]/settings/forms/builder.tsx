@@ -54,7 +54,7 @@ export function FieldBuilder({ initial }: { initial: FormFieldDef[] }) {
                 <button type="button" aria-label="Remove question" onClick={() => setRows((x) => x.filter((_, k) => k !== i))} className="rounded-lg border border-stone-300 bg-white px-2 text-stone-500 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
               </div>
             </div>
-            {r.type === "select" || r.type === "multiselect" ? <Textarea name={`f${i}_options`} rows={3} className="mt-2" placeholder={"One option per line"} defaultValue={(r.options ?? []).join("\n")} /> : null}
+            {r.type === "select" || r.type === "multiselect" ? <Textarea name={`f${i}_options`} rows={5} className="mt-2" placeholder={"One option per line"} defaultValue={(r.options ?? []).join("\n")} /> : null}
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-stone-600">
               {r.type !== "statement" ? (
                 <Checkbox name={`f${i}_required`} checked={r.required ?? false} onChange={(e) => update(i, { required: e.target.checked })} label="Required" className="text-xs" />

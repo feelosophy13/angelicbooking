@@ -95,7 +95,7 @@ export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: strin
         </div>
         <details className="mt-2 text-sm" open={!!workflow?.description}>
           <summary className="cursor-pointer select-none text-xs text-stone-500 hover:text-stone-800">{workflow?.description ? "Description" : "Add a description (for your team)"}</summary>
-          <Textarea name="description" rows={2} defaultValue={workflow?.description ?? ""} className="mt-2" placeholder="What this is for. Clients never see it." />
+          <Textarea name="description" rows={4} defaultValue={workflow?.description ?? ""} className="mt-2" placeholder="What this is for. Clients never see it." />
         </details>
       </Section>
 

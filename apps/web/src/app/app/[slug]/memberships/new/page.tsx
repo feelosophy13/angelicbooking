@@ -24,7 +24,7 @@ export default async function NewPlanPage({ params }: { params: Promise<{ slug: 
           <Field label="Sessions per month" name="includedSessions"><Input name="includedSessions" type="number" min={0} defaultValue={1} /></Field>
           <Field label="Discount on other services (%)" name="discountPct"><Input name="discountPct" type="number" min={0} max={100} defaultValue={0} /></Field>
         </div>
-        <Field label="Description" name="description"><Textarea name="description" rows={2} /></Field>
+        <Field label="Description" name="description"><Textarea name="description" rows={4} /></Field>
         <ValidAt locations={locations} what="membership credits and discounts" />
         <SubmitButton pendingText="Creating…">Create plan</SubmitButton>
       </ActionForm>

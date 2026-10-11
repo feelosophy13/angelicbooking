@@ -26,7 +26,7 @@ export function BookingForm(props: { slug: string; serviceId: string; staffId: s
       <Field label="Mobile number"><Input name="phone" type="tel" autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
       <Field label="Email"><Input name="email" type="email" autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
       {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
-      <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
+      <Field label="Anything we should know?"><Textarea name="notes" rows={4} /></Field>
       {props.referrals && !d ? <Field label="Referral code (optional)"><Input name="referralCode" placeholder="From a friend who comes here" className="uppercase" /></Field> : null}
       {props.promos ? <Field label="Promo code (optional)"><Input name="promoCode" placeholder="Code" className="uppercase" /></Field> : null}
       {state?.error ? <Notice>{state.error}</Notice> : null}

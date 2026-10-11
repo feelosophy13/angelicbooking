@@ -20,7 +20,7 @@ export default async function NewClientPage({ params }: { params: Promise<{ slug
         <Field label="Mobile phone" name="phone" hint="Used for text confirmations and reminders."><Input name="phone" type="tel" /></Field>
         <Field label="Email" name="email"><Input name="email" type="email" /></Field>
         <Field label="Birthday" name="birthday" hint="Optional, for birthday messages."><Input name="birthday" type="date" /></Field>
-        <Field label="Notes" name="notes"><Textarea name="notes" rows={3} placeholder="Allergies, formulas, preferences" /></Field>
+        <Field label="Notes" name="notes"><Textarea name="notes" rows={5} placeholder="Allergies, formulas, preferences" /></Field>
         <SubmitButton pendingText="Creating…">Create client</SubmitButton>
       </ActionForm>
     </FormPage>

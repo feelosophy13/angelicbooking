@@ -23,7 +23,7 @@ export function ScheduleClassForm(props: { slug: string; serviceId: string; staf
         <div className="grid grid-cols-2 gap-3">
           <Field label="Seats" name="capacity" hint="Leave as is to use the service's group size."><Input name="capacity" type="number" min={1} max={500} defaultValue={props.defaultCapacity} /></Field>
         </div>
-        <Field label="Note for clients (optional)" name="notes" hint="Shown next to the time on the booking page."><Textarea name="notes" rows={2} placeholder="Bring a mat" /></Field>
+        <Field label="Note for clients (optional)" name="notes" hint="Shown next to the time on the booking page."><Textarea name="notes" rows={4} placeholder="Bring a mat" /></Field>
         <SubmitButton disabled={!picked} pendingText="Scheduling…">{picked ? `Schedule at ${props.slots.find((s) => s.iso === picked)?.label}` : "Pick a time"}</SubmitButton>
       </ActionForm>
     </Card>

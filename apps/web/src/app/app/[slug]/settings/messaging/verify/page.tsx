@@ -92,7 +92,7 @@ export default async function VerifyPage({ params, searchParams }: { params: Pro
         <Field label="Extra opt-in screenshot URL" name="extraOptInImageUrl" hint={`We already attach a screenshot of the booking page consent box (${appUrl(OPT_IN_IMAGE_PATH)}). Add another if you collect consent elsewhere, e.g. an in-store form.`}>
           <Input name="extraOptInImageUrl" defaultValue={v.extraOptInImageUrl ?? ""} placeholder="https://…/opt-in.png" />
         </Field>
-        <Field label="Anything else for the reviewers" name="additionalInformation"><Textarea name="additionalInformation" rows={2} defaultValue={v.additionalInformation ?? ""} /></Field>
+        <Field label="Anything else for the reviewers" name="additionalInformation"><Textarea name="additionalInformation" rows={4} defaultValue={v.additionalInformation ?? ""} /></Field>
 
         <SubmitButton pendingText="Submitting…">Submit for verification</SubmitButton>
       </ActionForm>

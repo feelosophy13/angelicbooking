@@ -33,7 +33,7 @@ export function ReviewForm({ slug, token, initialRating, googleReviewUrl, busine
           <button key={n} type="button" aria-label={`${n} star${n === 1 ? "" : "s"}`} onMouseEnter={() => setHover(n)} onClick={() => setRating(n)} className={`text-4xl transition-colors ${(hover || rating) >= n ? "text-amber-400" : "text-stone-300"}`}>★</button>
         ))}
       </div>
-      <Textarea name="comment" rows={3} placeholder={rating && rating <= 3 ? "What could we do better?" : "Anything you'd like to add? (optional)"} />
+      <Textarea name="comment" rows={5} placeholder={rating && rating <= 3 ? "What could we do better?" : "Anything you'd like to add? (optional)"} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Sending…" disabled={!rating}>Send</SubmitButton>
     </form>

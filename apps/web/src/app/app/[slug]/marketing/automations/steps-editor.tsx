@@ -109,7 +109,7 @@ export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; tri
                     ) : null}
                     {s.type === "sms" ? (
                       <>
-                        <Textarea rows={3} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="Your message. Your business name is added at the start." maxLength={1000} />
+                        <Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="Your message. Your business name is added at the start." maxLength={1000} />
                         <div className="flex items-center justify-between gap-3"><Placeholders /><span className="text-[11px] text-stone-400">{s.body.length}/1000</span></div>
                       </>
                     ) : null}
@@ -139,7 +139,7 @@ export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; tri
                           <option value="owner">Email the business address</option>
                           {hasAppt ? <option value="provider">Email the provider of the visit</option> : null}
                         </Select>
-                        <Textarea rows={3} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="What the team should know" />
+                        <Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="What the team should know" />
                         <Placeholders />
                       </>
                     ) : null}

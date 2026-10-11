@@ -34,7 +34,7 @@ export default async function EditPlanPage({ params }: { params: Promise<{ slug:
           <Field label="Sessions per month" name="includedSessions"><Input name="includedSessions" type="number" min={0} defaultValue={p.includedSessions} /></Field>
           <Field label="Discount on other services (%)" name="discountPct"><Input name="discountPct" type="number" min={0} max={100} defaultValue={p.discountBps / 100} /></Field>
         </div>
-        <Field label="Description" name="description"><Textarea name="description" rows={2} defaultValue={p.description ?? ""} /></Field>
+        <Field label="Description" name="description"><Textarea name="description" rows={4} defaultValue={p.description ?? ""} /></Field>
         <ValidAt locations={locations} selected={p.validLocationIds} what="membership credits and discounts" />
         <SubmitButton pendingText="Saving…">Save plan</SubmitButton>
       </ActionForm>

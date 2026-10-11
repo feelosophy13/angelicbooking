@@ -74,7 +74,7 @@ export function FormFill({ action, hidden, form, defaults, clientName, submitLab
           <label key={f.id} className="block text-sm">
             <span className="mb-1 block font-medium text-stone-700">{f.label}{f.required ? " *" : ""}</span>
             {f.type === "textarea" ? (
-              <Textarea name={name} rows={3} required={f.required} value={typeof v === "string" ? v : ""} onChange={(e) => set(f.id, e.target.value)} />
+              <Textarea name={name} rows={5} required={f.required} value={typeof v === "string" ? v : ""} onChange={(e) => set(f.id, e.target.value)} />
             ) : f.type === "select" ? (
               <Select name={name} required={f.required} value={typeof v === "string" ? v : ""} onChange={(e) => set(f.id, e.target.value)}>
                 <option value="" disabled>Choose…</option>

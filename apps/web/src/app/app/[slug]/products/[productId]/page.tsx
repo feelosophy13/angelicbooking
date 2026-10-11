@@ -62,7 +62,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
         <fieldset className="rounded-lg border border-stone-200 p-3">
           <legend className="px-1 text-sm font-medium text-stone-700">Online store</legend>
           <Checkbox name="sellOnline" defaultChecked={product.sellOnline} label="Sell online (needs the store turned on under Settings → Online store)" />
-          <Field label="Description" name="description" className="mt-2"><Textarea name="description" rows={2} defaultValue={product.description ?? ""} /></Field>
+          <Field label="Description" name="description" className="mt-2"><Textarea name="description" rows={4} defaultValue={product.description ?? ""} /></Field>
           <Field label="Photo" name="image" hint="PNG/JPEG/WebP up to 2 MB." className="mt-2"><input type="file" name="image" accept="image/*" className="block text-sm" /></Field>
           {product.imageUrl ? <img src={product.imageUrl} alt="" className="mt-2 h-20 w-20 rounded-lg border border-stone-200 object-cover" /> : null}
         </fieldset>

@@ -43,7 +43,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
             <details className="rounded-lg border border-stone-200 p-3" open={!!business.bookingPolicy || business.clientAccountsEnabled}>
               <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">Policy, address and client accounts</summary>
               <div className="mt-3 space-y-3">
-                <Field label="Booking policy" name="bookingPolicy" hint="Shown to clients when they book."><Textarea name="bookingPolicy" rows={3} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
+                <Field label="Booking policy" name="bookingPolicy" hint="Shown to clients when they book."><Textarea name="bookingPolicy" rows={5} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
                 <Field label="Address shown on the booking page and in messages" name="addressLine"><Input name="addressLine" defaultValue={business.addressLine ?? ""} placeholder="123 Main St, Springfield" /></Field>
                 <Checkbox name="clientAccountsEnabled" defaultChecked={business.clientAccountsEnabled} label="Client accounts on the booking page" hint="Clients sign in with a code by email or text to see upcoming visits, rebook, and use saved cards and points." />
               </div>

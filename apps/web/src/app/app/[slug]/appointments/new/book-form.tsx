@@ -83,7 +83,7 @@ export function BookForm(props: {
             className="max-w-[10rem]"
           />
         </Field>
-        <Field label="Notes (optional)"><Textarea name="notes" rows={2} /></Field>
+        <Field label="Notes (optional)"><Textarea name="notes" rows={4} /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Repeat">
             <Select name="repeatWeeks" value={repeat} onChange={(e) => setRepeat(Number(e.target.value))}>

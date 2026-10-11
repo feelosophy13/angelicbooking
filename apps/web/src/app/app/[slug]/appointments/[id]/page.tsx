@@ -260,7 +260,7 @@ export default async function AppointmentPage({
             <form action={saveNotes} className="space-y-2">
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="appointmentId" value={id} />
-              <Textarea name="notes" rows={3} defaultValue={appointment.notes ?? ""} placeholder="Anything the team should know for this visit" />
+              <Textarea name="notes" rows={5} defaultValue={appointment.notes ?? ""} placeholder="Anything the team should know for this visit" />
               <Button type="submit" size="sm" variant="secondary">Save notes</Button>
             </form>
           </Card>

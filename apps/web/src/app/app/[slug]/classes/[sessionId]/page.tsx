@@ -86,7 +86,7 @@ export default async function ClassSessionPage({ params }: { params: Promise<{ s
                       {clients.map((c) => <option key={c.id} value={c.id}>{c.firstName} {c.lastName}{c.phone ? ` · ${c.phone}` : ""}</option>)}
                     </Select>
                   </Field>
-                  <Field label="Notes" name="notes"><Textarea name="notes" rows={2} /></Field>
+                  <Field label="Notes" name="notes"><Textarea name="notes" rows={4} /></Field>
                   <SubmitButton variant="secondary" pendingText="Adding…">Add to class</SubmitButton>
                 </ActionForm>
               )}

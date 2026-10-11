@@ -248,7 +248,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 <ActionForm action={replyToClient} className="mt-2">
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="clientId" value={client.id} />
-                  <Field label="" name="body"><Textarea name="body" rows={2} placeholder={client.smsOptIn ? "Reply by text…" : "Client opted out of texts"} disabled={!client.smsOptIn} /></Field>
+                  <Field label="" name="body"><Textarea name="body" rows={4} placeholder={client.smsOptIn ? "Reply by text…" : "Client opted out of texts"} disabled={!client.smsOptIn} /></Field>
                   <SubmitButton size="sm" variant="secondary" pendingText="Sending…" disabled={!client.smsOptIn}>Send text</SubmitButton>
                 </ActionForm>
               </details>

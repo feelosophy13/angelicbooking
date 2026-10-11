@@ -12,7 +12,7 @@ export function RoleForm(props: { action: (prev: FormState | undefined, fd: Form
       {props.roleId ? <input type="hidden" name="roleId" value={props.roleId} /> : null}
       <fieldset disabled={props.locked} className="space-y-4 disabled:opacity-70">
         <Field label="Role name" name="name" required><Input name="name" defaultValue={d?.name ?? ""} placeholder="Senior stylist" required autoFocus={!props.roleId} /></Field>
-        <Field label="Description" name="description" hint="Shown when assigning the role."><Textarea name="description" rows={2} defaultValue={d?.description ?? ""} /></Field>
+        <Field label="Description" name="description" hint="Shown when assigning the role."><Textarea name="description" rows={4} defaultValue={d?.description ?? ""} /></Field>
         <div className="space-y-5">
           <p className="text-sm font-medium text-stone-700">Permissions</p>
           {PERMISSION_GROUPS.map((g) => (
