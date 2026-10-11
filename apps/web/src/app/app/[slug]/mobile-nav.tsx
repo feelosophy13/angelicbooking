@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { ExternalLink, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Wordmark } from "@/components/brand";
 
@@ -13,7 +13,7 @@ export type NavSection = { title: string; items: { href: string; label: string; 
  * slide-in drawer with the full grouped menu, plus a bottom tab bar with the
  * four most-used destinations. Hidden at md and up (the sidebar takes over).
  */
-export function MobileNav({ sections, businessName, userName, tabs, children }: { sections: NavSection[]; businessName: string; userName: string; tabs: { href: string; label: string; exact?: boolean; iconName: string }[]; children?: React.ReactNode }) {
+export function MobileNav({ sections, businessName, userName, tabs, bookingUrl, children }: { sections: NavSection[]; businessName: string; userName: string; tabs: { href: string; label: string; exact?: boolean; iconName: string }[]; bookingUrl?: string; children?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
   useEffect(() => setOpen(false), [path]);
@@ -46,6 +46,11 @@ export function MobileNav({ sections, businessName, userName, tabs, children }: 
               <button onClick={() => setOpen(false)} aria-label="Close menu" className="rounded-lg p-2 text-stone-700 hover:bg-stone-100"><X className="h-5 w-5" /></button>
             </div>
             <nav className="flex-1 space-y-4 overflow-y-auto p-3">
+              {bookingUrl ? (
+                <a href={bookingUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5 text-[15px] font-medium text-brand-700">
+                  <ExternalLink className="h-5 w-5" /> Open booking page
+                </a>
+              ) : null}
               {sections.map((s, i) => (
                 <div key={i}>
                   {s.title ? <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-stone-400">{s.title}</p> : null}

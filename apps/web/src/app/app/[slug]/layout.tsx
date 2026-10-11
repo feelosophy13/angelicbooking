@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone } from "lucide-react";
+import { CalendarDays, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink } from "lucide-react";
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
 import { asc, desc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { permissionsForRole, listRoles } from "@/server/roles";
+import { appUrl } from "@/lib/stripe";
 import { Wordmark } from "@/components/brand";
 import { UserMenu } from "@/components/user-menu";
 import { CommandPalette } from "@/components/command-palette";
@@ -22,6 +23,8 @@ export default async function AppLayout({ children, params }: { children: React.
   void permissionsForRole;
   const roleName = roles.find((r) => r.key === role)?.name ?? role.replace("_", " ");
   const base = `/app/${slug}`;
+  // What clients see: the public booking page (custom domain when one is set). Opens in a new tab.
+  const bookingUrl = business.customDomain ? `https://${business.customDomain}` : appUrl(`/book/${business.slug}`);
   type Item = { href: string; label: string; iconName: IconName; exact?: boolean };
   const it = (href: string, label: string, iconName: IconName, exact?: boolean): Item => ({ href, label, iconName, exact });
   const sections: { title: string; items: Item[] }[] = [
@@ -69,6 +72,11 @@ export default async function AppLayout({ children, params }: { children: React.
           ) : null}
         </div>
         <div className="px-3 pb-2"><CommandPalette slug={slug} /></div>
+        <div className="px-3 pb-3">
+          <a href={bookingUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-100" title={bookingUrl}>
+            <ExternalLink className="h-4 w-4" /> Open booking page
+          </a>
+        </div>
         <nav className="flex-1 space-y-4 overflow-y-auto px-2 pb-2">
           {sections.map((s, i) => (
             <div key={i}>
@@ -91,7 +99,7 @@ export default async function AppLayout({ children, params }: { children: React.
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <MobileNav sections={sections as NavSection[]} businessName={business.name} userName={`${user.name} · ${roleName}`} tabs={tabs}>
+        <MobileNav sections={sections as NavSection[]} businessName={business.name} userName={`${user.name} · ${roleName}`} tabs={tabs} bookingUrl={bookingUrl}>
           <UserMenu user={user} businesses={mine} currentSlug={slug} />
         </MobileNav>
         <main className="flex-1 p-4 pb-24 md:p-8 md:pb-8">
