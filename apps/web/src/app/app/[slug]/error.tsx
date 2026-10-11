@@ -2,7 +2,7 @@
 import { Button, Card } from "@/components/ui";
 
 export default function AppError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  const permission = /permission/i.test(error.message);
+  const permission = error.digest === "PERMISSION_DENIED" || /permission/i.test(error.message);
   return (
     <Card className="mx-auto mt-10 max-w-md p-6 text-center">
       <h1 className="text-lg font-semibold">{permission ? "Not allowed" : "Something went wrong"}</h1>

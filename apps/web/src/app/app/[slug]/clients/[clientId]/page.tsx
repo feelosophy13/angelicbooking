@@ -7,7 +7,7 @@ import { notFound } from "next/navigation";
 import { and, asc, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
-import { requireBusiness } from "@/lib/tenant";
+import { requireAction, requireBusiness } from "@/lib/tenant";
 import { formatMoney, formatTime } from "@/lib/utils";
 import { BackLink, Card, Input, LinkButton, PageHeader, Textarea, Empty } from "@/components/ui";
 import { updateClient } from "../actions";
@@ -37,7 +37,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function ClientPage({ params }: { params: Promise<{ slug: string; clientId: string }> }) {
   const { slug, clientId } = await params;
-  const { business, permissions } = await requireBusiness(slug);
+  const { business, permissions } = await requireAction(slug, "clients.read");
   const data = await withTenant(business.id, async (tx) => {
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
     if (!client) return null;

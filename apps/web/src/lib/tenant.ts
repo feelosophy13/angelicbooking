@@ -31,9 +31,19 @@ export const requireBusiness = cache(async (slug: string): Promise<TenantContext
   return { business, role: membership.role, permissions, user: session.user };
 });
 
+export const PERMISSION_DENIED = "PERMISSION_DENIED";
+
+/** Next.js strips server error messages in production but forwards `digest`, so the boundary keys on that. */
+export class PermissionError extends Error {
+  digest = PERMISSION_DENIED;
+  constructor() {
+    super("You don't have permission to do that.");
+  }
+}
+
 export async function requireAction(slug: string, action: Action): Promise<TenantContext> {
   const ctx = await requireBusiness(slug);
-  if (!can(ctx.permissions, action)) throw new Error("You don't have permission to do that.");
+  if (!can(ctx.permissions, action)) throw new PermissionError();
   return ctx;
 }
 

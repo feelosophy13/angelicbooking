@@ -6,6 +6,12 @@ import { authClient } from "@/lib/auth-client";
 import { Button, Card, Field, Input, Notice } from "@/components/ui";
 import { Wordmark } from "@/components/brand";
 
+/** Only ever send people to a path on this site after signing in (never to another host). */
+function safeNext(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) return "/";
+  return raw;
+}
+
 export function AuthForm({ mode, googleEnabled = false }: { mode: "sign-in" | "sign-up"; googleEnabled?: boolean }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -22,7 +28,7 @@ export function AuthForm({ mode, googleEnabled = false }: { mode: "sign-in" | "s
   async function withGoogle() {
     setError(null);
     setGoogleBusy(true);
-    const next = params.get("next") ?? "/";
+    const next = safeNext(params.get("next"));
     const res = await authClient.signIn.social({ provider: "google", callbackURL: next, errorCallbackURL: `/${mode}?error=oauth` });
     if (res.error) {
       setGoogleBusy(false);
@@ -47,7 +53,7 @@ export function AuthForm({ mode, googleEnabled = false }: { mode: "sign-in" | "s
       return;
     }
     if ((res.data as { twoFactorRedirect?: boolean } | null)?.twoFactorRedirect) return; // plugin redirects to /two-factor
-    router.push(params.get("next") ?? "/");
+    router.push(safeNext(params.get("next")));
     router.refresh();
   }
 

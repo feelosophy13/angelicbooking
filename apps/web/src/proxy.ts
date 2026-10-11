@@ -40,7 +40,9 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
   if ((pathname === "/sign-in" || pathname === "/sign-up") && cookie) {
-    return NextResponse.redirect(new URL("/", request.url));
+    const next = request.nextUrl.searchParams.get("next") ?? "/";
+    const safe = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/";
+    return NextResponse.redirect(new URL(safe, request.url));
   }
   // Expose the pathname to server layouts (used for tab highlighting).
   const reqHeaders = new Headers(request.headers);

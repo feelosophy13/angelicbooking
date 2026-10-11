@@ -91,6 +91,32 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
   if (ids.length) after(() => deliverMany(business.id, ids));
 }
 
+/** Templates that are only meaningful while the visit is still on. */
+const VISIT_BOUND_TEMPLATES = ["reminder", "auto_pre_visit", "formsNudge"];
+
+/** Drop queued reminders / pre-visit / forms messages for an appointment that is no longer happening. */
+export async function cancelQueuedReminders(businessId: string, appointmentId: string) {
+  await withTenant(businessId, (tx) =>
+    tx
+      .update(schema.notifications)
+      .set({ status: "cancelled" })
+      .where(and(eq(schema.notifications.appointmentId, appointmentId), eq(schema.notifications.status, "queued"), inArray(schema.notifications.template, VISIT_BOUND_TEMPLATES))),
+  );
+}
+
+/**
+ * Safety net run before every claim: any queued visit-bound message whose
+ * appointment has since been cancelled (by whatever path) is dropped, so a
+ * client never gets a reminder for a visit that is not happening.
+ */
+async function sweepOrphanedReminders(tx: TenantDb) {
+  const gone = tx.select({ id: schema.appointments.id }).from(schema.appointments).where(inArray(schema.appointments.status, ["cancelled", "no_show"]));
+  await tx
+    .update(schema.notifications)
+    .set({ status: "cancelled", error: "Appointment cancelled" })
+    .where(and(eq(schema.notifications.status, "queued"), inArray(schema.notifications.template, VISIT_BOUND_TEMPLATES), inArray(schema.notifications.appointmentId, gone)));
+}
+
 /** Schedule the reminder for an appointment without sending a confirmation (used for later visits in a series). */
 export async function scheduleReminderFor(business: typeof schema.businesses.$inferSelect, appointmentId: string) {
   await withTenant(business.id, async (tx) => {
@@ -175,6 +201,7 @@ async function smsSenderFor(tx: TenantDb, locationId: string | null): Promise<Sm
 }
 
 async function claimWithSender(tx: TenantDb, opts: { ids?: string[]; limit: number }): Promise<Claimed[]> {
+  await sweepOrphanedReminders(tx);
   const rows = await claim(tx, opts);
   if (!rows.length) return [];
   const senders = new Map<string | null, SmsSender | null>();

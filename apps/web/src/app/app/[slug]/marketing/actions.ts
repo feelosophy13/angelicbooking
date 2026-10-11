@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema, withTenant } from "@angelic/db";
+import { zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
@@ -113,7 +114,7 @@ export const createPromo = formAction(
     const exists = await withTenant(ctx.business.id, (tx) => tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.code, code) }));
     if (exists) throw new FormError("That code already exists", "code");
     await withTenant(ctx.business.id, (tx) =>
-      tx.insert(schema.promoCodes).values({ businessId: ctx.business.id, code, type: d.type, value, startsAt: d.startsAt ? new Date(d.startsAt) : null, expiresAt: d.expiresAt ? new Date(`${d.expiresAt}T23:59:59`) : null, maxUses, serviceIds, minSubtotalCents: d.minSubtotal }),
+      tx.insert(schema.promoCodes).values({ businessId: ctx.business.id, code, type: d.type, value, startsAt: d.startsAt ? zonedToInstant(d.startsAt, "00:00", ctx.business.timezone) : null, expiresAt: d.expiresAt ? zonedToInstant(d.expiresAt, "23:59", ctx.business.timezone) : null, maxUses, serviceIds, minSubtotalCents: d.minSubtotal }),
     );
     await setFlash(`Code ${code} created`);
     revalidatePath(`/app/${d.slug}/marketing/promos`);

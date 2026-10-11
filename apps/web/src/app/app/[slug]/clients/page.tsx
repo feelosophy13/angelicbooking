@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Download, Plus, Search } from "lucide-react";
 import { can } from "@angelic/core";
-import { requireBusiness } from "@/lib/tenant";
+import { requireAction } from "@/lib/tenant";
 import { listClients, type ClientSort } from "@/server/clients";
 import { dateShort, money } from "@/lib/format";
 import { Button, Card, Input, LinkButton, PageHeader, Empty } from "@/components/ui";
@@ -22,7 +22,7 @@ const SORTS: { key: ClientSort; label: string; align?: "right" }[] = [
 export default async function ClientsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ q?: string; sort?: string; dir?: string; page?: string; location?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions } = await requireBusiness(slug);
+  const { business, permissions } = await requireAction(slug, "clients.read");
   const locations = await listLocations(business.id);
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
   const q = sp.q ?? "";

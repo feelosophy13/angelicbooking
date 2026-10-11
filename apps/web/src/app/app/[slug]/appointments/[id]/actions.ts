@@ -6,7 +6,7 @@ import { refundDeposit } from "@/server/online-payments";
 import { paymentContextForAppointment } from "@/server/locations";
 import { cancelSeriesFrom } from "@/server/series";
 import { queueReviewRequest } from "@/server/reviews";
-import { notifyAppointment } from "@/lib/notify";
+import { cancelQueuedReminders, notifyAppointment } from "@/lib/notify";
 import { parseMoney } from "@angelic/core";
 import { schema as dbSchema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
@@ -96,7 +96,9 @@ export async function moveService(_prev: ActionState, formData: FormData): Promi
 export async function removeService(formData: FormData) {
   const d = base.extend({ itemId: z.string().min(1) }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "appointments.write.any");
-  await removeServiceFromAppointment({ businessId: ctx.business.id, itemId: d.itemId, actorUserId: ctx.user.id });
+  const r = await removeServiceFromAppointment({ businessId: ctx.business.id, itemId: d.itemId, actorUserId: ctx.user.id });
+  // Removing the last service cancels the visit: tell the client and drop its reminders.
+  if (r?.cancelled) await notifyAppointment(ctx.business, r.appointmentId, "cancellation");
   revalidatePath(`/app/${d.slug}/appointments/${d.appointmentId}`);
   revalidatePath(`/app/${d.slug}`);
 }
@@ -173,8 +175,9 @@ export async function cancelSeries(formData: FormData) {
     }
     throw e;
   }
-  // The client hears about the first cancelled visit; later reminders are dropped with each cancellation.
+  // The client hears about the first cancelled visit; the later visits only lose their queued reminders.
   if (ids[0]) await notifyAppointment(ctx.business, ids[0], "cancellation");
+  for (const id of ids.slice(1)) await cancelQueuedReminders(ctx.business.id, id);
   await setFlash(`Cancelled ${ids.length} visit${ids.length === 1 ? "" : "s"}`);
   revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
   revalidatePath(`/app/${slug}`);

@@ -1,8 +1,7 @@
 "use server";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { and, eq, lt } from "drizzle-orm";
 import { redirect } from "next/navigation";
+import { db, schema } from "@angelic/db";
 import { z } from "zod";
 import { requireAction } from "@/lib/tenant";
 import { parseTable } from "@/lib/import/parse";
@@ -12,17 +11,25 @@ import { runImport } from "@/server/import";
 export type UploadState = { error?: string } | undefined;
 export type Staged = { id: string; businessId: string; kind: ImportKind; filename: string; headers: string[]; rows: Record<string, string>[]; mapping: Record<string, string> };
 
-const dir = join(tmpdir(), "angelic-imports");
-const pathFor = (id: string) => join(dir, `${id}.json`);
+// Staged uploads live in the `files` table (kind "import_stage") so they survive restarts and
+// work across instances; the files route never serves that kind. Stale stages are swept on upload.
+const STAGE_KIND = "import_stage";
+const STAGE_TTL_MS = 24 * 3_600_000;
 
 export async function readStaged(businessId: string, id: string): Promise<Staged | null> {
   if (!/^[a-f0-9-]{36}$/.test(id)) return null;
+  const row = await db.query.files.findFirst({ where: and(eq(schema.files.id, id), eq(schema.files.businessId, businessId), eq(schema.files.kind, STAGE_KIND)) });
+  if (!row) return null;
   try {
-    const s = JSON.parse(await readFile(pathFor(id), "utf8")) as Staged;
+    const s = JSON.parse(Buffer.from(row.data).toString("utf8")) as Staged;
     return s.businessId === businessId ? s : null;
   } catch {
     return null;
   }
+}
+
+async function discardStaged(id: string) {
+  await db.delete(schema.files).where(and(eq(schema.files.id, id), eq(schema.files.kind, STAGE_KIND)));
 }
 
 /** Step 1: parse the upload, auto-map headers, stage it server-side, redirect to the preview. */
@@ -35,10 +42,11 @@ export async function uploadImport(_prev: UploadState, formData: FormData): Prom
   if (file.size > 25 * 1024 * 1024) return { error: "File is too large (25 MB max)." };
   const table = await parseTable({ name: file.name, bytes: await file.arrayBuffer() });
   if (!table.rows.length) return { error: "No rows found in that file." };
+  await db.delete(schema.files).where(and(eq(schema.files.businessId, ctx.business.id), eq(schema.files.kind, STAGE_KIND), lt(schema.files.createdAt, new Date(Date.now() - STAGE_TTL_MS))));
   const id = crypto.randomUUID();
   const staged: Staged = { id, businessId: ctx.business.id, kind, filename: file.name, headers: table.headers, rows: table.rows, mapping: autoMap(kind, table.headers) };
-  await mkdir(dir, { recursive: true });
-  await writeFile(pathFor(id), JSON.stringify(staged));
+  const data = Buffer.from(JSON.stringify(staged), "utf8");
+  await db.insert(schema.files).values({ id, businessId: ctx.business.id, kind: STAGE_KIND, contentType: "application/json", size: data.length, data });
   redirect(`/app/${slug}/settings/import?staged=${id}`);
 }
 
@@ -57,5 +65,6 @@ export async function commitImport(_prev: UploadState, formData: FormData): Prom
   const missing = FIELDS[staged.kind].filter((f) => f.required && !mapping[f.key] && !(staged.kind === "clients" && f.key === "firstName" && mapping.fullName));
   if (missing.length) return { error: `Map these columns first: ${missing.map((m) => m.label).join(", ")}` };
   const result = await runImport(ctx.business, staged.kind, staged.rows, mapping, ctx.user.id, staged.filename);
+  await discardStaged(id);
   redirect(`/app/${slug}/settings/import?done=${encodeURIComponent(JSON.stringify({ kind: staged.kind, ...result, errors: result.errors.slice(0, 20) }))}`);
 }

@@ -73,7 +73,9 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         if (!l.staffId) continue;
         const disc = goodsTotal > 0 ? Math.round((sale.discountCents * l.amountCents) / goodsTotal) : 0;
         const tax = l.taxable && taxableTotal > 0 ? Math.round((sale.taxCents * l.amountCents) / taxableTotal) : 0;
-        const net = Math.round((l.amountCents - disc + tax) * keep);
+        // A line covered by a package or membership credit carries its value in creditCents
+        // (amountCents is 0 so the ticket adds up); the provider is still paid on it.
+        const net = Math.round((l.amountCents - disc + tax) * keep) + Math.round((l.creditCents ?? 0) * keep);
         let tip = 0;
         if (l.kind === "service" && !seenStaffTip.has(l.staffId) && tipByStaff.has(l.staffId)) {
           tip = tipByStaff.get(l.staffId)!;

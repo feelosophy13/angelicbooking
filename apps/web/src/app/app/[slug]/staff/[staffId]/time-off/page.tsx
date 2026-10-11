@@ -1,5 +1,6 @@
 import { and, asc, eq, gte } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
+import { instantToISODate } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { dateLong } from "@/lib/format";
 import { Card, Input, Select, Empty } from "@/components/ui";
@@ -9,7 +10,7 @@ import { addOverride, deleteOverride } from "../../actions";
 export default async function StaffTimeOffPage({ params }: { params: Promise<{ slug: string; staffId: string }> }) {
   const { slug, staffId } = await params;
   const { business } = await requireAction(slug, "staff.manage");
-  const today = new Date().toISOString().slice(0, 10);
+  const today = instantToISODate(new Date(), business.timezone);
   const overrides = await withTenant(business.id, (tx) =>
     tx.select().from(schema.staffScheduleOverrides).where(and(eq(schema.staffScheduleOverrides.staffId, staffId), gte(schema.staffScheduleOverrides.date, today))).orderBy(asc(schema.staffScheduleOverrides.date)),
   );

@@ -12,7 +12,7 @@ import { updateWaitlist } from "./actions";
 export default async function WaitlistPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "appointments.read.any");
-  const rows = await listWaitlist(business.id);
+  const rows = await listWaitlist(business.id, business.timezone);
   return (
     <>
       <PageHeader title="Waitlist" />

@@ -76,6 +76,17 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ## 3. Product backlog
 
+### App-wide evaluation (2026-10-10)
+- [ ] Work through `ENHANCEMENTS.md` (full page-by-page review, ~250 items, P1/P2/P3). P1s first: public
+      `/api/files/[id]`, checkout refund/credit/discount math, reminders after cancellation, open redirect via
+      `?next=`, role sync, waitlist/time-off UTC "today", client picker cap, calendar hours/overlap/drag validation,
+      booking-page waitlist and provider filter, promo validated after deposit, import staging on tmpdir.
+- [x] Landed 2026-10-10 (batch 1): private form/signature files, open-redirect guard, waitlist/time-off "today" in
+      the business timezone, payroll commission on package/membership-covered services, reminders dropped on
+      remove-last-service and series cancel plus a sweep before every delivery run, promo dates in the business
+      timezone, Better Auth invite/role/remove hooks enforce our `members.manage`, permission errors survive
+      production builds, `clients.read` on client pages, import staging stored in the database.
+
 - [x] Membership auto-billing (recurring charges on the business's Connect account). Done 2026-10-10 (client page → Auto-renew with saved card; Connect webhook `invoice.paid` / `invoice.payment_failed` / `customer.subscription.deleted`). Untested against Stripe until keys exist.
 - [ ] Tap to Pay / card reader support.
 - [ ] Run the Expo mobile app on a device against `/api/mobile`.

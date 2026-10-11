@@ -266,10 +266,10 @@ async function followProviderLocation(tx: Tx, businessId: string, appointmentId:
 }
 
 /** Remove one service (all its segments) from an appointment. Cancels the appointment if nothing is left. */
-export async function removeServiceFromAppointment(input: { businessId: string; itemId: string; actorUserId: string }) {
-  await withTenant(input.businessId, async (tx) => {
+export async function removeServiceFromAppointment(input: { businessId: string; itemId: string; actorUserId: string }): Promise<{ appointmentId: string; cancelled: boolean } | null> {
+  return withTenant(input.businessId, async (tx) => {
     const item = await tx.query.appointmentItems.findFirst({ where: eq(schema.appointmentItems.id, input.itemId) });
-    if (!item) return;
+    if (!item) return null;
     await tx
       .update(schema.appointmentItems)
       .set({ status: "cancelled" })
@@ -284,13 +284,15 @@ export async function removeServiceFromAppointment(input: { businessId: string; 
       .select({ live: sql<number>`count(*) filter (where ${schema.appointmentItems.status} <> 'cancelled')` })
       .from(schema.appointmentItems)
       .where(eq(schema.appointmentItems.appointmentId, item.appointmentId));
-    if (Number(agg?.live ?? 0) === 0) {
+    const cancelled = Number(agg?.live ?? 0) === 0;
+    if (cancelled) {
       await tx
         .update(schema.appointments)
         .set({ status: "cancelled", cancelledAt: new Date() })
         .where(eq(schema.appointments.id, item.appointmentId));
     }
     await audit(tx, input.businessId, input.actorUserId, "appointment.remove_service", item.appointmentId, { itemId: item.id });
+    return { appointmentId: item.appointmentId, cancelled };
   });
 }
 

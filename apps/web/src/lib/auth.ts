@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, organization, twoFactor } from "better-auth/plugins";
 import { googleEnabled } from "./auth-providers";
@@ -20,6 +21,23 @@ export const orgRoles = {
   provider: ac.newRole(memberAc.statements),
   front_desk: ac.newRole(memberAc.statements),
 };
+
+/** The signed-in user behind the current request (hooks don't receive the actor). */
+async function actingUserId(): Promise<string | null> {
+  const { getSession } = await import("./session");
+  const s = await getSession();
+  return s?.user.id ?? null;
+}
+
+async function assertMayManageMembers(organizationId: string, userId: string | null) {
+  if (!userId) throw new APIError("FORBIDDEN", { message: "Sign in to manage team members." });
+  const membership = await db.query.member.findFirst({ where: and(eq(schema.member.organizationId, organizationId), eq(schema.member.userId, userId)) });
+  if (!membership) throw new APIError("FORBIDDEN", { message: "You are not a member of this business." });
+  if (membership.role === "owner") return;
+  const { permissionsForRole } = await import("@/server/roles");
+  const perms = await permissionsForRole(organizationId, membership.role);
+  if (!perms.has("members.manage")) throw new APIError("FORBIDDEN", { message: "Your role can't manage team members." });
+}
 
 /**
  * Better Auth owns users, sessions, organizations and memberships.
@@ -83,6 +101,17 @@ export const auth = betterAuth({
       dynamicAccessControl: { enabled: true, maximumRolesPerOrganization: 30 },
       invitationExpiresIn: 60 * 60 * 24 * 7,
       organizationHooks: {
+        // Member management is governed by our roles table (Settings → Roles), not by
+        // Better Auth's static role map, so an edited built-in role is honoured here too.
+        beforeCreateInvitation: async ({ invitation, inviter }) => {
+          await assertMayManageMembers(invitation.organizationId, inviter.id);
+        },
+        beforeUpdateMemberRole: async ({ member }) => {
+          await assertMayManageMembers(member.organizationId, await actingUserId());
+        },
+        beforeRemoveMember: async ({ member }) => {
+          await assertMayManageMembers(member.organizationId, await actingUserId());
+        },
         // When an invitee joins, attach them to the staff row created for their
         // email (or create one) so they appear on the calendar.
         afterAcceptInvitation: async ({ invitation, user, organization: org }) => {

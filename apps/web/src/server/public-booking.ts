@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
-import { canClientCancel, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
+import { canClientCancel, instantToISODate, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
 import { getStaffAvailability, staffForService, timingFor } from "./availability";
 import { bookAppointment, BookingError, rescheduleService, setAppointmentStatus } from "./booking";
 import { refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
@@ -271,7 +271,8 @@ export async function joinWaitlist(business: PublicBusiness, input: { serviceId:
   );
 }
 
-export async function listWaitlist(businessId: string) {
+export async function listWaitlist(businessId: string, timeZone: string) {
+  const today = instantToISODate(new Date(), timeZone);
   return withTenant(businessId, (tx) =>
     tx
       .select({ id: schema.waitlist.id, date: schema.waitlist.date, notes: schema.waitlist.notes, status: schema.waitlist.status, createdAt: schema.waitlist.createdAt, clientFirst: schema.clients.firstName, clientLast: schema.clients.lastName, clientPhone: schema.clients.phone, clientId: schema.clients.id, serviceName: schema.services.name, serviceId: schema.services.id, staffName: schema.staff.displayName, locationId: schema.waitlist.locationId, locationName: schema.locations.name })
@@ -280,7 +281,7 @@ export async function listWaitlist(businessId: string) {
       .leftJoin(schema.services, eq(schema.services.id, schema.waitlist.serviceId))
       .leftJoin(schema.staff, eq(schema.staff.id, schema.waitlist.staffId))
       .leftJoin(schema.locations, eq(schema.locations.id, schema.waitlist.locationId))
-      .where(and(eq(schema.waitlist.status, "open"), gte(schema.waitlist.date, new Date().toISOString().slice(0, 10))))
+      .where(and(eq(schema.waitlist.status, "open"), gte(schema.waitlist.date, today)))
       .orderBy(asc(schema.waitlist.date), asc(schema.waitlist.createdAt)),
   );
 }
