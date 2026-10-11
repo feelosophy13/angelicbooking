@@ -1,3 +1,4 @@
+import { Checkbox } from "@/components/ui";
 /**
  * Location tick boxes for a catalogue item; renders nothing for a single-location business.
  * Posts loc_<id> for each ticked location plus hasLocations=1 so the action knows the boxes were shown.
@@ -12,7 +13,7 @@ export function OfferedAt({ locations, selected, legend = "Offered at", hint = "
       <input type="hidden" name="hasLocations" value="1" />
       <div className="flex flex-wrap gap-4">
         {locations.map((l) => (
-          <label key={l.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name={`loc_${l.id}`} defaultChecked={all || selected.includes(l.id)} className="h-4 w-4 accent-brand-600" /> {l.name}</label>
+          <Checkbox key={l.id} name={`loc_${l.id}`} defaultChecked={all || selected.includes(l.id)} label={l.name} />
         ))}
       </div>
       <p className="mt-1 text-xs text-stone-500">{hint}</p>

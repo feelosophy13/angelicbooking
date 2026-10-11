@@ -33,7 +33,7 @@ export function FormEditor({ action, slug, form, services, locations = [], submi
         <p className="mt-2 text-xs text-stone-500">…or only before these services:</p>
         <div className="mt-1 grid gap-1 sm:grid-cols-2">
           {services.map((s) => (
-            <label key={s.id} className="flex items-center gap-2 text-sm"><input type="checkbox" name="serviceIds" value={s.id} defaultChecked={form?.serviceIds.includes(s.id) ?? false} className="h-4 w-4 accent-brand-600" /> {s.name}</label>
+            <Checkbox key={s.id} name="serviceIds" value={s.id} defaultChecked={form?.serviceIds.includes(s.id) ?? false} label={s.name} />
           ))}
         </div>
       </fieldset>

@@ -1,7 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { Card } from "@/components/ui";
+import { Card, Checkbox } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
 import { saveStaffServices } from "../../actions";
 
@@ -20,10 +20,7 @@ export default async function StaffServicesPage({ params }: { params: Promise<{ 
         <input type="hidden" name="staffId" value={staffId} />
         {services.length === 0 ? <p className="text-sm text-stone-500">No services yet.</p> : null}
         {services.map((s) => (
-          <label key={s.id} className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="serviceIds" value={s.id} defaultChecked={mapped.has(s.id)} className="h-4 w-4 accent-brand-600" />
-            {s.name} <span className="text-stone-400">· {s.durationMin} min</span>
-          </label>
+          <Checkbox key={s.id} name="serviceIds" value={s.id} defaultChecked={mapped.has(s.id)} label={<>{s.name} <span className="text-stone-400">· {s.durationMin} min</span></>} />
         ))}
         <SubmitButton className="mt-2" pendingText="Saving…">Save services</SubmitButton>
       </form>

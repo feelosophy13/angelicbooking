@@ -1,7 +1,7 @@
 "use client";
 import { useActionState, useEffect, useRef, useState } from "react";
 import type { FormAnswer, FormFieldDef } from "@angelic/db";
-import { Input, Notice, Select, Textarea } from "@/components/ui";
+import { Input, Notice, Select, Textarea, Checkbox } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
 import { fieldVisible } from "@/lib/forms-logic";
 
@@ -42,9 +42,7 @@ export function FormFill({ action, hidden, form, defaults, clientName, submitLab
         if (f.type === "statement") return <p key={f.id} className="text-sm text-stone-700">{f.label}</p>;
         if (f.type === "checkbox") {
           return (
-            <label key={f.id} className="flex items-start gap-2 text-sm">
-              <input type="checkbox" name={name} required={f.required} checked={v === true} onChange={(e) => set(f.id, e.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-600" /> <span>{f.label}{f.required ? " *" : ""}</span>
-            </label>
+            <Checkbox key={f.id} name={name} required={f.required} checked={v === true} onChange={(e) => set(f.id, e.target.checked)} label={<>{f.label}{f.required ? " *" : ""}</>} />
           );
         }
         if (f.type === "multiselect") {
@@ -54,7 +52,7 @@ export function FormFill({ action, hidden, form, defaults, clientName, submitLab
               <legend className="mb-1 font-medium text-stone-700">{f.label}{f.required ? " *" : ""}</legend>
               <div className="grid gap-1 sm:grid-cols-2">
                 {(f.options ?? []).map((o) => (
-                  <label key={o} className="flex items-center gap-2"><input type="checkbox" name={name} value={o} checked={picked.includes(o)} onChange={(e) => set(f.id, e.target.checked ? [...picked, o] : picked.filter((x) => x !== o))} className="h-4 w-4 accent-brand-600" /> {o}</label>
+                  <Checkbox key={o} name={name} value={o} checked={picked.includes(o)} onChange={(e) => set(f.id, e.target.checked ? [...picked, o] : picked.filter((x) => x !== o))} label={o} />
                 ))}
               </div>
             </fieldset>

@@ -1,7 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { Card, Input, Select } from "@/components/ui";
+import { Card, Input, Select, Checkbox } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
 import { saveSchedule } from "../../actions";
 
@@ -32,10 +32,7 @@ export default async function StaffHoursPage({ params }: { params: Promise<{ slu
           const row = byDay.get(weekday);
           return (
             <div key={weekday} className={`grid items-center gap-2 text-sm ${multi ? "grid-cols-[6rem_7rem_auto_7rem_minmax(9rem,1fr)]" : "grid-cols-[6rem_7rem_auto_7rem]"}`}>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" name={`on_${weekday}`} defaultChecked={!!row} className="h-4 w-4 accent-brand-600" />
-                {name}
-              </label>
+              <Checkbox name={`on_${weekday}`} defaultChecked={!!row} label={name} className="!items-center [&>input]:mt-0" />
               <Input name={`start_${weekday}`} type="time" defaultValue={row ? hhmm(row.startTime) : "09:00"} className="w-28 px-2" />
               <span className="text-stone-400">to</span>
               <Input name={`end_${weekday}`} type="time" defaultValue={row ? hhmm(row.endTime) : "17:00"} className="w-28 px-2" />

@@ -3,7 +3,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
-import { Button, Field, Input, Notice } from "@/components/ui";
+import { Button, Field, Input, Notice, Checkbox } from "@/components/ui";
 import { finishCardPayment, startCardPayment } from "./actions";
 
 /**
@@ -32,10 +32,7 @@ export function CardPayment(props: { slug: string; saleId: string; dueCents: num
       <div className="space-y-3">
         <Field label="Amount to charge"><Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></Field>
         {props.hasClient ? (
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={saveCard} onChange={(e) => setSaveCard(e.target.checked)} className="h-4 w-4 accent-brand-600" />
-            Save this card to the client for next time
-          </label>
+          <Checkbox checked={saveCard} onChange={(e) => setSaveCard(e.target.checked)} label="Save this card to the client for next time" />
         ) : null}
         {error ? <Notice>{error}</Notice> : null}
         <Button

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import type { FormFieldDef } from "@angelic/db";
-import { Input, Select, Textarea } from "@/components/ui";
+import { Input, Select, Textarea, Checkbox } from "@/components/ui";
 
 const TYPES: { type: FormFieldDef["type"]; label: string }[] = [
   { type: "text", label: "Short answer" },
@@ -57,7 +57,7 @@ export function FieldBuilder({ initial }: { initial: FormFieldDef[] }) {
             {r.type === "select" || r.type === "multiselect" ? <Textarea name={`f${i}_options`} rows={3} className="mt-2" placeholder={"One option per line"} defaultValue={(r.options ?? []).join("\n")} /> : null}
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-stone-600">
               {r.type !== "statement" ? (
-                <label className="flex items-center gap-2"><input type="checkbox" name={`f${i}_required`} checked={r.required ?? false} onChange={(e) => update(i, { required: e.target.checked })} className="h-4 w-4 accent-brand-600" /> Required</label>
+                <Checkbox name={`f${i}_required`} checked={r.required ?? false} onChange={(e) => update(i, { required: e.target.checked })} label="Required" className="text-xs" />
               ) : null}
               {drivers.length ? (
                 <span className="flex flex-wrap items-center gap-2">

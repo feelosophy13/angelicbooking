@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
 import { appUrl } from "@/lib/stripe";
-import { BackLink, Card, Input, PageHeader, Select, Textarea } from "@/components/ui";
+import { BackLink, Card, Input, PageHeader, Select, Textarea, Checkbox } from "@/components/ui";
 import { TIMEZONES } from "@/lib/utils";
 import { updateBusiness } from "../actions";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
@@ -49,12 +49,12 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <Field label="Logo" name="logoFile" hint="Square image, PNG/JPEG/WebP/SVG up to 2 MB."><input type="file" name="logoFile" accept="image/*" className="block w-full text-sm" /></Field>
-                {business.logoUrl ? <div className="mt-2 flex items-center gap-3"><img src={business.logoUrl} alt="" className="h-14 w-14 rounded-xl border border-stone-200 object-cover" /><label className="flex items-center gap-1 text-xs text-stone-600"><input type="checkbox" name="removeLogo" className="h-3.5 w-3.5" /> Remove</label></div> : null}
+                {business.logoUrl ? <div className="mt-2 flex items-center gap-3"><img src={business.logoUrl} alt="" className="h-14 w-14 rounded-xl border border-stone-200 object-cover" /><Checkbox name="removeLogo" label="Remove" className="text-xs" /></div> : null}
                 <details className="mt-1 text-xs text-stone-500"><summary className="cursor-pointer">…or paste an image URL</summary><Input name="logoUrl" defaultValue={business.logoUrl ?? ""} placeholder="https://…/logo.png" className="mt-1" /></details>
               </div>
               <div>
                 <Field label="Cover photo" name="coverFile" hint="Wide image for the top of the booking page."><input type="file" name="coverFile" accept="image/*" className="block w-full text-sm" /></Field>
-                {business.coverUrl ? <div className="mt-2 flex items-center gap-3"><img src={business.coverUrl} alt="" className="h-14 w-28 rounded-lg border border-stone-200 object-cover" /><label className="flex items-center gap-1 text-xs text-stone-600"><input type="checkbox" name="removeCover" className="h-3.5 w-3.5" /> Remove</label></div> : null}
+                {business.coverUrl ? <div className="mt-2 flex items-center gap-3"><img src={business.coverUrl} alt="" className="h-14 w-28 rounded-lg border border-stone-200 object-cover" /><Checkbox name="removeCover" label="Remove" className="text-xs" /></div> : null}
                 <details className="mt-1 text-xs text-stone-500"><summary className="cursor-pointer">…or paste an image URL</summary><Input name="coverUrl" defaultValue={business.coverUrl ?? ""} placeholder="https://…/cover.jpg" className="mt-1" /></details>
               </div>
             </div>

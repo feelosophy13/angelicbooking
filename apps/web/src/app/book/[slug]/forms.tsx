@@ -1,7 +1,7 @@
 "use client";
 import { useActionState } from "react";
 import { bookOnline, joinWaitlistAction, type PublicState } from "./actions";
-import { Field, Input, Notice, Textarea } from "@/components/ui";
+import { Field, Input, Notice, Textarea, Checkbox } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean } | null;
@@ -67,11 +67,8 @@ export function WaitlistForm(props: { slug: string; serviceId: string; staffId: 
  */
 export function SmsConsent() {
   return (
-    <label className="flex items-start gap-2 text-xs text-stone-600">
-      <input type="checkbox" name="smsConsent" className="mt-0.5 h-4 w-4 shrink-0 accent-brand-600" />
-      <span>
+    <Checkbox name="smsConsent" className="text-xs [&_span]:text-stone-600" label={<>
         Text me appointment confirmations and reminders at this mobile number. Message frequency varies by appointment. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help.
-      </span>
-    </label>
+      </>} />
   );
 }

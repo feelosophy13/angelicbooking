@@ -60,10 +60,7 @@ function Picker({ name, label, groups, selected }: { name: string; label: string
         {groups.map((g, gi) => (
           <div key={g[0]?.id ?? gi} className="mb-1 break-inside-avoid space-y-1">
             {g.map((x) => (
-              <label key={x.id} className="flex items-center gap-2" style={{ paddingLeft: `${(x.depth ?? 0) * 16}px` }}>
-                <input type="checkbox" name={name} value={x.id} defaultChecked={selected?.includes(x.id)} className="h-4 w-4 accent-brand-600" />
-                <span className={x.depth ? "text-stone-700" : "font-medium"}>{x.name}</span>
-              </label>
+              <Checkbox key={x.id} name={name} value={x.id} defaultChecked={selected?.includes(x.id)} label={<span className={x.depth ? "text-stone-700" : "font-medium"}>{x.name}</span>} style={{ paddingLeft: `${(x.depth ?? 0) * 16}px` }} />
             ))}
           </div>
         ))}
@@ -94,9 +91,7 @@ export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: strin
       <Section n={1} title="Name">
         <div className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1"><Field label="Name" name="name" required className="[&>label]:sr-only"><Input name="name" defaultValue={workflow?.name ?? ""} required placeholder="Aftercare for colour clients" className="text-base font-medium" /></Field></div>
-          <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium has-[:checked]:border-green-300 has-[:checked]:bg-green-50 has-[:checked]:text-green-800">
-            <input type="checkbox" name="enabled" defaultChecked={workflow?.enabled ?? false} className="h-4 w-4 accent-green-600" /> On
-          </label>
+          <Checkbox name="enabled" defaultChecked={workflow?.enabled ?? false} label="On" className="h-10 cursor-pointer !items-center rounded-lg border border-stone-300 bg-white px-3 font-medium has-[:checked]:border-green-300 has-[:checked]:bg-green-50 has-[:checked]:text-green-800 [&>input]:accent-green-600 [&>input]:mt-0" />
         </div>
         <details className="mt-2 text-sm" open={!!workflow?.description}>
           <summary className="cursor-pointer select-none text-xs text-stone-500 hover:text-stone-800">{workflow?.description ? "Description" : "Add a description (for your team)"}</summary>

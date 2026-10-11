@@ -1,4 +1,5 @@
 "use client";
+import { Checkbox } from "@/components/ui";
 import { useState } from "react";
 import type { WeeklyHours } from "@angelic/core";
 import { WEEKDAYS } from "@/lib/hours";
@@ -17,7 +18,7 @@ export function HoursEditor({ initial }: { initial: WeeklyHours | null }) {
             <input type="time" name={`h${d}_open`} defaultValue={h?.open ?? "10:00"} disabled={closed[d]} className="h-8 rounded border border-stone-300 px-2 text-sm disabled:opacity-40" />
             <span className="text-stone-400">to</span>
             <input type="time" name={`h${d}_close`} defaultValue={h?.close ?? "18:00"} disabled={closed[d]} className="h-8 rounded border border-stone-300 px-2 text-sm disabled:opacity-40" />
-            <label className="flex items-center gap-1 text-xs text-stone-600"><input type="checkbox" name={`h${d}_closed`} checked={closed[d]} onChange={(e) => setClosed((c) => c.map((v, i) => (i === d ? e.target.checked : v)))} className="h-3.5 w-3.5" /> Closed</label>
+            <Checkbox name={`h${d}_closed`} checked={closed[d]} onChange={(e) => setClosed((c) => c.map((v, i) => (i === d ? e.target.checked : v)))} label="Closed" className="text-xs !items-center [&>input]:mt-0" />
           </div>
         );
       })}

@@ -1,5 +1,5 @@
 import { PERMISSION_GROUPS } from "@angelic/core";
-import { Input, Textarea } from "@/components/ui";
+import { Input, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import type { FormState } from "@/lib/form";
 
@@ -20,13 +20,7 @@ export function RoleForm(props: { action: (prev: FormState | undefined, fd: Form
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-400">{g.title}</p>
               <div className="grid gap-2 sm:grid-cols-2">
                 {g.items.map((it) => (
-                  <label key={it.action} className="flex cursor-pointer items-start gap-3 rounded-lg border border-stone-200 p-3 hover:bg-stone-50 has-[:checked]:border-brand-300 has-[:checked]:bg-brand-50/40">
-                    <input type="checkbox" name="permissions" value={it.action} defaultChecked={has(it.action)} className="mt-0.5 h-4 w-4 accent-brand-600" />
-                    <span>
-                      <span className="block text-sm font-medium">{it.label}</span>
-                      <span className="block text-xs text-stone-500">{it.description}</span>
-                    </span>
-                  </label>
+                  <Checkbox key={it.action} name="permissions" value={it.action} defaultChecked={has(it.action)} label={<span className="font-medium">{it.label}</span>} hint={it.description} className="cursor-pointer rounded-lg border border-stone-200 p-3 hover:bg-stone-50 has-[:checked]:border-brand-300 has-[:checked]:bg-brand-50/40" />
                 ))}
               </div>
             </div>
