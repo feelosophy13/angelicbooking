@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
+import { rowClass, rowControl, RowLink } from "@/components/row";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, gt, isNull, or } from "drizzle-orm";
@@ -98,6 +99,19 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const past = visits.filter((v) => v.startAt < new Date() || done.has(v.status));
   const money = (c: number) => formatMoney(c, business.currency);
   const write = can(permissions, "clients.write");
+  // One timeline: past visits carry their ticket and rating; sales with no visit (retail, gift cards, open tickets) are rows too.
+  const reviewFor = new Map(reviews.filter((r) => r.appointmentId).map((r) => [r.appointmentId!, r]));
+  const saleFor = new Map(sales.filter((s) => s.appointmentId).map((s) => [s.appointmentId!, s]));
+  const reviewAverage = reviews.length ? reviews.reduce((a, r) => a + (r.rating ?? 0), 0) / reviews.length : 0;
+  type TimelineRow = { key: string; at: Date; kind: "visit" | "sale"; href: string; title: string; meta: string; status: string; sale: { id: string; number: number; totalCents: number; status: string } | null; review: { rating: number | null; comment: string | null } | null };
+  const timeline: TimelineRow[] = [
+    ...past.map((v): TimelineRow => {
+      const s = saleFor.get(v.id);
+      const r = reviewFor.get(v.id);
+      return { key: `v:${v.id}`, at: v.startAt, kind: "visit", href: `/app/${slug}/appointments/${v.id}`, title: `${v.serviceName} with ${v.staffName}`, meta: at(v).replace(/^ · /, "· "), status: v.status, sale: s ? { id: s.id, number: s.number, totalCents: s.totalCents, status: s.status } : null, review: r ? { rating: r.rating, comment: r.comment } : null };
+    }),
+    ...sales.filter((s) => !s.appointmentId).map((s): TimelineRow => ({ key: `s:${s.id}`, at: s.closedAt ?? s.createdAt, kind: "sale", href: `/app/${slug}/sales/${s.id}`, title: `Ticket #${s.number}`, meta: s.status === "open" ? "· not an appointment · still open" : "· retail, gift card or package", status: s.status, sale: { id: s.id, number: s.number, totalCents: s.totalCents, status: s.status }, review: null })),
+  ].sort((a, b) => b.at.getTime() - a.at.getTime());
   const stats = await withTenant(business.id, (tx) => clientStats(tx, client));
   const fmtMonth = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: tz });
   const sinceMonths = Math.max(0, Math.round((Date.now() - stats.since.getTime()) / (30.44 * 86_400_000)));
@@ -180,22 +194,32 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             )}
           </Card>
           <Card>
-            <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">History</h2>
-            {past.length === 0 ? <div className="p-4"><Empty title="No past visits" /></div> : (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-2">
+              <h2 className="text-sm font-semibold text-stone-600">History</h2>
+              {reviews.length ? <p className="text-xs text-stone-500"><span className="text-amber-400">★</span> {reviewAverage.toFixed(1)} average over {reviews.length} {reviews.length === 1 ? "rating" : "ratings"}</p> : null}
+            </div>
+            {timeline.length === 0 ? <div className="p-4"><Empty title="No past visits or purchases" /></div> : (
               <ul className="divide-y divide-stone-100 text-sm">
-                {past.map((v) => (
-                  <li key={v.id}><Link href={`/app/${slug}/appointments/${v.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span className={v.status === "cancelled" || v.status === "no_show" ? "text-stone-400" : ""}>{fmtDate.format(v.startAt)} · {v.serviceName} with {v.staffName}{at(v)}</span><StatusBadge status={v.status} /></Link></li>
-                ))}
-              </ul>
-            )}
-          </Card>
-          <Card>
-            <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Sales</h2>
-            {sales.length === 0 ? <div className="p-4"><Empty title="No sales yet" /></div> : (
-              <ul className="divide-y divide-stone-100 text-sm">
-                {sales.map((s) => (
-                  <li key={s.id}><Link href={`/app/${slug}/sales/${s.id}`} className="flex items-center justify-between px-4 py-2 hover:bg-stone-50"><span>#{s.number} · {fmtDate.format(s.createdAt)}</span><span className="flex items-center gap-2">{money(s.totalCents)} <StatusBadge status={s.status} /></span></Link></li>
-                ))}
+                {timeline.map((t) => {
+                  const dim = t.kind === "visit" && (t.status === "cancelled" || t.status === "no_show");
+                  return (
+                    <li key={t.key} className={`${rowClass} px-4 py-2`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className={`min-w-0 ${dim ? "text-stone-400" : ""}`}>
+                          <RowLink href={t.href} className="hover:underline">{fmtDate.format(t.at)} · {t.title}</RowLink>
+                          {t.meta ? <span className="text-stone-500"> {t.meta}</span> : null}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          {t.sale ? <Link href={`/app/${slug}/sales/${t.sale.id}`} className={`${rowControl} tabular-nums ${t.sale.status === "open" ? "font-medium text-amber-700" : "text-stone-700"}`} title={`Ticket #${t.sale.number}`}>{money(t.sale.totalCents)}{t.sale.status === "open" ? " due" : t.sale.status === "refunded" ? " refunded" : ""}</Link> : null}
+                          <StatusBadge status={t.status} />
+                        </span>
+                      </div>
+                      {t.review ? (
+                        <p className="mt-0.5 text-xs text-stone-600"><span className="text-amber-400">{"★".repeat(t.review.rating ?? 0)}</span>{t.review.comment ? ` “${t.review.comment}”` : ""}</p>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>
@@ -352,14 +376,6 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               </p>
             ) : null}
           </Card>
-          {reviews.length ? (
-            <Card className="p-4 text-sm">
-              <h2 className="mb-2 font-medium">Ratings</h2>
-              <ul className="space-y-1">
-                {reviews.map((r) => <li key={r.id}><span className="text-amber-400">{"★".repeat(r.rating ?? 0)}</span> <span className="text-xs text-stone-500">{r.submittedAt ? fmtDate.format(r.submittedAt) : ""}</span>{r.comment ? <p className="text-xs text-stone-700">{r.comment}</p> : null}</li>)}
-              </ul>
-            </Card>
-          ) : null}
           <Card className="p-4 text-sm">
             <h2 className="mb-2 font-medium">Packages &amp; memberships</h2>
             {packs.length === 0 && memberships.length === 0 ? <p className="text-stone-500">None.</p> : null}
