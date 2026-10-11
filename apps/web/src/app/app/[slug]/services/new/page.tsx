@@ -10,18 +10,19 @@ import { listLocations } from "@/server/locations";
 
 export const metadata: Metadata = { title: "New service" };
 
-export default async function NewServicePage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function NewServicePage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ category?: string }> }) {
   const { slug } = await params;
+  const { category } = await searchParams;
   const { business } = await requireAction(slug, "services.manage");
   const [categories, locations] = await Promise.all([listCategories(business.id, "service"), listLocations(business.id)]);
   return (
     <FormPage title="New service" backHref={`/app/${slug}/services`} backLabel="Services">
       <ActionForm action={createService}>
         <input type="hidden" name="slug" value={slug} />
-        
         <Field label="Name" name="name" required><Input name="name" defaultValue="" required placeholder="Women's haircut" autoFocus /></Field>
-        <Field label="Category" name="categoryIdNew"><CategoryPicker name="categoryId" categories={categories} value={null} /></Field>
+        <Field label="Category" name="categoryIdNew"><CategoryPicker name="categoryId" categories={categories} value={categories.some((c) => c.id === category) ? category : null} /></Field>
         <Field label="Description" name="description" hint="Shown on the booking page."><Textarea name="description" rows={2} defaultValue="" /></Field>
+        <Field label="Photo" name="image" hint="PNG/JPEG/WebP up to 2 MB. Shown next to the service on the booking page."><input type="file" name="image" accept="image/*" className="block text-sm" /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Duration (min)" name="durationMin" required><Input name="durationMin" type="number" min={5} step={5} defaultValue={45} required /></Field>
           <Field label="Price" name="price" required><Input name="price" inputMode="decimal" defaultValue="" placeholder="65" required /></Field>

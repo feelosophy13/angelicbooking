@@ -1,5 +1,5 @@
 "use client";
-import { Children, cloneElement, createContext, isValidElement, useActionState, useContext, useEffect, useId, useRef, useState } from "react";
+import { createContext, isValidElement, useActionState, useContext, useEffect, useId, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Loader2 } from "lucide-react";
 import type { FormState } from "@/lib/form";
@@ -33,33 +33,36 @@ export function useFormState() {
   return useContext(Ctx);
 }
 
-/** Label + control + hint + error. Works inside or outside <ActionForm>. */
+/** The id a <Field> assigns to the control inside it; Input/Select/Textarea pick it up when they have none. */
+const FieldIdCtx = createContext<string | undefined>(undefined);
+export function useFieldId() {
+  return useContext(FieldIdCtx);
+}
+
+/**
+ * Label + control + hint + error. Works inside or outside <ActionForm>.
+ * The label points at `f-<name>` (or a stable generated id) and the control inside
+ * reads that id from context, so server and client always render the same markup
+ * whatever the child is (a plain input, a wrapper div, a server component).
+ */
 export function Field({ label, name, hint, required, children, className }: { label: string; name?: string; hint?: string; required?: boolean; children: React.ReactNode; className?: string }) {
   const state = useContext(Ctx);
   const auto = useId();
-  // Associate the label with the (single) control inside so screen readers and
-  // test tools can find inputs by label. Multi-control children keep a plain label.
-  // A server component passed as the child (e.g. <CategoryPicker/>) arrives as a
-  // lazy element that Children.only rejects; treat it like a multi-control child.
-  let only: React.ReactNode = null;
-  try {
-    only = Children.count(children) === 1 ? Children.only(children) : null;
-  } catch {
-    only = null;
-  }
-  const child = only && isValidElement<{ id?: string; name?: string }>(only) ? only : null;
-  const fieldName = name ?? child?.props.name;
-  const id = child ? (child.props.id ?? `f-${fieldName ?? auto}`) : undefined;
-  const control = child ? cloneElement(child, { id }) : children;
+  // Errors are keyed by input name; fall back to the single child's name when the Field has none.
+  const childName = isValidElement<{ name?: string }>(children) && typeof children.props.name === "string" ? children.props.name : undefined;
+  const fieldName = name ?? childName;
+  const id = `f-${(name ?? auto).replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const error = fieldName ? state?.fieldErrors?.[fieldName] : undefined;
-  const errId = `${id ?? auto}-error`;
+  const errId = `${id}-error`;
   return (
     <div className={className}>
       <label htmlFor={id} className="mb-1 block text-sm font-medium text-stone-700">
         {label}
         {required ? <span className="ml-0.5 text-red-500" aria-hidden>*</span> : null}
       </label>
-      <div className={cn(error && "[&_input]:border-red-400 [&_select]:border-red-400 [&_textarea]:border-red-400")} aria-describedby={error ? errId : undefined}>{control}</div>
+      <div className={cn(error && "[&_input]:border-red-400 [&_select]:border-red-400 [&_textarea]:border-red-400")} aria-describedby={error ? errId : undefined}>
+        <FieldIdCtx.Provider value={id}>{children}</FieldIdCtx.Provider>
+      </div>
       {error ? <p id={errId} className="mt-1 text-xs text-red-600" role="alert">{error}</p> : hint ? <p className="mt-1 text-xs text-stone-500">{hint}</p> : null}
     </div>
   );

@@ -42,7 +42,10 @@ export function formAction<S extends z.ZodTypeAny>(
         const key = issue.path.join(".") || "_";
         if (!fieldErrors[key]) fieldErrors[key] = issue.message;
       }
-      return { fieldErrors, values: raw, error: fieldErrors._ };
+      // Always say something at the top too, so a failed submit is never silent even when a
+      // field with an error has no <Field> on the page (e.g. a hidden or missing input).
+      const summary = Object.entries(fieldErrors).filter(([k]) => k !== "_").map(([k, m]) => `${labelFor(k)}: ${m}`).join(" · ");
+      return { fieldErrors, values: raw, error: fieldErrors._ ?? (summary ? `Please check: ${summary}` : "Please check the highlighted fields.") };
     }
     try {
       const message = await handler(parsed.data, formData);
@@ -56,6 +59,12 @@ export function formAction<S extends z.ZodTypeAny>(
       throw e;
     }
   };
+}
+
+/** "hourlyRate" → "Hourly rate", for the error summary. */
+function labelFor(key: string): string {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_.]+/g, " ").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 /** Common zod helpers for form fields (all inputs arrive as strings). */

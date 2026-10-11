@@ -13,7 +13,13 @@ export default async function StaffPayPage({ params }: { params: Promise<{ slug:
   if (!person) notFound();
   return (
     <Card className="max-w-3xl p-5">
-      <p className="mb-4 text-sm text-stone-600">Drives the Payroll page. Commission providers are paid on service revenue; hourly and salaried staff keep tips from procedures they perform and earn the product rate on their sales. Leave withholding blank for the accountant to fill in.</p>
+      <p className="mb-1 text-sm text-stone-600">Drives the Payroll page. Everyone keeps the tips from procedures they perform (less the card-tip fee) and earns the product rate on their sales. The other components combine however you pay this person:</p>
+      <ul className="mb-4 list-disc space-y-0.5 pl-5 text-xs text-stone-500">
+        <li><b>Commission (1099)</b>: a % of main-service revenue. Add an hourly rate for a guaranteed base on top of commission. No withholding.</li>
+        <li><b>Hourly (W-2)</b>: rate × clocked hours (overtime optional). Add a main-services % to pay commission on top of wages.</li>
+        <li><b>Salary (W-2)</b>: a flat amount per pay period, plus an optional main-services %.</li>
+      </ul>
+      <p className="mb-4 text-xs text-stone-500">Leave fields you don't use at 0. Leave withholding blank for the accountant to fill in.</p>
       <ActionForm action={savePay} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="staffId" value={staffId} />
@@ -25,11 +31,11 @@ export default async function StaffPayPage({ params }: { params: Promise<{ slug:
             <option value="salary">Salary (W-2)</option>
           </Select>
         </Field>
-        <Field label="Main services %" name="mainCommissionPct"><Input name="mainCommissionPct" type="number" step="0.5" min={0} max={100} defaultValue={(person.mainCommissionBps / 100).toString()} /></Field>
+        <Field label="Main services %" name="mainCommissionPct" hint="Commission on service revenue. 0 = none."><Input name="mainCommissionPct" type="number" step="0.5" min={0} max={100} defaultValue={(person.mainCommissionBps / 100).toString()} /></Field>
         <Field label="Product / package %" name="productCommissionPct"><Input name="productCommissionPct" type="number" step="0.5" min={0} max={100} defaultValue={(person.productCommissionBps / 100).toString()} /></Field>
         <Field label="Fee on card tips %" name="ccTipFeePct"><Input name="ccTipFeePct" type="number" step="0.1" min={0} max={100} defaultValue={(person.ccTipFeeBps / 100).toString()} /></Field>
-        <Field label="Hourly rate ($)" name="hourlyRate"><Input name="hourlyRate" inputMode="decimal" defaultValue={person.hourlyRateCents ? (person.hourlyRateCents / 100).toFixed(2) : ""} /></Field>
-        <Field label="Salary per period ($)" name="salaryPerPeriod"><Input name="salaryPerPeriod" inputMode="decimal" defaultValue={person.salaryPerPeriodCents ? (person.salaryPerPeriodCents / 100).toFixed(2) : ""} /></Field>
+        <Field label="Hourly rate ($)" name="hourlyRate" hint="Paid on time-clock hours (hourly staff, or a base for commission providers)."><Input name="hourlyRate" inputMode="decimal" defaultValue={person.hourlyRateCents ? (person.hourlyRateCents / 100).toFixed(2) : ""} /></Field>
+        <Field label="Salary per period ($)" name="salaryPerPeriod" hint="Salaried staff only."><Input name="salaryPerPeriod" inputMode="decimal" defaultValue={person.salaryPerPeriodCents ? (person.salaryPerPeriodCents / 100).toFixed(2) : ""} /></Field>
         <Field label="Overtime" name="overtimeOverride">
           <Select name="overtimeOverride" defaultValue={person.overtimeOverride == null ? "default" : person.overtimeOverride ? "yes" : "no"}>
             <option value="default">Follow payroll run</option>

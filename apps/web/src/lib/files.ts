@@ -1,5 +1,5 @@
 /**
- * Small-file storage in Postgres (logos, cover photos, product images).
+ * Small-file storage in Postgres (logos, cover photos, product, service and category images).
  * Files are served from /api/files/<id> with long cache headers; ids are
  * unguessable UUIDs. Keeps the app single-dependency until object storage
  * is worth adding.
@@ -13,7 +13,7 @@ const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/gif", "
 
 export class FileError extends Error {}
 
-export async function storeImage(businessId: string, kind: "logo" | "cover" | "product", file: File): Promise<{ id: string; url: string }> {
+export async function storeImage(businessId: string, kind: "logo" | "cover" | "product" | "service" | "category", file: File): Promise<{ id: string; url: string }> {
   if (!file || file.size === 0) throw new FileError("Choose an image file.");
   if (!ALLOWED.has(file.type)) throw new FileError("Use a PNG, JPEG, WebP, GIF or SVG image.");
   if (file.size > MAX_FILE_BYTES) throw new FileError("Images must be 2 MB or smaller.");
@@ -56,3 +56,13 @@ export async function storeSignaturePng(businessId: string, dataUrl: string): Pr
 }
 
 export const fileUrl = (id: string) => appUrl(`/api/files/${id}`);
+
+/**
+ * Read an optional `<input type="file" name="image">` from a form and store it.
+ * Returns the new URL, or null when nothing was chosen. Throws FileError on bad input.
+ */
+export async function uploadedImageFrom(businessId: string, kind: "product" | "service" | "category", raw: FormData, field = "image"): Promise<string | null> {
+  const file = raw.get(field);
+  if (!(file instanceof File) || file.size === 0) return null;
+  return (await storeImage(businessId, kind, file)).url;
+}

@@ -17,6 +17,7 @@ import {
   check,
   jsonb,
   customType,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { organization, user } from "./auth";
 
@@ -246,10 +247,14 @@ export const serviceCategories = pgTable(
   {
     id: id(),
     businessId: businessId(),
+    // Nested menus: "Hair" → "Colour" → "Balayage". Null = top level.
+    parentId: text("parent_id").references((): AnyPgColumn => serviceCategories.id, { onDelete: "set null" }),
     name: text("name").notNull(),
+    description: text("description"),
+    imageUrl: text("image_url"),
     sortOrder: integer("sort_order").notNull().default(0),
   },
-  (t) => [index("service_categories_business_idx").on(t.businessId)],
+  (t) => [index("service_categories_business_idx").on(t.businessId), index("service_categories_parent_idx").on(t.parentId)],
 );
 
 export const services = pgTable(
@@ -260,6 +265,7 @@ export const services = pgTable(
     categoryId: text("category_id").references(() => serviceCategories.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     description: text("description"),
+    imageUrl: text("image_url"),
     durationMin: smallint("duration_min").notNull(),
     // Processing/gap time after the active portion during which the staff member
     // is free to take another client (e.g. colour developing).

@@ -6,9 +6,10 @@ import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { ensureCategory } from "@/server/categories";
-import { f, formAction } from "@/lib/form";
+import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { setServiceLocations } from "@/server/locations";
+import { deleteFileByUrl, FileError, uploadedImageFrom } from "@/lib/files";
 
 const fields = z.object({
   slug: z.string(),
@@ -25,7 +26,24 @@ const fields = z.object({
   deposit: f.moneyOptional(),
   capacity: f.int(1, 500).default(1),
   bookableOnline: f.checkbox(),
+  removeImage: f.checkbox(),
 });
+
+async function imageOrFieldError(businessId: string, raw: FormData) {
+  try {
+    return await uploadedImageFrom(businessId, "service", raw);
+  } catch (e) {
+    if (e instanceof FileError) throw new FormError(e.message, "image");
+    throw e;
+  }
+}
+
+const revalidateServices = (slug: string, serviceId?: string) => {
+  revalidatePath(`/app/${slug}/services`);
+  revalidatePath(`/app/${slug}/services/all`);
+  revalidatePath("/app/[slug]/services/categories/[categoryId]", "page");
+  if (serviceId) revalidatePath(`/app/${slug}/services/${serviceId}`);
+};
 
 async function resolveCategory(businessId: string, d: { categoryId?: string; categoryIdNew: string | null }) {
   if (d.categoryIdNew) return ensureCategory(businessId, "service", d.categoryIdNew);
@@ -40,12 +58,14 @@ function pickedLocations(raw: FormData): string[] {
 export const createService = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "services.manage");
   const categoryId = await resolveCategory(ctx.business.id, d);
+  const imageUrl = await imageOrFieldError(ctx.business.id, raw);
   await withTenant(ctx.business.id, async (tx) => {
     const [row] = await tx.insert(schema.services).values({
       businessId: ctx.business.id,
       categoryId,
       name: d.name,
       description: d.description,
+      imageUrl,
       durationMin: d.durationMin,
       gapMin: d.gapMin,
       finishMin: d.finishMin,
@@ -58,18 +78,23 @@ export const createService = formAction(fields, async (d, raw) => {
     if (raw.has("hasLocations")) await setServiceLocations(tx, ctx.business.id, row!.id, pickedLocations(raw));
   });
   await setFlash(`${d.name} added`);
-  revalidatePath(`/app/${d.slug}/services`);
-  redirect(`/app/${d.slug}/services`);
+  revalidateServices(d.slug);
+  redirect(categoryId ? `/app/${d.slug}/services/categories/${categoryId}` : `/app/${d.slug}/services/all`);
 });
 
 export const updateService = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "services.manage");
   const categoryId = await resolveCategory(ctx.business.id, d);
+  const uploaded = await imageOrFieldError(ctx.business.id, raw);
   await withTenant(ctx.business.id, async (tx) => {
     if (raw.has("hasLocations")) await setServiceLocations(tx, ctx.business.id, d.serviceId ?? "", pickedLocations(raw));
+    const current = await tx.query.services.findFirst({ where: eq(schema.services.id, d.serviceId ?? ""), columns: { imageUrl: true } });
+    const imagePatch = uploaded ? { imageUrl: uploaded } : d.removeImage ? { imageUrl: null } : {};
+    if ((uploaded || d.removeImage) && current?.imageUrl) await deleteFileByUrl(current.imageUrl);
     await tx
       .update(schema.services)
       .set({
+        ...imagePatch,
         categoryId,
         name: d.name,
         description: d.description,
@@ -84,8 +109,7 @@ export const updateService = formAction(fields, async (d, raw) => {
       })
       .where(eq(schema.services.id, d.serviceId ?? ""));
   });
-  revalidatePath(`/app/${d.slug}/services`);
-  revalidatePath(`/app/${d.slug}/services/${d.serviceId}`);
+  revalidateServices(d.slug, d.serviceId);
   return "Service saved";
 });
 
@@ -96,7 +120,7 @@ export async function toggleServiceActive(formData: FormData) {
   const active = formData.get("active") === "true";
   await withTenant(ctx.business.id, (tx) => tx.update(schema.services).set({ active }).where(eq(schema.services.id, id)));
   await setFlash(active ? "Service shown again" : "Service hidden");
-  revalidatePath(`/app/${slug}/services`);
+  revalidateServices(slug);
 }
 
 /** Move a service up/down within its category. Renumbers siblings so legacy zeros become a real order. */
@@ -118,5 +142,5 @@ export async function moveService(formData: FormData) {
     [ids[i], ids[j]] = [ids[j]!, ids[i]!];
     for (let k = 0; k < ids.length; k++) await tx.update(schema.services).set({ sortOrder: k }).where(eq(schema.services.id, ids[k]!));
   });
-  revalidatePath(`/app/${d.slug}/services`);
+  revalidateServices(d.slug);
 }

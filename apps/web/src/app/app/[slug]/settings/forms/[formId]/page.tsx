@@ -10,6 +10,8 @@ import { Card, FormPage } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
 import { FormEditor } from "../form-editor";
 import { deleteForm, updateForm } from "../actions";
+import QRCode from "qrcode";
+import { appUrl } from "@/lib/stripe";
 
 export const metadata: Metadata = { title: "Edit form" };
 
@@ -31,8 +33,22 @@ export default async function EditFormPage({ params }: { params: Promise<{ slug:
       .limit(20),
   );
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
+  const shareUrl = appUrl(`/book/${business.slug}/forms/${form.id}`);
+  const qr = await QRCode.toDataURL(shareUrl, { margin: 1, width: 160, color: { dark: "#1c1917" } });
   return (
     <FormPage title={form.name} backHref={`/app/${slug}/settings/forms`} backLabel="Forms" width="max-w-3xl">
+      <div className="mb-5 flex flex-wrap items-start gap-4 rounded-xl border border-brand-100 bg-brand-50/60 p-4">
+        <img src={qr} alt={`QR code for ${form.name}`} className="h-24 w-24 rounded-lg border border-stone-200 bg-white" />
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold text-stone-800">Share this form</h2>
+          <p className="mb-2 text-xs text-stone-600">Anyone with the link can fill it in; they enter their name and number or email and it lands on their client record. Put the QR code at the front desk, link it from your website, or text it to a client. Forms assigned to services are also sent automatically with the confirmation.</p>
+          <input readOnly value={form.active ? shareUrl : "Activate the form to share it"} className="w-full rounded border border-stone-300 bg-white px-2 py-1 text-xs" />
+          <div className="mt-1 flex gap-3 text-xs">
+            {form.active ? <a href={shareUrl} target="_blank" rel="noreferrer" className="text-brand-700 underline">Open the form →</a> : null}
+            <a href={qr} download={`form-${form.id.slice(0, 8)}.png`} className="text-brand-700 underline">Download QR code</a>
+          </div>
+        </div>
+      </div>
       <FormEditor action={updateForm} slug={slug} form={form} services={services} locations={await listLocations(business.id)} submitLabel="Save form" />
       <div className="mt-6 border-t border-stone-200 pt-4">
         <div className="mb-2 flex items-center justify-between"><h2 className="text-sm font-semibold text-stone-600">Recent submissions</h2><Link href={`/app/${slug}/settings/forms/${form.id}/export`} className="text-xs text-brand-700 underline">Export all as CSV</Link></div>

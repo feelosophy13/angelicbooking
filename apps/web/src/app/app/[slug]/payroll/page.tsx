@@ -82,8 +82,8 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
             <tbody className="divide-y divide-stone-100">
               {active.map((e) => {
                 const emp = e.employee;
-                const commission = emp.payType === "commission" ? e.mainCommissionCents + e.productCommissionCents : e.productCommissionCents;
-                const wage = emp.payType === "commission" ? 0 : e.wageCents + e.adjustmentsCents;
+                const commission = e.mainCommissionCents + e.productCommissionCents;
+                const wage = e.wageCents + (emp.payType === "commission" ? 0 : e.adjustmentsCents);
                 return (
                   <tr key={emp.staffId}>
                     <td className="px-3 py-2 font-medium"><a href={`#emp-${emp.staffId}`} className="hover:underline">{emp.name}</a></td>
@@ -120,6 +120,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
                     <dt className="text-stone-500">Main service revenue</dt><dd className="text-right sm:col-span-2">{money(e.mainRevenueCents)}</dd>
                     <dt className="text-stone-500">Main Services ({(emp.mainCommissionBps / 100).toFixed(0)}%)</dt><dd className="text-right sm:col-span-2">{money(e.mainCommissionCents)}</dd>
+                    {e.wageCents ? <><dt className="text-stone-500">Hourly base ({(e.totalMinutes / 60).toFixed(2)} h × ${(emp.hourlyRateCents / 100).toFixed(2)}{e.overtimeApplied ? `, ${(e.overtimeMinutes / 60).toFixed(2)} OT` : ""})</dt><dd className="text-right sm:col-span-2">{money(e.wageCents)}</dd></> : null}
                     <dt className="text-stone-500">Product/Package Sale ({(emp.productCommissionBps / 100).toFixed(0)}%) on {money(e.productSalesCents)}</dt><dd className="text-right sm:col-span-2">{money(e.productCommissionCents)}</dd>
                     <dt className="text-stone-500">Cash tips</dt><dd className="text-right sm:col-span-2">{money(e.cashTipsCents)}</dd>
                     <dt className="text-stone-500">Card tips</dt><dd className="text-right sm:col-span-2">{money(e.cardTipsCents)}</dd>
@@ -131,6 +132,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
                     {emp.payType === "hourly" ? <><dt className="text-stone-500">Hours{e.overtimeApplied ? ` (${(e.overtimeMinutes / 60).toFixed(2)} OT)` : ""}</dt><dd className="text-right sm:col-span-2">{(e.totalMinutes / 60).toFixed(2)}</dd></> : null}
                     <dt className="text-stone-500">{emp.payType === "hourly" ? "Pay" : "Salary"}</dt><dd className="text-right sm:col-span-2">{money(e.wageCents)}</dd>
+                    {emp.mainCommissionBps > 0 ? <><dt className="text-stone-500">Service commission ({(emp.mainCommissionBps / 100).toFixed(emp.mainCommissionBps % 100 ? 1 : 0)}%) on {money(e.mainRevenueCents)}</dt><dd className="text-right sm:col-span-2">{money(e.mainCommissionCents)}</dd></> : null}
                     {e.cashTipsCents + e.cardTipsCents ? <><dt className="text-stone-500">Tips (cash {money(e.cashTipsCents)} / card {money(e.cardTipsCents)}, fee −{money(e.ccTipFeeCents)})</dt><dd className="text-right sm:col-span-2">{money(e.cashTipsCents + e.cardTipsCents - e.ccTipFeeCents)}</dd></> : null}
                     {e.productSalesCents ? <><dt className="text-stone-500">Product/Package ({(emp.productCommissionBps / 100).toFixed(0)}%)</dt><dd className="text-right sm:col-span-2">{money(e.productCommissionCents)}</dd></> : null}
                     {e.adjustments.map((a, i) => <><dt key={`l${i}`} className="text-stone-500">{a.label}</dt><dd key={`v${i}`} className="text-right sm:col-span-2">{money(a.amountCents)}</dd></>)}

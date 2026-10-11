@@ -23,7 +23,7 @@ export default async function ServiceCategoriesPage({ params }: { params: Promis
       <PageHeader title="Service categories">
         <LinkButton href={`/app/${slug}/services/categories/new`} variant="primary">+ New category</LinkButton>
       </PageHeader>
-      <p className="mb-3 text-sm text-stone-600">This order is used on the booking page and in service lists. Deleting a category leaves its services uncategorised.</p>
+      <p className="mb-3 text-sm text-stone-600">This order is used on the booking page and in service lists; arrows move a category among its siblings. Use Edit to change the image, description or where a category sits. Deleting a category leaves its services uncategorised and moves its sub-categories up a level.</p>
       <CategoryList slug={slug} kind="service" categories={categories} counts={counts} actions={{ rename: renameCategoryAction, remove: removeCategory, move: moveCategoryAction }} />
     </>
   );

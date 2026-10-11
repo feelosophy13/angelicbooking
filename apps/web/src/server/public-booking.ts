@@ -20,6 +20,14 @@ export async function getPublicBusiness(slug: string): Promise<PublicBusiness | 
   return b && b.onlineBookingEnabled ? b : null;
 }
 
+/** Average rating and count of submitted reviews, for the booking page header. */
+export async function getPublicRating(businessId: string): Promise<{ average: number; count: number }> {
+  const [agg] = await withTenant(businessId, (tx) =>
+    tx.select({ n: sql<number>`count(*)`, avg: sql<number>`coalesce(avg(${schema.reviews.rating}), 0)` }).from(schema.reviews).where(sql`${schema.reviews.submittedAt} is not null and ${schema.reviews.rating} is not null`),
+  );
+  return { average: Number(agg?.avg ?? 0), count: Number(agg?.n ?? 0) };
+}
+
 export async function getPublicLocations(businessId: string) {
   return withTenant(businessId, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.isDefault), asc(schema.locations.name)));
 }

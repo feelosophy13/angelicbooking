@@ -6,7 +6,7 @@ import { requireAction } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
 import { FormPage, Input, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { CategoryPicker } from "@/components/categories";
+import { CategoryPicker, CategoryThumb } from "@/components/categories";
 import { updateService } from "../actions";
 import { OfferedAt } from "@/components/offered-at";
 import { listLocations } from "@/server/locations";
@@ -30,13 +30,22 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
   if (!service) notFound();
   const $ = (c: number) => (c / 100).toFixed(2);
   return (
-    <FormPage title={service.name} backHref={`/app/${slug}/services`} backLabel="Services">
+    <FormPage title={service.name} backHref={service.categoryId ? `/app/${slug}/services/categories/${service.categoryId}` : `/app/${slug}/services`} backLabel={service.categoryId ? (categories.find((c) => c.id === service.categoryId)?.name ?? "Services") : "Services"}>
       <ActionForm action={updateService}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="serviceId" value={service.id} />
         <Field label="Name" name="name" required><Input name="name" defaultValue={service.name} required placeholder="Women's haircut" autoFocus /></Field>
         <Field label="Category" name="categoryIdNew"><CategoryPicker name="categoryId" categories={categories} value={service.categoryId} /></Field>
         <Field label="Description" name="description" hint="Shown on the booking page."><Textarea name="description" rows={2} defaultValue={service.description ?? ""} /></Field>
+        <Field label="Photo" name="image" hint="PNG/JPEG/WebP up to 2 MB. Shown next to the service on the booking page; uploading replaces the current one.">
+          <div className="flex flex-wrap items-start gap-4">
+            <CategoryThumb imageUrl={service.imageUrl} name={service.name} icon="image" className="h-24 w-24 rounded-lg" />
+            <div className="space-y-2">
+              <input type="file" name="image" accept="image/*" className="block text-sm" />
+              {service.imageUrl ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="removeImage" className="h-4 w-4 accent-brand-600" /> Remove the current photo</label> : null}
+            </div>
+          </div>
+        </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Duration (min)" name="durationMin" required><Input name="durationMin" type="number" min={5} step={5} defaultValue={service.durationMin} required /></Field>
           <Field label="Price" name="price" required><Input name="price" inputMode="decimal" defaultValue={$(service.priceCents)} placeholder="65" required /></Field>

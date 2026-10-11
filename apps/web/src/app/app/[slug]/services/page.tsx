@@ -1,95 +1,64 @@
-import Link from "next/link";
 import type { Metadata } from "next";
-import { ChevronDown, ChevronUp, Plus } from "lucide-react";
-
-export const metadata: Metadata = { title: "Services" };
-import { asc, eq } from "drizzle-orm";
-import { schema, withTenant } from "@angelic/db";
+import Link from "next/link";
+import { ArrowDown, ArrowUp, FolderPlus, List, Plus } from "lucide-react";
 import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
-import { formatMoney } from "@/lib/utils";
-import { duration } from "@/lib/format";
-import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
-import { moveService, toggleServiceActive } from "./actions";
+import { buildTree, subtreeIds } from "@/server/categories";
+import { Empty, LinkButton, PageHeader } from "@/components/ui";
+import { CategoryCard } from "@/components/categories";
+import { moveCategoryAction } from "../categories-actions";
+import { ServiceRows } from "./service-rows";
+import { categoryMeta, loadServicesAdmin } from "./data";
 
+export const metadata: Metadata = { title: "Services" };
+
+/** The menu, browsed by category: tiles for each top-level category, then anything uncategorised. */
 export default async function ServicesPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, permissions } = await requireBusiness(slug);
-  const rows = await withTenant(business.id, (tx) =>
-    tx
-      .select({ s: schema.services, category: schema.serviceCategories.name })
-      .from(schema.services)
-      .leftJoin(schema.serviceCategories, eq(schema.serviceCategories.id, schema.services.categoryId))
-      .orderBy(asc(schema.serviceCategories.sortOrder), asc(schema.serviceCategories.name), asc(schema.services.sortOrder), asc(schema.services.name)),
-  );
-  const [locations, offered] = await withTenant(business.id, async (tx) => [
-    await tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations),
-    await tx.select({ serviceId: schema.serviceLocations.serviceId, locationId: schema.serviceLocations.locationId }).from(schema.serviceLocations),
-  ]);
-  const onlyAt = (serviceId: string) => {
-    if (locations.length < 2) return "";
-    const ids = offered.filter((o) => o.serviceId === serviceId).map((o) => o.locationId);
-    if (!ids.length || ids.length >= locations.length) return "";
-    return ` · ${ids.map((id) => locations.find((l) => l.id === id)?.name.replace(/^.*? - /, "") ?? "?").join(", ")} only`;
-  };
   const manage = can(permissions, "services.manage");
-  const groups = new Map<string, typeof rows>();
-  for (const r of rows) {
-    const k = r.category ?? "Uncategorised";
-    groups.set(k, [...(groups.get(k) ?? []), r]);
-  }
+  const { services, categories, onlyAt } = await loadServicesAdmin(business.id);
+  const tree = buildTree(categories);
+  const countIn = (id: string) => { const ids = subtreeIds(categories, id); return services.filter((s) => s.active && s.categoryId && ids.includes(s.categoryId)).length; };
+  const loose = services.filter((s) => !s.categoryId || !categories.some((c) => c.id === s.categoryId));
+  const base = `/app/${slug}/services`;
   return (
     <>
       <PageHeader title="Services">
-        {manage ? <LinkButton href={`/app/${slug}/services/categories`}>Categories</LinkButton> : null}
-        {manage ? <LinkButton href={`/app/${slug}/services/new`} variant="primary"><Plus className="h-4 w-4" /> New service</LinkButton> : null}
+        <LinkButton href={`${base}/all`}><List className="h-4 w-4" /> All services</LinkButton>
+        {manage ? <LinkButton href={`${base}/categories/new`}><FolderPlus className="h-4 w-4" /> New category</LinkButton> : null}
+        {manage ? <LinkButton href={`${base}/new`} variant="primary"><Plus className="h-4 w-4" /> New service</LinkButton> : null}
       </PageHeader>
-      <div className="space-y-4">
-        {rows.length === 0 ? <Empty title="No services yet" body="Your menu is what clients see when they book." action={{ href: `/app/${slug}/services/new`, label: "Add your first service" }} /> : null}
-        {[...groups.entries()].map(([cat, list]) => (
-          <Card key={cat}>
-            <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">{cat}</h2>
-            <ul className="divide-y divide-stone-200">
-              {list.map(({ s }, idx) => (
-                <li key={s.id} className="flex items-center gap-3 px-4 py-3">
-                  {manage && list.length > 1 ? (
-                    <div className="flex flex-col -my-1">
-                      <form action={moveService}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="serviceId" value={s.id} /><input type="hidden" name="dir" value="up" /><button aria-label={`Move ${s.name} up`} disabled={idx === 0} className="rounded p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"><ChevronUp className="h-3.5 w-3.5" /></button></form>
-                      <form action={moveService}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="serviceId" value={s.id} /><input type="hidden" name="dir" value="down" /><button aria-label={`Move ${s.name} down`} disabled={idx === list.length - 1} className="rounded p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-30"><ChevronDown className="h-3.5 w-3.5" /></button></form>
-                    </div>
-                  ) : null}
-                  <div className="min-w-0 flex-1">
-                    {manage ? (
-                      <Link href={`/app/${slug}/services/${s.id}`} className={`font-medium hover:underline ${s.active ? "" : "text-stone-400 line-through"}`}>{s.name}</Link>
-                    ) : (
-                      <p className={s.active ? "font-medium" : "font-medium text-stone-400 line-through"}>{s.name}</p>
-                    )}
-                    <p className="text-xs text-stone-500">
-                      {duration(s.durationMin)}
-                      {s.gapMin ? ` + ${duration(s.gapMin)} processing` : ""}
-                      {s.finishMin ? ` + ${duration(s.finishMin)} finish` : ""}
-                      {s.bufferAfterMin ? ` + ${duration(s.bufferAfterMin)} buffer` : ""}
-                      {s.depositCents ? ` · deposit ${formatMoney(s.depositCents, business.currency)}` : ""}
-                      {s.capacity > 1 ? ` · class of ${s.capacity}` : ""}
-                      {!s.bookableOnline ? " · not online" : ""}
-                      {onlyAt(s.id)}
-                    </p>
-                  </div>
-                  <span className="font-medium">{formatMoney(s.priceCents, business.currency)}</span>
-                  {manage ? (
-                    <form action={toggleServiceActive}>
-                      <input type="hidden" name="slug" value={slug} />
-                      <input type="hidden" name="serviceId" value={s.id} />
-                      <input type="hidden" name="active" value={s.active ? "false" : "true"} />
-                      <Button size="sm" variant="ghost" type="submit">{s.active ? "Hide" : "Show"}</Button>
-                    </form>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </Card>
-        ))}
-      </div>
+      {services.length === 0 && tree.length === 0 ? (
+        <Empty title="No services yet" body="Your menu is what clients see when they book. Group services into categories such as Hair, Nails or Lashes; categories can hold sub-categories." action={{ href: `${base}/new`, label: "Add your first service" }} />
+      ) : null}
+      {tree.length ? (
+        <section className="mb-8">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-stone-500">Categories</h2>
+            {manage ? <Link href={`${base}/categories`} className="text-xs text-brand-700 hover:underline">Rename, reorder or delete</Link> : null}
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {tree.map((c, i) => (
+              <CategoryCard key={c.id} href={`${base}/categories/${c.id}`} name={c.name} imageUrl={c.imageUrl} description={c.description} meta={categoryMeta(countIn(c.id), c.children.length)}>
+                {manage ? (
+                  <>
+                    <form action={moveCategoryAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="kind" value="service" /><input type="hidden" name="id" value={c.id} /><input type="hidden" name="dir" value="up" /><button aria-label={`Move ${c.name} earlier`} disabled={i === 0} className="rounded-md border border-stone-200 bg-white/90 p-1 text-stone-500 shadow-sm hover:text-stone-900 disabled:opacity-30"><ArrowUp className="h-3.5 w-3.5" /></button></form>
+                    <form action={moveCategoryAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="kind" value="service" /><input type="hidden" name="id" value={c.id} /><input type="hidden" name="dir" value="down" /><button aria-label={`Move ${c.name} later`} disabled={i === tree.length - 1} className="rounded-md border border-stone-200 bg-white/90 p-1 text-stone-500 shadow-sm hover:text-stone-900 disabled:opacity-30"><ArrowDown className="h-3.5 w-3.5" /></button></form>
+                  </>
+                ) : null}
+              </CategoryCard>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {loose.length ? (
+        <section>
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">{tree.length ? "Uncategorised" : "Services"}</h2>
+          <ServiceRows slug={slug} services={loose} currency={business.currency} manage={manage} onlyAt={onlyAt} />
+          {manage && tree.length ? <p className="mt-2 text-xs text-stone-500">Open a service to put it in a category.</p> : null}
+        </section>
+      ) : null}
     </>
   );
 }

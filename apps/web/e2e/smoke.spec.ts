@@ -39,8 +39,10 @@ test("sign up → onboard → service → book → checkout → public page", as
 
   // Book tomorrow (owner has default hours Tue–Sat; pick the next day with slots)
   await page.goto(`/app/${slug}/appointments/new`);
-  const clientValue = await page.getByLabel(/^Client/).locator("option", { hasText: "Casey Tester" }).getAttribute("value");
-  await page.getByLabel(/^Client/).selectOption(clientValue!);
+  // Client is a type-ahead: type part of the name and pick the match.
+  await page.getByPlaceholder(/Search by name, phone or email/).fill("Casey");
+  await page.getByRole("option").filter({ hasText: "Casey Tester" }).getByRole("button").click();
+  await expect(page.getByText("Casey Tester").first()).toBeVisible();
   const serviceValue = await page.getByLabel(/^Service/).locator("option", { hasText: "Blowout" }).getAttribute("value");
   await page.getByLabel(/^Service/).selectOption(serviceValue!);
   let found = false;
@@ -70,6 +72,6 @@ test("sign up → onboard → service → book → checkout → public page", as
 
   // Public booking page renders
   await page.goto(`/book/${slug}`);
-  await expect(page.getByText("Choose a service")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What would you like to book?" })).toBeVisible();
   await expect(page.getByText("Blowout")).toBeVisible();
 });

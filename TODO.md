@@ -123,6 +123,20 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       for outstanding required forms ("Complete forms now" / "Check out anyway"); services can be added to an open
       ticket at the desk and any line's price, quantity or staff credit edited; a voided ticket no longer blocks
       checking the visit out again. All P1 items in `ENHANCEMENTS.md` are now ticked.
+- [x] Landed 2026-10-11 (menu + booking page; migration 0049): service categories nest (Hair › Colour › Balayage) and
+      carry a description and image; services have a photo; Services in the sidebar opens a category browser
+      (tiles → category page with sub-categories and services → All services list); category create/edit pages
+      with image upload. Public booking page redesigned: hero with cover/logo/rating, step progress bar, category
+      tiles with drill-down, service cards with photos, provider cards, grouped time slots, a summary card on every
+      step. Pay models combine (hourly or salary + service commission; commission + hourly base) in payroll math,
+      the Payroll page and the workbook. Forms have a shareable link + QR (`/book/<slug>/forms/<id>`; the client
+      identifies themself, or is signed in). Demo tenant: `apps/web/scripts/seed-demo.ts` (see docs-ops.md).
+      Form validation errors always show a top banner (never silent). Staff profile save could not be reproduced
+      locally (profile, PIN and hours all save); production was 39 commits behind at the time, so retest after deploy.
+- [ ] Booking page follow-ups: service photos on the Shop/gift pages; a search box on the service step for large
+      menus; show provider photos (staff have no photo field yet) and a short bio on the provider step.
+- [ ] Automations: decide between the fixed recipes (today) and a user-built trigger → delay → message builder
+      (GoHighLevel style). Recommendation in the 2026-10-11 session notes: keep recipes, add "custom" entries later.
 
 - [x] Membership auto-billing (recurring charges on the business's Connect account). Done 2026-10-10 (client page → Auto-renew with saved card; Connect webhook `invoice.paid` / `invoice.payment_failed` / `customer.subscription.deleted`). Untested against Stripe until keys exist.
 - [ ] Tap to Pay / card reader support.

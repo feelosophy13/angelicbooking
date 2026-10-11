@@ -69,6 +69,7 @@ function commissionSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, period: stri
   if (e.refundedRows.length) linesSection(ws, "Refunded Transactions (listed, not paid)", e.refundedRows, "Appointment Date");
   const sum = (label: string, cents: number, fill?: ExcelJS.Fill) => moneyRow(ws, ["", "", label, "", null, null, null, null, null, $(cents)], { bold: !!fill, fill, moneyFrom: 10 });
   sum(`Main Services (${(e.employee.mainCommissionBps / 100).toFixed(0)}%)`, e.mainCommissionCents);
+  if (e.wageCents) sum(`Hourly base (${h(e.totalMinutes)} h × $${(e.employee.hourlyRateCents / 100).toFixed(2)})`, e.wageCents);
   if (e.productSalesCents) sum(`Misc – Product/Package Sale (${(e.employee.productCommissionBps / 100).toFixed(0)}%)`, e.productCommissionCents);
   sum("Cash Tips", e.cashTipsCents);
   sum("Card Tips", e.cardTipsCents);
@@ -93,6 +94,7 @@ function simpleSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, period: string, 
   } else {
     row("Salary for period", "", $(e.wageCents), { bold: true });
   }
+  if (emp.mainCommissionBps > 0) row(`Service commission (${(emp.mainCommissionBps / 100).toFixed(emp.mainCommissionBps % 100 ? 1 : 0)}%)`, `on $${$(e.mainRevenueCents).toFixed(2)}`, $(e.mainCommissionCents));
   if (e.cashTipsCents) row("Cash Tips", "from procedures performed", $(e.cashTipsCents));
   if (e.cardTipsCents) row("Card Tips", "from procedures performed", $(e.cardTipsCents));
   if (e.ccTipFeeCents) row(`Fees on CC Tip (${(emp.ccTipFeeBps / 100).toFixed(1)}%)`, "card fee on CC tips", -$(e.ccTipFeeCents));
@@ -137,8 +139,8 @@ export async function buildPayrollWorkbook(result: PayrollResult, opts: { salon:
   const totals = { commission: 0, wage: 0, cashTip: 0, cardTip: 0, fee: 0, total: 0, rev: 0, profit: 0 };
   for (const e of active) {
     const emp = e.employee;
-    const commission = emp.payType === "commission" ? e.mainCommissionCents + e.productCommissionCents : e.productCommissionCents;
-    const wage = emp.payType === "commission" ? 0 : e.wageCents + e.adjustmentsCents;
+    const commission = e.mainCommissionCents + e.productCommissionCents;
+    const wage = e.wageCents + (emp.payType === "commission" ? 0 : e.adjustmentsCents);
     moneyRow(summary, [emp.name, emp.position ?? "", emp.payType, rateLabel(emp), $(commission), $(wage), $(e.cashTipsCents), $(e.cardTipsCents), -$(e.ccTipFeeCents), $(e.totalCents), ...(perf ? [$(e.serviceRevenueCents), $(e.serviceProfitCents)] : [])]);
     totals.commission += commission; totals.wage += wage; totals.cashTip += e.cashTipsCents; totals.cardTip += e.cardTipsCents; totals.fee += e.ccTipFeeCents; totals.total += e.totalCents; totals.rev += e.serviceRevenueCents; totals.profit += e.serviceProfitCents;
   }

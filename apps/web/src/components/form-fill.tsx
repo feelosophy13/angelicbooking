@@ -13,9 +13,11 @@ type Action = (prev: FillState, formData: FormData) => Promise<FillState>;
  * and at the front desk (staff page). Questions can depend on earlier answers,
  * previous answers prefill, files attach, and the signature is typed and drawn.
  */
-export function FormFill({ action, hidden, form, defaults, clientName, submitLabel, staffMode = false }: {
+export function FormFill({ action, hidden, form, defaults, clientName, submitLabel, staffMode = false, before }: {
   action: Action;
   hidden: Record<string, string>;
+  /** Extra inputs rendered above the questions (e.g. who is filling in a shared form). */
+  before?: React.ReactNode;
   form: { id: string; name: string; description: string | null; fields: FormFieldDef[]; requireSignature: boolean };
   defaults?: Record<string, FormAnswer> | null;
   clientName: string;
@@ -31,6 +33,7 @@ export function FormFill({ action, hidden, form, defaults, clientName, submitLab
     <form action={act} className="space-y-4">
       {Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
       {form.description ? <p className="whitespace-pre-line text-sm text-stone-700">{form.description}</p> : null}
+      {before}
       {prefilled ? <p className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">We filled in your answers from last time. Please check they are still right.</p> : null}
       {form.fields.map((f) => {
         if (!fieldVisible(f, answers)) return null;

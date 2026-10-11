@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeHours, computePayroll, type PayrollEmployee, type PayrollLine } from "../payroll";
+import { computeHours, computePayroll, rateLabel, type PayrollEmployee, type PayrollLine } from "../payroll";
 
 const base = (over: Partial<PayrollEmployee>): PayrollEmployee => ({
   staffId: "s",
@@ -64,7 +64,7 @@ describe("hourly staff (Maria and Dasia examples)", () => {
     const hours = [
       { staffId: "s", date: "2026-07-13", minutes: 1803 }, // 30.05h total across days
     ];
-    const r = computePayroll({ employees: [base({ payType: "hourly", hourlyRateCents: 1600, position: "Esthetician" })], lines: [], hours, adjustments: [], overtime: false });
+    const r = computePayroll({ employees: [base({ payType: "hourly", hourlyRateCents: 1600, mainCommissionBps: 0, position: "Esthetician" })], lines: [], hours, adjustments: [], overtime: false });
     expect(r.employees[0]!.wageCents).toBe(48_080);
     expect(r.employees[0]!.totalCents).toBe(48_080);
   });
@@ -75,7 +75,7 @@ describe("hourly staff (Maria and Dasia examples)", () => {
       line({ kind: "product", name: "Serum", amtPaidCents: 23_500 }), // 5% = 11.75
     ];
     const r = computePayroll({
-      employees: [base({ payType: "hourly", hourlyRateCents: 1500, position: "Esthetician", taxDeductionCents: 4_830 })],
+      employees: [base({ payType: "hourly", hourlyRateCents: 1500, mainCommissionBps: 0, position: "Esthetician", taxDeductionCents: 4_830 })],
       lines,
       hours: [{ staffId: "s", date: "2026-07-14", minutes: 790.2 }], // 13.17h × $15 = 197.55
       adjustments: [{ staffId: "s", label: "Missed Pay from Training", amountCents: 14_290 }],
@@ -109,7 +109,7 @@ describe("hourly staff (Maria and Dasia examples)", () => {
 describe("salary and non-revenue positions", () => {
   it("pays the flat amount and zeroes revenue for receptionists", () => {
     const lines = [line({ kind: "product", name: "Retail", amtPaidCents: 10_000 })];
-    const r = computePayroll({ employees: [base({ payType: "salary", salaryPerPeriodCents: 211_500, position: "Receptionist" })], lines, hours: [], adjustments: [], overtime: true });
+    const r = computePayroll({ employees: [base({ payType: "salary", salaryPerPeriodCents: 211_500, mainCommissionBps: 0, position: "Receptionist" })], lines, hours: [], adjustments: [], overtime: true });
     const e = r.employees[0]!;
     expect(e.wageCents).toBe(211_500);
     expect(e.productCommissionCents).toBe(500);
@@ -120,5 +120,37 @@ describe("salary and non-revenue positions", () => {
   it("reports lines for staff missing from the config", () => {
     const r = computePayroll({ employees: [], lines: [line({ staffId: "ghost" })], hours: [], adjustments: [], overtime: false });
     expect(r.unmatchedStaffIds).toEqual(["ghost"]);
+  });
+});
+
+describe("combined pay models", () => {
+  it("hourly plus service commission: wage and commission both paid, withholding on both", () => {
+    // 10h × $20 = $200 wage; $500 of services × 15% = $75 commission; 10% tax on $275 = $27.50
+    const lines = [line({ amtPaidCents: 50_000 })];
+    const r = computePayroll({ employees: [base({ payType: "hourly", hourlyRateCents: 2000, mainCommissionBps: 1500, taxDeductionBps: 1000 })], lines, hours: [{ staffId: "s", date: "2026-07-14", minutes: 600 }], adjustments: [], overtime: false });
+    const e = r.employees[0]!;
+    expect(e.wageCents).toBe(20_000);
+    expect(e.mainCommissionCents).toBe(7_500);
+    expect(e.taxCents).toBe(2_750);
+    expect(e.totalCents).toBe(20_000 + 7_500 - 2_750);
+  });
+  it("salary plus service commission", () => {
+    const lines = [line({ amtPaidCents: 100_000 })];
+    const r = computePayroll({ employees: [base({ payType: "salary", salaryPerPeriodCents: 150_000, mainCommissionBps: 1000 })], lines, hours: [], adjustments: [], overtime: false });
+    expect(r.employees[0]!.totalCents).toBe(150_000 + 10_000);
+    expect(r.employees[0]!.overtimeApplied).toBe(false);
+  });
+  it("commission plus hourly base (1099 contractor with a guaranteed rate)", () => {
+    const lines = [line({ amtPaidCents: 100_000 })];
+    const r = computePayroll({ employees: [base({ payType: "commission", mainCommissionBps: 4000, hourlyRateCents: 1000 })], lines, hours: [{ staffId: "s", date: "2026-07-14", minutes: 480 }], adjustments: [], overtime: false });
+    const e = r.employees[0]!;
+    expect(e.wageCents).toBe(8_000);
+    expect(e.totalCents).toBe(40_000 + 8_000);
+    expect(e.taxCents).toBe(0);
+  });
+  it("labels combined rates", () => {
+    expect(rateLabel(base({ payType: "hourly", hourlyRateCents: 1800, mainCommissionBps: 1500 }))).toBe("$18.00/hr + 15%");
+    expect(rateLabel(base({ payType: "hourly", hourlyRateCents: 1800, mainCommissionBps: 0 }))).toBe("$18.00/hr");
+    expect(rateLabel(base({ payType: "commission", mainCommissionBps: 4000 }))).toBe("40%");
   });
 });

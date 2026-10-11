@@ -247,3 +247,19 @@ Current state (2026-10-10): sandbox endpoints exist and the sandbox keys are on 
 - **Uploaded images** (logo, cover, product photos) are stored in Postgres (`files`, max 2 MB each) and
   served from `/api/files/<id>` with immutable caching. Move to object storage if they grow past a few hundred MB.
 - **Provider calendar feeds** are public by secret token (`/api/calendar/<token>.ics`); reset from the staff profile.
+
+## Demo tenant
+
+`apps/web/scripts/seed-demo.ts` builds a fully populated demo business for walkthroughs and screenshots (never touches
+any other tenant). From `apps/web`:
+
+```
+../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts [--reset]
+```
+
+Creates user `demo@angelicbooking.com` (password `demo-salon-2026`) and business `demo-salon` ("Luxe Beauty Studio"):
+nested service menu with placeholder images, six staff across every pay model, 40 clients, eight weeks of completed
+visits with sales/tips/reviews, three weeks of upcoming bookings, time-clock entries, products with stock, two forms,
+packages, membership plans, gift cards, a promo code, waitlist entries and enabled automations. `--reset` deletes and
+rebuilds it. Run it against production with `DATABASE_URL`/`DATABASE_ADMIN_URL` pointed at the prod database once a
+public demo login is wanted (change the password first).

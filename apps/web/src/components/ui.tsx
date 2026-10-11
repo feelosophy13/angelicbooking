@@ -1,7 +1,9 @@
+"use client";
 import * as React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { ArrowLeft, Inbox } from "lucide-react";
+import { useFieldId } from "./form";
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost" | "danger";
@@ -59,8 +61,10 @@ export function LinkButton({
 }
 
 export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+  const fieldId = useFieldId();
   return (
     <input
+      id={props.id ?? fieldId}
       className={cn(
         "h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-2 focus:outline-offset-0 focus:outline-brand-500",
         className,
@@ -71,8 +75,10 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
 }
 
 export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const fieldId = useFieldId();
   return (
     <select
+      id={props.id ?? fieldId}
       className={cn(
         "h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-900 focus:outline-2 focus:outline-offset-0 focus:outline-brand-500",
         className,
@@ -83,8 +89,10 @@ export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLS
 }
 
 export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const fieldId = useFieldId();
   return (
     <textarea
+      id={props.id ?? fieldId}
       className={cn(
         "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-2 focus:outline-offset-0 focus:outline-brand-500",
         className,

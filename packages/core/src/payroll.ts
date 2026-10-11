@@ -1,10 +1,15 @@
 /**
  * Pure payroll math, reproducing the salon's existing pay sheets to the cent.
  *
- * Commission (1099): main commission on service revenue (amt paid − tips, net of
- * discount) + product/package commission (memberships earn 0) + all tips − a fee
- * on card tips. Hourly/salary (W-2): wage (+ overtime when enabled) + their own
- * tips (net of the card-tip fee) + product commission + adjustments − tax.
+ * Pay is built from components that can be combined on one person:
+ *   - service commission: mainCommissionBps on main-service revenue (amt paid − tips, net of discount)
+ *   - product/package commission: productCommissionBps on misc sales (memberships earn 0)
+ *   - hourly wage: hourlyRateCents × clocked hours (+ overtime when enabled)
+ *   - salary: salaryPerPeriodCents flat per run
+ *   - tips (cash + card) − a fee on card tips, plus adjustments
+ * `payType` decides the sheet: "commission" is a 1099 contractor (no withholding; an hourly
+ * rate on top is a guaranteed base), "hourly" / "salary" are W-2 employees (withholding applies;
+ * a commission % on top pays them on the services they perform).
  * All money is integer cents; percentages are basis points (4000 = 40%).
  */
 
@@ -190,34 +195,35 @@ export function computePayroll(input: PayrollInput): PayrollResult {
     const ccTipFeeCents = bps(cardTipsCents, emp.ccTipFeeBps);
     const productCommissionCents = bps(productSalesCents, emp.productCommissionBps);
 
+    // Hourly wage for anyone with a rate (hourly staff, or a guaranteed base on top of commission);
+    // overtime only ever applies to hourly pay. Salary is a flat amount per run.
     const applyOt = emp.overtimeOverride ?? input.overtime;
-    const hrs = computeHours(input.hours.filter((h) => h.staffId === emp.staffId), weekStart, applyOt && emp.payType === "hourly");
+    const paysHourly = emp.hourlyRateCents > 0 && (emp.payType === "hourly" || emp.payType === "commission");
+    const hrs = computeHours(input.hours.filter((h) => h.staffId === emp.staffId), weekStart, applyOt && paysHourly);
     let wageCents = 0;
-    if (emp.payType === "hourly") {
-      wageCents = roundCents((hrs.regularMinutes / 60) * emp.hourlyRateCents + (hrs.overtimeMinutes / 60) * emp.hourlyRateCents * 1.5);
-    } else if (emp.payType === "salary") {
-      wageCents = emp.salaryPerPeriodCents;
-    }
+    if (paysHourly) wageCents += roundCents((hrs.regularMinutes / 60) * emp.hourlyRateCents + (hrs.overtimeMinutes / 60) * emp.hourlyRateCents * 1.5);
+    if (emp.payType === "salary") wageCents += emp.salaryPerPeriodCents;
 
     const adjustments = input.adjustments.filter((a) => a.staffId === emp.staffId);
     const adjustmentsCents = adjustments.reduce((s, a) => s + a.amountCents, 0);
 
-    let mainCommissionCents = 0;
+    // Service commission for anyone with a rate: the whole pay for commission providers,
+    // a bonus on top of wages for employees.
+    const mainCommissionCents = bps(mainRevenueCents, emp.mainCommissionBps);
     let taxCents = 0;
     let totalCents: number;
     if (emp.payType === "commission") {
-      mainCommissionCents = bps(mainRevenueCents, emp.mainCommissionBps);
-      totalCents = mainCommissionCents + productCommissionCents + cashTipsCents + cardTipsCents - ccTipFeeCents + adjustmentsCents;
+      totalCents = mainCommissionCents + productCommissionCents + wageCents + cashTipsCents + cardTipsCents - ccTipFeeCents + adjustmentsCents;
     } else {
-      const pay = wageCents + cashTipsCents + cardTipsCents - ccTipFeeCents + productCommissionCents + adjustmentsCents;
+      const pay = wageCents + mainCommissionCents + cashTipsCents + cardTipsCents - ccTipFeeCents + productCommissionCents + adjustmentsCents;
       if (emp.taxDeductionCents != null) taxCents = emp.taxDeductionCents;
-      else if (emp.taxDeductionBps != null) taxCents = bps(wageCents, emp.taxDeductionBps);
+      else if (emp.taxDeductionBps != null) taxCents = bps(wageCents + mainCommissionCents, emp.taxDeductionBps);
       totalCents = pay - taxCents;
     }
 
     const revenueOk = generatesRevenue(emp.position);
     const serviceRevenueCents = revenueOk ? mainRevenueCents : 0;
-    const costCents = emp.payType === "commission" ? mainCommissionCents + productCommissionCents : wageCents + adjustmentsCents + productCommissionCents;
+    const costCents = emp.payType === "commission" ? mainCommissionCents + productCommissionCents + wageCents : wageCents + mainCommissionCents + adjustmentsCents + productCommissionCents;
     const serviceProfitCents = revenueOk ? serviceRevenueCents - costCents : 0;
 
     const hasActivity = mine.length > 0 || hrs.totalMinutes > 0 || adjustments.length > 0 || (emp.payType === "salary" && wageCents > 0);
@@ -232,7 +238,7 @@ export function computePayroll(input: PayrollInput): PayrollResult {
       totalMinutes: hrs.totalMinutes,
       regularMinutes: hrs.regularMinutes,
       overtimeMinutes: hrs.overtimeMinutes,
-      overtimeApplied: applyOt && emp.payType === "hourly",
+      overtimeApplied: applyOt && paysHourly,
       wageCents,
       mainRevenueCents,
       mainCommissionCents,
@@ -254,9 +260,11 @@ export function computePayroll(input: PayrollInput): PayrollResult {
   return { employees, unmatchedStaffIds: [...unmatched] };
 }
 
-/** Summary-row "Rate" text, as on the salon's Summary tab. */
+/** Summary-row "Rate" text, as on the salon's Summary tab ("40%", "$18.00/hr + 15%", "$1,800.00/period"). */
 export function rateLabel(e: PayrollEmployee): string {
-  if (e.payType === "commission") return `${(e.mainCommissionBps / 100).toFixed(0)}%`;
-  if (e.payType === "hourly") return `$${(e.hourlyRateCents / 100).toFixed(2)}/hr`;
-  return `$${(e.salaryPerPeriodCents / 100).toFixed(2)}/period`;
+  const pct = `${(e.mainCommissionBps / 100).toFixed(e.mainCommissionBps % 100 ? 1 : 0)}%`;
+  const hr = `$${(e.hourlyRateCents / 100).toFixed(2)}/hr`;
+  if (e.payType === "commission") return e.hourlyRateCents > 0 ? `${pct} + ${hr}` : pct;
+  const base = e.payType === "hourly" ? hr : `$${(e.salaryPerPeriodCents / 100).toFixed(2)}/period`;
+  return e.mainCommissionBps > 0 ? `${base} + ${pct}` : base;
 }

@@ -3,11 +3,11 @@ import { db, schema } from "@angelic/db";
 import { getSession } from "@/lib/session";
 import { getClientSessionId } from "@/lib/client-session";
 
-const PUBLIC_KINDS = new Set(["logo", "cover", "product"]);
+const PUBLIC_KINDS = new Set(["logo", "cover", "product", "service", "category"]);
 const PRIVATE_KINDS = new Set(["form", "signature"]);
 
 /**
- * Serve an uploaded file. Branding and product images are public and immutable
+ * Serve an uploaded file. Branding, product, service and category images are public and immutable
  * (cacheable for a year). Form attachments and signatures are private: only a
  * member of the business or the client who signed may view them, never cached
  * by intermediaries. Anything else stored in `files` (e.g. staged imports) is
