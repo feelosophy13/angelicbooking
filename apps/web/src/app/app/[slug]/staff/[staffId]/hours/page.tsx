@@ -20,7 +20,7 @@ export default async function StaffHoursPage({ params }: { params: Promise<{ slu
   const byDay = new Map(schedule.map((r) => [r.weekday, r]));
   const hhmm = (t: string) => t.slice(0, 5);
   return (
-    <Card className="p-4">
+    <Card className="w-fit max-w-full p-4">
       <p className="mb-3 text-xs text-stone-500">
         Regular weekly hours. Use Time off for single-day changes.
         {multi ? " Pick where they work each day: the calendar, online booking and reports follow it." : ""}
