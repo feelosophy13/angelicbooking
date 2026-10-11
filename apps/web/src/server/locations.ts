@@ -56,6 +56,11 @@ export function paymentContext(business: Business, location: Location | null | u
   };
 }
 
+/** Wall-clock zone for scheduling at a location (its own, else the business's). */
+export function tzFor(business: Pick<Business, "timezone">, location: Pick<Location, "timezone"> | null | undefined): string {
+  return location?.timezone ?? business.timezone;
+}
+
 export async function listLocations(businessId: string) {
   return withTenant(businessId, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.isDefault), asc(schema.locations.name)));
 }
@@ -187,6 +192,19 @@ export async function serviceOfferedAt(tx: TenantDb, serviceId: string, location
   if (!locationId) return true;
   const rows = await tx.select({ locationId: schema.serviceLocations.locationId }).from(schema.serviceLocations).where(eq(schema.serviceLocations.serviceId, serviceId));
   return rows.length === 0 || rows.some((r) => r.locationId === locationId);
+}
+
+/** Location ids ticked on a form (loc_<id> boxes); [] when none/all ticked or the boxes weren't shown. */
+export async function validAtFromForm(tx: TenantDb, raw: FormData): Promise<string[]> {
+  if (!raw.has("hasLocations")) return [];
+  const all = await tx.select({ id: schema.locations.id }).from(schema.locations);
+  const picked = [...raw.keys()].filter((k) => k.startsWith("loc_")).map((k) => k.slice(4)).filter((id) => all.some((l) => l.id === id));
+  return picked.length === 0 || picked.length >= all.length ? [] : picked;
+}
+
+/** Can something valid at `validAt` (empty = anywhere) be used at `locationId`? */
+export function validAtLocation(validAt: string[] | null | undefined, locationId: string | null | undefined): boolean {
+  return !validAt?.length || (!!locationId && validAt.includes(locationId));
 }
 
 /** Replace a service's "offered at" set. An empty set, or every location, means everywhere. */

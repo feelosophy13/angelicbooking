@@ -7,7 +7,7 @@ import { duration } from "@/lib/format";
 import { BookingForm, WaitlistForm } from "./forms";
 import { PaidBookingForm } from "./payment-form";
 import { onlinePaymentRequirement } from "@/server/online-payments";
-import { paymentContextFor } from "@/server/locations";
+import { paymentContextFor, tzFor } from "@/server/locations";
 import { publicSessions } from "@/server/classes";
 import { brandHex } from "@/lib/brand";
 import { describeHours } from "@/lib/hours";
@@ -50,7 +50,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const me = business.clientAccountsEnabled ? await currentClient(business) : null;
   const hasPromos = await withTenant(business.id, async (tx) => !!(await tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.active, true) })));
   const defaults = me ? { firstName: me.firstName, lastName: me.lastName, phone: me.phone, email: me.email, smsOptIn: me.smsOptIn } : null;
-  const tz = business.timezone;
+  const tz = tzFor(business, location);
   const today = instantToISODate(new Date(), tz);
   const service = services.find((s) => s.id === sp.service) ?? null;
   const staffChoice = sp.staff === "any" || staff.some((s) => s.id === sp.staff) ? sp.staff! : null;

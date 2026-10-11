@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { SaleError } from "./sales";
+import { validAtLocation } from "./locations";
 
 /** Gift cards, packages and memberships: catalog, selling at checkout, redemption. */
 
@@ -29,12 +30,12 @@ export async function getClientCredits(tx: TenantDb, clientId: string) {
   const now = new Date();
   const [packs, memberships] = await Promise.all([
     tx
-      .select({ id: schema.clientPackages.id, serviceId: schema.clientPackages.serviceId, remaining: schema.clientPackages.remaining, name: schema.packages.name, expiresAt: schema.clientPackages.expiresAt })
+      .select({ id: schema.clientPackages.id, serviceId: schema.clientPackages.serviceId, remaining: schema.clientPackages.remaining, name: schema.packages.name, expiresAt: schema.clientPackages.expiresAt, validLocationIds: schema.packages.validLocationIds })
       .from(schema.clientPackages)
       .innerJoin(schema.packages, eq(schema.packages.id, schema.clientPackages.packageId))
       .where(and(eq(schema.clientPackages.clientId, clientId), gt(schema.clientPackages.remaining, 0), or(isNull(schema.clientPackages.expiresAt), gt(schema.clientPackages.expiresAt, now)))),
     tx
-      .select({ id: schema.clientMemberships.id, planName: schema.membershipPlans.name, includedServiceId: schema.membershipPlans.includedServiceId, discountBps: schema.membershipPlans.discountBps, creditsRemaining: schema.clientMemberships.creditsRemaining, currentPeriodEnd: schema.clientMemberships.currentPeriodEnd, status: schema.clientMemberships.status })
+      .select({ id: schema.clientMemberships.id, planName: schema.membershipPlans.name, includedServiceId: schema.membershipPlans.includedServiceId, discountBps: schema.membershipPlans.discountBps, creditsRemaining: schema.clientMemberships.creditsRemaining, currentPeriodEnd: schema.clientMemberships.currentPeriodEnd, status: schema.clientMemberships.status, validLocationIds: schema.membershipPlans.validLocationIds })
       .from(schema.clientMemberships)
       .innerJoin(schema.membershipPlans, eq(schema.membershipPlans.id, schema.clientMemberships.planId))
       .where(and(eq(schema.clientMemberships.clientId, clientId), eq(schema.clientMemberships.status, "active"), gt(schema.clientMemberships.currentPeriodEnd, now))),
@@ -110,6 +111,7 @@ export async function redeemGiftCard(input: { businessId: string; saleId: string
     const card = await tx.query.giftCards.findFirst({ where: and(eq(schema.giftCards.code, code), eq(schema.giftCards.active, true)) });
     if (!card) throw new SaleError("Gift card not found.");
     if (card.expiresAt && card.expiresAt < new Date()) throw new SaleError("Gift card has expired.");
+    if (!validAtLocation(card.validLocationIds, sale.locationId)) throw new SaleError("This gift card isn't valid at this location.");
     const due = sale.totalCents - sale.paidCents;
     const amount = Math.min(input.amountCents, card.balanceCents, due);
     if (amount <= 0) throw new SaleError(card.balanceCents === 0 ? "That gift card has no balance left." : "Nothing to redeem.");
@@ -131,10 +133,14 @@ export async function redeemCredit(input: { businessId: string; saleId: string; 
       const cp = await tx.query.clientPackages.findFirst({ where: and(eq(schema.clientPackages.id, input.sourceId), eq(schema.clientPackages.clientId, sale.clientId ?? "")) });
       if (!cp || cp.remaining <= 0) throw new SaleError("No sessions left on that package.");
       if (cp.serviceId && line.serviceId && cp.serviceId !== line.serviceId) throw new SaleError("That package is for a different service.");
+      const pkg = await tx.query.packages.findFirst({ where: eq(schema.packages.id, cp.packageId), columns: { validLocationIds: true } });
+      if (!validAtLocation(pkg?.validLocationIds, sale.locationId)) throw new SaleError("That package isn't valid at this location.");
       await tx.update(schema.clientPackages).set({ remaining: cp.remaining - 1 }).where(eq(schema.clientPackages.id, cp.id));
     } else {
       const m = await tx.query.clientMemberships.findFirst({ where: and(eq(schema.clientMemberships.id, input.sourceId), eq(schema.clientMemberships.clientId, sale.clientId ?? ""), eq(schema.clientMemberships.status, "active")) });
       if (!m || m.creditsRemaining <= 0) throw new SaleError("No membership credits left this period.");
+      const plan = await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, m.planId), columns: { validLocationIds: true } });
+      if (!validAtLocation(plan?.validLocationIds, sale.locationId)) throw new SaleError("That membership isn't valid at this location.");
       await tx.update(schema.clientMemberships).set({ creditsRemaining: m.creditsRemaining - 1 }).where(eq(schema.clientMemberships.id, m.id));
     }
     const delta = line.amountCents;
@@ -147,9 +153,9 @@ export async function redeemCredit(input: { businessId: string; saleId: string; 
   });
 }
 
-export async function issueGiftCardManually(input: { businessId: string; amountCents: number; recipientName: string | null; actorUserId: string }) {
+export async function issueGiftCardManually(input: { businessId: string; amountCents: number; recipientName: string | null; actorUserId: string; validLocationIds?: string[] }) {
   return withTenant(input.businessId, async (tx) => {
-    const [row] = await tx.insert(schema.giftCards).values({ businessId: input.businessId, code: newGiftCode(), initialCents: input.amountCents, balanceCents: input.amountCents, recipientName: input.recipientName }).returning();
+    const [row] = await tx.insert(schema.giftCards).values({ businessId: input.businessId, code: newGiftCode(), initialCents: input.amountCents, balanceCents: input.amountCents, recipientName: input.recipientName, validLocationIds: input.validLocationIds ?? [] }).returning();
     await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "gift_card.issue", entity: "gift_card", entityId: row!.id, diff: JSON.stringify({ amount: input.amountCents }) });
     return row!;
   });

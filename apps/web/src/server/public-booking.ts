@@ -10,7 +10,7 @@ import { appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify
 import { staffAlertEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
 import { shiftISODate } from "@/lib/utils";
-import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt } from "./locations";
+import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt, tzFor } from "./locations";
 
 export type PublicBusiness = typeof schema.businesses.$inferSelect;
 
@@ -226,9 +226,10 @@ export async function getManagedAppointment(slug: string, token: string) {
       .where(eq(schema.appointmentItems.appointmentId, appt.id))
       .orderBy(asc(schema.appointmentItems.startAt));
     const client = appt.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, appt.clientId) }) : null;
+    const location = appt.locationId ? ((await tx.query.locations.findFirst({ where: eq(schema.locations.id, appt.locationId) })) ?? null) : null;
     const live = items.filter((i) => i.status !== "cancelled");
     const start = (live[0] ?? items[0])?.startAt ?? null;
-    return { business, appt, items, live, client, start, canChange: !!start && appt.status !== "cancelled" && appt.status !== "completed" && appt.status !== "no_show" && canClientCancel(start, new Date(), business) };
+    return { business, appt, location, timeZone: tzFor(business, location), items, live, client, start, canChange: !!start && appt.status !== "cancelled" && appt.status !== "completed" && appt.status !== "no_show" && canClientCancel(start, new Date(), business) };
   });
 }
 

@@ -264,7 +264,7 @@ async function runAutomationsFor(business: Business, now: Date): Promise<number>
 void isNull; void lt;
 
 /** Vars for appointment-driven automations (pre-visit). */
-export function appointmentVars(business: Business, ctx: { clientFirstName: string; services: string; staffName: string; startAt: Date; manageUrl: string; formsUrl?: string | null }) {
-  const d = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: business.timezone }).format(ctx.startAt);
+export function appointmentVars(business: Business, ctx: { clientFirstName: string; services: string; staffName: string; startAt: Date; manageUrl: string; formsUrl?: string | null; timeZone?: string }) {
+  const d = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: ctx.timeZone ?? business.timezone }).format(ctx.startAt);
   return { first_name: ctx.clientFirstName, business: business.name, booking_url: appUrl(`/book/${business.slug}`), service: ctx.services, staff: ctx.staffName, when: d, manage_url: ctx.manageUrl, forms_url: ctx.formsUrl ?? "" };
 }

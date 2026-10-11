@@ -3,6 +3,8 @@ import { requireAction } from "@/lib/tenant";
 import { getOffersCatalog } from "@/server/offers";
 import { FormPage, Input, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
+import { ValidAt } from "@/components/offered-at";
+import { listLocations } from "@/server/locations";
 import { createPackage } from "../../catalog-actions";
 
 export const metadata: Metadata = { title: "New package" };
@@ -10,7 +12,7 @@ export const metadata: Metadata = { title: "New package" };
 export default async function NewPackagePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "services.manage");
-  const { services } = await getOffersCatalog(business.id);
+  const [{ services }, locations] = await Promise.all([getOffersCatalog(business.id), listLocations(business.id)]);
   return (
     <FormPage title="New package" backHref={`/app/${slug}/packages`} backLabel="Packages" width="max-w-lg">
       <ActionForm action={createPackage}>
@@ -22,6 +24,7 @@ export default async function NewPackagePage({ params }: { params: Promise<{ slu
           <Field label="Price" name="price" required><Input name="price" inputMode="decimal" required placeholder="275" /></Field>
         </div>
         <Field label="Valid for (days)" name="validDays" hint="Leave blank if sessions never expire."><Input name="validDays" type="number" min={1} placeholder="365" /></Field>
+        <ValidAt locations={locations} what="package sessions" />
         <SubmitButton pendingText="Creating…">Create package</SubmitButton>
       </ActionForm>
     </FormPage>

@@ -10,13 +10,13 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
   const sp = await searchParams;
   const m = await getManagedAppointment(slug, token);
   if (!m || !m.start) notFound();
-  const tz = m.business.timezone;
+  const tz = m.timeZone;
   const day = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: tz }).format(m.start);
   const status = m.appt.status;
   const first = m.live[0];
   const canReschedule = m.canChange && first?.serviceId && new Set(m.live.map((i) => i.serviceId)).size === 1;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : null;
-  const slots = canReschedule && date ? await getPublicSlots(m.business, first!.serviceId!, first!.staffId, date) : [];
+  const slots = canReschedule && date ? await getPublicSlots(m.business, first!.serviceId!, first!.staffId, date, new Date(), m.appt.locationId) : [];
   const today = instantToISODate(new Date(), tz);
 
   return (

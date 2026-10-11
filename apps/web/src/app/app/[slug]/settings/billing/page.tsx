@@ -5,7 +5,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { money } from "@/lib/format";
 import { billingState, completeCheckout } from "@/server/billing";
-import { getActiveNumber } from "@/server/messaging";
+import { listNumbers } from "@/server/messaging";
 import { StatusBadge } from "@/components/status-badge";
 import { BackLink, Card, Notice, PageHeader } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/form";
@@ -26,7 +26,9 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
   }
   const state = billingState(business);
   const { config } = state;
-  const number = await getActiveNumber(business.id);
+  const numbers = await withTenant(business.id, listNumbers);
+  const number = numbers.find((n) => !n.locationId) ?? numbers[0] ?? null;
+  const numberFees = numbers.reduce((t, n) => t + n.monthlyFeeCents, 0);
 
   // Usage this billing period (or this calendar month before a subscription exists).
   const periodStart = business.currentPeriodEnd ? new Date(new Date(business.currentPeriodEnd).setMonth(business.currentPeriodEnd.getMonth() - 1)) : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
@@ -40,7 +42,7 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
   const billableSms = Math.max(0, smsSent - config.smsIncluded);
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
 
-  const estimate = (state.subscribed ? config.baseCents : 0) + (number ? number.monthlyFeeCents : 0) + billableSms * config.smsUsageCents;
+  const estimate = (state.subscribed ? config.baseCents : 0) + numberFees + billableSms * config.smsUsageCents;
 
   return (
     <>
@@ -99,9 +101,9 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
               <tr><td className="py-2">Platform plan</td><td className="py-2 text-right tabular-nums">{money(state.subscribed ? config.baseCents : 0)}</td></tr>
               <tr>
                 <td className="py-2">
-                  Dedicated text number{number ? <span className="block text-xs text-stone-500">{number.phoneNumber} · <StatusBadge status={number.status} /></span> : <span className="block text-xs text-stone-500">none · <Link href={`/app/${slug}/settings/messaging`} className="text-brand-700 underline">get one</Link></span>}
+                  Dedicated text number{numbers.length > 1 ? ` × ${numbers.length}` : ""}{number ? <span className="block text-xs text-stone-500">{number.phoneNumber} · <StatusBadge status={number.status} /></span> : <span className="block text-xs text-stone-500">none · <Link href={`/app/${slug}/settings/messaging`} className="text-brand-700 underline">get one</Link></span>}
                 </td>
-                <td className="py-2 text-right tabular-nums">{money(number ? number.monthlyFeeCents : 0)}</td>
+                <td className="py-2 text-right tabular-nums">{money(numberFees)}</td>
               </tr>
               <tr>
                 <td className="py-2">

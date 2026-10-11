@@ -5,6 +5,7 @@ import { can } from "@angelic/core";
 export const metadata: Metadata = { title: "Packages" };
 import { requireBusiness } from "@/lib/tenant";
 import { getOffersCatalog } from "@/server/offers";
+import { listLocations } from "@/server/locations";
 import { formatMoney } from "@/lib/utils";
 import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 import { togglePackage } from "../catalog-actions";
@@ -13,6 +14,8 @@ export default async function PackagesPage({ params }: { params: Promise<{ slug:
   const { slug } = await params;
   const { business, permissions } = await requireBusiness(slug);
   const { packages, services } = await getOffersCatalog(business.id);
+  const locations = await listLocations(business.id);
+  const validAtLabel = (ids: string[]) => (ids.length ? ` · valid at ${ids.map((id) => locations.find((l) => l.id === id)?.name.replace(/^.*? - /, "") ?? "?").join(", ")} only` : "");
   const manage = can(permissions, "services.manage");
   const svc = (id: string) => services.find((s) => s.id === id)?.name ?? "—";
   return (
@@ -28,7 +31,7 @@ export default async function PackagesPage({ params }: { params: Promise<{ slug:
               <li key={p.id} className="flex items-center justify-between gap-3 px-4 py-3">
                 <div className={p.active ? "" : "text-stone-400 line-through"}>
                   <p className="font-medium">{p.name}</p>
-                  <p className="text-xs text-stone-500">{p.sessions}× {p.serviceId ? svc(p.serviceId) : "any service"}{p.validDays ? ` · valid ${p.validDays} days` : ""}</p>
+                  <p className="text-xs text-stone-500">{p.sessions}× {p.serviceId ? svc(p.serviceId) : "any service"}{p.validDays ? ` · valid ${p.validDays} days` : ""}{validAtLabel(p.validLocationIds)}</p>
                 </div>
                 <span className="font-medium">{formatMoney(p.priceCents, business.currency)}</span>
                 {manage ? <form action={togglePackage}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={p.id} /><input type="hidden" name="active" value={p.active ? "false" : "true"} /><Button size="sm" variant="ghost" type="submit">{p.active ? "Hide" : "Show"}</Button></form> : null}

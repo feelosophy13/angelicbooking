@@ -71,7 +71,7 @@ export async function getStaffAvailability(opts: {
         .from(schema.classSessions)
         .where(and(eq(schema.classSessions.staffId, staffId), eq(schema.classSessions.status, "scheduled"), gte(schema.classSessions.startAt, windowStart), lt(schema.classSessions.startAt, windowEnd))),
       tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true } }),
-      tx.select({ id: schema.locations.id, isDefault: schema.locations.isDefault, hours: schema.locations.hours }).from(schema.locations),
+      tx.select({ id: schema.locations.id, isDefault: schema.locations.isDefault, hours: schema.locations.hours, timezone: schema.locations.timezone }).from(schema.locations),
     ]);
     const fallbackLoc = person?.locationId ?? locations.find((l) => l.isDefault)?.id ?? locations[0]?.id ?? null;
     const locOf = (r: { locationId: string | null }) => r.locationId ?? fallbackLoc;
@@ -79,13 +79,16 @@ export async function getStaffAvailability(opts: {
       const l = locations.find((x) => x.id === locId);
       return l?.hours ? (l.hours[String(weekday)] ?? null) : undefined;
     };
+    // A location in another timezone keeps its own wall clock.
+    const tzAt = (locId: string | null) => locations.find((x) => x.id === locId)?.timezone ?? timeZone;
     const ov = override ? { date: override.date, isOff: override.isOff, start: override.startTime, end: override.endTime } : null;
     const todays = weekly.filter((r) => r.weekday === weekday);
-    let workingBlocks: ReturnType<typeof resolveWorkingBlocks>;
+    // Working blocks per location (each with its own opening hours and clock).
+    const blocksByLoc = new Map<string | null, ReturnType<typeof resolveWorkingBlocks>>();
     if (ov && ov.date === date) {
       // A day override replaces the weekly rows; it happens wherever the provider normally works that day.
       const dayLoc = todays[0] ? locOf(todays[0]) : fallbackLoc;
-      workingBlocks = opts.locationId && dayLoc !== opts.locationId ? [] : clampToOpenHours(resolveWorkingBlocks(date, weekday, [], ov), openAt(dayLoc));
+      if (!opts.locationId || dayLoc === opts.locationId) blocksByLoc.set(dayLoc, clampToOpenHours(resolveWorkingBlocks(date, weekday, [], ov), openAt(dayLoc)));
     } else {
       const byLoc = new Map<string | null, typeof todays>();
       for (const r of todays) {
@@ -93,18 +96,14 @@ export async function getStaffAvailability(opts: {
         if (opts.locationId && l !== opts.locationId) continue;
         byLoc.set(l, [...(byLoc.get(l) ?? []), r]);
       }
-      workingBlocks = [...byLoc.entries()].flatMap(([l, rows]) => clampToOpenHours(resolveWorkingBlocks(date, weekday, rows, null), openAt(l))).sort((a, b) => a.start.localeCompare(b.start));
+      for (const [l, rows] of byLoc) blocksByLoc.set(l, clampToOpenHours(resolveWorkingBlocks(date, weekday, rows, null), openAt(l)));
     }
     const busy: Interval[] = [...items, ...sessions].map((i) => ({ start: i.start, end: i.end }));
-    return computeAvailableSlots({
-      date,
-      timeZone,
-      workingBlocks,
-      busy,
-      service: opts.service,
-      slotIntervalMin: opts.slotIntervalMin,
-      notBefore: opts.notBefore,
-    });
+    const out = new Map<number, Date>();
+    for (const [l, workingBlocks] of blocksByLoc) {
+      for (const at of computeAvailableSlots({ date, timeZone: tzAt(l), workingBlocks, busy, service: opts.service, slotIntervalMin: opts.slotIntervalMin, notBefore: opts.notBefore })) out.set(at.getTime(), at);
+    }
+    return [...out.values()].sort((a, b) => a.getTime() - b.getTime());
   });
 }
 

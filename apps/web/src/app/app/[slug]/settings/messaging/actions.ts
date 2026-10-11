@@ -10,21 +10,21 @@ import { buyNumber, MessagingError, refreshVerification, releaseBusinessNumber, 
 const known = { knownErrors: [MessagingError] };
 
 export const buyNumberAction = formAction(
-  z.object({ slug: z.string(), phoneNumber: z.string().regex(/^\+1\d{10}$/, "Pick a number from the list") }),
+  z.object({ slug: z.string(), phoneNumber: z.string().regex(/^\+1\d{10}$/, "Pick a number from the list"), locationId: z.string().optional() }),
   async (d) => {
     const { business } = await requireAction(d.slug, "business.manage");
-    await buyNumber(business, d.phoneNumber);
+    const row = await buyNumber(business, d.phoneNumber, d.locationId || null);
     revalidatePath(`/app/${d.slug}`, "layout");
-    redirect(`/app/${d.slug}/settings/messaging?bought=1`);
+    redirect(`/app/${d.slug}/settings/messaging?bought=${row.id}`);
   },
   known,
 );
 
 export const releaseNumberAction = formAction(
-  z.object({ slug: z.string() }),
+  z.object({ slug: z.string(), numberId: z.string().optional() }),
   async (d) => {
     const { business } = await requireAction(d.slug, "business.manage");
-    await releaseBusinessNumber(business);
+    await releaseBusinessNumber(business, d.numberId || null);
     revalidatePath(`/app/${d.slug}`, "layout");
     return "Number released. Texts are paused until you get a new one.";
   },
@@ -32,10 +32,10 @@ export const releaseNumberAction = formAction(
 );
 
 export const refreshVerificationAction = formAction(
-  z.object({ slug: z.string() }),
+  z.object({ slug: z.string(), numberId: z.string().optional() }),
   async (d) => {
     const { business } = await requireAction(d.slug, "business.manage");
-    const row = await refreshVerification(business);
+    const row = await refreshVerification(business, d.numberId || null);
     revalidatePath(`/app/${d.slug}/settings/messaging`);
     return row?.status === "verified" ? "Verified. Texts now go out from your number." : "Status refreshed";
   },
@@ -47,6 +47,7 @@ const businessTypes = ["PRIVATE_PROFIT", "PUBLIC_PROFIT", "SOLE_PROPRIETOR", "NO
 export const submitVerificationAction = formAction(
   z.object({
     slug: z.string(),
+    numberId: z.string().optional(),
     businessName: f.text(2, 100),
     businessWebsite: z.string().trim().url("Enter a full URL starting with https://"),
     businessType: z.enum(businessTypes),
@@ -72,8 +73,9 @@ export const submitVerificationAction = formAction(
     }
     const contactPhone = d.contactPhone ? normalizePhone(d.contactPhone) : null;
     if (d.contactPhone && !contactPhone) throw new FormError("Enter a valid US phone number", "contactPhone");
-    const form: VerificationForm = { ...d, businessRegistrationNumber: d.businessRegistrationNumber?.replace("-", "") ?? null, contactPhone };
-    await submitVerification(business, form);
+    const { numberId, ...rest } = d;
+    const form: VerificationForm = { ...rest, businessRegistrationNumber: d.businessRegistrationNumber?.replace("-", "") ?? null, contactPhone };
+    await submitVerification(business, form, numberId || null);
     revalidatePath(`/app/${d.slug}/settings/messaging`);
     redirect(`/app/${d.slug}/settings/messaging?submitted=1`);
   },

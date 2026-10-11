@@ -3,6 +3,8 @@ import { requireAction } from "@/lib/tenant";
 import { getOffersCatalog } from "@/server/offers";
 import { FormPage, Input, Select, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
+import { ValidAt } from "@/components/offered-at";
+import { listLocations } from "@/server/locations";
 import { createPlan } from "../../catalog-actions";
 
 export const metadata: Metadata = { title: "New membership plan" };
@@ -10,7 +12,7 @@ export const metadata: Metadata = { title: "New membership plan" };
 export default async function NewPlanPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "services.manage");
-  const { services } = await getOffersCatalog(business.id);
+  const [{ services }, locations] = await Promise.all([getOffersCatalog(business.id), listLocations(business.id)]);
   return (
     <FormPage title="New membership plan" backHref={`/app/${slug}/memberships`} backLabel="Membership plans" width="max-w-lg">
       <ActionForm action={createPlan}>
@@ -23,6 +25,7 @@ export default async function NewPlanPage({ params }: { params: Promise<{ slug: 
           <Field label="Discount on other services (%)" name="discountPct"><Input name="discountPct" type="number" min={0} max={100} defaultValue={0} /></Field>
         </div>
         <Field label="Description" name="description"><Textarea name="description" rows={2} /></Field>
+        <ValidAt locations={locations} what="membership credits and discounts" />
         <SubmitButton pendingText="Creating…">Create plan</SubmitButton>
       </ActionForm>
     </FormPage>

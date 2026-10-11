@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
 import { money } from "@/lib/format";
-import { getActiveNumber, numberMonthlyFeeCents, searchTollFree, twilioConfigured } from "@/server/messaging";
+import { listNumbers, numberMonthlyFeeCents, searchTollFree, twilioConfigured } from "@/server/messaging";
+import { schema, withTenant } from "@angelic/db";
+import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { billingState } from "@/server/billing";
 import { Button, FormPage, Input, Notice } from "@/components/ui";
@@ -10,11 +12,13 @@ import { buyNumberAction } from "../actions";
 
 export const metadata: Metadata = { title: "Choose a number" };
 
-export default async function NewNumberPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ contains?: string }> }) {
+export default async function NewNumberPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ contains?: string; location?: string }> }) {
   const { slug } = await params;
-  const { contains = "" } = await searchParams;
+  const { contains = "", location: locationId = "" } = await searchParams;
   const { business } = await requireAction(slug, "business.manage");
-  if (await getActiveNumber(business.id)) redirect(`/app/${slug}/settings/messaging`);
+  const location = locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) })) : null;
+  const existing = await withTenant(business.id, listNumbers);
+  if (existing.some((n) => (n.locationId ?? null) === (location?.id ?? null))) redirect(`/app/${slug}/settings/messaging`);
   if (!billingState(business).canBuyNumber) redirect(`/app/${slug}/settings/billing`);
   const fee = numberMonthlyFeeCents();
   let numbers: { phoneNumber: string; friendlyName: string }[] = [];
@@ -30,7 +34,7 @@ export default async function NewNumberPage({ params, searchParams }: { params: 
   }
 
   return (
-    <FormPage title="Choose a toll-free number" backHref={`/app/${slug}/settings/messaging`} backLabel="Text messaging" width="max-w-2xl">
+    <FormPage title={location ? `Choose a toll-free number for ${location.name}` : "Choose a toll-free number"} backHref={`/app/${slug}/settings/messaging`} backLabel="Text messaging" width="max-w-2xl">
       <p className="text-sm text-stone-600">
         Pick any available number. {fee > 0 ? `${money(fee)} per month on your invoice.` : "Included in your plan."}
       </p>
@@ -48,6 +52,7 @@ export default async function NewNumberPage({ params, searchParams }: { params: 
               <ActionForm action={buyNumberAction} className="inline">
                 <input type="hidden" name="slug" value={slug} />
                 <input type="hidden" name="phoneNumber" value={n.phoneNumber} />
+                {location ? <input type="hidden" name="locationId" value={location.id} /> : null}
                 <ConfirmSubmit
                   title={`Get ${n.friendlyName}?`}
                   body={`${fee > 0 ? `${money(fee)} per month. ` : ""}You can release it at any time. Next you'll submit carrier verification so it can send texts.`}

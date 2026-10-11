@@ -10,7 +10,7 @@ import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
 import { duration } from "@/lib/format";
 import { Button, Card, Field, Input, PageHeader, Select, Empty } from "@/components/ui";
 import { BookForm } from "./book-form";
-import { listLocations, servicesHiddenAt } from "@/server/locations";
+import { listLocations, servicesHiddenAt, tzFor } from "@/server/locations";
 
 type SP = { date?: string; serviceId?: string; staffId?: string; clientId?: string; time?: string; location?: string };
 
@@ -24,13 +24,13 @@ export default async function NewAppointmentPage({
   const { slug } = await params;
   const sp = await searchParams;
   const { business } = await requireAction(slug, "appointments.write.any");
-  const tz = business.timezone;
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : instantToISODate(new Date(), tz);
-
   const locations = await listLocations(business.id);
   const multi = locations.length > 1;
-  // Multi-site businesses pick the location first; it filters services, providers and open times.
+  // Multi-site businesses pick the location first; it filters services, providers, open times and the clock shown.
   const location = multi ? (locations.find((l) => l.id === sp.location) ?? locations.find((l) => l.isDefault) ?? locations[0] ?? null) : null;
+  const tz = tzFor(business, location);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : instantToISODate(new Date(), tz);
+
   const { services, clients } = await withTenant(business.id, async (tx) => {
     const hidden = await servicesHiddenAt(tx, location?.id);
     return {

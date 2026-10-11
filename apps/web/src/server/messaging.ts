@@ -35,33 +35,49 @@ export function numberMonthlyFeeCents(): number {
 /** Public image of the booking form's SMS consent checkbox, shown to carrier reviewers. */
 export const OPT_IN_IMAGE_PATH = "/tollfree/opt-in.png";
 
-export async function activeNumber(tx: TenantDb): Promise<MessagingNumber | null> {
-  const row = await tx.query.messagingNumbers.findFirst({ where: isNull(schema.messagingNumbers.releasedAt) });
-  return row ?? null;
+/** Every number the business still holds (business-wide first, then per location). */
+export async function listNumbers(tx: TenantDb): Promise<MessagingNumber[]> {
+  const rows = await tx.select().from(schema.messagingNumbers).where(isNull(schema.messagingNumbers.releasedAt)).orderBy(schema.messagingNumbers.purchasedAt);
+  return rows.sort((a, b) => Number(!!a.locationId) - Number(!!b.locationId));
 }
 
-export async function getActiveNumber(businessId: string): Promise<MessagingNumber | null> {
-  return withTenant(businessId, activeNumber);
+/**
+ * The number that serves a location: the location's own if it has one, else the
+ * business-wide number (location null). Without a location: the business-wide one.
+ */
+export async function activeNumber(tx: TenantDb, locationId?: string | null): Promise<MessagingNumber | null> {
+  const rows = await listNumbers(tx);
+  return (locationId ? rows.find((r) => r.locationId === locationId) : undefined) ?? rows.find((r) => !r.locationId) ?? null;
 }
 
-/** Whether this business can send texts right now: its own verified number, or a platform fallback sender. */
+export async function getActiveNumber(businessId: string, locationId?: string | null): Promise<MessagingNumber | null> {
+  return withTenant(businessId, (tx) => activeNumber(tx, locationId));
+}
+
+export async function getNumberById(businessId: string, id: string): Promise<MessagingNumber | null> {
+  return withTenant(businessId, async (tx) => (await tx.query.messagingNumbers.findFirst({ where: and(eq(schema.messagingNumbers.id, id), isNull(schema.messagingNumbers.releasedAt)) })) ?? null);
+}
+
+/** Whether this business can send texts right now: a verified number of its own, or a platform fallback sender. */
 export async function smsAvailableFor(businessId: string): Promise<boolean> {
-  const own = await getActiveNumber(businessId);
-  if (own?.status === "verified") return true;
+  const own = await withTenant(businessId, listNumbers);
+  if (own.some((n) => n.status === "verified")) return true;
   return !!(process.env.TWILIO_FROM || process.env.TWILIO_MESSAGING_SERVICE_SID) && twilioConfigured();
 }
 
 export { searchTollFree, twilioConfigured };
 
-/** Buy `phoneNumber` for the business. Refuses if it already has an active number. */
-export async function buyNumber(business: Business, phoneNumber: string): Promise<MessagingNumber> {
+/** Buy `phoneNumber` for the business (or for one location). Refuses if that scope already has an active number. */
+export async function buyNumber(business: Business, phoneNumber: string, locationId: string | null = null): Promise<MessagingNumber> {
   if (!twilioConfigured()) throw new MessagingError("Text messaging is not set up on this platform yet.");
-  const existing = await getActiveNumber(business.id);
-  if (existing) throw new MessagingError(`You already have a number (${existing.phoneNumber}). Release it first to pick a different one.`);
+  const existing = (await withTenant(business.id, listNumbers)).find((n) => (n.locationId ?? null) === locationId);
+  if (existing) throw new MessagingError(`You already have a number (${existing.phoneNumber}) for this. Release it first to pick a different one.`);
+  const location = locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) })) : null;
+  if (locationId && !location) throw new MessagingError("Location not found.");
   if (!billingState(business).canBuyNumber) throw new MessagingError("Add a card under Settings → Billing first; the number is billed monthly.");
   let bought: { sid: string; phoneNumber: string };
   try {
-    bought = await purchaseNumber(phoneNumber, { friendlyName: `${business.name} (${business.slug})`, smsUrl: appUrl("/api/twilio/inbound") });
+    bought = await purchaseNumber(phoneNumber, { friendlyName: `${location ? location.name : business.name} (${business.slug})`, smsUrl: appUrl("/api/twilio/inbound") });
   } catch (e) {
     if (e instanceof TwilioError) throw new MessagingError(e.code === 21422 ? "That number was just taken. Pick another one." : `Twilio: ${e.message}`);
     throw e;
@@ -70,7 +86,7 @@ export async function buyNumber(business: Business, phoneNumber: string): Promis
     const [row] = await withTenant(business.id, (tx) =>
       tx
         .insert(schema.messagingNumbers)
-        .values({ businessId: business.id, phoneNumber: bought.phoneNumber, providerSid: bought.sid, monthlyFeeCents: numberMonthlyFeeCents(), billingStartsAt: new Date() })
+        .values({ businessId: business.id, phoneNumber: bought.phoneNumber, providerSid: bought.sid, locationId, monthlyFeeCents: numberMonthlyFeeCents(), billingStartsAt: new Date() })
         .returning(),
     );
     await attachNumberItem(business, row!.id).catch((e) => console.error("[messaging] could not add number to subscription", (e as Error).message));
@@ -82,8 +98,8 @@ export async function buyNumber(business: Business, phoneNumber: string): Promis
   }
 }
 
-export async function releaseBusinessNumber(business: Business): Promise<void> {
-  const row = await getActiveNumber(business.id);
+export async function releaseBusinessNumber(business: Business, numberId?: string | null): Promise<void> {
+  const row = numberId ? await getNumberById(business.id, numberId) : await getActiveNumber(business.id);
   if (!row) return;
   try {
     await releaseNumber(row.providerSid);
@@ -202,8 +218,8 @@ export function localStatus(s: TollfreeStatus): MessagingNumber["status"] {
 }
 
 /** Submit (or, after an editable rejection, resubmit) toll-free verification for the business's number. */
-export async function submitVerification(business: Business, form: VerificationForm): Promise<MessagingNumber> {
-  const row = await getActiveNumber(business.id);
+export async function submitVerification(business: Business, form: VerificationForm, numberId?: string | null): Promise<MessagingNumber> {
+  const row = numberId ? await getNumberById(business.id, numberId) : await getActiveNumber(business.id);
   if (!row) throw new MessagingError("Get a number first.");
   if (row.status === "verified") throw new MessagingError("This number is already verified.");
   if (row.status === "pending_review" || row.status === "in_review") throw new MessagingError("Verification is already under review.");
@@ -252,8 +268,8 @@ async function applyVerification(businessId: string, rowId: string, verification
 }
 
 /** Re-check the business's verification with Twilio now. */
-export async function refreshVerification(business: Business): Promise<MessagingNumber | null> {
-  const row = await getActiveNumber(business.id);
+export async function refreshVerification(business: Business, numberId?: string | null): Promise<MessagingNumber | null> {
+  const row = numberId ? await getNumberById(business.id, numberId) : await getActiveNumber(business.id);
   if (!row?.verificationSid) return row;
   try {
     await applyVerification(business.id, row.id, row.verificationSid);
@@ -261,7 +277,7 @@ export async function refreshVerification(business: Business): Promise<Messaging
     if (e instanceof TwilioError) throw new MessagingError(`Twilio: ${e.message}`);
     throw e;
   }
-  return getActiveNumber(business.id);
+  return getNumberById(business.id, row.id);
 }
 
 /** Cron: poll every verification still under review. Twilio has no status webhook for toll-free verification. */

@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { requireAction } from "@/lib/tenant";
 import { appUrl } from "@/lib/stripe";
-import { defaultVerificationForm, getActiveNumber, OPT_IN_IMAGE_PATH, type VerificationForm } from "@/server/messaging";
+import { defaultVerificationForm, getActiveNumber, getNumberById, OPT_IN_IMAGE_PATH, type VerificationForm } from "@/server/messaging";
+import { schema, withTenant } from "@angelic/db";
+import { eq } from "drizzle-orm";
+import { normalizePhone } from "@angelic/core";
 import { FormPage, Input, Notice, Select, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { submitVerificationAction } from "../actions";
@@ -11,14 +14,19 @@ export const metadata: Metadata = { title: "Carrier verification" };
 
 const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
 
-export default async function VerifyPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function VerifyPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ number?: string }> }) {
   const { slug } = await params;
+  const sp = await searchParams;
   const { business, user } = await requireAction(slug, "business.manage");
-  const number = await getActiveNumber(business.id);
+  const number = sp.number ? await getNumberById(business.id, sp.number) : await getActiveNumber(business.id);
   if (!number) redirect(`/app/${slug}/settings/messaging/new`);
   if (number.status !== "unverified" && number.status !== "rejected") redirect(`/app/${slug}/settings/messaging`);
+  // A location's own number is verified under that location's name and address.
+  const location = number.locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, number.locationId!) })) : null;
   const saved = (number.verification as unknown as Partial<VerificationForm> | null) ?? {};
-  const v: VerificationForm = { ...defaultVerificationForm(business, user), ...saved };
+  const prefill = defaultVerificationForm(business, user);
+  if (location) Object.assign(prefill, { businessName: location.name, businessStreetAddress: location.addressLine1 ?? prefill.businessStreetAddress, businessCity: location.city, businessStateProvinceRegion: location.state, businessPostalCode: location.postalCode, contactPhone: location.phone ? normalizePhone(location.phone) : prefill.contactPhone });
+  const v: VerificationForm = { ...prefill, ...saved };
 
   return (
     <FormPage title="Carrier verification" backHref={`/app/${slug}/settings/messaging`} backLabel="Text messaging">
@@ -29,6 +37,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ slug: s
       {number.status === "rejected" && number.rejectionReason ? <div className="mt-3"><Notice><span className="font-medium">Carrier feedback:</span> {number.rejectionReason}</Notice></div> : null}
       <ActionForm action={submitVerificationAction} className="mt-4">
         <input type="hidden" name="slug" value={slug} />
+        <input type="hidden" name="numberId" value={number.id} />
 
         <h3 className="mb-2 font-medium">Business</h3>
         <div className="grid gap-3 sm:grid-cols-2">

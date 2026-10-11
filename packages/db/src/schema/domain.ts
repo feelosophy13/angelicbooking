@@ -640,6 +640,9 @@ export const messagingNumbers = pgTable(
     businessId: businessId(),
     phoneNumber: text("phone_number").notNull(), // E.164
     providerSid: text("provider_sid").notNull().unique(), // Twilio IncomingPhoneNumber SID (PN…)
+    // Null = the business's main number (every location without its own). A location that is a
+    // separate business can have its own: texts about visits there go out from it.
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     numberType: text("number_type").notNull().default("toll_free"),
     status: messagingNumberStatus("status").notNull().default("unverified"),
     verificationSid: text("verification_sid"), // Twilio Tollfree Verification SID (HH…)
@@ -676,6 +679,8 @@ export const notifications = pgTable(
     businessId: businessId(),
     clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "cascade" }),
+    // Which location the message is about (picks the sender number). Null = business-wide.
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     channel: notificationChannel("channel").notNull(),
     template: text("template").notNull(), // confirmation | reminder | cancellation | rescheduled | receipt | invite
     recipient: text("recipient").notNull(),

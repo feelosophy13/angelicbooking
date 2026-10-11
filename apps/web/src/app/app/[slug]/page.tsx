@@ -4,6 +4,7 @@ import { instantToISODate, weekdayOf } from "@angelic/core";
 
 export const metadata: Metadata = { title: "Calendar" };
 import { filterAgendaByLocation, getRangeAgenda } from "@/server/agenda";
+import { tzFor } from "@/server/locations";
 import { requireBusiness } from "@/lib/tenant";
 import { formatDateLong, shiftISODate } from "@/lib/utils";
 import { LinkButton, PageHeader, Empty } from "@/components/ui";
@@ -34,7 +35,10 @@ export default async function CalendarPage({
   const { slug } = await params;
   const sp = await searchParams;
   const { business, permissions } = await requireBusiness(slug);
-  const tz = business.timezone;
+  const locations = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.name)));
+  const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
+  // Filtered to one location: show its wall clock (it may sit in another timezone).
+  const tz = tzFor(business, locationFilter ? locations.find((l) => l.id === locationFilter) : null);
   const today = instantToISODate(new Date(), tz);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : today;
   const view = sp.view === "week" ? "week" : sp.view === "month" ? "month" : "day";
@@ -43,8 +47,6 @@ export default async function CalendarPage({
   const from = view === "week" ? startOfWeek(date) : view === "month" ? monthStart : date;
   const days = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
   const agenda = await getRangeAgenda(business.id, tz, from, days);
-  const locations = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.name)));
-  const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
   // Day view: who works at this location on that weekday; week/month: anyone who works there on some day.
   const { staff, items } = filterAgendaByLocation(agenda, locationFilter, view === "day" ? weekdayOf(date) : null);
   const staffFilter = staff.some((s) => s.id === sp.staff) ? sp.staff! : null;

@@ -210,6 +210,12 @@ resolves all of that for a sale, appointment or location; every Stripe call goes
   multi-location businesses, `staff_schedules.location_id` (staff primary, else default). Re-run nothing;
   it is idempotent-safe but only meant to run once.
 - Staff hours rows: `staff_schedules.location_id` null = the staff member's primary site, else the default.
+- Text numbers (migration 0040): `messaging_numbers.location_id` null = business-wide. A location may hold its
+  own number; the sender for each queued message is chosen from `notifications.location_id` (location's verified
+  number → business verified number → `TWILIO_FROM`/messaging service). Inbound routing is unchanged (by the
+  number texted). Each extra number is billed through the same subscription item flow as the first.
+- `locations.timezone` is now applied to scheduling (availability, booking pages, messages, filtered calendar).
+- `valid_location_ids text[]` on `gift_cards`, `packages`, `membership_plans`: empty = any location.
 
 ## Stripe webhook setup script
 

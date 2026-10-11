@@ -5,6 +5,7 @@ import { can } from "@angelic/core";
 export const metadata: Metadata = { title: "Gift cards" };
 import { requireBusiness } from "@/lib/tenant";
 import { getOffersCatalog } from "@/server/offers";
+import { listLocations } from "@/server/locations";
 import { formatMoney } from "@/lib/utils";
 import { Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 
@@ -12,6 +13,8 @@ export default async function GiftCardsPage({ params }: { params: Promise<{ slug
   const { slug } = await params;
   const { business, permissions } = await requireBusiness(slug);
   const { giftCards } = await getOffersCatalog(business.id);
+  const locations = await listLocations(business.id);
+  const validAtLabel = (ids: string[]) => (ids.length ? ` · valid at ${ids.map((id) => locations.find((l) => l.id === id)?.name.replace(/^.*? - /, "") ?? "?").join(", ")} only` : "");
   const money = (c: number) => formatMoney(c, business.currency);
   return (
     <>
@@ -26,7 +29,7 @@ export default async function GiftCardsPage({ params }: { params: Promise<{ slug
             <tbody className="divide-y divide-stone-100">
               {giftCards.map((g) => (
                 <tr key={g.id} className={g.balanceCents === 0 ? "text-stone-400" : ""}>
-                  <td className="px-4 py-2 font-mono">{g.code}</td><td className="px-4 py-2">{g.recipientName ?? ""}</td><td className="px-4 py-2 text-right">{money(g.initialCents)}</td><td className="px-4 py-2 text-right font-medium">{money(g.balanceCents)}</td><td className="px-4 py-2 text-stone-500">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(g.createdAt)}</td>
+                  <td className="px-4 py-2 font-mono">{g.code}</td><td className="px-4 py-2">{g.recipientName ?? ""}{g.validLocationIds.length ? <span className="block text-xs text-stone-500">{validAtLabel(g.validLocationIds).replace(/^ · /, "")}</span> : null}</td><td className="px-4 py-2 text-right">{money(g.initialCents)}</td><td className="px-4 py-2 text-right font-medium">{money(g.balanceCents)}</td><td className="px-4 py-2 text-stone-500">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(g.createdAt)}</td>
                 </tr>
               ))}
             </tbody>

@@ -7,7 +7,8 @@ import { formatMoney } from "@/lib/utils";
 import { formsForAppointment } from "@/server/forms";
 import { emailConfigured, sendEmail, sendSms, smsConfigured, type SmsSender } from "./providers";
 import { platformSmsSender } from "@/lib/twilio";
-import { activeNumber } from "@/server/messaging";
+import { listNumbers } from "@/server/messaging";
+import { addressOf, tzFor } from "@/server/locations";
 import { reportSmsUsage } from "@/server/billing";
 import { templates, type ApptContext, type TemplateName } from "./templates";
 import { smsBody, smsWithStopNotice } from "./sms";
@@ -30,13 +31,15 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
   const use = live.length ? live : items;
   if (!use.length) return null;
   const client = appt.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, appt.clientId) }) : null;
+  // Messages speak for the location of the visit: its phone, address and clock.
+  const location = appt.locationId ? await tx.query.locations.findFirst({ where: eq(schema.locations.id, appt.locationId) }) : null;
   const ctx: ApptContext = {
     businessName: business.name,
     logoUrl: business.logoUrl,
     brandColor: business.brandColor,
-    businessPhone: business.phone,
-    address: business.addressLine,
-    timeZone: business.timezone,
+    businessPhone: location?.phone ?? business.phone,
+    address: location ? (addressOf(location) ?? business.addressLine) : business.addressLine,
+    timeZone: tzFor(business, location),
     clientFirstName: client?.firstName ?? "there",
     services: [...new Set(use.map((i) => i.name.replace(" (finish)", "")))].join(", "),
     staffName: [...new Set(use.map((i) => i.staffName))].join(" & "),
@@ -64,10 +67,10 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
     const rows: (typeof schema.notifications.$inferInsert)[] = [];
     const phone = normalizePhone(client.phone);
     if (client.emailOptIn && client.email) {
-      rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "email", template, recipient: client.email, subject: t.subject, body: t.html });
+      rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, locationId: appt.locationId, channel: "email", template, recipient: client.email, subject: t.subject, body: t.html });
     }
     if (client.smsOptIn && phone) {
-      rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, channel: "sms", template, recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, template, ctx)) });
+      rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, locationId: appt.locationId, channel: "sms", template, recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, template, ctx)) });
     }
     if (template === "cancellation") {
       // Drop any pending reminder / pre-visit message for this appointment.
@@ -77,7 +80,7 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
         .where(and(eq(schema.notifications.appointmentId, appt.id), eq(schema.notifications.status, "queued"), inArray(schema.notifications.template, ["reminder", "auto_pre_visit"])));
     }
     if (template === "confirmation" || template === "rescheduled") {
-      await scheduleReminder(tx, business, appt.id, client, ctx, phone);
+      await scheduleReminder(tx, business, appt.id, client, ctx, phone, appt.locationId);
     }
     if (!rows.length) return [];
     const inserted = await tx.insert(schema.notifications).values(rows).returning({ id: schema.notifications.id });
@@ -91,7 +94,7 @@ export async function scheduleReminderFor(business: typeof schema.businesses.$in
   await withTenant(business.id, async (tx) => {
     const built = await appointmentContext(tx, business, appointmentId);
     if (!built || !built.client) return;
-    await scheduleReminder(tx, business, appointmentId, built.client, built.ctx, normalizePhone(built.client.phone));
+    await scheduleReminder(tx, business, appointmentId, built.client, built.ctx, normalizePhone(built.client.phone), built.appt.locationId);
   });
 }
 
@@ -102,6 +105,7 @@ async function scheduleReminder(
   client: typeof schema.clients.$inferSelect,
   ctx: ApptContext,
   phone: string | null,
+  locationId: string | null = null,
 ) {
   // Replace any existing reminder / pre-visit message (time may have changed).
   await tx
@@ -112,8 +116,8 @@ async function scheduleReminder(
   const at = new Date(ctx.startAt.getTime() - business.reminderHours * 3_600_000);
   if (at > new Date()) {
     const t = templates.reminder(ctx);
-    if (client.emailOptIn && client.email) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "email", template: "reminder", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: at });
-    if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", ctx)), scheduledAt: at });
+    if (client.emailOptIn && client.email) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "email", template: "reminder", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: at });
+    if (client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", ctx)), scheduledAt: at });
   }
   // Optional pre-visit message (Marketing → Automations), e.g. prep instructions 48h before.
   const pre = await tx.query.automations.findFirst({ where: and(eq(schema.automations.kind, "pre_visit"), eq(schema.automations.enabled, true)) });
@@ -126,9 +130,9 @@ async function scheduleReminder(
       const wantSms = pre.channel === "sms" || pre.channel === "both";
       if (wantEmail && client.emailOptIn && client.email) {
         const t = marketingEmail(brand, { subject: renderText(pre.subject ?? "Getting ready for your visit", vars), text: renderText(pre.body, vars), ctaLabel: "Manage appointment", ctaUrl: ctx.manageUrl, unsubscribeUrl: unsubscribeUrl(business, client.id) });
-        rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "email", template: "auto_pre_visit", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: preAt });
+        rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "email", template: "auto_pre_visit", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: preAt });
       }
-      if (wantSms && client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, channel: "sms", template: "auto_pre_visit", recipient: phone, body: await smsWithStopNotice(tx, client, `${business.name}: ${renderText(pre.body, vars)}`), scheduledAt: preAt });
+      if (wantSms && client.smsOptIn && phone) rows.push({ businessId: business.id, clientId: client.id, appointmentId, locationId, channel: "sms", template: "auto_pre_visit", recipient: phone, body: await smsWithStopNotice(tx, client, `${business.name}: ${renderText(pre.body, vars)}`), scheduledAt: preAt });
     }
   }
   if (rows.length) await tx.insert(schema.notifications).values(rows);
@@ -157,23 +161,29 @@ const CONCURRENCY = 8;
 type Claimed = { row: Row; sender: SmsSender | null; email: { fromName: string; replyTo?: string } | null };
 
 /**
- * The sender a business texts from: its own verified toll-free number, else the
- * platform fallback (TWILIO_FROM / TWILIO_MESSAGING_SERVICE_SID), else nothing.
+ * The sender a message texts from: the verified number of the location it is
+ * about (else the business's verified number), else the platform fallback
+ * (TWILIO_FROM / TWILIO_MESSAGING_SERVICE_SID), else nothing.
  */
-async function smsSenderFor(tx: TenantDb): Promise<SmsSender | null> {
-  const own = await activeNumber(tx);
-  if (own?.status === "verified") return { from: own.phoneNumber };
+async function smsSenderFor(tx: TenantDb, locationId: string | null): Promise<SmsSender | null> {
+  const numbers = await listNumbers(tx);
+  const own = (locationId ? numbers.find((n) => n.locationId === locationId && n.status === "verified") : undefined) ?? numbers.find((n) => !n.locationId && n.status === "verified");
+  if (own) return { from: own.phoneNumber };
   return platformSmsSender();
 }
 
 async function claimWithSender(tx: TenantDb, opts: { ids?: string[]; limit: number }): Promise<Claimed[]> {
   const rows = await claim(tx, opts);
   if (!rows.length) return [];
-  const sender = rows.some((r) => r.channel === "sms") ? await smsSenderFor(tx) : null;
+  const senders = new Map<string | null, SmsSender | null>();
+  for (const r of rows) {
+    if (r.channel !== "sms" || senders.has(r.locationId)) continue;
+    senders.set(r.locationId, await smsSenderFor(tx, r.locationId));
+  }
   // Emails go out as "<Business> <platform address>" with replies routed to the business.
   const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, rows[0]!.businessId), columns: { name: true, email: true } });
   const email = biz ? { fromName: biz.name, replyTo: biz.email ?? undefined } : null;
-  return rows.map((row) => ({ row, sender, email }));
+  return rows.map((row) => ({ row, sender: row.channel === "sms" ? (senders.get(row.locationId) ?? null) : null, email }));
 }
 
 async function claim(tx: TenantDb, opts: { ids?: string[]; limit: number }): Promise<Row[]> {

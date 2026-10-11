@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressOf, effectiveLocationId, paymentContext, worksAt, type StaffLocationIndex } from "../locations";
+import { addressOf, effectiveLocationId, paymentContext, tzFor, validAtLocation, worksAt, type StaffLocationIndex } from "../locations";
 
 const business = {
   id: "b1",
@@ -68,5 +68,20 @@ describe("addressOf", () => {
   it("joins the parts that exist", () => {
     expect(addressOf({ addressLine1: "1 Main St", addressLine2: null, city: "Sterling", state: "VA", postalCode: null })).toBe("1 Main St, Sterling, VA");
     expect(addressOf(null)).toBeNull();
+  });
+});
+
+describe("validAtLocation / tzFor", () => {
+  it("treats an empty set as valid anywhere and otherwise requires membership", () => {
+    expect(validAtLocation([], "a")).toBe(true);
+    expect(validAtLocation(null, null)).toBe(true);
+    expect(validAtLocation(["a"], "a")).toBe(true);
+    expect(validAtLocation(["a"], "b")).toBe(false);
+    expect(validAtLocation(["a"], null)).toBe(false);
+  });
+  it("uses the location's timezone when it has one", () => {
+    expect(tzFor({ timezone: "America/New_York" }, null)).toBe("America/New_York");
+    expect(tzFor({ timezone: "America/New_York" }, { timezone: null })).toBe("America/New_York");
+    expect(tzFor({ timezone: "America/New_York" }, { timezone: "America/Los_Angeles" })).toBe("America/Los_Angeles");
   });
 });

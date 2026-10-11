@@ -167,10 +167,23 @@ apart use separate tenants.
       default site; `clients.stripe_customer_id` is legacy (copied into `client_stripe_customers`, drop later);
       `import-vagaro.ts` still assigns appointment locations from the staff's primary site.
 
-**Phase 2**
-- [ ] Optional per-location text number and reply-to phone; per-location tax rate override; apply the location
-      timezone to scheduling.
-- [ ] "Valid at" on gift cards / packages / memberships (default: any location) for businesses that want it.
+**Phase 2 — built 2026-10-10, migration 0040**
+- [x] Per-location text number: Settings → Text messaging lists the business number plus one optional number per
+      location ("Get its own number"); texts about a visit go out from that location's verified number, else the
+      business number, else the platform fallback (`notifications.location_id` picks the sender per row). Carrier
+      verification for a location's number is prefilled with the location's name and address. Replies still
+      route by the number texted. Messages (email and SMS) use the visit location's phone and address.
+- [x] Per-location tax rate override (Phase 1).
+- [x] Location timezone: `tzFor(business, location)`; availability computes each location's blocks on its own
+      clock, the public booking page / confirmation / manage page, the staff-side New appointment page and the
+      appointment page show the visit location's time, reminders/pre-visit texts format times in it, and the
+      calendar switches clocks when filtered to one location ("All" stays on the business clock).
+- [x] "Valid at" on gift cards (manual issue), packages and membership plans: tick boxes on the create forms
+      (empty/all = any location); redemption at checkout refuses and the sale page hides credits that aren't
+      valid at the sale's location. Online-bought gift cards are valid anywhere.
+- [ ] Follow-ups: no edit form for existing packages/plans (validity is set at creation); day-view "today"
+      strip and month grid use the business clock; the reminder cron compares `scheduledAt` instants, so
+      nothing changes there.
 
 **Phase 3 (owners with several businesses)**
 - [ ] "All my businesses" dashboard: read-only roll-up of sales and upcoming appointments across tenants the

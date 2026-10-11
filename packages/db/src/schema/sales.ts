@@ -228,6 +228,8 @@ export const giftCards = pgTable(
     recipientName: text("recipient_name"),
     saleId: text("sale_id").references(() => sales.id, { onDelete: "set null" }),
     locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }), // sold at
+    // Where it can be spent. Empty = any location of the business.
+    validLocationIds: text("valid_location_ids").array().notNull().default(sql`'{}'::text[]`),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     active: boolean("active").notNull().default(true),
     createdAt: createdAt(),
@@ -246,6 +248,8 @@ export const packages = pgTable(
     sessions: integer("sessions").notNull(),
     priceCents: integer("price_cents").notNull(),
     validDays: integer("valid_days"), // null = never expires
+    // Where sessions can be redeemed. Empty = any location of the business.
+    validLocationIds: text("valid_location_ids").array().notNull().default(sql`'{}'::text[]`),
     active: boolean("active").notNull().default(true),
     createdAt: createdAt(),
   },
@@ -285,6 +289,8 @@ export const membershipPlans = pgTable(
     includedSessions: integer("included_sessions").notNull().default(0), // per period
     discountBps: integer("discount_bps").notNull().default(0), // off other services
     description: text("description"),
+    // Where credits and discounts can be used. Empty = any location of the business.
+    validLocationIds: text("valid_location_ids").array().notNull().default(sql`'{}'::text[]`),
     active: boolean("active").notNull().default(true),
     // Stripe price on the BUSINESS's connected account, created on first auto-renew setup.
     stripePriceId: text("stripe_price_id"),

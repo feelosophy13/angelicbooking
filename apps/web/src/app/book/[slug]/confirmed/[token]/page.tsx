@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { getManagedAppointment } from "@/server/public-booking";
 import { formatTime } from "@/lib/utils";
+import { addressOf } from "@/server/locations";
 import { CalendarPlus } from "lucide-react";
 
 export default async function ConfirmedPage({ params }: { params: Promise<{ slug: string; token: string }> }) {
@@ -12,11 +13,11 @@ export default async function ConfirmedPage({ params }: { params: Promise<{ slug
   const top = embed ? { target: "_top" as const } : {};
   const m = await getManagedAppointment(slug, token);
   if (!m || !m.start) notFound();
-  const tz = m.business.timezone;
+  const tz = m.timeZone;
   const day = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: tz }).format(m.start);
   const end = m.live.reduce<Date>((e, i) => (i.endAt > e ? i.endAt : e), m.start);
   const g = (d: Date) => d.toISOString().replace(/[-:]|\.\d{3}/g, "");
-  const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`${m.live[0]?.name.replace(" (finish)", "") ?? "Appointment"} at ${m.business.name}`)}&dates=${g(m.start)}/${g(end)}&details=${encodeURIComponent(`Manage: ${process.env.NEXT_PUBLIC_APP_URL ?? ""}/book/${slug}/manage/${token}`)}&location=${encodeURIComponent(m.business.addressLine ?? m.business.name)}`;
+  const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`${m.live[0]?.name.replace(" (finish)", "") ?? "Appointment"} at ${m.business.name}`)}&dates=${g(m.start)}/${g(end)}&details=${encodeURIComponent(`Manage: ${process.env.NEXT_PUBLIC_APP_URL ?? ""}/book/${slug}/manage/${token}`)}&location=${encodeURIComponent((m.location ? addressOf(m.location) : null) ?? m.business.addressLine ?? m.business.name)}`;
   return (
     <div className="rounded-xl border border-stone-200 bg-white p-6 text-center">
       <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-2xl text-emerald-700">✓</div>

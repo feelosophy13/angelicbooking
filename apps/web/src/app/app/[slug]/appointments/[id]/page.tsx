@@ -19,7 +19,7 @@ import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
 import { NoShowFeeForm } from "./no-show-form";
 import { savedCardsFor } from "@/server/stripe-connect";
-import { paymentContextForAppointment } from "@/server/locations";
+import { paymentContextForAppointment, tzFor } from "@/server/locations";
 
 const STATUS_LABEL: Record<string, string> = {
   booked: "Booked",
@@ -61,7 +61,7 @@ export default async function AppointmentPage({
   const pay = await paymentContextForAppointment(business, id);
   const stripeReady = pay.ready;
   const savedCards = await savedCardsFor(business.id, pay, client?.id);
-  const tz = business.timezone;
+  const tz = tzFor(business, pay.location);
   const live = items.filter((i) => i.status !== "cancelled");
   const first = live[0] ?? items[0];
   const apptDate = first ? instantToISODate(first.startAt, tz) : instantToISODate(new Date(), tz);
