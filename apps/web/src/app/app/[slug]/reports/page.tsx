@@ -13,6 +13,7 @@ import { Button, Card, Input, PageHeader, Empty, LinkButton } from "@/components
 import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
 import { listCategories, pathTo } from "@/server/categories";
+import { CategoryTable, type CategoryLine } from "./category-table";
 
 export default async function ReportsPage({
   params,
@@ -77,6 +78,10 @@ export default async function ReportsPage({
   }
   catRows.sort((x, y) => y.amount - x.amount);
   const serviceRevenue = catRows.reduce((s, r) => s + r.amount, 0);
+  const toLine = (r: CatRow): CategoryLine => {
+    const d = delta(r.amount, r.before);
+    return { id: r.id, name: r.name, count: r.count, revenue: money(r.amount), share: serviceRevenue ? (r.amount / serviceRevenue) * 100 : 0, change: d === null ? "—" : d.pct === null ? "new" : `${d.pct > 0 ? "+" : ""}${d.pct}%`, tone: d === null ? "flat" : d.up ? "up" : "down", children: r.children.map(toLine) };
+  };
   const money = (c: number) => formatMoney(Number(c), business.currency);
   type K = "subtotalCents" | "discountCents" | "taxCents" | "tipCents" | "totalCents" | "refundedCents";
   const sum = (k: K, rows = sales) => rows.reduce((s, r) => s + r[k], 0);
@@ -214,29 +219,7 @@ export default async function ReportsPage({
         <Card className="lg:col-span-2">
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Revenue by service category</h2>
           {catRows.length === 0 ? <div className="p-4"><Empty title="No services sold in this range" /></div> : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
-              <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Category</th><th className="px-4 py-2 text-right">Services</th><th className="px-4 py-2 text-right">Revenue</th><th className="px-4 py-2 text-right">Share</th><th className="px-4 py-2 text-right">vs {periodLabel}</th><th className="w-1/4 px-4 py-2"><span className="sr-only">Share bar</span></th></tr></thead>
-              <tbody className="divide-y divide-stone-100">
-                {catRows.flatMap((t) => {
-                  const line = (r: CatRow, depth: number) => {
-                    const d = delta(r.amount, r.before);
-                    const share = serviceRevenue ? (r.amount / serviceRevenue) * 100 : 0;
-                    return (
-                      <tr key={`${depth}:${r.id}`} className={depth ? "text-stone-600" : "font-medium"}>
-                        <td className="px-4 py-2" style={{ paddingLeft: `${1 + depth * 1.25}rem` }}>{depth ? <span className="text-stone-400">› </span> : null}{r.name}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{r.count}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{money(r.amount)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{share.toFixed(0)}%</td>
-                        <td className={`px-4 py-2 text-right tabular-nums text-xs ${d === null ? "text-stone-400" : d.up ? "text-emerald-700" : "text-red-700"}`}>{d === null ? "—" : d.pct === null ? "new" : `${d.pct > 0 ? "+" : ""}${d.pct}%`}</td>
-                        <td className="px-4 py-2"><div className="h-2 w-full rounded bg-stone-100"><div className={`h-2 rounded ${depth ? "bg-brand-300" : "bg-brand-500"}`} style={{ width: `${Math.min(100, share)}%` }} /></div></td>
-                      </tr>
-                    );
-                  };
-                  return [line(t, 0), ...(t.children.length > 1 ? t.children.map((c) => line(c, 1)) : [])];
-                })}
-              </tbody>
-              <tfoot className="border-t border-stone-200 text-sm font-semibold"><tr><td className="px-4 py-2">All services</td><td className="px-4 py-2 text-right tabular-nums">{catRows.reduce((s, r) => s + r.count, 0)}</td><td className="px-4 py-2 text-right tabular-nums">{money(serviceRevenue)}</td><td className="px-4 py-2 text-right">100%</td><td colSpan={2} /></tr></tfoot>
-            </table></div>
+            <CategoryTable rows={catRows.map(toLine)} total={{ count: catRows.reduce((s, r) => s + r.count, 0), revenue: money(serviceRevenue) }} periodLabel={periodLabel} />
           )}
           <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Service lines on paid tickets, by the service's category today. Sub-categories are listed when a category has more than one.</p>
         </Card>
