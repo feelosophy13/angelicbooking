@@ -20,7 +20,7 @@ export default async function StaffHoursPage({ params }: { params: Promise<{ slu
   const byDay = new Map(schedule.map((r) => [r.weekday, r]));
   const hhmm = (t: string) => t.slice(0, 5);
   return (
-    <Card className="max-w-2xl p-4">
+    <Card className="p-4">
       <p className="mb-3 text-xs text-stone-500">
         Regular weekly hours. Use Time off for single-day changes.
         {multi ? " Pick where they work each day: the calendar, online booking and reports follow it." : ""}
@@ -31,7 +31,7 @@ export default async function StaffHoursPage({ params }: { params: Promise<{ slu
         {DAYS.map((name, weekday) => {
           const row = byDay.get(weekday);
           return (
-            <div key={weekday} className={`grid items-center gap-2 text-sm ${multi ? "grid-cols-[6rem_7rem_auto_7rem_minmax(9rem,1fr)]" : "grid-cols-[6rem_7rem_auto_7rem]"}`}>
+            <div key={weekday} className={`grid items-center gap-2 text-sm ${multi ? "grid-cols-[6rem_7rem_max-content_7rem_minmax(12rem,20rem)]" : "grid-cols-[6rem_7rem_max-content_7rem]"}`}>
               <Checkbox name={`on_${weekday}`} defaultChecked={!!row} label={name} className="!items-center [&>input]:mt-0" />
               <Input name={`start_${weekday}`} type="time" defaultValue={row ? hhmm(row.startTime) : "09:00"} className="w-28 px-2" />
               <span className="text-stone-400">to</span>
