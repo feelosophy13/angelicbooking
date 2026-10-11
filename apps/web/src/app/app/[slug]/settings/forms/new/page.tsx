@@ -3,7 +3,7 @@ import Link from "next/link";
 import { FileText } from "lucide-react";
 import { requireAction } from "@/lib/tenant";
 import { listLocations } from "@/server/locations";
-import { serviceGroups } from "@/server/service-groups";
+import { serviceTree } from "@/server/service-groups";
 import { FormPage } from "@/components/ui";
 import { FORM_TEMPLATES, formTemplate } from "@/lib/form-templates";
 import { FormEditor } from "../form-editor";
@@ -38,11 +38,11 @@ export default async function NewFormPage({ params, searchParams }: { params: Pr
       </FormPage>
     );
   }
-  const groups = await serviceGroups(business, { meta: "none" });
+  const tree = await serviceTree(business);
   const initial = t === "blank" ? null : { name: t.name, kind: t.kind, description: t.description, fields: t.fields, requireSignature: t.requireSignature, applyToAll: t.applyToAll, serviceIds: [], renewDays: t.renewDays, active: true };
   return (
     <FormPage title={t === "blank" ? "New form" : t.name} backHref={`/app/${slug}/settings/forms/new`} backLabel="Templates" width="max-w-3xl">
-      <FormEditor action={createForm} slug={slug} form={initial} groups={groups} locations={await listLocations(business.id)} submitLabel="Create form" />
+      <FormEditor action={createForm} slug={slug} form={initial} tree={tree} locations={await listLocations(business.id)} submitLabel="Create form" />
     </FormPage>
   );
 }

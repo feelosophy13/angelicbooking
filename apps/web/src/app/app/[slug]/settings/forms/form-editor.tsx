@@ -4,12 +4,12 @@ import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { FieldBuilder } from "./builder";
 import { OfferedAt } from "@/components/offered-at";
 import { ServiceCheckboxes } from "@/components/service-checkboxes";
-import type { ServiceGroup } from "@/components/service-picker";
+import type { ServiceTreeNode } from "@/server/service-groups";
 
 type Action = Parameters<typeof ActionForm>[0]["action"];
 
 /** Shared create/edit form for an intake or consent form. */
-export function FormEditor({ action, slug, form, groups, locations = [], submitLabel }: { action: Action; slug: string; form: { id?: string; name: string; kind: string; description: string | null; fields: FormFieldDef[]; requireSignature: boolean; applyToAll: boolean; serviceIds: string[]; renewDays: number | null; active: boolean; locationIds?: string[] } | null; groups: ServiceGroup[]; locations?: { id: string; name: string }[]; submitLabel: string }) {
+export function FormEditor({ action, slug, form, tree, locations = [], submitLabel }: { action: Action; slug: string; form: { id?: string; name: string; kind: string; description: string | null; fields: FormFieldDef[]; requireSignature: boolean; applyToAll: boolean; serviceIds: string[]; renewDays: number | null; active: boolean; locationIds?: string[] } | null; tree: ServiceTreeNode[]; locations?: { id: string; name: string }[]; submitLabel: string }) {
   return (
     <ActionForm action={action}>
       <input type="hidden" name="slug" value={slug} />
@@ -34,7 +34,7 @@ export function FormEditor({ action, slug, form, groups, locations = [], submitL
         <legend className="px-1 text-sm font-medium text-stone-700">Who has to complete it</legend>
         <Checkbox name="applyToAll" defaultChecked={form?.applyToAll ?? false} label="Every client, before any visit" />
         <p className="mb-1 mt-2 text-xs text-stone-500">…or only before these services:</p>
-        <ServiceCheckboxes name="serviceIds" groups={groups} selected={form?.serviceIds ?? []} />
+        <ServiceCheckboxes name="serviceIds" tree={tree} selected={form?.serviceIds ?? []} />
       </fieldset>
       <OfferedAt locations={locations} selected={form?.locationIds ?? []} legend="Required at" hint="Untick a location if visits there don't need this form (e.g. a different legal entity with its own waiver)." />
       <div className="grid gap-4 sm:grid-cols-2">
