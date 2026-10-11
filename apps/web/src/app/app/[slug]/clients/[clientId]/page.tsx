@@ -9,7 +9,7 @@ import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireAction, requireBusiness } from "@/lib/tenant";
 import { formatMoney, formatTime } from "@/lib/utils";
-import { BackLink, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox } from "@/components/ui";
+import { BackLink, Button, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox } from "@/components/ui";
 import { updateClient } from "../actions";
 import { addNote, deleteNote, togglePin } from "./notes-actions";
 import { Pin, PinOff } from "lucide-react";
@@ -19,9 +19,9 @@ import { Textarea as NoteArea } from "@/components/ui";
 import { ConfirmSubmit, SubmitButton as NoteSubmit } from "@/components/form";
 import { relative } from "@/lib/format";
 import { listForms, listSubmissionsForClient } from "@/server/forms";
-import { getClientLoyalty } from "@/server/loyalty";
+import { getClientLoyalty, referralsOf } from "@/server/loyalty";
 import { reviewsForClient } from "@/server/reviews";
-import { adjustClientPoints, adjustClientStoreCredit, createReferralCode } from "./loyalty-actions";
+import { adjustClientPoints, adjustClientStoreCredit, createReferralCode, sendReferralCodeAction } from "./loyalty-actions";
 import { getClientStoreCredit } from "@/server/store-credit";
 import { turnOffAutoRenew, turnOnAutoRenew } from "./membership-actions";
 import { replyToClient } from "./messages-actions";
@@ -72,7 +72,15 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   if (!data) notFound();
   const { client, visits, sales, packs, memberships, notes } = data;
   const activeForms = (await listForms(business.id)).filter((f) => f.active);
-  const [submissions, loyalty, reviews, thread, storeCredit] = await Promise.all([listSubmissionsForClient(business.id, clientId), business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null), reviewsForClient(business.id, clientId), clientThread(business.id, clientId), getClientStoreCredit(business.id, clientId)]);
+  const [submissions, loyalty, reviews, thread, storeCredit, referrals, referredBy] = await Promise.all([
+    listSubmissionsForClient(business.id, clientId),
+    business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null),
+    reviewsForClient(business.id, clientId),
+    clientThread(business.id, clientId),
+    getClientStoreCredit(business.id, clientId),
+    withTenant(business.id, (tx) => referralsOf(tx, clientId)),
+    client.referredByClientId ? withTenant(business.id, async (tx) => { const r = await tx.query.clients.findFirst({ where: eq(schema.clients.id, client.referredByClientId!), columns: { id: true, firstName: true, lastName: true } }); return r ? { id: r.id, name: `${r.firstName} ${r.lastName ?? ""}`.trim() } : null; }) : Promise.resolve(null),
+  ]);
   // Cards are shown for the client's home location's Stripe account (else the default site's).
   const pay = await paymentContextFor(business, client.homeLocationId);
   const multiLocation = (await listLocations(business.id)).length > 1;
@@ -254,11 +262,33 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 </details>
               ) : null}
               <div className="mt-3 border-t border-stone-200 pt-3">
-                <p className="text-xs text-stone-500">Referral code</p>
-                {client.referralCode ? <p className="font-mono text-sm">{client.referralCode}</p> : write ? (
-                  <form action={createReferralCode}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><button className="text-xs text-brand-700 underline">Create a referral code</button></form>
-                ) : <p className="text-xs text-stone-400">None yet</p>}
-                {client.referredByClientId ? <p className="mt-1 text-xs text-stone-500">Referred by <Link href={`/app/${slug}/clients/${client.referredByClientId}`} className="underline">another client</Link>{client.referralRewardedAt ? " · bonus paid" : " · bonus after first paid visit"}</p> : null}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-xs text-stone-500">Referral code</p>
+                    {client.referralCode ? <p className="font-mono text-sm">{client.referralCode}</p> : write ? (
+                      <form action={createReferralCode}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><button className="text-xs text-brand-700 underline">Create a referral code</button></form>
+                    ) : <p className="text-xs text-stone-400">None yet</p>}
+                  </div>
+                  {write ? (
+                    <div className="flex gap-1">
+                      {client.phone ? <form action={sendReferralCodeAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="channel" value="sms" /><Button type="submit" size="sm" variant="secondary">Text it</Button></form> : null}
+                      {client.email ? <form action={sendReferralCodeAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="channel" value="email" /><Button type="submit" size="sm" variant="secondary">Email it</Button></form> : null}
+                    </div>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-xs text-stone-500">{business.referralBonusPoints > 0 ? `${business.referralBonusPoints} points to them after each friend's first paid visit` : "No referrer bonus set"}{business.referralFriendBonusPoints > 0 ? ` · ${business.referralFriendBonusPoints} points to the friend` : ""}.</p>
+                {referredBy ? <p className="mt-1 text-xs text-stone-500">Referred by <Link href={`/app/${slug}/clients/${referredBy.id}`} className="underline">{referredBy.name}</Link>{client.referralRewardedAt ? ` · bonus paid ${fmtDate.format(client.referralRewardedAt)}` : " · bonus after first paid visit"}</p> : null}
+                <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-stone-500">Referred {referrals.length ? `${referrals.length} ${referrals.length === 1 ? "client" : "clients"}` : "nobody yet"}</p>
+                {referrals.length ? (
+                  <ul className="mt-1 space-y-0.5 text-xs text-stone-600">
+                    {referrals.map((r) => (
+                      <li key={r.id} className="flex justify-between gap-2">
+                        <Link href={`/app/${slug}/clients/${r.id}`} className="truncate underline">{r.name}</Link>
+                        <span className="shrink-0 text-stone-500">{r.rewardedAt ? `first visit ${fmtDate.format(r.rewardedAt)} · bonus paid` : `joined ${fmtDate.format(r.joinedAt)} · not visited yet`}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             </Card>
           ) : null}

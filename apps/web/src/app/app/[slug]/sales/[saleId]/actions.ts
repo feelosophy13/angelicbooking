@@ -20,7 +20,7 @@ import {
 } from "@/server/sales";
 import { stripe } from "@/lib/stripe";
 import { addOfferLine, redeemCredit, redeemGiftCard } from "@/server/offers";
-import { LoyaltyError, redeemPoints } from "@/server/loyalty";
+import { LoyaltyError, redeemPoints, referralPitch, referralsEnabled } from "@/server/loyalty";
 import { StoreCreditError } from "@/server/store-credit";
 import { RefundReasonError, updateRefundReason } from "@/server/refund-reasons";
 import { PromoError } from "@/server/promos";
@@ -314,6 +314,7 @@ export async function emailReceipt(formData: FormData) {
     total: m(sale.totalCents),
     payments: payments.filter((p) => p.status !== "failed" && p.status !== "pending").map((p) => ({ label: `${p.method.replace("_", " ")}${p.cardLast4 ? ` ****${p.cardLast4}` : ""}`, amount: m(p.amountCents) })),
     refunded: sale.refundedCents ? m(sale.refundedCents) : null,
+    referral: referralsEnabled(b) && client.referralCode ? referralPitch(b, client.referralCode) : null,
   });
   await queueOneOff(b.id, { channel: "email", template: "receipt", recipient: email, subject: t.subject, body: t.html });
   await setFlash(`Receipt emailed to ${email}`);

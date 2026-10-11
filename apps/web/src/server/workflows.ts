@@ -24,6 +24,7 @@ const reminderTemplate = messageTemplates.reminder;
 import { smsBody, smsWithStopNotice } from "@/lib/notify/sms";
 import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing";
 import { pathTo } from "@/server/categories";
+import { ensureReferralCode, referralsEnabled } from "./loyalty";
 import { APPOINTMENT_TRIGGERS, deferToDaytime, isMarketingTrigger, matchesFilters, newStepId, validateSteps, waitResumesAt, type TriggerFacts } from "@/lib/workflows-logic";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -64,6 +65,10 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   { key: "rebook", group: "after", trigger: "appointment_completed", enabled: false, exitOnBooking: true, name: "Rebook reminder", description: "A nudge a few weeks after a visit when nothing else is booked.", steps: S([
     { type: "wait", mode: "delay", hours: 28 * 24 },
     { type: "email", subject: "Time for your next visit?", body: "Hi {first_name},\n\nIt's about time for your next appointment at {business}. Grab a time that suits you." },
+  ]) },
+  { key: "refer_friend", group: "after", trigger: "appointment_completed", enabled: false, filters: { firstVisitOnly: true }, name: "Refer a friend", description: "After a client's first paid visit, send their referral code and what each side earns. Needs Loyalty & referrals turned on.", steps: S([
+    { type: "wait", mode: "after_appointment", hours: 48 },
+    { type: "email", subject: "Know someone who'd love {business}?", body: "Hi {first_name},\n\nThanks for visiting {business}! If a friend books with your referral code, you both get something back.\n\nYour code: {referral_code}\n\nThey just type it in the referral box when booking online." },
   ]) },
   { key: "no_show_follow_up", group: "after", trigger: "appointment_no_show", enabled: false, name: "No-show follow-up", description: "A friendly note after a missed appointment with a link to rebook.", steps: S([
     { type: "wait", mode: "delay", hours: 1 },
@@ -364,7 +369,8 @@ async function appointmentTimes(tx: TenantDb, appointmentId: string): Promise<{ 
 /** Vars for message steps: client + business always, appointment / review / form / membership when the run has one. */
 async function varsFor(tx: TenantDb, business: Business, w: Workflow, run: WorkflowRun, client: typeof schema.clients.$inferSelect) {
   const bookingUrl = appUrl(`/book/${business.slug}`);
-  let vars: Record<string, string | number | null | undefined> = { first_name: client.firstName, business: business.name, booking_url: bookingUrl, points: null };
+  let vars: Record<string, string | number | null | undefined> = { first_name: client.firstName, business: business.name, booking_url: bookingUrl, points: null, referral_code: "" };
+  if (referralsEnabled(business)) vars.referral_code = await ensureReferralCode(tx, client).catch(() => "");
   let ctaUrl = bookingUrl;
   let ctaLabel = "Book now";
   let brand = { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address: business.addressLine };

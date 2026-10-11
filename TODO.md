@@ -183,6 +183,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       bookings carry an "online" chip with when they came in). "New online booking" automation template (team
       group, on by default) emails the owner and the provider when a client books online; automations gain a
       "Booked online only" filter and templates added later are topped up on the next trigger.
+- [x] 2026-10-11: referrals made visible. Client page: referral code with "Text it" / "Email it" (consent-aware,
+      one-off notification), the referrer's name on referred clients with the bonus date, and the list of clients
+      this person referred with first-visit status. Reports → "Referrals" (who referred whom, joined, first paid
+      visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
+      available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
+      paid visit.
 - [x] 2026-10-11: sidebar Grow group gains "Loyalty & referrals" (links to the settings page; Settings item excludes
       it so one entry lights up).
 - [x] 2026-10-11 (migrations 0058–0059): refund reasons. `refund_reasons` per business (seeded with Service issue,

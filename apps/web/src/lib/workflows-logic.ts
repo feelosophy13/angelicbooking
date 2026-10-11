@@ -28,7 +28,7 @@ export const APPOINTMENT_TRIGGERS: WorkflowTrigger[] = ["appointment_booked", "a
 
 /** Placeholders available to message steps, by trigger. */
 export function placeholdersFor(trigger: WorkflowTrigger): string[] {
-  const base = ["{first_name}", "{business}", "{booking_url}"];
+  const base = ["{first_name}", "{business}", "{booking_url}", "{referral_code}"];
   if (APPOINTMENT_TRIGGERS.includes(trigger)) return [...base, "{service}", "{staff}", "{when}", "{manage_url}", "{forms_url}", "{review_url}"];
   if (trigger === "review_submitted") return [...base, "{rating}", "{comment}", "{staff}", "{service}"];
   if (trigger === "form_submitted") return [...base, "{form}"];

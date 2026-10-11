@@ -3,8 +3,12 @@
  * deltas). Clients earn on paid sales, redeem at checkout as a payment line,
  * and referrers are credited once their friend's first visit is paid.
  */
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
+import { normalizePhone } from "@angelic/core";
+import { appUrl } from "@/lib/stripe";
+import { queueOneOff } from "@/lib/notify";
+import { brandedEmail } from "@/lib/notify/templates";
 
 type Business = typeof schema.businesses.$inferSelect;
 
@@ -43,6 +47,8 @@ export async function awardPointsForSale(tx: TenantDb, business: Business, sale:
       .onConflictDoNothing();
   }
   const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) });
+  // Everyone who pays gets a code once referrals are on, so the receipt and automations can carry it.
+  if (client && referralsEnabled(business) && !client.referralCode) await ensureReferralCode(tx, client).catch(() => null);
   if (client?.referredByClientId && !client.referralRewardedAt) {
     if (business.referralBonusPoints > 0) {
       await tx.insert(schema.loyaltyLedger).values({ businessId: business.id, clientId: client.referredByClientId, delta: business.referralBonusPoints, reason: "referral", saleId: sale.id, note: `Referred ${client.firstName} ${client.lastName}`.trim() }).onConflictDoNothing();
@@ -107,4 +113,87 @@ export async function findReferrer(tx: TenantDb, code: string | null | undefined
   const c = (code ?? "").trim().toUpperCase();
   if (!c) return null;
   return (await tx.query.clients.findFirst({ where: eq(schema.clients.referralCode, c) })) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Referrals: who brought whom, and getting the code into clients' hands
+// ---------------------------------------------------------------------------
+
+/** Referrals are "on" when the programme is enabled and either side earns something. */
+export function referralsEnabled(b: Pick<Business, "loyaltyEnabled" | "referralBonusPoints" | "referralFriendBonusPoints">): boolean {
+  return b.loyaltyEnabled && (b.referralBonusPoints > 0 || b.referralFriendBonusPoints > 0);
+}
+
+export interface ReferredClient {
+  id: string;
+  name: string;
+  joinedAt: Date;
+  /** First paid visit, which is when the bonus settles. */
+  rewardedAt: Date | null;
+}
+
+/** Clients this person referred, newest first. */
+export async function referralsOf(tx: TenantDb, clientId: string): Promise<ReferredClient[]> {
+  const rows = await tx
+    .select({ id: schema.clients.id, firstName: schema.clients.firstName, lastName: schema.clients.lastName, createdAt: schema.clients.createdAt, rewardedAt: schema.clients.referralRewardedAt })
+    .from(schema.clients)
+    .where(eq(schema.clients.referredByClientId, clientId))
+    .orderBy(desc(schema.clients.createdAt));
+  return rows.map((r) => ({ id: r.id, name: `${r.firstName} ${r.lastName ?? ""}`.trim(), joinedAt: r.createdAt, rewardedAt: r.rewardedAt }));
+}
+
+export interface ReferralRow {
+  referrerId: string;
+  referrerName: string;
+  referredId: string;
+  referredName: string;
+  joinedAt: Date;
+  rewardedAt: Date | null;
+}
+
+/** Every referral whose friend joined in the period (for Reports), newest first. */
+export async function referralsInPeriod(tx: TenantDb, from: Date, to: Date): Promise<ReferralRow[]> {
+  const referred = schema.clients;
+  const rows = await tx
+    .select({ referrerId: referred.referredByClientId, referredId: referred.id, firstName: referred.firstName, lastName: referred.lastName, joinedAt: referred.createdAt, rewardedAt: referred.referralRewardedAt })
+    .from(referred)
+    .where(and(isNotNull(referred.referredByClientId), gte(referred.createdAt, from), lt(referred.createdAt, to)))
+    .orderBy(desc(referred.createdAt));
+  const referrerIds = [...new Set(rows.map((r) => r.referrerId!).filter(Boolean))];
+  const referrers = referrerIds.length ? await tx.select({ id: schema.clients.id, firstName: schema.clients.firstName, lastName: schema.clients.lastName }).from(schema.clients).where(inArray(schema.clients.id, referrerIds)) : [];
+  const nameOf = (id: string) => { const c = referrers.find((x) => x.id === id); return c ? `${c.firstName} ${c.lastName ?? ""}`.trim() : "Former client"; };
+  return rows.map((r) => ({ referrerId: r.referrerId!, referrerName: nameOf(r.referrerId!), referredId: r.referredId, referredName: `${r.firstName} ${r.lastName ?? ""}`.trim(), joinedAt: r.joinedAt, rewardedAt: r.rewardedAt }));
+}
+
+/** The one-line pitch that goes with a code, used by texts, emails and receipts. */
+export function referralPitch(b: Pick<Business, "name" | "referralBonusPoints" | "referralFriendBonusPoints">, code: string): string {
+  const friend = b.referralFriendBonusPoints > 0 ? ` and they get ${b.referralFriendBonusPoints} points to start` : "";
+  const you = b.referralBonusPoints > 0 ? `you earn ${b.referralBonusPoints} points after their first visit` : "we'll say thank you";
+  return `Share your code ${code} with a friend: when they book at ${b.name} with it, ${you}${friend}.`;
+}
+
+/** Text or email the client their referral code (creating one if needed). Returns where it went. */
+export async function sendReferralCode(business: Business, clientId: string, channel: "sms" | "email"): Promise<string> {
+  const { code, client } = await withTenant(business.id, async (tx) => {
+    const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
+    if (!client) throw new LoyaltyError("Client not found.");
+    return { code: await ensureReferralCode(tx, client), client };
+  });
+  const pitch = referralPitch(business, code);
+  if (channel === "sms") {
+    const phone = normalizePhone(client.phone);
+    if (!phone) throw new LoyaltyError("No mobile number on file.");
+    if (!client.smsOptIn) throw new LoyaltyError("This client has opted out of texts.");
+    await queueOneOff(business.id, { channel: "sms", template: "referral_code", recipient: phone, body: `${business.name}: ${pitch} Book: ${appUrl(`/book/${business.slug}`)}`, clientId: client.id });
+    return phone;
+  }
+  if (!client.email) throw new LoyaltyError("No email on file.");
+  if (!client.emailOptIn) throw new LoyaltyError("This client has opted out of emails.");
+  const html = brandedEmail(
+    { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address: business.addressLine },
+    "Your referral code",
+    `<p>Hi ${client.firstName},</p><p>${pitch}</p><p style="font-size:24px;font-weight:700;letter-spacing:1px;margin:16px 0">${code}</p><p>They just type it in the “Referral code” box when booking online.</p><p style="margin-top:16px"><a href="${appUrl(`/book/${business.slug}`)}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Book at ${business.name}</a></p>`,
+  );
+  await queueOneOff(business.id, { channel: "email", template: "referral_code", recipient: client.email, subject: `Your ${business.name} referral code`, body: html, clientId: client.id });
+  return client.email;
 }

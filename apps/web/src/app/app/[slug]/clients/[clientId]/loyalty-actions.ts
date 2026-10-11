@@ -5,7 +5,8 @@ import { schema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
-import { adjustPoints, ensureReferralCode, LoyaltyError } from "@/server/loyalty";
+import { adjustPoints, ensureReferralCode, LoyaltyError, sendReferralCode } from "@/server/loyalty";
+import { setFlash } from "@/lib/flash";
 import { adjustStoreCredit, StoreCreditError } from "@/server/store-credit";
 
 export const adjustClientPoints = formAction(
@@ -52,3 +53,17 @@ export const adjustClientStoreCredit = formAction(
     return `${cents > 0 ? "Added" : "Removed"} ${(Math.abs(cents) / 100).toFixed(2)} of store credit`;
   },
 );
+
+/** Text or email the client their referral code. */
+export async function sendReferralCodeAction(formData: FormData) {
+  const d = z.object({ slug: z.string(), clientId: z.string().min(1), channel: z.enum(["sms", "email"]) }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "clients.write");
+  try {
+    const to = await sendReferralCode(ctx.business, d.clientId, d.channel);
+    await setFlash(`Referral code sent to ${to}`);
+  } catch (e) {
+    if (e instanceof LoyaltyError) await setFlash(e.message, "error");
+    else throw e;
+  }
+  revalidatePath(`/app/${d.slug}/clients/${d.clientId}`);
+}

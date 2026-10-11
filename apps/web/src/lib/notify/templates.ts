@@ -182,6 +182,8 @@ export interface ReceiptCtx extends BrandCtx {
   total: string;
   payments: { label: string; amount: string }[];
   refunded: string | null;
+  /** "Share your code X with a friend…" when referrals are on. */
+  referral?: string | null;
 }
 
 /** Itemised receipt for a closed sale. */
@@ -196,6 +198,6 @@ ${row("Total", r.total, true)}
 <tr><td colspan="2" style="border-top:1px solid #e7e5e4;padding-top:8px"></td></tr>
 ${r.payments.map((p) => row(p.label, p.amount)).join("")}${r.refunded ? row("Refunded", `-${r.refunded}`) : ""}
 </table>
-<p style="margin-top:20px">Thank you for visiting!</p>`;
+<p style="margin-top:20px">Thank you for visiting!</p>${r.referral ? `<p style="margin-top:12px;padding:12px;background:#f5f5f4;border-radius:8px">${esc(r.referral)}</p>` : ""}`;
   return { subject: `Your receipt from ${r.businessName} (#${r.number})`, html: shell(r, r.businessName, body) };
 }
