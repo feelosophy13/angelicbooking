@@ -66,7 +66,7 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
                   <div className="min-w-0 flex-1">
                     <p className={`font-medium ${s.active ? "" : "text-stone-400"}`}>{s.displayName}{s.active ? "" : " · inactive"}</p>
                     <p className="truncate text-xs text-stone-500">
-                      {[s.position, multiLocation && s.takesAppointments ? whereWorks(s.id, s.locationId) : multiLocation ? locationName(s.locationId) : null, s.email ?? "no email", memberRole ? `${roleName(memberRole)} (has login)` : "no login yet", s.takesAppointments ? null : "no calendar column"].filter(Boolean).join(" · ")}
+                      {[s.fullName && s.fullName.trim() !== s.displayName ? s.fullName : null, s.position, multiLocation && s.takesAppointments ? whereWorks(s.id, s.locationId) : multiLocation ? locationName(s.locationId) : null, s.email ?? "no email", memberRole ? `${roleName(memberRole)} (has login)` : "no login yet", s.takesAppointments ? null : "no calendar column"].filter(Boolean).join(" · ")}
                     </p>
                   </div>
                   <ChevronRight className="h-4 w-4 text-stone-300" />

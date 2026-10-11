@@ -14,7 +14,8 @@ export default async function NewStaffPage({ params }: { params: Promise<{ slug:
       <p className="mb-4 text-sm text-stone-600">Creates a calendar column with default hours (Tue–Sat 9–5) that you can change next. To let them sign in, send an invitation afterwards.</p>
       <ActionForm action={createStaff}>
         <input type="hidden" name="slug" value={slug} />
-        <Field label="Name" name="displayName" required><Input name="displayName" required autoFocus /></Field>
+        <Field label="Display name" name="displayName" required hint="What clients see on the booking page and in messages. A first name or nickname is fine."><Input name="displayName" required autoFocus /></Field>
+        <Field label="Full name" name="fullName" hint="Private: payroll, pay sheets and your records only."><Input name="fullName" placeholder="Legal name, if different" /></Field>
         <Field label="Email" name="email"><Input name="email" type="email" /></Field>
         <Field label="Phone" name="phone"><Input name="phone" /></Field>
         <Field label="Calendar colour" name="color"><Input name="color" type="color" defaultValue="#6366f1" className="h-10 w-24 p-1" /></Field>

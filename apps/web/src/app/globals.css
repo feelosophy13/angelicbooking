@@ -20,3 +20,12 @@ body {
 h1, h2, h3 { letter-spacing: -0.01em; }
 input[type="time"]::-webkit-calendar-picker-indicator, input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.6; }
 @media print { aside, header, nav, .print\:hidden { display: none !important; } main { padding: 0 !important; } }
+
+/* Tailwind v4 gives buttons the arrow cursor; anything clickable shows the hand. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+summary,
+label:has(> input[type="checkbox"]:not(:disabled)),
+label:has(> input[type="radio"]:not(:disabled)) {
+  cursor: pointer;
+}

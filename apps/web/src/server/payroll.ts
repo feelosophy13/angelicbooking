@@ -135,7 +135,7 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
   ]);
   const employees: PayrollEmployee[] = rest.staff.map((s) => ({
     staffId: s.id,
-    name: s.displayName,
+    name: s.fullName?.trim() || s.displayName,
     position: s.position,
     payType: s.payType,
     mainCommissionBps: s.mainCommissionBps,

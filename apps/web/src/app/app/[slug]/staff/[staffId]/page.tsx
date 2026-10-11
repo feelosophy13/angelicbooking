@@ -28,7 +28,10 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
       <ActionForm action={updateStaffProfile}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="staffId" value={staffId} />
-        <Field label="Name" name="displayName" required><Input name="displayName" defaultValue={person.displayName} required /></Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Display name" name="displayName" required hint="What clients see on the booking page and in messages. A first name or nickname is fine."><Input name="displayName" defaultValue={person.displayName} required /></Field>
+          <Field label="Full name" name="fullName" hint="Private: payroll, pay sheets and your records only."><Input name="fullName" defaultValue={person.fullName ?? ""} placeholder="Legal name, if different" /></Field>
+        </div>
         <Field label="Email" name="email"><Input name="email" type="email" defaultValue={person.email ?? ""} /></Field>
         <Field label="Phone" name="phone"><Input name="phone" defaultValue={person.phone ?? ""} /></Field>
         <Field label="Calendar colour" name="color"><Input name="color" type="color" defaultValue={person.color} className="h-10 w-24 p-1" /></Field>

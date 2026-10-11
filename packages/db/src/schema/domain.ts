@@ -163,7 +163,9 @@ export const staff = pgTable(
     id: id(),
     businessId: businessId(),
     userId: text("user_id").references(() => user.id, { onDelete: "set null" }),
+    // displayName is what clients see (a first name or nickname is fine); fullName is private, for payroll and records.
     displayName: text("display_name").notNull(),
+    fullName: text("full_name"),
     email: text("email"),
     phone: text("phone"),
     color: text("color").notNull().default("#6366f1"),

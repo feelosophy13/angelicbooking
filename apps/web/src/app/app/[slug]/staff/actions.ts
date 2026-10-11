@@ -21,6 +21,7 @@ const profileSchema = z.object({
   slug: z.string(),
   staffId: z.string().optional(),
   displayName: f.text(1, 80),
+  fullName: f.optional(120),
   email: f.email(),
   phone: f.optional(30),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Pick a colour"),
@@ -40,7 +41,7 @@ export const createStaff = formAction(profileSchema, async (d) => {
   const id = await withTenant(ctx.business.id, async (tx) => {
     const [row] = await tx
       .insert(schema.staff)
-      .values({ businessId: ctx.business.id, displayName: d.displayName, email: d.email, phone: d.phone, color: d.color })
+      .values({ businessId: ctx.business.id, displayName: d.displayName, fullName: d.fullName, email: d.email, phone: d.phone, color: d.color })
       .returning({ id: schema.staff.id });
     // Default schedule: Tue–Sat 9–5. Editable immediately after.
     await tx.insert(schema.staffSchedules).values(
@@ -71,7 +72,7 @@ export const updateStaffProfile = formAction(profileSchema, async (d, raw) => {
   await withTenant(ctx.business.id, (tx) =>
     tx
       .update(schema.staff)
-      .set({ displayName: d.displayName, email: d.email, phone: d.phone, color: d.color, bio: d.bio, bookableOnline: d.bookableOnline && d.takesAppointments, takesAppointments: d.takesAppointments, active: d.active, locationId: d.locationId || null, ...(photoUrl !== undefined ? { photoUrl } : {}) })
+      .set({ displayName: d.displayName, fullName: d.fullName, email: d.email, phone: d.phone, color: d.color, bio: d.bio, bookableOnline: d.bookableOnline && d.takesAppointments, takesAppointments: d.takesAppointments, active: d.active, locationId: d.locationId || null, ...(photoUrl !== undefined ? { photoUrl } : {}) })
       .where(eq(schema.staff.id, d.staffId!)),
   );
   if (photoUrl !== undefined && current?.photoUrl) await deleteFileByUrl(current.photoUrl);
