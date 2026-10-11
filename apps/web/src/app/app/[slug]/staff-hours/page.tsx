@@ -1,67 +1,75 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Ban } from "lucide-react";
+import { Ban, ChevronLeft, ChevronRight } from "lucide-react";
 import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { can, instantToISODate, mondayOf, rotationWeekIndex } from "@angelic/core";
+import { can, instantToISODate, mondayOf } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { shiftISODate } from "@/lib/utils";
-import { dateLong, initials } from "@/lib/format";
+import { dateLong } from "@/lib/format";
 import { describeHours, time12 } from "@/lib/hours";
-import { Card, Empty, LinkButton, PageHeader } from "@/components/ui";
-import { LinkRow } from "@/components/table-row";
+import { buildCoverage } from "@/server/coverage";
+import { listCategories, buildTree, flattenTree } from "@/server/categories";
+import { Button, Card, Empty, LinkButton, PageHeader, Select } from "@/components/ui";
+import { LocationFilter } from "@/components/location-filter";
 import { rowClass, rowControl, RowLink } from "@/components/row";
+import { CoverageGaps, CoverageGrid } from "./coverage-grid";
 
 export const metadata: Metadata = { title: "Staff hours" };
 
-const DAYS = [1, 2, 3, 4, 5, 6, 0]; // Monday first
-const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+type SP = { week?: string; location?: string; scope?: string };
 const nextDay = (d: string) => shiftISODate(d, 1);
 
 /**
- * The schedule side of staff: opening hours, who works when (with rotations and sites), and upcoming
- * time off, all on one page. Editing happens on the location page and each person's Weekly hours / Time off.
+ * Coverage at a glance: a week with time down the side, who is in on each day as lanes, opening
+ * hours as the white area, and a strip that says whether the services in scope are covered.
+ * Editing happens on the location page and each person's Weekly hours / Time off.
  */
-export default async function StaffHoursPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function StaffHoursPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
+  const sp = await searchParams;
   const { business, permissions } = await requireAction(slug, "appointments.read.any");
   const base = `/app/${slug}`;
   const manage = can(permissions, "staff.manage");
   const today = instantToISODate(new Date(), business.timezone);
+  const thisMonday = mondayOf(today);
+  const weekStart = /^\d{4}-\d{2}-\d{2}$/.test(sp.week ?? "") ? mondayOf(sp.week!) : thisMonday;
   const horizon = shiftISODate(today, 90);
-  const { people, rows, overrides, locations } = await withTenant(business.id, async (tx) => {
-    const people = await tx
-      .select({ id: schema.staff.id, name: schema.staff.displayName, color: schema.staff.color, photoUrl: schema.staff.photoUrl, locationId: schema.staff.locationId, rotationWeeks: schema.staff.rotationWeeks, rotationAnchor: schema.staff.rotationAnchor })
-      .from(schema.staff)
-      .where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true)))
-      .orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName));
+
+  const { people, overrides, locations, cats, services } = await withTenant(business.id, async (tx) => {
+    const people = await tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName));
     const ids = people.map((p) => p.id);
     return {
       people,
-      rows: ids.length ? await tx.select().from(schema.staffSchedules).where(inArray(schema.staffSchedules.staffId, ids)).orderBy(asc(schema.staffSchedules.weekIndex), asc(schema.staffSchedules.weekday), asc(schema.staffSchedules.startTime)) : [],
       overrides: ids.length
         ? await tx.select().from(schema.staffScheduleOverrides).where(and(inArray(schema.staffScheduleOverrides.staffId, ids), gte(schema.staffScheduleOverrides.date, today), lte(schema.staffScheduleOverrides.date, horizon))).orderBy(asc(schema.staffScheduleOverrides.staffId), asc(schema.staffScheduleOverrides.date))
         : [],
       locations: await tx.select({ id: schema.locations.id, name: schema.locations.name, hours: schema.locations.hours, isDefault: schema.locations.isDefault }).from(schema.locations).orderBy(desc(schema.locations.isDefault), asc(schema.locations.name)),
+      cats: await listCategories(business.id, "service"),
+      services: await tx.select({ id: schema.services.id, name: schema.services.name, categoryId: schema.services.categoryId }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
     };
   });
   const multi = locations.length > 1;
-  const defaultLoc = locations.find((l) => l.isDefault)?.id ?? locations[0]?.id ?? null;
+  // One site at a time makes the question answerable; default to the main site when there are several.
+  const locationId = multi ? (locations.some((l) => l.id === sp.location) ? sp.location! : sp.location === "" ? null : (locations.find((l) => l.isDefault)?.id ?? locations[0]!.id)) : null;
+  const scope = sp.scope ?? "";
+  const serviceId = scope.startsWith("s:") && services.some((s) => s.id === scope.slice(2)) ? scope.slice(2) : null;
+  const categoryId = scope.startsWith("c:") && cats.some((c) => c.id === scope.slice(2)) ? scope.slice(2) : null;
+  const coverage = await buildCoverage(business, { weekStart, locationId, serviceId, categoryId });
+
+  // Query string for links, keeping the other choices. location="" means "all sites" on multi-site tenants.
+  const qs = (over: Partial<Record<keyof SP, string | null>>) => {
+    const all: Record<keyof SP, string | null> = { week: weekStart === thisMonday ? null : weekStart, location: multi ? (locationId ?? "") : null, scope: scope || null, ...over };
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(all)) if (v !== null && (v !== "" || k === "location")) p.set(k, v);
+    return p.toString();
+  };
   const shortLoc = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "").replace(`${business.name} - `, "") : "");
   const hhmm = (t: string) => t.slice(0, 5);
-  const span = (r: { startTime: string; endTime: string }) => `${time12(hhmm(r.startTime))}–${time12(hhmm(r.endTime))}`;
-
-  // One cell per person and weekday; a rotation shows one line per week with the live week first-marked.
-  const cell = (p: (typeof people)[number], weekday: number) => {
-    const mine = rows.filter((r) => r.staffId === p.id && r.weekday === weekday);
-    const weeks = Math.max(1, p.rotationWeeks);
-    const nowWeek = rotationWeekIndex(today, { weeks, anchor: p.rotationAnchor ?? mondayOf(today) });
-    return Array.from({ length: weeks }, (_, w) => {
-      const blocks = mine.filter((r) => r.weekIndex === w);
-      const loc = blocks[0]?.locationId ?? p.locationId ?? defaultLoc;
-      return { w, text: blocks.length ? blocks.map(span).join(", ") : null, loc: multi && blocks.length ? shortLoc(loc) : null, now: weeks > 1 && w === nowWeek };
-    });
-  };
+  const md = (d: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
+  const weekLabel = `${md(weekStart)} – ${md(shiftISODate(weekStart, 6))}`;
+  const tree = flattenTree(buildTree(cats));
+  const hoursHref = (staffId: string) => (manage ? `${base}/staff/${staffId}/hours` : null);
 
   // Upcoming time off: consecutive identical dates collapse into one range per person.
   type Group = { staffId: string; from: string; to: string; isOff: boolean; startTime: string | null; endTime: string | null; note: string | null };
@@ -72,8 +80,8 @@ export default async function StaffHoursPage({ params }: { params: Promise<{ slu
     else groups.push({ staffId: o.staffId, from: o.date, to: o.date, isOff: o.isOff, startTime: o.startTime, endTime: o.endTime, note: o.note });
   }
   groups.sort((a, b) => a.from.localeCompare(b.from));
-  const md = (d: string) => new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
-  const range = (g: Group) => (g.from === g.to ? dateLong(g.from) : `${md(g.from)} – ${md(g.to)}`);
+  const mdw = (d: string) => new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
+  const range = (g: Group) => (g.from === g.to ? dateLong(g.from) : `${mdw(g.from)} – ${mdw(g.to)}`);
   const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? "Someone";
 
   return (
@@ -82,84 +90,80 @@ export default async function StaffHoursPage({ params }: { params: Promise<{ slu
         {can(permissions, "appointments.write.any") ? <LinkButton href={`${base}/appointments/block?date=${today}`} size="sm"><Ban className="h-4 w-4" /> Block time</LinkButton> : null}
       </PageHeader>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="min-w-0 space-y-6">
-          <Card>
-            <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Who works when</h2>
-            {people.length === 0 ? (
-              <div className="p-4"><Empty title="No providers yet" body="Add staff and set their weekly hours." action={manage ? { href: `${base}/staff`, label: "Staff" } : undefined} /></div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-stone-500">
-                      <th className="sticky left-0 bg-white px-4 py-2 font-semibold">Provider</th>
-                      {DAYS.map((d) => <th key={d} className="px-3 py-2 font-semibold">{DAY_SHORT[d]}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {people.map((p) => {
-                      const cells = DAYS.map((d) => cell(p, d));
-                      const weeks = Math.max(1, p.rotationWeeks);
-                      const inner = (
-                        <>
-                          <td className="sticky left-0 whitespace-nowrap bg-white px-4 py-2 align-top">
-                            <div className="flex items-center gap-2.5">
-                              {p.photoUrl ? <img src={p.photoUrl} alt="" className="h-7 w-7 rounded-full object-cover" /> : <span className="flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold text-white" style={{ background: p.color }}>{initials(p.name)}</span>}
-                              <div className="min-w-0">
-                                {manage ? <RowLink href={`${base}/staff/${p.id}/hours`} className="font-medium">{p.name}</RowLink> : <span className="font-medium">{p.name}</span>}
-                                {weeks > 1 ? <p className="text-xs text-stone-500">{weeks}-week rotation</p> : null}
-                              </div>
-                            </div>
-                          </td>
-                          {cells.map((c, i) => (
-                            <td key={i} className="whitespace-nowrap px-3 py-2 align-top tabular-nums">
-                              {c.map((line) => (
-                                <p key={line.w} className={line.text ? "text-stone-800" : "text-stone-300"}>
-                                  {weeks > 1 ? <span className={`mr-1 text-[11px] ${line.now ? "font-semibold text-brand-700" : "text-stone-400"}`}>W{line.w + 1}</span> : null}
-                                  {line.text ?? "—"}
-                                  {line.loc ? <span className="ml-1 text-xs text-stone-500">{line.loc}</span> : null}
-                                </p>
-                              ))}
-                            </td>
-                          ))}
-                        </>
-                      );
-                      return manage ? (
-                        <LinkRow key={p.id} href={`${base}/staff/${p.id}/hours`} className={`${rowClass} cursor-pointer`}>{inner}</LinkRow>
-                      ) : (
-                        <tr key={p.id}>{inner}</tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">{manage ? "Click a provider to change their hours, breaks, rotation or sites." : "Hours are set under Staff by a manager."}{multi ? " Site shown next to each day." : ""}</p>
-          </Card>
-
-          <Card>
-            <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Time off in the next 90 days</h2>
-            {groups.length === 0 ? (
-              <div className="p-4"><Empty title="Nothing scheduled" body="Days off and custom hours added under a provider's Time off show here." /></div>
-            ) : (
-              <ul className="divide-y divide-stone-100 text-sm">
-                {groups.map((g) => {
-                  const days = Math.round((Date.parse(g.to) - Date.parse(g.from)) / 86_400_000) + 1;
-                  const what = g.isOff ? (days > 1 ? `${days} days off` : "Day off") : `${time12(hhmm(g.startTime!))}–${time12(hhmm(g.endTime!))}${days > 1 ? ` · ${days} days` : ""}`;
-                  return (
-                    <li key={`${g.staffId}:${g.from}`} className={`${rowClass} flex items-center gap-3 px-4 py-2`}>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium">{manage ? <RowLink href={`${base}/staff/${g.staffId}/time-off`}>{nameOf(g.staffId)}</RowLink> : nameOf(g.staffId)} <span className="font-normal text-stone-500">· {range(g)}</span></p>
-                        <p className="text-xs text-stone-500">{what}{g.note ? ` · ${g.note}` : ""}</p>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Card>
+      <Card className="mb-4 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1">
+            <LinkButton href={`?${qs({ week: shiftISODate(weekStart, -7) })}`} size="sm"><ChevronLeft className="h-4 w-4" /><span className="sr-only">Previous week</span></LinkButton>
+            <LinkButton href={`?${qs({ week: null })}`} size="sm" variant={weekStart === thisMonday ? "ghost" : "secondary"}>This week</LinkButton>
+            <LinkButton href={`?${qs({ week: shiftISODate(weekStart, 7) })}`} size="sm"><ChevronRight className="h-4 w-4" /><span className="sr-only">Next week</span></LinkButton>
+            <span className="ml-2 text-sm font-medium text-stone-800">{weekLabel}</span>
+          </div>
+          {multi ? <LocationFilter locations={locations} current={locationId} query={qs({ location: null })} allLabel="All sites" /> : null}
+          <form method="get" className="flex items-center gap-2">
+            {weekStart !== thisMonday ? <input type="hidden" name="week" value={weekStart} /> : null}
+            {multi ? <input type="hidden" name="location" value={locationId ?? ""} /> : null}
+            <Select name="scope" defaultValue={scope} aria-label="Services to check coverage for" className="h-9 w-auto max-w-[16rem]">
+              <option value="">Coverage for all services</option>
+              {tree.map((c) => (
+                <optgroup key={c.id} label={`${"– ".repeat(Math.max(0, c.depth))}${c.name}`}>
+                  <option value={`c:${c.id}`}>All of {c.name}</option>
+                  {services.filter((s) => s.categoryId === c.id).map((s) => <option key={s.id} value={`s:${s.id}`}>{s.name}</option>)}
+                </optgroup>
+              ))}
+              {services.some((s) => !s.categoryId) ? <optgroup label="Other">{services.filter((s) => !s.categoryId).map((s) => <option key={s.id} value={`s:${s.id}`}>{s.name}</option>)}</optgroup> : null}
+            </Select>
+            <Button type="submit" size="sm" variant="secondary">Check</Button>
+          </form>
         </div>
+      </Card>
+
+      <Card className="mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-2 text-sm">
+          <h2 className="font-semibold text-stone-600">Who covers what{multi ? ` · ${locationId ? shortLoc(locationId) : "all sites"}` : ""}</h2>
+          <p className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
+            <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-emerald-400 align-middle" />{coverage.scope.label === "All services" ? "every service covered" : `${coverage.scope.label} covered`}</span>
+            <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-amber-400 align-middle" />some services uncovered</span>
+            <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-red-400 align-middle" />open, nobody in</span>
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-stone-200 align-middle" />closed</span>
+          </p>
+        </div>
+        {people.length === 0 ? (
+          <div className="p-4"><Empty title="No providers yet" body="Add staff and set their weekly hours." action={manage ? { href: `${base}/staff`, label: "Staff" } : undefined} /></div>
+        ) : (
+          <CoverageGrid coverage={coverage} today={today} hoursHref={hoursHref} />
+        )}
+        <div className="border-t border-stone-200">
+          <h3 className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-500">Needs attention this week</h3>
+          <CoverageGaps coverage={coverage} />
+        </div>
+        <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
+          Rotations, time off and custom hours are already applied. A service nobody is assigned to counts as something everyone can do.
+          {manage ? " Click a provider's block to change their hours." : ""}
+        </p>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <Card className="min-w-0">
+          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Time off in the next 90 days</h2>
+          {groups.length === 0 ? (
+            <div className="p-4"><Empty title="Nothing scheduled" body="Days off and custom hours added under a provider's Time off show here." /></div>
+          ) : (
+            <ul className="divide-y divide-stone-100 text-sm">
+              {groups.map((g) => {
+                const days = Math.round((Date.parse(g.to) - Date.parse(g.from)) / 86_400_000) + 1;
+                const what = g.isOff ? (days > 1 ? `${days} days off` : "Day off") : `${time12(hhmm(g.startTime!))}–${time12(hhmm(g.endTime!))}${days > 1 ? ` · ${days} days` : ""}`;
+                return (
+                  <li key={`${g.staffId}:${g.from}`} className={`${rowClass} flex items-center gap-3 px-4 py-2`}>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium">{manage ? <RowLink href={`${base}/staff/${g.staffId}/time-off`}>{nameOf(g.staffId)}</RowLink> : nameOf(g.staffId)} <span className="font-normal text-stone-500">· {range(g)}</span></p>
+                      <p className="text-xs text-stone-500">{what}{g.note ? ` · ${g.note}` : ""}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
 
         <Card className="min-w-0">
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Business hours</h2>

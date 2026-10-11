@@ -183,6 +183,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       bookings carry an "online" chip with when they came in). "New online booking" automation template (team
       group, on by default) emails the owner and the provider when a client books online; automations gain a
       "Booked online only" filter and templates added later are topped up on the next trigger.
+- [x] 2026-10-11: Staff hours is a coverage grid: time down the side, the week across, opening hours as the white
+      area, every provider on duty as a lane, and a strip per day that says whether the services in scope (all, a
+      category or one service) are covered, partly covered or nobody is in; "Needs attention" lists the gaps in
+      words. Week navigation and a site picker; rotations, time off and custom hours are already applied
+      (`server/coverage.ts`, `staff-hours/coverage-grid.tsx`). The provider × weekday table is gone.
 - [ ] Booking page follow-ups: service photos on the Shop/gift pages; a search box on the service step for large
       menus; show provider photos (staff have no photo field yet) and a short bio on the provider step.
 - [ ] Automations: decide between the fixed recipes (today) and a user-built trigger → delay → message builder
