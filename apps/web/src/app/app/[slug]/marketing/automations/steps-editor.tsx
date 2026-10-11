@@ -1,11 +1,15 @@
 "use client";
-import { useState } from "react";
-import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, Bell, ChevronDown, Clock, Coins, Mail, MessageSquare, Plus, Star, Tag, Trash2 } from "lucide-react";
 import type { WorkflowStep, WorkflowTrigger } from "@angelic/db";
 import { Input, Select, Textarea } from "@/components/ui";
 import { APPOINTMENT_TRIGGERS, newStepId, placeholdersFor, STEP_LABELS } from "@/lib/workflows-logic";
+import { cn } from "@/lib/utils";
 
 type StepType = WorkflowStep["type"];
+
+const ICON: Record<StepType, typeof Clock> = { wait: Clock, sms: MessageSquare, email: Mail, review_request: Star, tag: Tag, points: Coins, notify_staff: Bell };
+const TONE: Record<StepType, string> = { wait: "bg-stone-100 text-stone-600", sms: "bg-sky-50 text-sky-700", email: "bg-violet-50 text-violet-700", review_request: "bg-amber-50 text-amber-700", tag: "bg-emerald-50 text-emerald-700", points: "bg-emerald-50 text-emerald-700", notify_staff: "bg-rose-50 text-rose-700" };
 
 function blank(type: StepType): WorkflowStep {
   const id = newStepId();
@@ -20,88 +24,142 @@ function blank(type: StepType): WorkflowStep {
   }
 }
 
+/** One-line description of a step for the collapsed header. */
+function headline(s: WorkflowStep): string {
+  const hours = (h: number) => (h >= 24 && h % 24 === 0 ? `${h / 24} day${h === 24 ? "" : "s"}` : `${h} h`);
+  switch (s.type) {
+    case "wait": return s.mode === "delay" ? `Wait ${hours(s.hours)}` : s.mode === "before_appointment" ? `${hours(s.hours)} before the appointment` : `${hours(s.hours)} after the appointment ends`;
+    case "sms": return s.body.trim() ? s.body.trim().slice(0, 70) + (s.body.length > 70 ? "…" : "") : "Text message (empty)";
+    case "email": return s.subject.trim() || "Email (no subject yet)";
+    case "review_request": return "One-tap star rating, once per visit";
+    case "tag": return s.tag.trim() ? `Tag “${s.tag.trim()}”` : "Add a tag (empty)";
+    case "points": return `Give ${s.points} points`;
+    case "notify_staff": return s.to === "owner" ? "Email the business address" : "Email the provider of the visit";
+  }
+}
+
 /**
- * Ordered steps for a workflow. Keeps state locally and posts the list as JSON in a
- * hidden `steps` field; the server validates it against the trigger.
+ * Ordered steps for a workflow, shown as a timeline. One step is open for editing at a time;
+ * the rest collapse to a single line. Posts the list as JSON in a hidden `steps` field.
  */
 export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; trigger: WorkflowTrigger }) {
   const [steps, setSteps] = useState<WorkflowStep[]>(initial);
+  const [open, setOpen] = useState<string | null>(initial.length === 1 ? initial[0]!.id : null);
+  const [menu, setMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // The add-step menu closes on Escape or a click anywhere else.
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(false); };
+    const onDoc = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(false); };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDoc);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDoc); };
+  }, [menu]);
   const hasAppt = APPOINTMENT_TRIGGERS.includes(trigger);
   const update = (i: number, patch: Partial<WorkflowStep>) => setSteps((s) => s.map((x, j) => (j === i ? ({ ...x, ...patch } as WorkflowStep) : x)));
   const move = (i: number, dir: -1 | 1) => setSteps((s) => { const j = i + dir; if (j < 0 || j >= s.length) return s; const c = [...s]; [c[i], c[j]] = [c[j]!, c[i]!]; return c; });
   const remove = (i: number) => setSteps((s) => s.filter((_, j) => j !== i));
-  const add = (type: StepType) => setSteps((s) => [...s, blank(type)]);
+  const add = (type: StepType) => { const s = blank(type); setSteps((list) => [...list, s]); setOpen(s.id); setMenu(false); };
   const placeholders = placeholdersFor(trigger);
   const addable: StepType[] = ["wait", "sms", "email", ...(trigger === "appointment_completed" ? (["review_request"] as StepType[]) : []), "tag", "points", "notify_staff"];
+  const Placeholders = () => (
+    <details className="text-xs text-stone-500">
+      <summary className="cursor-pointer select-none hover:text-stone-800">Placeholders you can use</summary>
+      <p className="mt-1 font-mono text-[11px] leading-5">{placeholders.join("  ")}</p>
+    </details>
+  );
   return (
-    <div className="space-y-3">
+    <div>
       <input type="hidden" name="steps" value={JSON.stringify(steps)} />
-      {steps.length === 0 ? <p className="rounded-lg border border-dashed border-stone-300 p-4 text-center text-sm text-stone-500">No steps yet. Add a wait, a message or an action below.</p> : null}
-      <ol className="space-y-3">
-        {steps.map((s, i) => (
-          <li key={s.id} className="rounded-xl border border-stone-200 bg-white p-3">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-stone-900 text-xs font-semibold text-white">{i + 1}</span>
-              <span className="text-sm font-medium">{STEP_LABELS[s.type]}</span>
-              <span className="flex-1" />
-              <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up" className="rounded p-1 text-stone-400 hover:text-stone-800 disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
-              <button type="button" onClick={() => move(i, 1)} disabled={i === steps.length - 1} aria-label="Move down" className="rounded p-1 text-stone-400 hover:text-stone-800 disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
-              <button type="button" onClick={() => remove(i)} aria-label="Remove step" className="rounded p-1 text-stone-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
-            </div>
-            {s.type === "wait" ? (
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <Input type="number" min={0} max={8760} value={s.hours} onChange={(e) => update(i, { hours: Number(e.target.value) })} className="h-9 w-24" aria-label="Hours" />
-                <span>hours</span>
-                <Select value={s.mode} onChange={(e) => update(i, { mode: e.target.value as "delay" })} className="h-9 w-auto" aria-label="Counted from">
-                  <option value="delay">after the previous step</option>
-                  {hasAppt && trigger === "appointment_booked" ? <option value="before_appointment">before the appointment</option> : null}
-                  {hasAppt ? <option value="after_appointment">after the appointment ends</option> : null}
-                </Select>
-                <span className="text-xs text-stone-500">{s.hours >= 24 ? `(${(s.hours / 24).toFixed(s.hours % 24 ? 1 : 0)} days)` : ""}</span>
+      {steps.length === 0 ? <p className="mb-3 rounded-xl border border-dashed border-stone-300 p-5 text-center text-sm text-stone-500">No steps yet. Add a wait, a message or an action.</p> : null}
+      <ol className="relative space-y-2 border-l-2 border-stone-200 pl-6">
+        {steps.map((s, i) => {
+          const I = ICON[s.type];
+          const isOpen = open === s.id;
+          return (
+            <li key={s.id} className="relative">
+              <span className={cn("absolute -left-[31px] top-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white shadow-sm", TONE[s.type])} aria-hidden><I className="h-4 w-4" /></span>
+              <div className={cn("rounded-xl border bg-white transition", isOpen ? "border-brand-300 shadow-sm" : "border-stone-200 hover:border-stone-300")}>
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <button type="button" onClick={() => setOpen(isOpen ? null : s.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left" aria-expanded={isOpen}>
+                    <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-400">{STEP_LABELS[s.type]}</span>
+                    <span className="truncate text-sm text-stone-800">{headline(s)}</span>
+                  </button>
+                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up" className="rounded p-1 text-stone-400 hover:text-stone-800 disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => move(i, 1)} disabled={i === steps.length - 1} aria-label="Move down" className="rounded p-1 text-stone-400 hover:text-stone-800 disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => remove(i)} aria-label="Remove step" className="rounded p-1 text-stone-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setOpen(isOpen ? null : s.id)} aria-label={isOpen ? "Collapse" : "Edit"} className="rounded p-1 text-stone-400 hover:text-stone-800"><ChevronDown className={cn("h-4 w-4 transition", isOpen && "rotate-180")} /></button>
+                </div>
+                {isOpen ? (
+                  <div className="space-y-2 border-t border-stone-100 px-3 py-3">
+                    {s.type === "wait" ? (
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <Input type="number" min={0} max={8760} value={s.hours} onChange={(e) => update(i, { hours: Number(e.target.value) })} className="h-9 w-24" aria-label="Hours" />
+                        <span>hours</span>
+                        <Select value={s.mode} onChange={(e) => update(i, { mode: e.target.value as "delay" })} className="h-9 w-auto" aria-label="Counted from">
+                          <option value="delay">after the previous step</option>
+                          {hasAppt && trigger === "appointment_booked" ? <option value="before_appointment">before the appointment</option> : null}
+                          {hasAppt ? <option value="after_appointment">after the appointment ends</option> : null}
+                        </Select>
+                        {s.hours >= 24 ? <span className="text-xs text-stone-500">= {(s.hours / 24).toFixed(s.hours % 24 ? 1 : 0)} days</span> : null}
+                      </div>
+                    ) : null}
+                    {s.type === "sms" ? (
+                      <>
+                        <Textarea rows={3} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="Your message. Your business name is added at the start." maxLength={1000} />
+                        <div className="flex items-center justify-between gap-3"><Placeholders /><span className="text-[11px] text-stone-400">{s.body.length}/1000</span></div>
+                      </>
+                    ) : null}
+                    {s.type === "email" ? (
+                      <>
+                        <Input value={s.subject} onChange={(e) => update(i, { subject: e.target.value })} placeholder="Subject" maxLength={150} aria-label="Subject" />
+                        <Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="Message. Blank lines make paragraphs; your logo, colours and an unsubscribe link are added." />
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <Placeholders />
+                          <Input value={s.ctaLabel ?? ""} onChange={(e) => update(i, { ctaLabel: e.target.value || null })} placeholder="Button label (optional)" maxLength={40} aria-label="Button label" className="h-8 w-56 text-xs" />
+                        </div>
+                      </>
+                    ) : null}
+                    {s.type === "review_request" ? <p className="text-sm text-stone-600">Email when the client has one, otherwise a text. Wording lives under Settings → Messages; the Google link under Settings → Review requests.</p> : null}
+                    {s.type === "tag" ? <Input value={s.tag} onChange={(e) => update(i, { tag: e.target.value })} placeholder="Tag, e.g. Colour client" maxLength={40} className="max-w-xs" aria-label="Tag" /> : null}
+                    {s.type === "points" ? (
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <Input type="number" min={1} max={100000} value={s.points} onChange={(e) => update(i, { points: Number(e.target.value) })} className="h-9 w-28" aria-label="Points" />
+                        <span>points</span>
+                        <Input value={s.note ?? ""} onChange={(e) => update(i, { note: e.target.value || null })} placeholder="Note on the client's points history (optional)" maxLength={120} className="h-9 max-w-xs" aria-label="Note" />
+                      </div>
+                    ) : null}
+                    {s.type === "notify_staff" ? (
+                      <>
+                        <Select value={s.to} onChange={(e) => update(i, { to: e.target.value as "owner" })} className="h-9 max-w-xs" aria-label="Who">
+                          <option value="owner">Email the business address</option>
+                          {hasAppt ? <option value="provider">Email the provider of the visit</option> : null}
+                        </Select>
+                        <Textarea rows={3} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="What the team should know" />
+                        <Placeholders />
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
+            </li>
+          );
+        })}
+        <li className="relative">
+          <span className="absolute -left-[31px] top-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-stone-900 text-white shadow-sm" aria-hidden><Plus className="h-4 w-4" /></span>
+          <div className="relative inline-block" ref={menuRef}>
+            <button type="button" onClick={() => setMenu((m) => !m)} className="inline-flex h-10 items-center gap-1 rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium hover:bg-stone-50" aria-expanded={menu} aria-haspopup="menu">Add a step <ChevronDown className="h-4 w-4 text-stone-400" /></button>
+            {menu ? (
+              <ul role="menu" className="absolute left-0 z-20 mt-1 w-60 overflow-hidden rounded-xl border border-stone-200 bg-white py-1 shadow-lg">
+                {addable.map((t) => { const I = ICON[t]; return (
+                  <li key={t} role="none"><button type="button" role="menuitem" onClick={() => add(t)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-stone-50"><span className={cn("flex h-6 w-6 items-center justify-center rounded-full", TONE[t])}><I className="h-3.5 w-3.5" /></span>{STEP_LABELS[t]}</button></li>
+                ); })}
+              </ul>
             ) : null}
-            {s.type === "sms" ? (
-              <div>
-                <Textarea rows={3} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="{business}: …" maxLength={1000} />
-                <p className="mt-1 text-xs text-stone-500">Starts with your business name automatically. Marketing texts end with “Reply STOP to opt out”. {s.body.length}/1000.</p>
-              </div>
-            ) : null}
-            {s.type === "email" ? (
-              <div className="space-y-2">
-                <Input value={s.subject} onChange={(e) => update(i, { subject: e.target.value })} placeholder="Subject" maxLength={150} aria-label="Subject" />
-                <Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="Message (blank lines make paragraphs)" />
-                <Input value={s.ctaLabel ?? ""} onChange={(e) => update(i, { ctaLabel: e.target.value || null })} placeholder="Button label (default: Book now, or Manage appointment)" maxLength={40} aria-label="Button label" className="max-w-sm" />
-                <p className="text-xs text-stone-500">Sent with your logo and colours and an unsubscribe link.</p>
-              </div>
-            ) : null}
-            {s.type === "review_request" ? <p className="text-sm text-stone-600">Sends the one-tap star rating (email when the client has one, otherwise a text), once per visit. Wording: Settings → Messages. Google link: Settings → Review requests.</p> : null}
-            {s.type === "tag" ? <Input value={s.tag} onChange={(e) => update(i, { tag: e.target.value })} placeholder="Tag, e.g. Colour client" maxLength={40} className="max-w-xs" aria-label="Tag" /> : null}
-            {s.type === "points" ? (
-              <div className="flex flex-wrap items-center gap-2 text-sm">
-                <Input type="number" min={1} max={100000} value={s.points} onChange={(e) => update(i, { points: Number(e.target.value) })} className="h-9 w-28" aria-label="Points" />
-                <span>points</span>
-                <Input value={s.note ?? ""} onChange={(e) => update(i, { note: e.target.value || null })} placeholder="Shown on the client's points history" maxLength={120} className="h-9 max-w-xs" aria-label="Note" />
-              </div>
-            ) : null}
-            {s.type === "notify_staff" ? (
-              <div className="space-y-2">
-                <Select value={s.to} onChange={(e) => update(i, { to: e.target.value as "owner" })} className="h-9 max-w-xs" aria-label="Who">
-                  <option value="owner">Email the business address</option>
-                  {hasAppt ? <option value="provider">Email the provider of the visit</option> : null}
-                </Select>
-                <Textarea rows={3} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="What the team should know" />
-              </div>
-            ) : null}
-          </li>
-        ))}
+          </div>
+        </li>
       </ol>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-stone-500">Add step</span>
-        {addable.map((t) => (
-          <button key={t} type="button" onClick={() => add(t)} className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-xs hover:bg-stone-50"><Plus className="h-3 w-3" /> {STEP_LABELS[t]}</button>
-        ))}
-      </div>
-      <p className="text-xs text-stone-500">Placeholders for messages: {placeholders.join(" ")}</p>
     </div>
   );
 }

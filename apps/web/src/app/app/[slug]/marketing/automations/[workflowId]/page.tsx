@@ -28,11 +28,11 @@ export default async function EditWorkflowPage({ params }: { params: Promise<{ s
           <form action={deleteWorkflowAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="workflowId" value={w.id} /><ConfirmSubmit title={`Delete “${w.name}”?`} body="Runs in progress are dropped. This can't be undone." confirmLabel="Delete" variant="ghost" className="text-stone-500 hover:text-red-600">Delete</ConfirmSubmit></form>
         ) : null}
       </PageHeader>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <Card className="p-5"><WorkflowForm slug={slug} workflow={w} trigger={w.trigger} pickers={pickers} /></Card>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <Card className="overflow-hidden p-5"><WorkflowForm slug={slug} workflow={w} trigger={w.trigger} pickers={pickers} /></Card>
         <Card className="h-fit p-4 text-sm">
           <h2 className="mb-1 font-medium">Recent runs</h2>
-          <p className="mb-3 text-xs text-stone-500">{triggerMeta(w.trigger).label}{w.templateKey ? " · built-in template" : " · custom"}. One run per client per occasion; each line says what happened at every step.</p>
+          <p className="mb-3 text-xs text-stone-500">{triggerMeta(w.trigger).label}{w.templateKey ? " · built-in" : " · custom"}. One run per client per occasion.</p>
           {runs.length === 0 ? <p className="text-xs text-stone-500">Nothing has started this workflow yet.</p> : (
             <ul className="space-y-3">
               {runs.map(({ run, firstName, lastName }) => (
