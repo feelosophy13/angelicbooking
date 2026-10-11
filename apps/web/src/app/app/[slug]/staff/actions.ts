@@ -5,6 +5,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { headers } from "next/headers";
 import { schema, withTenant } from "@angelic/db";
+import { instantToISODate, mondayOf } from "@angelic/core";
+import { shiftISODate } from "@/lib/utils";
 import { auth } from "@/lib/auth";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
@@ -125,34 +127,45 @@ export async function saveSchedule(formData: FormData) {
   const slug = String(formData.get("slug"));
   const staffId = String(formData.get("staffId"));
   const ctx = await requireAction(slug, "staff.manage");
-  // Any number of blocks per weekday (lunch break, split shift): start_{wd}_{i} / end_{wd}_{i}, plus one loc_{wd}.
-  const days: { weekday: number; blocks: { start: string; end: string }[]; locationId: string | null }[] = [];
-  for (let weekday = 0; weekday < 7; weekday++) {
-    const blocks: { start: string; end: string }[] = [];
-    if (formData.get(`on_${weekday}`) === "on") {
-      for (let i = 0; i < 12 && formData.has(`start_${weekday}_${i}`); i++) {
-        const parsed = blockSchema.safeParse({ start: String(formData.get(`start_${weekday}_${i}`) ?? ""), end: String(formData.get(`end_${weekday}_${i}`) ?? "") });
-        if (!parsed.success) { await setFlash(`${DAY_NAMES[weekday]}: enter a start and end time for every block.`, "error"); return; }
-        blocks.push(parsed.data);
+  // Hours repeat every `rotationWeeks` weeks (1–4). Per week w and weekday: on_{w}_{wd}, loc_{w}_{wd}, and any
+  // number of blocks start_{w}_{wd}_{i} / end_{w}_{wd}_{i} (lunch break, split shift).
+  const rotationWeeks = Math.min(4, Math.max(1, Number(formData.get("rotationWeeks")) || 1));
+  const thisWeekIs = Math.min(rotationWeeks - 1, Math.max(0, Number(formData.get("thisWeekIs")) || 0));
+  const days: { weekIndex: number; weekday: number; blocks: { start: string; end: string }[]; locationId: string | null }[] = [];
+  for (let w = 0; w < rotationWeeks; w++) {
+    for (let weekday = 0; weekday < 7; weekday++) {
+      const label = rotationWeeks > 1 ? `Week ${w + 1} ${DAY_NAMES[weekday]}` : DAY_NAMES[weekday];
+      const blocks: { start: string; end: string }[] = [];
+      if (formData.get(`on_${w}_${weekday}`) === "on") {
+        for (let i = 0; i < 12 && formData.has(`start_${w}_${weekday}_${i}`); i++) {
+          const parsed = blockSchema.safeParse({ start: String(formData.get(`start_${w}_${weekday}_${i}`) ?? ""), end: String(formData.get(`end_${w}_${weekday}_${i}`) ?? "") });
+          if (!parsed.success) { await setFlash(`${label}: enter a start and end time for every block.`, "error"); return; }
+          blocks.push(parsed.data);
+        }
+        if (!blocks.length) { await setFlash(`${label}: add at least one block or untick the day.`, "error"); return; }
       }
-      if (!blocks.length) { await setFlash(`${DAY_NAMES[weekday]}: add at least one block or untick the day.`, "error"); return; }
+      blocks.sort((a, b) => a.start.localeCompare(b.start));
+      for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i]!;
+        if (b.start >= b.end) { await setFlash(`${label}: start time must be before end time.`, "error"); return; }
+        if (i > 0 && b.start < blocks[i - 1]!.end) { await setFlash(`${label}: blocks overlap.`, "error"); return; }
+      }
+      days.push({ weekIndex: w, weekday, blocks, locationId: (formData.get(`loc_${w}_${weekday}`) as string | null) || null });
     }
-    blocks.sort((a, b) => a.start.localeCompare(b.start));
-    for (let i = 0; i < blocks.length; i++) {
-      const b = blocks[i]!;
-      if (b.start >= b.end) { await setFlash(`${DAY_NAMES[weekday]}: start time must be before end time.`, "error"); return; }
-      if (i > 0 && b.start < blocks[i - 1]!.end) { await setFlash(`${DAY_NAMES[weekday]}: blocks overlap.`, "error"); return; }
-    }
-    days.push({ weekday, blocks, locationId: (formData.get(`loc_${weekday}`) as string | null) || null });
   }
+  // The anchor is the Monday of a "Week 1" week: this week's Monday, moved back by however many weeks into the
+  // cycle the user says this week is.
+  const monday = mondayOf(instantToISODate(new Date(), ctx.business.timezone));
+  const rotationAnchor = rotationWeeks > 1 ? shiftISODate(monday, -7 * thisWeekIs) : null;
 
   await withTenant(ctx.business.id, async (tx) => {
     // Only locations of this business are accepted; a single-location business stores null (= the only one).
     const locs = await tx.select({ id: schema.locations.id }).from(schema.locations);
     const locId = (id: string | null) => (locs.length > 1 && id && locs.some((l) => l.id === id) ? id : null);
     await tx.delete(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, staffId));
-    const values = days.flatMap((d) => d.blocks.map((b) => ({ businessId: ctx.business.id, staffId, weekday: d.weekday, startTime: b.start, endTime: b.end, locationId: locId(d.locationId) })));
+    const values = days.flatMap((d) => d.blocks.map((b) => ({ businessId: ctx.business.id, staffId, weekIndex: d.weekIndex, weekday: d.weekday, startTime: b.start, endTime: b.end, locationId: locId(d.locationId) })));
     if (values.length) await tx.insert(schema.staffSchedules).values(values);
+    await tx.update(schema.staff).set({ rotationWeeks, rotationAnchor }).where(eq(schema.staff.id, staffId));
   });
   await setFlash("Hours saved");
   revalidatePath(`/app/${slug}/staff/${staffId}/hours`);

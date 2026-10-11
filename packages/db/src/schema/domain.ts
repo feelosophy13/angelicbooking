@@ -173,6 +173,10 @@ export const staff = pgTable(
     photoUrl: text("photo_url"),
     bio: text("bio"),
     locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }), // primary location
+    // Rotating schedules: hours repeat every N weeks (1 = the same every week). `rotationAnchor` is the Monday of a
+    // week that is "Week 1"; staff_schedules.week_index says which week of the cycle a row belongs to.
+    rotationWeeks: smallint("rotation_weeks").notNull().default(1),
+    rotationAnchor: date("rotation_anchor"),
     bookableOnline: boolean("bookable_online").notNull().default(true),
     // Has a calendar column and can be booked by staff. Off for receptionists, managers
     // and owner logins who don't take clients themselves.
@@ -221,10 +225,13 @@ export const staffSchedules = pgTable(
     weekday: smallint("weekday").notNull(),
     startTime: time("start_time").notNull(),
     endTime: time("end_time").notNull(),
+    // 0-based week of the staff member's rotation (always 0 when the hours repeat every week).
+    weekIndex: smallint("week_index").notNull().default(0),
   },
   (t) => [
     index("staff_schedules_staff_idx").on(t.businessId, t.staffId, t.weekday),
     check("staff_schedules_weekday_ck", sql`${t.weekday} between 0 and 6`),
+    check("staff_schedules_week_ck", sql`${t.weekIndex} between 0 and 3`),
     check("staff_schedules_range_ck", sql`${t.startTime} < ${t.endTime}`),
   ],
 );

@@ -31,7 +31,7 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
     const days = locIndex.byDay.get(staffId);
     if (!days?.size) return locationName(primary) ?? "any location";
     const byLoc = new Map<string, number[]>();
-    for (const [wd, loc] of [...days.entries()].sort((a, b) => ((a[0] + 6) % 7) - ((b[0] + 6) % 7))) if (loc) byLoc.set(loc, [...(byLoc.get(loc) ?? []), wd]);
+    for (const [wd, locs] of [...days.entries()].sort((a, b) => ((a[0] + 6) % 7) - ((b[0] + 6) % 7))) for (const loc of locs) if (loc) byLoc.set(loc, [...(byLoc.get(loc) ?? []), wd]);
     const span = (wds: number[]) => {
       const out: string[] = [];
       for (let i = 0; i < wds.length; ) {

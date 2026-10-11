@@ -49,7 +49,7 @@ describe("effectiveLocationId / worksAt", () => {
   });
   it("answers per weekday, and by 'any day' for staff without hours", () => {
     const idx: StaffLocationIndex = {
-      byDay: new Map([["s1", new Map([[1, "sterling"], [2, "fairfax"]])]]),
+      byDay: new Map([["s1", new Map([[1, new Set(["sterling"])], [2, new Set(["fairfax"])], [5, new Set(["sterling", "fairfax"])]])]]),
       any: new Map([["s1", new Set(["sterling", "fairfax"])], ["s2", new Set(["sterling"])]]),
       noHours: new Set(["s2"]),
       defaultId: "sterling",
@@ -61,6 +61,9 @@ describe("effectiveLocationId / worksAt", () => {
     expect(worksAt(idx, "s2", 4, "sterling")).toBe(true);
     expect(worksAt(idx, "s2", 4, "fairfax")).toBe(false);
     expect(worksAt(idx, "s1", 3, null)).toBe(true);
+    // A rotation can put the same weekday at different sites on different weeks: both count.
+    expect(worksAt(idx, "s1", 5, "sterling")).toBe(true);
+    expect(worksAt(idx, "s1", 5, "fairfax")).toBe(true);
   });
 });
 

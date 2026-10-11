@@ -27,7 +27,7 @@ export default async function EditLocationPage({ params }: { params: Promise<{ s
   const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const here = people
     .map((p) => {
-      const days = [...(idx.byDay.get(p.id)?.entries() ?? [])].filter(([, loc]) => loc === l.id).map(([wd]) => wd).sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
+      const days = [...(idx.byDay.get(p.id)?.entries() ?? [])].filter(([, locs]) => locs.has(l.id)).map(([wd]) => wd).sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7));
       // Someone with no hours yet counts at their primary site; owners/front desk without a calendar column are left out.
       const primaryOnly = !idx.byDay.has(p.id) && p.takesAppointments && (p.locationId === l.id || (!p.locationId && l.isDefault));
       return { ...p, days, primaryOnly };

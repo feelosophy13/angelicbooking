@@ -139,8 +139,8 @@ export function effectiveLocationId(row: { locationId: string | null }, staffPri
 }
 
 export interface StaffLocationIndex {
-  /** staffId → weekday → locationId (effective). */
-  byDay: Map<string, Map<number, string | null>>;
+  /** staffId → weekday → effective locations (more than one only when rotation weeks differ). */
+  byDay: Map<string, Map<number, Set<string | null>>>;
   /** staffId → set of locations they work at on any day. */
   any: Map<string, Set<string>>;
   /** Staff with no weekly hours at all (new hires). */
@@ -159,12 +159,14 @@ export async function staffLocationIndex(tx: TenantDb, staffIds?: string[]): Pro
     defaultLocation(tx),
   ]);
   const primary = new Map(people.map((p) => [p.id, p.locationId]));
-  const byDay = new Map<string, Map<number, string | null>>();
+  const byDay = new Map<string, Map<number, Set<string | null>>>();
   const any = new Map<string, Set<string>>();
   for (const r of rows) {
     const loc = effectiveLocationId(r, primary.get(r.staffId), def?.id ?? null);
     if (!byDay.has(r.staffId)) byDay.set(r.staffId, new Map());
-    byDay.get(r.staffId)!.set(r.weekday, loc);
+    const day = byDay.get(r.staffId)!;
+    if (!day.has(r.weekday)) day.set(r.weekday, new Set());
+    day.get(r.weekday)!.add(loc);
     if (loc) {
       if (!any.has(r.staffId)) any.set(r.staffId, new Set());
       any.get(r.staffId)!.add(loc);
@@ -184,7 +186,7 @@ export function worksAt(index: StaffLocationIndex, staffId: string, weekday: num
   if (!locationId) return true;
   const day = index.byDay.get(staffId);
   if (!day) return index.any.get(staffId)?.has(locationId) ?? false;
-  return day.get(weekday) === locationId;
+  return day.get(weekday)?.has(locationId) ?? false;
 }
 
 // ---------------------------------------------------------------------------

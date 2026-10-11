@@ -1,4 +1,4 @@
-import { addMinutes, zonedToInstant, type ISODate, type LocalTime } from "./time";
+import { addMinutes, parseISODate, zonedToInstant, type ISODate, type LocalTime } from "./time";
 
 export interface Interval {
   start: Date;
@@ -26,6 +26,39 @@ export interface WeeklyScheduleRow {
   weekday: number; // 0..6
   start: LocalTime;
   end: LocalTime;
+  /** Week of a rotating schedule this row belongs to (0-based). Missing = 0. */
+  weekIndex?: number;
+}
+
+/** A schedule that repeats every `weeks` weeks. `anchor` is any date inside a "week 0" week (weeks start Monday). */
+export interface Rotation {
+  weeks: number;
+  anchor: ISODate | null;
+}
+
+/** ISO date of the Monday that starts the week containing `date`. */
+export function mondayOf(date: ISODate): ISODate {
+  const { y, mo, d } = parseISODate(date);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7));
+  return dt.toISOString().slice(0, 10);
+}
+
+/** Which week of the rotation (0-based) `date` falls in. Always 0 for a schedule that repeats weekly. */
+export function rotationWeekIndex(date: ISODate, rotation: Rotation | null | undefined): number {
+  const weeks = rotation?.weeks ?? 1;
+  if (weeks <= 1) return 0;
+  const anchor = mondayOf(rotation?.anchor ?? "1970-01-05");
+  const diffDays = Math.round((Date.parse(mondayOf(date) + "T00:00:00Z") - Date.parse(anchor + "T00:00:00Z")) / 86_400_000);
+  const w = Math.floor(diffDays / 7) % weeks;
+  return (w + weeks) % weeks;
+}
+
+/** The weekly rows that apply on `date`: the whole template for a weekly schedule, else that week's rows. */
+export function rowsForDate<T extends { weekIndex?: number | null }>(date: ISODate, rows: T[], rotation: Rotation | null | undefined): T[] {
+  if (!rotation || rotation.weeks <= 1) return rows;
+  const w = rotationWeekIndex(date, rotation);
+  return rows.filter((r) => (r.weekIndex ?? 0) === w);
 }
 
 export interface ScheduleOverride {

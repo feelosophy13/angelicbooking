@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
-import { buildBookingSegments, instantToISODate, weekdayOf } from "@angelic/core";
+import { buildBookingSegments, instantToISODate, rowsForDate, weekdayOf } from "@angelic/core";
 import { timingFor, withinWorkingBlocks, workingBlocksFor } from "./availability";
 import { refreshHomeLocation, serviceOfferedAt } from "./locations";
 
@@ -96,12 +96,13 @@ export interface BookAppointmentInput {
 export async function resolveAppointmentLocation(tx: Tx, staffId: string, startAt: Date, timeZone: string, explicit?: string | null): Promise<string | null> {
   if (explicit) return explicit;
   const [rows, person, def] = await Promise.all([
-    tx.select({ weekday: schema.staffSchedules.weekday, locationId: schema.staffSchedules.locationId }).from(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, staffId)),
-    tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true } }),
+    tx.select({ weekday: schema.staffSchedules.weekday, locationId: schema.staffSchedules.locationId, weekIndex: schema.staffSchedules.weekIndex }).from(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, staffId)),
+    tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true, rotationWeeks: true, rotationAnchor: true } }),
     tx.query.locations.findFirst({ where: eq(schema.locations.isDefault, true), columns: { id: true } }),
   ]);
-  const weekday = weekdayOf(instantToISODate(startAt, timeZone));
-  const day = rows.find((r) => r.weekday === weekday);
+  const date = instantToISODate(startAt, timeZone);
+  const weekday = weekdayOf(date);
+  const day = rowsForDate(date, rows, person ? { weeks: person.rotationWeeks, anchor: person.rotationAnchor } : null).find((r) => r.weekday === weekday);
   return day?.locationId ?? person?.locationId ?? def?.id ?? null;
 }
 

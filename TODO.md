@@ -167,6 +167,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] 2026-10-11: staff weekly hours take any number of blocks per day (press + for a lunch break or split
       shift; blocks must not overlap); time off / custom hours take a first and last day and write one override per
       date, listed as one range with a single Remove.
+- [x] 2026-10-11 (migration 0055): rotating schedules. Hours repeat every 1–4 weeks (`staff.rotation_weeks`,
+      `rotation_anchor` = Monday of a Week 1 week; `staff_schedules.week_index`). The hours page shows Week tabs,
+      "This week is Week N" and Copy Week 1; availability, calendar shading, booking location and the per-weekday
+      location index all pick the active week (`rowsForDate` / `rotationWeekIndex` in core).
 - [ ] Booking page follow-ups: service photos on the Shop/gift pages; a search box on the service step for large
       menus; show provider photos (staff have no photo field yet) and a short bio on the provider step.
 - [ ] Automations: decide between the fixed recipes (today) and a user-built trigger → delay → message builder

@@ -4,6 +4,7 @@ import {
   clampToOpenHours,
   computeAvailableSlots,
   resolveWorkingBlocks,
+  rowsForDate,
   weekdayOf,
   zonedToInstant,
   type Interval,
@@ -61,7 +62,7 @@ export async function getStaffAvailabilityForDates(opts: AvailabilityOpts & { da
   return withTenant(businessId, async (tx) => {
     const [weekly, overrides, items, sessions, person, locations] = await Promise.all([
       tx
-        .select({ weekday: schema.staffSchedules.weekday, start: schema.staffSchedules.startTime, end: schema.staffSchedules.endTime, locationId: schema.staffSchedules.locationId })
+        .select({ weekday: schema.staffSchedules.weekday, start: schema.staffSchedules.startTime, end: schema.staffSchedules.endTime, locationId: schema.staffSchedules.locationId, weekIndex: schema.staffSchedules.weekIndex })
         .from(schema.staffSchedules)
         .where(eq(schema.staffSchedules.staffId, staffId)),
       tx
@@ -84,9 +85,10 @@ export async function getStaffAvailabilityForDates(opts: AvailabilityOpts & { da
         .select({ start: schema.classSessions.startAt, end: schema.classSessions.endAt })
         .from(schema.classSessions)
         .where(and(eq(schema.classSessions.staffId, staffId), eq(schema.classSessions.status, "scheduled"), gte(schema.classSessions.startAt, windowStart), lt(schema.classSessions.startAt, windowEnd))),
-      tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true } }),
+      tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true, rotationWeeks: true, rotationAnchor: true } }),
       tx.select({ id: schema.locations.id, isDefault: schema.locations.isDefault, hours: schema.locations.hours, timezone: schema.locations.timezone }).from(schema.locations),
     ]);
+    const rotation = person ? { weeks: person.rotationWeeks, anchor: person.rotationAnchor } : null;
     const fallbackLoc = person?.locationId ?? locations.find((l) => l.isDefault)?.id ?? locations[0]?.id ?? null;
     const locOf = (r: { locationId: string | null }) => r.locationId ?? fallbackLoc;
     const openAt = (locId: string | null, weekday: number) => {
@@ -101,7 +103,7 @@ export async function getStaffAvailabilityForDates(opts: AvailabilityOpts & { da
       const weekday = weekdayOf(date);
       const override = overrides.find((o) => o.date === date);
       const ov = override ? { date: override.date, isOff: override.isOff, start: override.startTime, end: override.endTime } : null;
-      const todays = weekly.filter((r) => r.weekday === weekday);
+      const todays = rowsForDate(date, weekly, rotation).filter((r) => r.weekday === weekday);
       // Working blocks per location (each with its own opening hours and clock).
       const blocksByLoc = new Map<string | null, ReturnType<typeof resolveWorkingBlocks>>();
       if (ov) {
@@ -141,14 +143,16 @@ export async function workingBlocksFor(opts: { businessId: string; timeZone: str
   if (!dates.length || !staffIds.length) return out;
   return withTenant(opts.businessId, async (tx) => {
     const [weekly, overrides, people, locations] = await Promise.all([
-      tx.select({ staffId: schema.staffSchedules.staffId, weekday: schema.staffSchedules.weekday, start: schema.staffSchedules.startTime, end: schema.staffSchedules.endTime, locationId: schema.staffSchedules.locationId }).from(schema.staffSchedules).where(inArray(schema.staffSchedules.staffId, staffIds)),
+      tx.select({ staffId: schema.staffSchedules.staffId, weekday: schema.staffSchedules.weekday, start: schema.staffSchedules.startTime, end: schema.staffSchedules.endTime, locationId: schema.staffSchedules.locationId, weekIndex: schema.staffSchedules.weekIndex }).from(schema.staffSchedules).where(inArray(schema.staffSchedules.staffId, staffIds)),
       tx.select().from(schema.staffScheduleOverrides).where(and(inArray(schema.staffScheduleOverrides.staffId, staffIds), inArray(schema.staffScheduleOverrides.date, dates))),
-      tx.select({ id: schema.staff.id, locationId: schema.staff.locationId }).from(schema.staff).where(inArray(schema.staff.id, staffIds)),
+      tx.select({ id: schema.staff.id, locationId: schema.staff.locationId, rotationWeeks: schema.staff.rotationWeeks, rotationAnchor: schema.staff.rotationAnchor }).from(schema.staff).where(inArray(schema.staff.id, staffIds)),
       tx.select({ id: schema.locations.id, isDefault: schema.locations.isDefault, hours: schema.locations.hours, timezone: schema.locations.timezone }).from(schema.locations),
     ]);
     const defaultLoc = locations.find((l) => l.isDefault)?.id ?? locations[0]?.id ?? null;
     for (const staffId of staffIds) {
-      const fallbackLoc = people.find((p) => p.id === staffId)?.locationId ?? defaultLoc;
+      const person = people.find((p) => p.id === staffId);
+      const rotation = person ? { weeks: person.rotationWeeks, anchor: person.rotationAnchor } : null;
+      const fallbackLoc = person?.locationId ?? defaultLoc;
       const locOf = (r: { locationId: string | null }) => r.locationId ?? fallbackLoc;
       const openAt = (locId: string | null, weekday: number) => {
         const l = locations.find((x) => x.id === locId);
@@ -160,7 +164,7 @@ export async function workingBlocksFor(opts: { businessId: string; timeZone: str
         const weekday = weekdayOf(date);
         const override = overrides.find((o) => o.staffId === staffId && o.date === date);
         const ov = override ? { date: override.date, isOff: override.isOff, start: override.startTime, end: override.endTime } : null;
-        const todays = mine.filter((r) => r.weekday === weekday);
+        const todays = rowsForDate(date, mine, rotation).filter((r) => r.weekday === weekday);
         const blocks: WorkingInterval[] = [];
         const push = (loc: string | null, local: { start: string; end: string }[]) => {
           for (const b of local) blocks.push({ start: zonedToInstant(date, b.start, tzAt(loc)), end: b.end === "24:00" ? zonedToInstant(date, "23:59", tzAt(loc)) : zonedToInstant(date, b.end, tzAt(loc)) });

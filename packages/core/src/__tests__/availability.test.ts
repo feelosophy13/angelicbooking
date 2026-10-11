@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBookingSegments, computeAvailableSlots, resolveWorkingBlocks } from "../availability";
+import { buildBookingSegments, computeAvailableSlots, resolveWorkingBlocks, rotationWeekIndex, rowsForDate } from "../availability";
 import { zonedToInstant, instantToISODate, weekdayOf } from "../time";
 
 const NY = "America/New_York";
@@ -50,6 +50,32 @@ describe("resolveWorkingBlocks", () => {
     expect(
       resolveWorkingBlocks("2026-10-06", 2, weekly, { date: "2026-10-06", isOff: false, start: "11:00", end: "15:00" }),
     ).toEqual([{ start: "11:00", end: "15:00" }]);
+  });
+});
+
+describe("rotations", () => {
+  it("counts weeks from the anchor's Monday, wrapping around the cycle", () => {
+    const rot = { weeks: 2, anchor: "2026-10-14" }; // a Wednesday; its week (Mon 12 Oct) is week 0
+    expect(rotationWeekIndex("2026-10-12", rot)).toBe(0);
+    expect(rotationWeekIndex("2026-10-18", rot)).toBe(0); // Sunday still belongs to the week of Mon 12 Oct
+    expect(rotationWeekIndex("2026-10-19", rot)).toBe(1);
+    expect(rotationWeekIndex("2026-10-26", rot)).toBe(0);
+    expect(rotationWeekIndex("2026-10-05", rot)).toBe(1); // before the anchor
+    expect(rotationWeekIndex("2026-09-28", rot)).toBe(0);
+  });
+  it("is always week 0 for a weekly schedule", () => {
+    expect(rotationWeekIndex("2026-10-19", { weeks: 1, anchor: "2026-10-12" })).toBe(0);
+    expect(rotationWeekIndex("2026-10-19", null)).toBe(0);
+  });
+  it("picks the rows of the active week", () => {
+    const rows = [
+      { weekday: 6, start: "09:00", end: "15:00", weekIndex: 0 },
+      { weekday: 2, start: "09:00", end: "17:00", weekIndex: 1 },
+    ];
+    const rot = { weeks: 2, anchor: "2026-10-12" };
+    expect(rowsForDate("2026-10-17", rows, rot)).toEqual([rows[0]]);
+    expect(rowsForDate("2026-10-20", rows, rot)).toEqual([rows[1]]);
+    expect(rowsForDate("2026-10-20", rows, { weeks: 1, anchor: null })).toEqual(rows);
   });
 });
 
