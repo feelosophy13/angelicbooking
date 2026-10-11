@@ -33,8 +33,9 @@ wrong: fix the page.
   `<tr>`, `RowLink` for the primary text, and `rowControl` on any button, form or secondary link inside the row
   (all from `components/row.tsx`, which is server-safe). Table rows use `LinkRow` from `components/table-row.tsx`
   instead, with a plain `Link` on the name. The row tints on hover.
-- Row layout: optional thumbnail or avatar, then name (medium) over one line of grey meta, then right-aligned
-  value, then quiet actions. Actions are ghost buttons; the destructive one is last and uses `ConfirmSubmit`.
+- Row layout: optional thumbnail or avatar, then name (medium) over one line of grey meta in a `min-w-0 flex-1`
+  block, then the value in a fixed right-aligned column (`w-28 shrink-0 text-right tabular-nums`) so prices line up
+  down the list, then quiet actions. Actions are ghost buttons; the destructive one is last and uses `ConfirmSubmit`.
 - Keep one per-row action visible at most two; anything else goes on the detail page.
 - Long lists get search, filters and paging (see Clients). Caps like "newest 50" are bugs.
 - Empty states use `Empty` with a one-line title, a short why/how line, and the primary action when there is one.

@@ -57,7 +57,7 @@ export function ServiceRows({ slug, title, titleHref, services, currency, manage
                 {onlyAt(s.id)}
               </p>
             </div>
-            <span className="font-medium">{formatMoney(s.priceCents, currency)}</span>
+            <span className="w-28 shrink-0 text-right font-medium tabular-nums">{formatMoney(s.priceCents, currency)}</span>
             {manage ? (
               <form action={toggleServiceActive} className={rowControl}>
                 <input type="hidden" name="slug" value={slug} />
