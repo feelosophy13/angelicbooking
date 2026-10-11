@@ -3,7 +3,7 @@
  * deltas). Clients earn on paid sales, redeem at checkout as a payment line,
  * and referrers are credited once their friend's first visit is paid.
  */
-import { and, desc, eq, gte, inArray, isNotNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
@@ -151,14 +151,15 @@ export interface ReferralRow {
   rewardedAt: Date | null;
 }
 
-/** Every referral whose friend joined in the period (for Reports), newest first. */
+/** Every referral whose friend joined, or had their first paid visit, in the period (for Reports), newest first. */
 export async function referralsInPeriod(tx: TenantDb, from: Date, to: Date): Promise<ReferralRow[]> {
   const referred = schema.clients;
+  const inRange = (col: typeof referred.createdAt | typeof referred.referralRewardedAt) => and(gte(col, from), lt(col, to));
   const rows = await tx
     .select({ referrerId: referred.referredByClientId, referredId: referred.id, firstName: referred.firstName, lastName: referred.lastName, joinedAt: referred.createdAt, rewardedAt: referred.referralRewardedAt })
     .from(referred)
-    .where(and(isNotNull(referred.referredByClientId), gte(referred.createdAt, from), lt(referred.createdAt, to)))
-    .orderBy(desc(referred.createdAt));
+    .where(and(isNotNull(referred.referredByClientId), or(inRange(referred.createdAt), inRange(referred.referralRewardedAt))))
+    .orderBy(desc(sql`coalesce(${referred.referralRewardedAt}, ${referred.createdAt})`));
   const referrerIds = [...new Set(rows.map((r) => r.referrerId!).filter(Boolean))];
   const referrers = referrerIds.length ? await tx.select({ id: schema.clients.id, firstName: schema.clients.firstName, lastName: schema.clients.lastName }).from(schema.clients).where(inArray(schema.clients.id, referrerIds)) : [];
   const nameOf = (id: string) => { const c = referrers.find((x) => x.id === id); return c ? `${c.firstName} ${c.lastName ?? ""}`.trim() : "Former client"; };

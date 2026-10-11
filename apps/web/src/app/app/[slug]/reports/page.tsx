@@ -112,6 +112,7 @@ export default async function ReportsPage({
   };
   const periodLabel = days === 1 ? "previous day" : `previous ${days} days`;
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: tz });
+  const fmtDay = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: tz });
 
   return (
     <>
@@ -301,7 +302,7 @@ export default async function ReportsPage({
         {business.loyaltyEnabled ? (
           <Card>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Referrals</h2>
-            {referrals.length === 0 ? <div className="p-4"><Empty title="No new clients came through a referral in this range" /></div> : (
+            {referrals.length === 0 ? <div className="p-4"><Empty title="No referrals joined or had a first visit in this range" /></div> : (
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Referred by</th><th className="px-4 py-2">New client</th><th className="px-4 py-2">Joined</th><th className="px-4 py-2">First paid visit</th></tr></thead>
                 <tbody className="divide-y divide-stone-100">
@@ -309,8 +310,8 @@ export default async function ReportsPage({
                     <tr key={r.referredId}>
                       <td className="px-4 py-2"><Link href={`/app/${slug}/clients/${r.referrerId}`} className="hover:underline">{r.referrerName}</Link></td>
                       <td className="px-4 py-2"><Link href={`/app/${slug}/clients/${r.referredId}`} className="hover:underline">{r.referredName}</Link></td>
-                      <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmt.format(r.joinedAt)}</td>
-                      <td className="whitespace-nowrap px-4 py-2 text-stone-600">{r.rewardedAt ? `${fmt.format(r.rewardedAt)} · ${business.referralBonusPoints} pts paid` : <span className="text-stone-400">not yet</span>}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmtDay.format(r.joinedAt)}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-stone-600">{r.rewardedAt ? `${fmtDay.format(r.rewardedAt)} · ${business.referralBonusPoints} pts paid` : <span className="text-stone-400">not yet</span>}</td>
                     </tr>
                   ))}
                 </tbody>
