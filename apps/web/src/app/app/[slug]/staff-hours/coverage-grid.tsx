@@ -6,8 +6,8 @@ import { cn } from "@/lib/utils";
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const PX_PER_HOUR = 44;
 const fmt = (min: number) => (min >= 24 * 60 ? "12am" : time12(`${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`));
-/** A few names when the list is short, otherwise categories with counts. */
-const describeMissing = (s: CoverageStrip) => (s.missingCount <= 3 ? s.missing.join(", ") : s.missingGroups.slice(0, 4).join(", ") + (s.missingGroups.length > 4 ? "…" : ""));
+/** Service names when only a few are missing, otherwise every category with how much of it is uncovered. */
+const describeMissing = (s: CoverageStrip) => (s.missingCount <= 3 ? s.missing.join(", ") : s.missingGroups.join(", "));
 const STRIP: Record<CoverageStrip["state"], string> = { closed: "hatched", none: "bg-red-400", partial: "bg-amber-400", full: "bg-emerald-400" };
 
 /**
@@ -93,25 +93,34 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref }: { day: Coverag
   );
 }
 
-/** Under the grid: the stretches that need attention, in words. */
+/** Under the grid: the stretches that need attention, in words, day by day. */
 export function CoverageGaps({ coverage }: { coverage: Coverage }) {
-  const lines: { date: string; weekday: number; text: string; tone: "red" | "amber" }[] = [];
-  for (const d of coverage.days) {
-    for (const s of d.strip) {
-      if (s.state === "none") lines.push({ date: d.date, weekday: d.weekday, text: `${fmt(s.start)}–${fmt(s.end)}: open with nobody in`, tone: "red" });
-      else if (s.state === "partial") lines.push({ date: d.date, weekday: d.weekday, text: `${fmt(s.start)}–${fmt(s.end)}: no one for ${describeMissing(s)}`, tone: "amber" });
-    }
-  }
-  if (!lines.length) return <p className="px-4 py-3 text-sm text-emerald-700">Every opening hour this week has someone in who can do {coverage.scope.label === "All services" ? "every service" : coverage.scope.label.toLowerCase()}.</p>;
+  const md = (d: string) => new Intl.DateTimeFormat("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
+  const days = coverage.days
+    .map((d) => ({
+      date: d.date,
+      lines: d.strip
+        .filter((s) => s.state !== "full" && s.state !== "closed")
+        .map((s) => ({ tone: s.state === "none" ? ("red" as const) : ("amber" as const), text: s.state === "none" ? `${fmt(s.start)}–${fmt(s.end)}: open with nobody in` : `${fmt(s.start)}–${fmt(s.end)}: no one for ${describeMissing(s)}` })),
+    }))
+    .filter((d) => d.lines.length);
+  if (!days.length) return <p className="px-4 py-3 text-sm text-emerald-700">Every opening hour this week has someone in who can do {coverage.scope.label === "All services" ? "every service" : coverage.scope.label.toLowerCase()}.</p>;
   return (
-    <ul className="divide-y divide-stone-100 text-sm">
-      {lines.map((l, i) => (
-        <li key={i} className="flex items-start gap-3 px-4 py-2">
-          <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", l.tone === "red" ? "bg-red-400" : "bg-amber-400")} />
-          <span className="w-10 shrink-0 font-medium text-stone-800">{DAY_SHORT[l.weekday]}</span>
-          <span className="text-stone-700">{l.text}</span>
-        </li>
+    <div className="divide-y divide-stone-100">
+      {days.map((d) => (
+        <section key={d.date} className="px-4 py-3">
+          <h4 className="mb-1 text-sm font-semibold text-stone-800">{md(d.date)}</h4>
+          <ul className="space-y-1 text-sm">
+            {d.lines.map((l, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", l.tone === "red" ? "bg-red-400" : "bg-amber-400")} />
+                <span className="text-stone-700">{l.text}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       ))}
-    </ul>
+      <p className="px-4 py-2 text-xs text-stone-500">"12 of 24 Facials" means that during those hours nobody on duty can do 12 of the 24 services in that category.</p>
+    </div>
   );
 }
