@@ -11,6 +11,7 @@ import { stockReport } from "@/server/inventory";
 import { withTenant } from "@angelic/db";
 import { runPayroll } from "@/server/payroll";
 import { storeCreditSummary } from "@/server/store-credit";
+import { refundsByReason } from "@/server/refund-reasons";
 import { formatDateLong, formatMoney, shiftISODate } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Empty, LinkButton } from "@/components/ui";
 import { LocationFilter } from "@/components/location-filter";
@@ -43,9 +44,10 @@ export default async function ReportsPage({
   const prevTo = shiftISODate(from, -1);
   const isPreset = (from === today && to === today) || (from === shiftISODate(today, -6) && to === today) || (from === `${today.slice(0, 8)}01` && to === today);
   const stock = await stockReport(business.id);
-  const [credit, creditBefore] = await withTenant(business.id, async (tx) => [
+  const [credit, creditBefore, byReason] = await withTenant(business.id, async (tx) => [
     await storeCreditSummary(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
     await storeCreditSummary(tx, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz)),
+    await refundsByReason(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
   ]);
   const canPayroll = can(permissions, "payroll.view");
   const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation }, prev, categories, pay, payBefore] = await Promise.all([
@@ -280,6 +282,20 @@ export default async function ReportsPage({
             )}
           </Card>
         ) : null}
+        <Card>
+          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Refunds by reason</h2>
+          {byReason.length === 0 ? <div className="p-4"><Empty title="No refunds in this range" /></div> : (
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Reason</th><th className="px-4 py-2 text-right">Refunds</th><th className="px-4 py-2 text-right">Money back</th><th className="px-4 py-2 text-right">Store credit</th><th className="px-4 py-2 text-right">Total</th></tr></thead>
+              <tbody className="divide-y divide-stone-100">
+                {byReason.map((r) => (
+                  <tr key={r.reasonId ?? "none"}><td className="px-4 py-2">{r.name}</td><td className="px-4 py-2 text-right tabular-nums">{r.count}</td><td className="px-4 py-2 text-right tabular-nums">{money(r.moneyCents)}</td><td className="px-4 py-2 text-right tabular-nums">{money(r.creditCents)}</td><td className="px-4 py-2 text-right font-medium tabular-nums">{money(r.moneyCents + r.creditCents)}</td></tr>
+                ))}
+              </tbody>
+            </table></div>
+          )}
+          {can(permissions, "business.manage") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/payments`} className="text-brand-700 underline">Settings → Payments</Link>.</p> : null}
+        </Card>
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By payment method</h2>
           {byMethod.length === 0 ? <div className="p-4"><Empty title="No payments in this range" /></div> : (

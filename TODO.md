@@ -183,6 +183,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       bookings carry an "online" chip with when they came in). "New online booking" automation template (team
       group, on by default) emails the owner and the provider when a client books online; automations gain a
       "Booked online only" filter and templates added later are topped up on the next trigger.
+- [x] 2026-10-11 (migrations 0058–0059): refund reasons. `refund_reasons` per business (seeded with Service issue,
+      Client changed mind, Duplicate charge, Late cancellation, Goodwill, Other), managed under Settings → Payments
+      (rename, reorder, add, retire/restore). The refund form requires a reason plus an optional note; each refund
+      line on a ticket has "Edit reason" (managers; amount and destination stay fixed; change logged in the activity
+      log). Reports → "Refunds by reason" (money back and store credit).
 - [x] 2026-10-11 (migrations 0056–0057): store credit. `store_credit_ledger` + cached `clients.store_credit_cents`;
       refund form offers "To original payment" or "As store credit" (money stays, client gets a balance; credit
       given counts against what is still refundable); "Store credit" payment method at checkout (refunding it

@@ -497,7 +497,7 @@ export async function recordManualPayment(input: {
  * The payment is left as is (it really was collected); the ledger row points at it so a later card
  * refund cannot double up.
  */
-export async function refundToStoreCredit(input: { businessId: string; paymentId: string; amountCents: number; reason: string | null; actorUserId: string }) {
+export async function refundToStoreCredit(input: { businessId: string; paymentId: string; amountCents: number; reason: string | null; reasonId?: string | null; actorUserId: string }) {
   await withTenant(input.businessId, async (tx) => {
     const p = await tx.query.payments.findFirst({ where: eq(schema.payments.id, input.paymentId) });
     if (!p) throw new SaleError("Payment not found.");
@@ -507,8 +507,8 @@ export async function refundToStoreCredit(input: { businessId: string; paymentId
     const refundable = p.amountCents - p.refundedCents - (await creditedAgainstPayment(tx, p.id));
     const amount = Math.min(input.amountCents, refundable);
     if (amount <= 0) throw new SaleError("Nothing left to refund.");
-    await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale.clientId, deltaCents: amount, reason: "refund", saleId: sale.id, paymentId: p.id, note: input.reason ?? `Refund on sale #${sale.number}`, actorUserId: input.actorUserId });
-    await audit(tx, input.businessId, input.actorUserId, "payment.refund_store_credit", sale.id, { paymentId: p.id, amount, reason: input.reason });
+    await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale.clientId, deltaCents: amount, reason: "refund", saleId: sale.id, paymentId: p.id, refundReasonId: input.reasonId ?? null, note: input.reason, actorUserId: input.actorUserId });
+    await audit(tx, input.businessId, input.actorUserId, "payment.refund_store_credit", sale.id, { paymentId: p.id, amount, reasonId: input.reasonId ?? null, note: input.reason });
   });
 }
 
@@ -688,7 +688,10 @@ export async function refundPayment(input: {
   accountId: string | null;
   paymentId: string;
   amountCents: number;
+  /** Free-text note. */
   reason: string | null;
+  /** Managed reason (refund_reasons.id). */
+  reasonId?: string | null;
   actorUserId: string;
   taxRateBps: number;
 }) {
@@ -712,6 +715,7 @@ export async function refundPayment(input: {
       paymentId: p.id,
       amountCents: amount,
       reason: input.reason,
+      reasonId: input.reasonId ?? null,
       stripeRefundId,
       createdByUserId: input.actorUserId,
     });

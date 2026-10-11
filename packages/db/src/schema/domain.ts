@@ -551,6 +551,8 @@ export const storeCreditLedger = pgTable(
     saleId: text("sale_id"),
     paymentId: text("payment_id"),
     appointmentId: text("appointment_id"),
+    /** For reason = refund: the managed refund reason (refund_reasons.id). */
+    refundReasonId: text("refund_reason_id"),
     note: text("note"),
     createdByUserId: text("created_by_user_id"),
     createdAt: createdAt(),
@@ -1200,6 +1202,7 @@ export const TENANT_TABLES = [
   "sale_lines",
   "payments",
   "refunds",
+  "refund_reasons",
   "store_credit_ledger",
   "notifications",
   "waitlist",

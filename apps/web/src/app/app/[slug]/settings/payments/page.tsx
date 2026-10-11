@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { requireAction } from "@/lib/tenant";
 import { listLocations } from "@/server/locations";
+import { listRefundReasons } from "@/server/refund-reasons";
 import { isStripeConfigured, platformFeeBps } from "@/lib/stripe";
 import type { Metadata } from "next";
 import { BackLink, Button, Card, Input, Notice, PageHeader } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
 
 export const metadata: Metadata = { title: "Payments" };
-import { connectStripe, disconnectStripe, refreshStripe, saveTax } from "./actions";
+import { connectStripe, disconnectStripe, refreshStripe, saveTax, addRefundReason, moveRefundReasonAction, renameRefundReasonAction, setRefundReasonActiveAction } from "./actions";
 
 export default async function PaymentsSettingsPage({
   params,
@@ -25,6 +26,7 @@ export default async function PaymentsSettingsPage({
   const fee = platformFeeBps();
   const locations = await listLocations(business.id);
   const multi = locations.length > 1;
+  const reasons = await listRefundReasons(business.id, { includeRetired: true });
 
   return (
     <>
@@ -133,6 +135,37 @@ export default async function PaymentsSettingsPage({
               <Input name="taxPct" type="number" step="0.01" min={0} max={30} defaultValue={(business.taxRateBps / 100).toFixed(2)} className="w-32" />
             </Field>
             <SubmitButton variant="secondary" pendingText="Saving…">Save</SubmitButton>
+          </ActionForm>
+        </Card>
+
+        <Card className="p-4">
+          <h2 className="mb-1 font-medium">Refund reasons</h2>
+          <p className="mb-3 text-sm text-stone-600">Picked on every refund so Reports can group refunds by cause. Rename, reorder or retire; retired reasons keep their history.</p>
+          <ul className="divide-y divide-stone-100 text-sm">
+            {reasons.map((r, i) => (
+              <li key={r.id} className={`flex flex-wrap items-center gap-2 py-2 ${r.active ? "" : "text-stone-400"}`}>
+                <ActionForm action={renameRefundReasonAction} className="flex min-w-0 flex-1 items-center gap-2">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="id" value={r.id} />
+                  <Input name="name" defaultValue={r.name} className="h-8 min-w-0 flex-1" aria-label={`Rename ${r.name}`} disabled={!r.active} />
+                  {r.active ? <SubmitButton size="sm" variant="ghost" pendingText="…">Rename</SubmitButton> : null}
+                </ActionForm>
+                <form action={moveRefundReasonAction} className="flex gap-0.5">
+                  <input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={r.id} />
+                  <button name="dir" value="up" disabled={i === 0} aria-label={`Move ${r.name} up`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↑</button>
+                  <button name="dir" value="down" disabled={i === reasons.length - 1} aria-label={`Move ${r.name} down`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↓</button>
+                </form>
+                <form action={setRefundReasonActiveAction}>
+                  <input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={r.id} /><input type="hidden" name="active" value={r.active ? "0" : "1"} />
+                  <button className="text-xs text-stone-500 underline hover:text-stone-800">{r.active ? "Retire" : "Restore"}</button>
+                </form>
+              </li>
+            ))}
+          </ul>
+          <ActionForm action={addRefundReason} className="mt-3 flex items-end gap-2 border-t border-stone-200 pt-3">
+            <input type="hidden" name="slug" value={slug} />
+            <Field label="New reason" name="name"><Input name="name" placeholder="Allergic reaction" className="h-9" /></Field>
+            <SubmitButton size="sm" variant="secondary" pendingText="Adding…">Add</SubmitButton>
           </ActionForm>
         </Card>
 

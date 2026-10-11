@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, editLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, payWithStoreCreditAction, refund, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, editLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, payWithStoreCreditAction, refund, changeRefundReason, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
 import { ClientPicker } from "@/components/client-picker";
 import { Disclosure } from "@/components/disclosure";
 import { quickCreateClient } from "../../clients/actions";
@@ -29,9 +29,10 @@ import { ServicePicker } from "@/components/service-picker";
 import { schema, withTenant } from "@angelic/db";
 import { asc, eq } from "drizzle-orm";
 import { instantToISODate } from "@angelic/core";
-import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, SavedCardForm, StoreCreditPayForm, TipsForm } from "./forms";
+import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, RefundReasonEditor, SavedCardForm, StoreCreditPayForm, TipsForm } from "./forms";
 import { pointsBalance } from "@/server/loyalty";
 import { storeCreditBalance } from "@/server/store-credit";
+import { listRefundReasons } from "@/server/refund-reasons";
 import { CardPayment } from "./card-payment";
 
 export default async function SalePage({ params }: { params: Promise<{ slug: string; saleId: string }> }) {
@@ -58,6 +59,12 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
   const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
   const storeCredit = open && client ? await withTenant(business.id, (tx) => storeCreditBalance(tx, client.id)) : 0;
+  const canRefund = can(permissions, "reports.view");
+  // Active reasons for new refunds; every reason (retired too) so old refunds still show their name.
+  const allReasons = canRefund ? await listRefundReasons(business.id, { includeRetired: true }) : [];
+  const reasonOptions = allReasons.filter((r) => r.active).map((r) => ({ id: r.id, name: r.name }));
+  const reasonName = (id: string | null) => (id ? allReasons.find((r) => r.id === id)?.name ?? null : null);
+  const reasonText = (id: string | null, note: string | null) => [reasonName(id), note].filter(Boolean).join(" · ");
   // Credit already given against a payment counts as refunded for what is left to refund.
   const creditedFor = (paymentId: string) => creditLedger.filter((c) => c.paymentId === paymentId && c.reason === "refund").reduce((s, c) => s + c.deltaCents, 0);
   const rebookLine = lines.find((l) => l.kind === "service") ?? null;
@@ -269,13 +276,19 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         <span className="font-medium">{money(p.amountCents)}{p.refundedCents || credited ? <span className="text-xs text-stone-500"> (−{money(p.refundedCents + credited)})</span> : null}</span>
                       </div>
                       {refunds.filter((r) => r.paymentId === p.id).map((r) => (
-                        <p key={r.id} className="text-xs text-stone-500">Refunded {money(r.amountCents)}{r.reason ? ` · ${r.reason}` : ""}</p>
+                        <div key={r.id} className="text-xs text-stone-500">
+                          Refunded {money(r.amountCents)}{reasonText(r.reasonId, r.reason) ? ` · ${reasonText(r.reasonId, r.reason)}` : ""}
+                          {canRefund ? <RefundReasonEditor key={`${r.reasonId}:${r.reason}`} action={changeRefundReason} slug={slug} saleId={sale.id} kind="refund" id={r.id} reasonId={r.reasonId} note={r.reason} reasons={reasonOptions} /> : null}
+                        </div>
                       ))}
                       {creditLedger.filter((c) => c.paymentId === p.id && c.reason === "refund").map((c) => (
-                        <p key={c.id} className="text-xs text-stone-500">Refunded {money(c.deltaCents)} as store credit{c.note ? ` · ${c.note}` : ""}</p>
+                        <div key={c.id} className="text-xs text-stone-500">
+                          Refunded {money(c.deltaCents)} as store credit{reasonText(c.refundReasonId, c.note) ? ` · ${reasonText(c.refundReasonId, c.note)}` : ""}
+                          {canRefund ? <RefundReasonEditor key={`${c.refundReasonId}:${c.note}`} action={changeRefundReason} slug={slug} saleId={sale.id} kind="credit" id={c.id} reasonId={c.refundReasonId} note={c.note} reasons={reasonOptions} /> : null}
+                        </div>
                       ))}
-                      {p.status !== "pending" && p.status !== "failed" && refundable > 0 && can(permissions, "reports.view") ? (
-                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} />
+                      {p.status !== "pending" && p.status !== "failed" && refundable > 0 && canRefund ? (
+                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} reasons={reasonOptions} />
                       ) : null}
                     </li>
                   );

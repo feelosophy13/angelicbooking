@@ -94,7 +94,9 @@ export function SavedCardForm({ action, slug, saleId, dueCents, cards }: { actio
  * Refund a payment. "Original payment" reverses it (card through Stripe, cash handed back); "Store
  * credit" keeps the money and gives the client a balance to spend later (needs a client on the ticket).
  */
-export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean }) {
+export type ReasonOption = { id: string; name: string };
+
+export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[] }) {
   const [state, act, pending] = useActionState(action, undefined);
   const [to, setTo] = useState<"original" | "store_credit">("original");
   return (
@@ -107,7 +109,11 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
         <option value="original">To original payment</option>
         <option value="store_credit" disabled={!creditAllowed}>As store credit{creditAllowed ? "" : " (needs a client)"}</option>
       </Select>
-      <Input name="reason" placeholder="Reason" className="w-40" />
+      <Select name="reasonId" defaultValue="" required className="w-44" aria-label="Reason">
+        <option value="" disabled>Reason…</option>
+        {reasons.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+      </Select>
+      <Input name="note" placeholder="Note (optional)" className="w-40" />
       <ConfirmSubmit
         title={to === "store_credit" ? "Refund as store credit?" : "Issue this refund?"}
         body={to === "store_credit" ? "The money stays with you and the client gets the amount as store credit to spend on a future visit." : "Card refunds go back to the original card through Stripe and can't be reversed."}
@@ -116,6 +122,29 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
       >
         {to === "store_credit" ? "Give credit" : "Refund"}
       </ConfirmSubmit>
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+    </form>
+  );
+}
+
+/** Change the reason or note on a refund already made. Opens on demand under the refund line. */
+export function RefundReasonEditor({ action, slug, saleId, kind, id, reasonId, note, reasons }: { action: Action; slug: string; saleId: string; kind: "refund" | "credit"; id: string; reasonId: string | null; note: string | null; reasons: ReasonOption[] }) {
+  const [state, act, pending] = useActionState(action, undefined);
+  const [open, setOpen] = useState(false);
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="ml-2 text-xs text-brand-700 underline">Edit reason</button>;
+  return (
+    <form action={act} className="mt-1 flex flex-wrap items-center gap-2">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="saleId" value={saleId} />
+      <input type="hidden" name="kind" value={kind} />
+      <input type="hidden" name="id" value={id} />
+      <Select name="reasonId" defaultValue={reasonId ?? ""} className="h-8 w-44 text-xs" aria-label="Reason">
+        <option value="">No reason</option>
+        {reasons.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+      </Select>
+      <Input name="note" defaultValue={note ?? ""} placeholder="Note (optional)" className="h-8 w-40 text-xs" aria-label="Note" />
+      <Button type="submit" size="sm" variant="secondary" disabled={pending}>{pending ? "Saving…" : "Save"}</Button>
+      <button type="button" onClick={() => setOpen(false)} className="text-xs text-stone-500 underline">Cancel</button>
       {state?.error ? <Notice>{state.error}</Notice> : null}
     </form>
   );

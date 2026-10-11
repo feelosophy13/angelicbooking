@@ -22,6 +22,7 @@ import { stripe } from "@/lib/stripe";
 import { addOfferLine, redeemCredit, redeemGiftCard } from "@/server/offers";
 import { LoyaltyError, redeemPoints } from "@/server/loyalty";
 import { StoreCreditError } from "@/server/store-credit";
+import { RefundReasonError, updateRefundReason } from "@/server/refund-reasons";
 import { PromoError } from "@/server/promos";
 import { addServiceLine, applyPromoToSale, payWithStoreCredit, refundToStoreCredit, removePromoFromSale, setSaleClient, updateLine } from "@/server/sales";
 import { schema as dbSchema, withTenant } from "@angelic/db";
@@ -177,19 +178,35 @@ export async function finishCardPayment(input: { slug: string; saleId: string; p
 }
 
 export async function refund(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
-  const d = base.extend({ paymentId: z.string().min(1), amount: z.string(), reason: z.string().optional(), to: z.enum(["original", "store_credit"]).optional() }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "reports.view"); // managers/owners only
-  const cents = parseMoney(d.amount);
+  const d = base.extend({ paymentId: z.string().min(1), amount: z.string(), reasonId: z.string().min(1, "Pick a reason."), note: z.string().optional(), to: z.enum(["original", "store_credit"]).optional() }).safeParse(Object.fromEntries(formData));
+  if (!d.success) return { error: "Pick a reason for the refund." };
+  const ctx = await requireAction(d.data.slug, "reports.view"); // managers/owners only
+  const cents = parseMoney(d.data.amount);
   if (cents === null || cents <= 0) return { error: "Enter a refund amount." };
+  const note = d.data.note?.trim() || null;
   try {
-    if (d.to === "store_credit") {
-      await refundToStoreCredit({ businessId: ctx.business.id, paymentId: d.paymentId, amountCents: cents, reason: d.reason?.trim() || null, actorUserId: ctx.user.id });
+    if (d.data.to === "store_credit") {
+      await refundToStoreCredit({ businessId: ctx.business.id, paymentId: d.data.paymentId, amountCents: cents, reason: note, reasonId: d.data.reasonId, actorUserId: ctx.user.id });
     } else {
-      const pay = await paymentContextForSale(ctx.business, d.saleId);
-      await refundPayment({ businessId: ctx.business.id, accountId: pay.accountId, paymentId: d.paymentId, amountCents: cents, reason: d.reason?.trim() || null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+      const pay = await paymentContextForSale(ctx.business, d.data.saleId);
+      await refundPayment({ businessId: ctx.business.id, accountId: pay.accountId, paymentId: d.data.paymentId, amountCents: cents, reason: note, reasonId: d.data.reasonId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
     }
   } catch (e) {
     return friendly(e);
+  }
+  revalidatePath(`/app/${d.data.slug}/sales/${d.data.saleId}`);
+  return { ok: true };
+}
+
+/** Change the reason or note on a refund that already happened. Logged; the money is untouched. */
+export async function changeRefundReason(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
+  const d = base.extend({ kind: z.enum(["refund", "credit"]), id: z.string().min(1), reasonId: z.string().optional(), note: z.string().optional() }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "reports.view");
+  try {
+    await updateRefundReason({ businessId: ctx.business.id, kind: d.kind, id: d.id, reasonId: d.reasonId || null, note: d.note?.trim() || null, actorUserId: ctx.user.id });
+  } catch (e) {
+    if (e instanceof RefundReasonError) return { error: e.message };
+    throw e;
   }
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
   return { ok: true };

@@ -180,6 +180,20 @@ export const payments = pgTable(
   ],
 );
 
+/** Why refunds happen, managed per business under Settings → Payments (seeded with defaults). */
+export const refundReasons = pgTable(
+  "refund_reasons",
+  {
+    id: id(),
+    businessId: businessId(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("refund_reasons_business_idx").on(t.businessId, t.sortOrder)],
+);
+
 export const refunds = pgTable(
   "refunds",
   {
@@ -189,7 +203,9 @@ export const refunds = pgTable(
       .notNull()
       .references(() => payments.id, { onDelete: "cascade" }),
     amountCents: integer("amount_cents").notNull(),
+    /** Free-text note (the "reason" column predates the managed list). */
     reason: text("reason"),
+    reasonId: text("reason_id").references(() => refundReasons.id, { onDelete: "set null" }),
     stripeRefundId: text("stripe_refund_id"),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     createdAt: createdAt(),
