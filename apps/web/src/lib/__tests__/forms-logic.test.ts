@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { answerText, answersEqual, fieldVisible } from "../forms-logic";
+import { answerText, answersEqual, clearHidden, fieldVisible } from "../forms-logic";
+import type { FormFieldDef } from "@angelic/db";
 import { parseFieldRows } from "@/server/forms";
 
 describe("fieldVisible", () => {
@@ -42,5 +43,20 @@ describe("parseFieldRows", () => {
     expect(defs[1]!.showIf).toEqual({ fieldId: "q1", equals: "true" });
     expect(defs[2]!.showIf).toBeUndefined();
     expect(defs[3]!.options).toEqual(["A", "B", "C"]);
+  });
+});
+
+describe("yes/no drivers and hidden answers", () => {
+  const q: FormFieldDef = { id: "preg", type: "yesno", label: "Pregnant?" };
+  const dep: FormFieldDef = { id: "weeks", type: "number", label: "How many weeks?", showIf: { fieldId: "preg", equals: "Yes" } };
+  it("shows a dependent only on the matching yes/no answer", () => {
+    expect(fieldVisible(dep, { preg: "Yes" })).toBe(true);
+    expect(fieldVisible(dep, { preg: "No" })).toBe(false);
+    expect(fieldVisible(dep, {})).toBe(false);
+  });
+  it("clears the answer of a question that becomes hidden", () => {
+    const after = clearHidden([q, dep], { preg: "No", weeks: "12" });
+    expect(after.weeks).toBeUndefined();
+    expect(clearHidden([q, dep], { preg: "Yes", weeks: "12" }).weeks).toBe("12");
   });
 });

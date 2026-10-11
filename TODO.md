@@ -201,6 +201,16 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-11 (migration 0062): Forms overhaul. Templates on New form (intake, lash, PMU, waxing, facial/peel,
+      photo release, minor consent; `lib/form-templates.ts`) and Duplicate. Builder: Yes/No, Phone, Email, Initials,
+      Section heading and Agreement box types; options survive a type switch; conditions key off yes/no too and are
+      dropped with a warning when their driver is removed or reordered; live "Preview"; "Saves to" maps an answer to
+      the client's email / phone / birthday / notes / a tag (added on Yes, removed on No) and the fill prefills from
+      the client record and last answers. Submissions inbox (Settings → Forms → Submissions: filter by form and name,
+      paginated) with "Still to sign before a visit this week"; a submission can be voided (kept, struck through,
+      no longer counts), moved to another client, or emailed to the client; CSV uses the signed snapshots, file links
+      and local time. Fill page: errors under the question, hidden questions drop stale answers, signature pad
+      survives rotation, "Next: <form>" after saving at the desk.
 - [x] 2026-10-11: form consistency. New/edit pages for products, packages and services share one fields component
       (`components/{product,package,service}-fields.tsx`, like `PlanFields`); per-page form widths removed (default,
       `max-w-md` for tiny forms, `max-w-3xl` for builders, rule in DESIGN.md); `MoneyInput` (currency symbol, decimal

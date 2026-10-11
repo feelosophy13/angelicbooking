@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { requireAction } from "@/lib/tenant";
-import { listForms } from "@/server/forms";
+import { listForms, outstandingForms } from "@/server/forms";
 import { BackLink, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Forms" };
@@ -11,10 +11,12 @@ export default async function FormsPage({ params }: { params: Promise<{ slug: st
   const { slug } = await params;
   const { business } = await requireAction(slug, "business.manage");
   const forms = await listForms(business.id);
+  const outstanding = (await outstandingForms(business, 7)).length;
   return (
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Forms">
+        <LinkButton href={`/app/${slug}/settings/forms/submissions`} variant="secondary" size="sm">Submissions{outstanding ? <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 text-[11px] font-medium text-amber-800">{outstanding} due</span> : null}</LinkButton>
         <LinkButton href={`/app/${slug}/settings/forms/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> New form</LinkButton>
       </PageHeader>
       <p className="mb-3 text-sm text-stone-600">Intake questionnaires and consent waivers. Clients get a link in their confirmation and reminder, sign on their phone, and the signed copy is kept on their record.</p>

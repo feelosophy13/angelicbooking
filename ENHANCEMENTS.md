@@ -181,19 +181,19 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
   (`components/form-fill.tsx:142-146,163`); `storeSignaturePng` only rejects <200 bytes (`lib/files.ts:49-56`).
 - ✅ **P1 Enforce required forms** [gap] — `appointmentsMissingForms` only badges; prompt at check-in and `startCheckout`
   ("2 forms outstanding: complete here / skip"); online booking never asks.
-- **P2 Public/blank form link** [gap] — forms exist only behind an appointment token or the staff fill page.
-- **P2 Chained conditions diverge client/server** [bug] — hidden driver keeps stale state (`form-fill.tsx:26-36`,
+- ✅ **P2 Public/blank form link** [gap] — forms exist only behind an appointment token or the staff fill page.
+- ✅ **P2 Chained conditions diverge client/server** [bug] — hidden driver keeps stale state (`form-fill.tsx:26-36`,
   `server/forms.ts:114`); clear answers when a field hides.
-- **P2 Signature pad breaks on rotation** [bug] — canvas sized once in `useEffect([])` (`form-fill.tsx:110-122`).
-- **P2 Submissions inbox** [gap] — only 20 most recent per form (`[formId]/page.tsx:31`) and per client.
-- **P2 Per-field errors; keep the picked file on error** [ux]; **auto-advance to the next due form** after save
+- ✅ **P2 Signature pad breaks on rotation** [bug] — canvas sized once in `useEffect([])` (`form-fill.tsx:110-122`).
+- ✅ **P2 Submissions inbox** [gap] — only 20 most recent per form (`[formId]/page.tsx:31`) and per client.
+- ✅ **P2 Per-field errors; keep the picked file on error** [ux]; **auto-advance to the next due form** after save
   (`forms/fill/[formId]/page.tsx:37-38`).
-- **P2 CSV export uses current fields, not snapshots; file answers export as UUIDs; UTC timestamps** [bug] —
+- ✅ **P2 CSV export uses current fields, not snapshots; file answers export as UUIDs; UTC timestamps** [bug] —
   `server/forms.ts:268-296`.
-- **P3 Options textarea is uncontrolled** [bug] — `builder.tsx:57` loses typed options on type switch.
-- **P3 Warn when moving/removing a driver drops conditions** [ux] — `server/forms.ts:344-349`.
-- **P3 Silent 50-question cap** [polish] — `server/forms.ts:332`.
-- **P3 Form list counts/preview/duplicate/templates** [ux]; **void/reassign/email a submission** [gap];
+- ✅ **P3 Options textarea is uncontrolled** [bug] — `builder.tsx:57` loses typed options on type switch.
+- ✅ **P3 Warn when moving/removing a driver drops conditions** [ux] — `server/forms.ts:344-349`.
+- ✅ **P3 Silent 50-question cap** [polish] (now 100) — `server/forms.ts:332`.
+- ✅ **P3 Form list counts/preview/duplicate/templates** [ux]; ✅ **void/reassign/email a submission** [gap];
   **"Checkbox (must tick)" label vs Required toggle** [polish]; **validate reused `_keep` file ids belong to the
   tenant** [polish] (`server/forms.ts:86-87,129`); **drawn-signature-required toggle** [polish].
 

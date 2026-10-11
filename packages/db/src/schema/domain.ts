@@ -434,15 +434,29 @@ export const clientStripeCustomers = pgTable(
 // ---------------------------------------------------------------------------
 // Intake / consent forms
 // ---------------------------------------------------------------------------
-export type FormFieldType = "text" | "textarea" | "checkbox" | "select" | "multiselect" | "number" | "date" | "file" | "statement";
+export type FormFieldType =
+  | "text" | "textarea" | "number" | "date" | "phone" | "email"
+  | "yesno" // "Yes" / "No"
+  | "checkbox" // agreement box: must be ticked
+  | "select" | "multiselect"
+  | "file"
+  | "initials" // the client's initials next to a paragraph of a waiver
+  | "heading" // section heading, no answer
+  | "statement"; // paragraph of text, no answer
+/** Where an answer is copied on the client record when the form is submitted. */
+export type FormFieldMapTo = "email" | "phone" | "birthday" | "notes" | "tag";
 export interface FormFieldDef {
   id: string;
   type: FormFieldType;
   label: string;
   required?: boolean;
   options?: string[]; // select / multiselect
-  /** Only shown (and required) when an earlier question has this answer ("true" for a ticked checkbox). */
+  /** Only shown (and required) when an earlier question has this answer ("true" for a ticked box, "Yes"/"No" for yes/no). */
   showIf?: { fieldId: string; equals: string } | null;
+  /** Copy the answer onto the client record: contact fields, a note, or a tag (added on Yes / ticked, removed on No). */
+  mapTo?: FormFieldMapTo | null;
+  /** Tag name when mapTo is "tag"; defaults to the question label. */
+  tag?: string | null;
 }
 /** One answer: text/number/date/select as string, checkbox as boolean, multiselect as string[], file as the file id. */
 export type FormAnswer = string | boolean | string[];
@@ -492,6 +506,10 @@ export const formSubmissions = pgTable(
     assistedByUserId: text("assisted_by_user_id"),
     // Snapshot of the form as it was signed, so later edits don't change the record.
     formSnapshot: jsonb("form_snapshot").$type<{ name: string; fields: FormFieldDef[]; description: string | null }>(),
+    // Voided submissions stay on file for the audit trail but no longer count as "on file".
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    voidedByUserId: text("voided_by_user_id"),
+    voidReason: text("void_reason"),
     createdAt: createdAt(),
   },
   (t) => [index("form_submissions_client_idx").on(t.businessId, t.clientId, t.createdAt), index("form_submissions_appointment_idx").on(t.appointmentId)],

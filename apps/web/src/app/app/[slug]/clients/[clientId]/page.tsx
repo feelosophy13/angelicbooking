@@ -365,7 +365,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
             <h2 className="mb-2 font-medium">Forms</h2>
             {submissions.length === 0 ? <p className="text-stone-500">Nothing signed yet.</p> : (
               <ul className="space-y-1">
-                {submissions.map(({ s: sub, formName }) => <li key={sub.id}><Link href={`/app/${slug}/settings/forms/submissions/${sub.id}`} className="hover:underline">{formName}</Link> <span className="text-xs text-stone-500">· {fmtDate.format(sub.createdAt)}{sub.signatureName ? " · signed" : ""}{sub.assistedByUserId ? " · at the desk" : ""}</span></li>)}
+                {submissions.map(({ s: sub, formName }) => <li key={sub.id} className={sub.voidedAt ? "text-stone-400 line-through" : ""}><Link href={`/app/${slug}/settings/forms/submissions/${sub.id}`} className="hover:underline">{formName}</Link> <span className="text-xs text-stone-500">· {fmtDate.format(sub.createdAt)}{sub.voidedAt ? " · voided" : sub.signatureName ? " · signed" : ""}{sub.assistedByUserId ? " · at the desk" : ""}</span></li>)}
               </ul>
             )}
             {write && activeForms.length ? (

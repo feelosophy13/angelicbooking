@@ -12,6 +12,7 @@ export function FormEditor({ action, slug, form, services, locations = [], submi
     <ActionForm action={action}>
       <input type="hidden" name="slug" value={slug} />
       {form?.id ? <input type="hidden" name="formId" value={form.id} /> : null}
+      {form && !form.id ? <p className="rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2 text-xs text-stone-700">Started from a template. Read the wording and adjust it to your studio before you publish; it is a sensible default, not legal advice.</p> : null}
       <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
         <Field label="Name" name="name" required><Input name="name" defaultValue={form?.name ?? ""} required placeholder="New client intake" autoFocus={!form} /></Field>
         <Field label="Type" name="kind">
@@ -24,7 +25,7 @@ export function FormEditor({ action, slug, form, services, locations = [], submi
       <Field label="Text shown at the top" name="description" hint="For a waiver, put the full text here; clients sign underneath."><Textarea name="description" rows={5} defaultValue={form?.description ?? ""} /></Field>
       <div>
         <p className="mb-1 text-sm font-medium text-stone-700">Questions</p>
-        <FieldBuilder initial={form?.fields ?? []} />
+        <FieldBuilder initial={form?.fields ?? []} description={form?.description ?? null} requireSignature={form?.requireSignature ?? true} />
       </div>
       <Checkbox name="requireSignature" defaultChecked={form?.requireSignature ?? true} label="Require a typed signature" />
       <fieldset className="rounded-lg border border-stone-200 p-3">

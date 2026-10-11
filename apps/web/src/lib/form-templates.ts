@@ -1,0 +1,156 @@
+import type { FormFieldDef } from "@angelic/db";
+
+/**
+ * Ready-made intake and consent forms a salon can start from. Wording is a sensible
+ * default, not legal advice; owners edit it before use.
+ */
+export type FormTemplate = { key: string; name: string; kind: "intake" | "consent"; blurb: string; description: string | null; requireSignature: boolean; renewDays: number | null; applyToAll: boolean; fields: FormFieldDef[] };
+
+const f = (id: string, type: FormFieldDef["type"], label: string, extra: Partial<FormFieldDef> = {}): FormFieldDef => ({ id, type, label, ...extra });
+
+export const FORM_TEMPLATES: FormTemplate[] = [
+  {
+    key: "intake",
+    name: "New client intake",
+    kind: "intake",
+    blurb: "Contact details, how they found you, allergies and sensitivities.",
+    description: "Welcome! A few questions so we can look after you properly.",
+    requireSignature: false,
+    renewDays: 365,
+    applyToAll: true,
+    fields: [
+      f("h_about", "heading", "About you"),
+      f("email", "email", "Email address", { required: true, mapTo: "email" }),
+      f("phone", "phone", "Mobile number", { required: true, mapTo: "phone" }),
+      f("birthday", "date", "Date of birth", { mapTo: "birthday" }),
+      f("source", "select", "How did you hear about us?", { options: ["Instagram", "Google", "A friend", "Walked past", "Other"] }),
+      f("h_health", "heading", "Health and sensitivities"),
+      f("allergies", "yesno", "Do you have any allergies?", { required: true, mapTo: "tag", tag: "Allergies" }),
+      f("allergy_detail", "textarea", "Please list them", { required: true, showIf: { fieldId: "allergies", equals: "Yes" }, mapTo: "notes" }),
+      f("pregnant", "yesno", "Are you pregnant or nursing?", { required: true, mapTo: "tag", tag: "Pregnant / nursing" }),
+      f("conditions", "multiselect", "Any of the following?", { options: ["Sensitive skin", "Eczema or psoriasis", "Recent chemical treatment", "Retinol or acne medication", "Contact lenses"], mapTo: "notes" }),
+      f("notes", "textarea", "Anything else we should know?", { mapTo: "notes" }),
+      f("offers", "yesno", "Would you like occasional offers by text?"),
+    ],
+  },
+  {
+    key: "lash",
+    name: "Lash extension consent",
+    kind: "consent",
+    blurb: "Patch test, adhesive risks, aftercare and photo consent.",
+    description: "Eyelash extensions are applied one by one to your natural lashes with a medical-grade adhesive. Please read each point and initial it.",
+    requireSignature: true,
+    renewDays: 365,
+    applyToAll: false,
+    fields: [
+      f("s1", "statement", "I understand that the adhesive contains cyanoacrylate and that a reaction (redness, swelling, itching) is possible even after a patch test, and I agree to tell my technician right away if my eyes feel uncomfortable."),
+      f("i1", "initials", "Initial here", { required: true }),
+      f("s2", "statement", "I will keep my lashes dry for 24 hours, avoid oil-based products and mascara, and brush them daily. I understand that poor aftercare shortens retention and is not grounds for a free fill."),
+      f("i2", "initials", "Initial here", { required: true }),
+      f("s3", "statement", "I understand that extensions are a repeat service and that a fill is recommended every 2 to 3 weeks; a set with more than 50% of extensions lost is charged as a full set."),
+      f("i3", "initials", "Initial here", { required: true }),
+      f("eye_cond", "yesno", "Do you have any eye conditions, recent eye surgery or an eye infection?", { required: true }),
+      f("eye_detail", "textarea", "Please describe", { required: true, showIf: { fieldId: "eye_cond", equals: "Yes" }, mapTo: "notes" }),
+      f("photos", "yesno", "May we photograph your lashes for our portfolio and social media?", { mapTo: "tag", tag: "Photo consent" }),
+      f("agree", "checkbox", "I have read and understood the above and consent to the service", { required: true }),
+    ],
+  },
+  {
+    key: "pmu",
+    name: "Permanent makeup consent",
+    kind: "consent",
+    blurb: "Cosmetic tattoo risks, healing, medical screening and touch-ups.",
+    description: "Permanent makeup is a cosmetic tattoo. Pigment is implanted into the skin and results vary with skin type, lifestyle and aftercare. Please read and sign.",
+    requireSignature: true,
+    renewDays: null,
+    applyToAll: false,
+    fields: [
+      f("h_med", "heading", "Medical screening"),
+      f("blood", "yesno", "Are you on blood thinners, Accutane, or steroids?", { required: true }),
+      f("preg", "yesno", "Are you pregnant or nursing?", { required: true }),
+      f("keloid", "yesno", "Do you keloid scar or have a skin condition in the treatment area?", { required: true }),
+      f("prev", "yesno", "Have you had permanent makeup in this area before?", { required: true }),
+      f("prev_photo", "file", "A clear photo of the area as it is now", { showIf: { fieldId: "prev", equals: "Yes" } }),
+      f("h_consent", "heading", "Consent"),
+      f("s1", "statement", "I understand the healed colour softens by 30–50%, that healed results differ from the fresh result, and that a touch-up after 6–8 weeks is normally needed and charged separately."),
+      f("i1", "initials", "Initial here", { required: true }),
+      f("s2", "statement", "I understand that this is a permanent procedure, that correction or removal may not be possible, and that I have disclosed all medications, allergies and conditions."),
+      f("i2", "initials", "Initial here", { required: true }),
+      f("agree", "checkbox", "I consent to the procedure and release the studio from liability for results affected by my health, aftercare or undisclosed conditions", { required: true }),
+    ],
+  },
+  {
+    key: "wax",
+    name: "Waxing consent",
+    kind: "consent",
+    blurb: "Skin medications, sun exposure, and aftercare.",
+    description: "Waxing removes hair from the root and can irritate skin that is sensitised by medication or sun. Please answer honestly.",
+    requireSignature: true,
+    renewDays: 365,
+    applyToAll: false,
+    fields: [
+      f("retinol", "yesno", "Have you used retinol, Accutane, or exfoliating acids in the last 7 days?", { required: true }),
+      f("sun", "yesno", "Have you tanned or sunburned the area in the last 48 hours?", { required: true }),
+      f("meds", "textarea", "Medications or skin conditions we should know about", { mapTo: "notes" }),
+      f("s1", "statement", "I understand that redness, bumps and tenderness are normal for up to 48 hours and that I should avoid heat, sun and tight clothing on the area today."),
+      f("agree", "checkbox", "I consent to the waxing service", { required: true }),
+    ],
+  },
+  {
+    key: "facial",
+    name: "Facial and peel consent",
+    kind: "consent",
+    blurb: "Skin history, active ingredients, downtime and sun care.",
+    description: "Facials and chemical peels use active ingredients that can cause redness, flaking or sensitivity. Please tell us about your skin.",
+    requireSignature: true,
+    renewDays: 365,
+    applyToAll: false,
+    fields: [
+      f("skin", "multiselect", "Skin concerns", { options: ["Acne", "Pigmentation", "Fine lines", "Rosacea", "Dryness", "Oiliness"], mapTo: "notes" }),
+      f("acids", "yesno", "Are you using retinoids, acids, or acne medication?", { required: true }),
+      f("acid_detail", "text", "Which ones?", { showIf: { fieldId: "acids", equals: "Yes" }, mapTo: "notes" }),
+      f("botox", "yesno", "Any injectables, laser or peels in the last 4 weeks?", { required: true }),
+      f("s1", "statement", "I understand that peeling, redness and sensitivity can last several days, that I must wear SPF daily, and that results build over a series of treatments."),
+      f("i1", "initials", "Initial here", { required: true }),
+      f("agree", "checkbox", "I consent to the treatment and have disclosed my skin history", { required: true }),
+    ],
+  },
+  {
+    key: "photo",
+    name: "Photo release",
+    kind: "consent",
+    blurb: "Permission to use before/after photos on social media and the website.",
+    description: "We love to show our work. With your permission we may photograph your results and use the photos on our website and social media. You can withdraw this at any time by telling us.",
+    requireSignature: true,
+    renewDays: null,
+    applyToAll: false,
+    fields: [
+      f("consent", "yesno", "May we use photos of your results?", { required: true, mapTo: "tag", tag: "Photo consent" }),
+      f("face", "select", "May your face be shown?", { options: ["Yes, face can be shown", "Close-ups only, no face"], showIf: { fieldId: "consent", equals: "Yes" } }),
+      f("handle", "text", "Instagram handle to credit (optional)", { showIf: { fieldId: "consent", equals: "Yes" } }),
+    ],
+  },
+  {
+    key: "minor",
+    name: "Minor consent (under 18)",
+    kind: "consent",
+    blurb: "A parent or guardian consents on a minor's behalf and stays present.",
+    description: "Clients under 18 need a parent or legal guardian to consent to the service and to be present during it.",
+    requireSignature: true,
+    renewDays: 365,
+    applyToAll: false,
+    fields: [
+      f("minor_name", "text", "Client's full name", { required: true }),
+      f("minor_dob", "date", "Client's date of birth", { required: true }),
+      f("guardian", "text", "Parent or guardian's full name", { required: true }),
+      f("relation", "select", "Relationship", { required: true, options: ["Parent", "Legal guardian"] }),
+      f("guardian_phone", "phone", "Guardian's mobile number", { required: true }),
+      f("s1", "statement", "I am the parent or legal guardian of the client named above. I consent to the service, confirm the health information given is accurate, and will remain on the premises for the duration of the appointment."),
+      f("agree", "checkbox", "I agree", { required: true }),
+    ],
+  },
+];
+
+export function formTemplate(key: string | undefined): FormTemplate | null {
+  return FORM_TEMPLATES.find((t) => t.key === key) ?? null;
+}

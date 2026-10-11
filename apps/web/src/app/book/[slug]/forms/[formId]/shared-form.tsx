@@ -1,11 +1,11 @@
 "use client";
-import type { FormFieldDef } from "@angelic/db";
+import type { FormAnswer, FormFieldDef } from "@angelic/db";
 import { FormFill } from "@/components/form-fill";
 import { Field, Input } from "@/components/ui";
 import { submitSharedForm } from "./actions";
 
 /** The shareable-link version of a form: asks who is filling it in unless a client is signed in. */
-export function SharedForm({ slug, form, me }: { slug: string; form: { id: string; name: string; description: string | null; fields: FormFieldDef[]; requireSignature: boolean }; me: { firstName: string; lastName: string } | null }) {
+export function SharedForm({ slug, form, me, defaults }: { slug: string; form: { id: string; name: string; description: string | null; fields: FormFieldDef[]; requireSignature: boolean }; me: { firstName: string; lastName: string } | null; defaults?: Record<string, FormAnswer> | null }) {
   const who = me ? (
     <p className="rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-600">Filling in as <b>{me.firstName} {me.lastName}</b>.</p>
   ) : (
@@ -20,5 +20,5 @@ export function SharedForm({ slug, form, me }: { slug: string; form: { id: strin
       <p className="text-xs text-stone-500">We use your number or email to attach this form to your client record.</p>
     </fieldset>
   );
-  return <FormFill action={submitSharedForm} hidden={{ slug, formId: form.id }} form={form} clientName={me ? `${me.firstName} ${me.lastName}`.trim() : ""} before={who} />;
+  return <FormFill action={submitSharedForm} hidden={{ slug, formId: form.id }} form={form} clientName={me ? `${me.firstName} ${me.lastName}`.trim() : ""} before={who} defaults={defaults} />;
 }

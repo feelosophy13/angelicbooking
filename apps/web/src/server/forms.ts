@@ -4,28 +4,18 @@
  * `renewDays`) before the visit. Clients fill forms from the link in their
  * confirmation / the manage page; staff can see and open submissions.
  */
-import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db, schema, withJobs, withTenant, type FormAnswer, type FormFieldDef, type TenantDb } from "@angelic/db";
 import { instantToISODate, normalizePhone, zonedToInstant } from "@angelic/core";
 import { FileError, storeFormFile, storeSignaturePng } from "@/lib/files";
-import { fieldVisible } from "@/lib/forms-logic";
+import { DISPLAY_TYPES, FIELD_TYPES, answerText, fieldVisible } from "@/lib/forms-logic";
+import { appUrl } from "@/lib/stripe";
+export { FIELD_TYPES };
 import { shiftISODate } from "@/lib/utils";
 import { appointmentFacts, triggerWorkflows } from "@/server/workflows";
 
 export type Form = typeof schema.forms.$inferSelect;
 export type FormSubmission = typeof schema.formSubmissions.$inferSelect;
-
-export const FIELD_TYPES: { type: FormFieldDef["type"]; label: string }[] = [
-  { type: "text", label: "Short answer" },
-  { type: "textarea", label: "Paragraph" },
-  { type: "number", label: "Number" },
-  { type: "checkbox", label: "Checkbox (must tick)" },
-  { type: "select", label: "Choose one" },
-  { type: "multiselect", label: "Choose any" },
-  { type: "date", label: "Date" },
-  { type: "file", label: "Photo or PDF upload" },
-  { type: "statement", label: "Statement (no answer)" },
-];
 
 export async function listForms(businessId: string) {
   return withTenant(businessId, (tx) => tx.select().from(schema.forms).orderBy(desc(schema.forms.active), asc(schema.forms.name)));
@@ -49,7 +39,7 @@ export async function formsForAppointment(tx: TenantDb, appointmentId: string) {
     ? await tx
         .select()
         .from(schema.formSubmissions)
-        .where(and(eq(schema.formSubmissions.clientId, appt.clientId), inArray(schema.formSubmissions.formId, required.map((f) => f.id))))
+        .where(and(eq(schema.formSubmissions.clientId, appt.clientId), inArray(schema.formSubmissions.formId, required.map((f) => f.id)), isNull(schema.formSubmissions.voidedAt)))
         .orderBy(desc(schema.formSubmissions.createdAt))
     : [];
   const now = Date.now();
@@ -70,7 +60,14 @@ export async function formsForManageToken(businessId: string, token: string) {
   });
 }
 
-export class FormSubmitError extends Error {}
+export class FormSubmitError extends Error {
+  /** The question the message is about, so the fill page can show it under that field. */
+  field: string | null;
+  constructor(message: string, field: string | null = null) {
+    super(message);
+    this.field = field;
+  }
+}
 
 /** Pull answers out of a posted FormData (a_<fieldId> inputs, multiselect as repeated values, files as File). */
 export function answersFromFormData(fields: FormFieldDef[], formData: FormData): { answers: Record<string, FormAnswer>; files: Record<string, File> } {
@@ -78,7 +75,7 @@ export function answersFromFormData(fields: FormFieldDef[], formData: FormData):
   const files: Record<string, File> = {};
   for (const f of fields) {
     const name = `a_${f.id}`;
-    if (f.type === "statement") continue;
+    if (DISPLAY_TYPES.includes(f.type)) continue;
     if (f.type === "checkbox") answers[f.id] = formData.get(name) === "on";
     else if (f.type === "multiselect") answers[f.id] = formData.getAll(name).map(String).filter(Boolean);
     else if (f.type === "file") {
@@ -121,18 +118,18 @@ async function submitFormTx(input: {
     if (!form) throw new FormSubmitError("This form is no longer available.");
     const clean: Record<string, FormAnswer> = {};
     for (const f of form.fields) {
-      if (f.type === "statement") continue;
+      if (DISPLAY_TYPES.includes(f.type)) continue;
       // Hidden by a condition: ignore whatever was posted and don't require it.
       if (!fieldVisible(f, { ...input.answers, ...clean })) continue;
       const v = input.answers[f.id];
       if (f.type === "checkbox") {
-        if (f.required && v !== true) throw new FormSubmitError(`Please tick "${f.label}".`);
+        if (f.required && v !== true) throw new FormSubmitError("Please tick this box to continue.", f.id);
         clean[f.id] = v === true;
         continue;
       }
       if (f.type === "multiselect") {
         const picked = (Array.isArray(v) ? v : []).filter((x) => (f.options ?? []).includes(x));
-        if (f.required && !picked.length) throw new FormSubmitError(`Pick at least one option for "${f.label}".`);
+        if (f.required && !picked.length) throw new FormSubmitError("Pick at least one.", f.id);
         clean[f.id] = picked;
         continue;
       }
@@ -143,22 +140,26 @@ async function submitFormTx(input: {
           try {
             clean[f.id] = await storeFormFile(input.businessId, file);
           } catch (e) {
-            if (e instanceof FileError) throw new FormSubmitError(`${f.label}: ${e.message}`);
+            if (e instanceof FileError) throw new FormSubmitError(e.message, f.id);
             throw e;
           }
         } else if (kept) clean[f.id] = kept;
-        else if (f.required) throw new FormSubmitError(`Please attach a file for "${f.label}".`);
+        else if (f.required) throw new FormSubmitError("Please attach a file.", f.id);
         else clean[f.id] = "";
         continue;
       }
       const s = typeof v === "string" ? v.trim() : "";
-      if (f.required && !s) throw new FormSubmitError(`"${f.label}" is required.`);
-      if (f.type === "select" && s && !(f.options ?? []).includes(s)) throw new FormSubmitError(`Pick one of the options for "${f.label}".`);
-      if (f.type === "number" && s && !Number.isFinite(Number(s))) throw new FormSubmitError(`"${f.label}" must be a number.`);
-      if (s.length > 2000) throw new FormSubmitError(`"${f.label}" is too long.`);
-      clean[f.id] = s;
+      if (f.required && !s) throw new FormSubmitError(f.type === "initials" ? "Please initial here." : "This one is required.", f.id);
+      if (f.type === "select" && s && !(f.options ?? []).includes(s)) throw new FormSubmitError("Pick one of the options.", f.id);
+      if (f.type === "yesno" && s && s !== "Yes" && s !== "No") throw new FormSubmitError("Choose Yes or No.", f.id);
+      if (f.type === "number" && s && !Number.isFinite(Number(s))) throw new FormSubmitError("Enter a number.", f.id);
+      if (f.type === "email" && s && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)) throw new FormSubmitError("Enter a valid email address.", f.id);
+      if (f.type === "phone" && s && s.replace(/\D/g, "").length < 7) throw new FormSubmitError("Enter a valid phone number.", f.id);
+      if (f.type === "initials" && s && !/^[A-Za-z.]{1,5}$/.test(s)) throw new FormSubmitError("Just your initials, e.g. JS.", f.id);
+      if (s.length > 2000) throw new FormSubmitError("That answer is too long.", f.id);
+      clean[f.id] = f.type === "initials" ? s.toUpperCase() : s;
     }
-    if (form.requireSignature && !input.signatureName) throw new FormSubmitError("Type your full name to sign.");
+    if (form.requireSignature && !input.signatureName) throw new FormSubmitError("Type your full name to sign.", "signatureName");
     let signatureFileId: string | null = null;
     if (form.requireSignature && input.signatureImage) {
       try {
@@ -183,14 +184,59 @@ async function submitFormTx(input: {
         formSnapshot: { name: form.name, fields: form.fields, description: form.description },
       })
       .returning();
+    await applyAnswersToClient(tx, input.clientId, form, clean);
     return row!;
   });
 }
 
+/** Copy mapped answers onto the client record: contact fields, notes and tags. */
+async function applyAnswersToClient(tx: TenantDb, clientId: string, form: { name: string; fields: FormFieldDef[] }, answers: Record<string, FormAnswer>) {
+  const mapped = form.fields.filter((f) => f.mapTo);
+  if (!mapped.length) return;
+  const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
+  if (!client) return;
+  const patch: Partial<typeof schema.clients.$inferInsert> = {};
+  let tags = [...client.tags];
+  const noteLines: string[] = [];
+  for (const f of mapped) {
+    const v = answers[f.id];
+    if (v === undefined) continue;
+    const text = answerText(f, v);
+    if (f.mapTo === "email" && typeof v === "string" && v) patch.email = v.toLowerCase();
+    else if (f.mapTo === "phone" && typeof v === "string" && v) patch.phone = normalizePhone(v) ?? v;
+    else if (f.mapTo === "birthday" && typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) patch.birthday = v;
+    else if (f.mapTo === "tag") {
+      const tag = (f.tag || f.label).trim().slice(0, 40);
+      const on = v === true || v === "Yes";
+      tags = on ? (tags.includes(tag) ? tags : [...tags, tag]) : tags.filter((t) => t !== tag);
+    } else if (f.mapTo === "notes" && text) noteLines.push(`${f.label}: ${text}`);
+  }
+  if (tags.length !== client.tags.length || tags.some((t, i) => t !== client.tags[i])) patch.tags = tags;
+  if (noteLines.length) {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const block = `From ${form.name} (${stamp})\n${noteLines.join("\n")}`;
+    // Replace an earlier block from the same form so repeat submissions don't pile up.
+    const prior = (client.notes ?? "").split(/\n{2,}/).filter((b) => !b.startsWith(`From ${form.name} (`));
+    patch.notes = [...prior, block].filter(Boolean).join("\n\n").slice(0, 8000);
+  }
+  if (Object.keys(patch).length) await tx.update(schema.clients).set(patch).where(eq(schema.clients.id, clientId));
+}
+
 /** The client's most recent answers to a form (any age), used to prefill the next one. */
 export async function latestAnswers(tx: TenantDb, clientId: string, formId: string): Promise<Record<string, FormAnswer> | null> {
-  const row = await tx.query.formSubmissions.findFirst({ where: and(eq(schema.formSubmissions.clientId, clientId), eq(schema.formSubmissions.formId, formId)), orderBy: desc(schema.formSubmissions.createdAt) });
+  const row = await tx.query.formSubmissions.findFirst({ where: and(eq(schema.formSubmissions.clientId, clientId), eq(schema.formSubmissions.formId, formId), isNull(schema.formSubmissions.voidedAt)), orderBy: desc(schema.formSubmissions.createdAt) });
   return row?.answers ?? null;
+}
+
+/** Defaults for a fill: the client's last answers, plus contact fields mapped from the client record when unanswered. */
+export function prefillFor(form: { fields: FormFieldDef[] }, client: { email: string | null; phone: string | null; birthday: string | null } | null, latest: Record<string, FormAnswer> | null): Record<string, FormAnswer> | null {
+  const out: Record<string, FormAnswer> = { ...(latest ?? {}) };
+  for (const f of form.fields) {
+    if (!f.mapTo || !client || (out[f.id] !== undefined && out[f.id] !== "")) continue;
+    const v = f.mapTo === "email" ? client.email : f.mapTo === "phone" ? client.phone : f.mapTo === "birthday" ? client.birthday : null;
+    if (v) out[f.id] = v;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 /** Appointment ids (from the given set) that still have a required form outstanding. */
@@ -202,7 +248,7 @@ export async function appointmentsMissingForms(tx: TenantDb, appointmentIds: str
   const appts = await tx.select({ id: schema.appointments.id, clientId: schema.appointments.clientId, locationId: schema.appointments.locationId, status: schema.appointments.status }).from(schema.appointments).where(inArray(schema.appointments.id, appointmentIds));
   const items = await tx.select({ appointmentId: schema.appointmentItems.appointmentId, serviceId: schema.appointmentItems.serviceId }).from(schema.appointmentItems).where(and(inArray(schema.appointmentItems.appointmentId, appointmentIds), sql`${schema.appointmentItems.status} <> 'cancelled'`));
   const clientIds = [...new Set(appts.map((a) => a.clientId).filter((x): x is string => !!x))];
-  const subs = clientIds.length ? await tx.select({ clientId: schema.formSubmissions.clientId, formId: schema.formSubmissions.formId, createdAt: schema.formSubmissions.createdAt }).from(schema.formSubmissions).where(inArray(schema.formSubmissions.clientId, clientIds)).orderBy(desc(schema.formSubmissions.createdAt)) : [];
+  const subs = clientIds.length ? await tx.select({ clientId: schema.formSubmissions.clientId, formId: schema.formSubmissions.formId, createdAt: schema.formSubmissions.createdAt }).from(schema.formSubmissions).where(and(inArray(schema.formSubmissions.clientId, clientIds), isNull(schema.formSubmissions.voidedAt))).orderBy(desc(schema.formSubmissions.createdAt)) : [];
   const now = Date.now();
   for (const a of appts) {
     // Walk-ins without a client record have nobody to sign; they are handled at the desk.
@@ -289,18 +335,24 @@ export async function submissionsCsv(businessId: string, formId: string): Promis
       .innerJoin(schema.clients, eq(schema.clients.id, schema.formSubmissions.clientId))
       .where(eq(schema.formSubmissions.formId, formId))
       .orderBy(desc(schema.formSubmissions.createdAt));
-    const qs = form.fields.filter((f) => f.type !== "statement");
-    const headers = ["Submitted", "Client", "Email", "Phone", "Signed as", "Assisted", ...qs.map((q) => q.label)];
+    // Columns: the form's current questions, plus any question that only exists in an older signed copy.
+    const qs: FormFieldDef[] = form.fields.filter((f) => !DISPLAY_TYPES.includes(f.type));
+    for (const { s: sub } of subs) for (const f of sub.formSnapshot?.fields ?? []) if (!DISPLAY_TYPES.includes(f.type) && !qs.some((q) => q.id === f.id)) qs.push(f);
+    const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId), columns: { timezone: true } });
+    const fmt = new Intl.DateTimeFormat("en-CA", { dateStyle: "short", timeStyle: "short", timeZone: biz?.timezone ?? "UTC", hour12: false });
+    const headers = ["Submitted", "Client", "Email", "Phone", "Signed as", "Assisted", "Voided", ...qs.map((q) => q.label)];
     const rows = subs.map(({ s: sub, first, last, email, phone }) => [
-      sub.createdAt.toISOString(),
+      fmt.format(sub.createdAt),
       `${first} ${last}`.trim(),
       email,
       phone,
       sub.signatureName,
       sub.assistedByUserId ? "staff" : "",
+      sub.voidedAt ? `voided${sub.voidReason ? `: ${sub.voidReason}` : ""}` : "",
       ...qs.map((q) => {
         const v = sub.answers[q.id];
         if (q.type === "checkbox") return v === true ? "yes" : "no";
+        if (q.type === "file") return typeof v === "string" && v ? appUrl(`/api/files/${v}`) : "";
         if (Array.isArray(v)) return v.join("; ");
         return typeof v === "string" ? v : "";
       }),
@@ -343,16 +395,21 @@ export async function getSubmission(businessId: string, submissionId: string) {
 /** Parse the builder's posted field rows into definitions (drops empty rows). */
 export function parseFieldRows(raw: Record<string, string>): FormFieldDef[] {
   const out: FormFieldDef[] = [];
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < 100; i++) {
     const label = (raw[`f${i}_label`] ?? "").trim();
     const type = raw[`f${i}_type`] as FormFieldDef["type"] | undefined;
     if (!label || !type || !FIELD_TYPES.some((t) => t.type === type)) continue;
     const id = (raw[`f${i}_id`] ?? "").trim() || `f_${Math.random().toString(36).slice(2, 8)}`;
-    const def: FormFieldDef = { id, type, label: label.slice(0, 200), required: raw[`f${i}_required`] === "on" };
+    const def: FormFieldDef = { id, type, label: label.slice(0, 1000), required: DISPLAY_TYPES.includes(type) ? false : raw[`f${i}_required`] === "on" };
     if (type === "select" || type === "multiselect") def.options = (raw[`f${i}_options`] ?? "").split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 30);
     const dep = (raw[`f${i}_showif_field`] ?? "").trim();
     const val = (raw[`f${i}_showif_value`] ?? "").trim();
     if (dep && val) def.showIf = { fieldId: dep, equals: val.slice(0, 200) };
+    const mapTo = (raw[`f${i}_mapto`] ?? "").trim();
+    if (mapTo === "email" || mapTo === "phone" || mapTo === "birthday" || mapTo === "notes" || mapTo === "tag") {
+      def.mapTo = mapTo;
+      if (mapTo === "tag") def.tag = (raw[`f${i}_tag`] ?? "").trim().slice(0, 40) || null;
+    }
     out.push(def);
   }
   // A condition may only point at an earlier question that exists.
@@ -362,4 +419,99 @@ export function parseFieldRows(raw: Record<string, string>): FormFieldDef[] {
     seen.add(f.id);
   }
   return out;
+}
+
+/** Make a copy of a form (inactive, so nothing is sent until it is reviewed). */
+export async function duplicateForm(businessId: string, formId: string): Promise<string | null> {
+  return withTenant(businessId, async (tx) => {
+    const src = await tx.query.forms.findFirst({ where: eq(schema.forms.id, formId) });
+    if (!src) return null;
+    const [row] = await tx
+      .insert(schema.forms)
+      .values({ businessId, name: `Copy of ${src.name}`.slice(0, 120), kind: src.kind, description: src.description, fields: src.fields, requireSignature: src.requireSignature, applyToAll: src.applyToAll, serviceIds: src.serviceIds, renewDays: src.renewDays, locationIds: src.locationIds, active: false })
+      .returning({ id: schema.forms.id });
+    return row!.id;
+  });
+}
+
+/** Void a submission: it stays on file, struck through, and no longer counts as signed. */
+export async function voidSubmission(businessId: string, submissionId: string, reason: string | null, actorUserId: string) {
+  await withTenant(businessId, async (tx) => {
+    await tx.update(schema.formSubmissions).set({ voidedAt: new Date(), voidedByUserId: actorUserId, voidReason: reason }).where(and(eq(schema.formSubmissions.id, submissionId), isNull(schema.formSubmissions.voidedAt)));
+    await tx.insert(schema.auditLog).values({ businessId, actorUserId, action: "form.void", entity: "form_submission", entityId: submissionId, diff: JSON.stringify({ reason }) });
+  });
+}
+
+/** Move a submission filed under the wrong person to the right client. */
+export async function reassignSubmission(businessId: string, submissionId: string, clientId: string, actorUserId: string) {
+  await withTenant(businessId, async (tx) => {
+    const target = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId), columns: { id: true } });
+    if (!target) throw new FormSubmitError("Client not found.");
+    const before = await tx.query.formSubmissions.findFirst({ where: eq(schema.formSubmissions.id, submissionId), columns: { clientId: true } });
+    await tx.update(schema.formSubmissions).set({ clientId, appointmentId: null }).where(eq(schema.formSubmissions.id, submissionId));
+    await tx.insert(schema.auditLog).values({ businessId, actorUserId, action: "form.reassign", entity: "form_submission", entityId: submissionId, diff: JSON.stringify({ from: before?.clientId ?? null, to: clientId }) });
+  });
+}
+
+/** Email the client a copy of their signed form. Returns false when they have no email. */
+export async function emailSubmissionCopy(business: typeof schema.businesses.$inferSelect, submissionId: string): Promise<boolean> {
+  const { queueOneOff } = await import("@/lib/notify");
+  const row = await getSubmission(business.id, submissionId);
+  if (!row || !row.client.email) return false;
+  const form = row.s.formSnapshot ?? { name: row.form.name, fields: row.form.fields, description: row.form.description };
+  const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "long", timeStyle: "short", timeZone: business.timezone });
+  const lines = form.fields
+    .filter((f) => !DISPLAY_TYPES.includes(f.type))
+    .map((f) => `<tr><td style="padding:4px 12px 4px 0;color:#57534e;vertical-align:top">${esc(f.label)}</td><td style="padding:4px 0"><b>${esc(f.type === "file" ? (row.s.answers[f.id] ? "attachment on file" : "") : answerText(f, row.s.answers[f.id]) || "—")}</b></td></tr>`)
+    .join("");
+  const signed = row.s.signatureName ? `<p>Signed <i>${esc(row.s.signatureName)}</i> on ${fmt.format(row.s.signedAt ?? row.s.createdAt)}.</p>` : `<p>Submitted ${fmt.format(row.s.createdAt)}.</p>`;
+  const html = `<p>Hi ${esc(row.client.firstName)},</p><p>Here is your copy of <b>${esc(form.name)}</b> from ${esc(business.name)}.</p>${form.description ? `<p style="white-space:pre-line;color:#57534e">${esc(form.description)}</p>` : ""}<table>${lines}</table>${signed}`;
+  await queueOneOff(business.id, { channel: "email", template: "form_copy", recipient: row.client.email, subject: `Your copy of ${form.name}`, body: html, clientId: row.client.id });
+  return true;
+}
+
+/** Every submission in the business, newest first, with optional form and name filters. */
+export async function listSubmissions(businessId: string, opts: { formId?: string | null; q?: string | null; limit?: number; offset?: number } = {}) {
+  return withTenant(businessId, async (tx) => {
+    const where = and(
+      opts.formId ? eq(schema.formSubmissions.formId, opts.formId) : undefined,
+      opts.q ? or(ilike(schema.clients.firstName, `%${opts.q}%`), ilike(schema.clients.lastName, `%${opts.q}%`), ilike(sql`${schema.clients.firstName} || ' ' || ${schema.clients.lastName}`, `%${opts.q}%`)) : undefined,
+    );
+    const rows = await tx
+      .select({ id: schema.formSubmissions.id, createdAt: schema.formSubmissions.createdAt, signatureName: schema.formSubmissions.signatureName, assistedByUserId: schema.formSubmissions.assistedByUserId, voidedAt: schema.formSubmissions.voidedAt, formName: schema.forms.name, formId: schema.forms.id, clientId: schema.clients.id, firstName: schema.clients.firstName, lastName: schema.clients.lastName })
+      .from(schema.formSubmissions)
+      .innerJoin(schema.forms, eq(schema.forms.id, schema.formSubmissions.formId))
+      .innerJoin(schema.clients, eq(schema.clients.id, schema.formSubmissions.clientId))
+      .where(where)
+      .orderBy(desc(schema.formSubmissions.createdAt))
+      .limit(opts.limit ?? 50)
+      .offset(opts.offset ?? 0);
+    const [n] = await tx.select({ n: sql<number>`count(*)` }).from(schema.formSubmissions).innerJoin(schema.clients, eq(schema.clients.id, schema.formSubmissions.clientId)).where(where);
+    return { rows, total: Number(n?.n ?? 0) };
+  });
+}
+
+/** Upcoming visits (next `days`) whose client still owes a form, oldest visit first. */
+export async function outstandingForms(business: typeof schema.businesses.$inferSelect, days = 7) {
+  return withTenant(business.id, async (tx) => {
+    const now = new Date();
+    const until = new Date(now.getTime() + days * 86_400_000);
+    const rows = await tx
+      .select({ id: schema.appointments.id, clientId: schema.appointments.clientId, startAt: schema.appointmentItems.startAt, serviceName: schema.appointmentItems.serviceName, firstName: schema.clients.firstName, lastName: schema.clients.lastName })
+      .from(schema.appointments)
+      .innerJoin(schema.appointmentItems, and(eq(schema.appointmentItems.appointmentId, schema.appointments.id), eq(schema.appointmentItems.sortOrder, 0)))
+      .innerJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
+      .where(and(gte(schema.appointmentItems.startAt, now), lt(schema.appointmentItems.startAt, until), inArray(schema.appointments.status, ["booked", "confirmed"])))
+      .orderBy(asc(schema.appointmentItems.startAt));
+    if (!rows.length) return [];
+    const missing = await appointmentsMissingForms(tx, rows.map((r) => r.id));
+    const out: { appointmentId: string; clientId: string; clientName: string; startAt: Date; serviceName: string; forms: { id: string; name: string }[] }[] = [];
+    for (const r of rows) {
+      if (!missing.has(r.id)) continue;
+      const due = (await formsForAppointment(tx, r.id)).filter((f) => !f.current).map((f) => ({ id: f.form.id, name: f.form.name }));
+      if (due.length) out.push({ appointmentId: r.id, clientId: r.clientId!, clientName: `${r.firstName} ${r.lastName}`.trim(), startAt: r.startAt, serviceName: r.serviceName, forms: due });
+    }
+    return out;
+  });
 }

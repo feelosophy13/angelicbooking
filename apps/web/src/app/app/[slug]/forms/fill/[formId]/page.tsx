@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { getForm, latestAnswers } from "@/server/forms";
+import { formsForAppointment, getForm, latestAnswers, prefillFor } from "@/server/forms";
 import { brandVars } from "@/lib/brand";
 import { BackLink, Card, PageHeader } from "@/components/ui";
 import { FormFill } from "@/components/form-fill";
@@ -25,6 +25,9 @@ export default async function StaffFillFormPage({ params, searchParams }: { para
   ]);
   if (!form || !form.active || !client) notFound();
   const back = appointmentId ? `/app/${slug}/appointments/${appointmentId}` : `/app/${slug}/clients/${client.id}`;
+  // After this one: the next form still due for the same visit, if any.
+  const nextDue = appointmentId ? (await withTenant(business.id, (tx) => formsForAppointment(tx, appointmentId))).find((f) => !f.current && f.form.id !== form.id) ?? null : null;
+  const next = nextDue ? { href: `/app/${slug}/forms/fill/${nextDue.form.id}?clientId=${client.id}&appointmentId=${appointmentId}`, label: nextDue.form.name } : { href: back, label: appointmentId ? "back to the appointment" : "back to the client" };
   const clientName = `${client.firstName} ${client.lastName}`.trim();
   return (
     <div style={brandVars(business.brandColor)}>
@@ -34,7 +37,7 @@ export default async function StaffFillFormPage({ params, searchParams }: { para
       </PageHeader>
       <Card className="max-w-2xl p-5">
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Hand the device to {client.firstName} to read and sign. The record notes that it was completed with staff help.</p>
-        <FormFill action={submitFormAsStaff} hidden={{ slug, formId: form.id, clientId: client.id, ...(appointmentId ? { appointmentId } : {}) }} form={form} clientName={clientName} defaults={defaults} staffMode submitLabel={form.requireSignature ? "Sign and save" : "Save"} />
+        <FormFill action={submitFormAsStaff} hidden={{ slug, formId: form.id, clientId: client.id, ...(appointmentId ? { appointmentId } : {}) }} form={form} clientName={clientName} defaults={prefillFor(form, client, defaults)} next={next} staffMode submitLabel={form.requireSignature ? "Sign and save" : "Save"} />
         <p className="mt-4 text-xs text-stone-500"><Link href={back} className="underline">Back</Link> when done.</p>
       </Card>
     </div>

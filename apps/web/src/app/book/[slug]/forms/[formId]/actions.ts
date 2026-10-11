@@ -6,7 +6,7 @@ import { currentClient } from "@/server/client-auth";
 import { answersFromFormData, FormSubmitError, getForm, submitForm } from "@/server/forms";
 import { rateLimit } from "@/lib/rate-limit";
 
-export type SharedFormState = { error?: string; ok?: boolean } | undefined;
+export type SharedFormState = { error?: string; field?: string | null; ok?: boolean } | undefined;
 
 /**
  * A form reached from its shareable link (QR code at the desk, link on the website) rather
@@ -50,7 +50,7 @@ export async function submitSharedForm(_prev: SharedFormState, formData: FormDat
   try {
     await submitForm({ businessId: business.id, formId: form.id, clientId, appointmentId: null, answers, files, signatureName: d.signatureName || null, signatureImage: d.signatureImage || null, ipAddress: ip });
   } catch (e) {
-    if (e instanceof FormSubmitError) return { error: e.message };
+    if (e instanceof FormSubmitError) return { error: e.message, field: e.field };
     throw e;
   }
   return { ok: true };

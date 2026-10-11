@@ -16,7 +16,7 @@ export async function submitFormAsStaff(_prev: FillState, formData: FormData): P
   try {
     await submitForm({ businessId: ctx.business.id, formId: form.id, clientId: d.clientId, appointmentId: d.appointmentId || null, answers, files, signatureName: d.signatureName || null, signatureImage: d.signatureImage || null, ipAddress: (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "").trim() || null, assistedByUserId: ctx.user.id });
   } catch (e) {
-    if (e instanceof FormSubmitError) return { error: e.message };
+    if (e instanceof FormSubmitError) return { error: e.message, field: e.field };
     throw e;
   }
   return { ok: true };

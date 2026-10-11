@@ -6,10 +6,10 @@ import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { listLocations } from "@/server/locations";
 import { getForm } from "@/server/forms";
-import { Card, FormPage } from "@/components/ui";
+import { Button, Card, FormPage } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
 import { FormEditor } from "../form-editor";
-import { deleteForm, updateForm } from "../actions";
+import { deleteForm, duplicateFormAction, updateForm } from "../actions";
 import QRCode from "qrcode";
 import { appUrl } from "@/lib/stripe";
 
@@ -30,7 +30,7 @@ export default async function EditFormPage({ params }: { params: Promise<{ slug:
       .innerJoin(schema.clients, eq(schema.clients.id, schema.formSubmissions.clientId))
       .where(eq(schema.formSubmissions.formId, formId))
       .orderBy(desc(schema.formSubmissions.createdAt))
-      .limit(20),
+      .limit(10),
   );
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
   const shareUrl = appUrl(`/book/${business.slug}/forms/${form.id}`);
@@ -51,7 +51,7 @@ export default async function EditFormPage({ params }: { params: Promise<{ slug:
       </div>
       <FormEditor action={updateForm} slug={slug} form={form} services={services} locations={await listLocations(business.id)} submitLabel="Save form" />
       <div className="mt-6 border-t border-stone-200 pt-4">
-        <div className="mb-2 flex items-center justify-between"><h2 className="text-sm font-semibold text-stone-600">Recent submissions</h2><Link href={`/app/${slug}/settings/forms/${form.id}/export`} className="text-xs text-brand-700 underline">Export all as CSV</Link></div>
+        <div className="mb-2 flex items-center justify-between gap-3"><h2 className="text-sm font-semibold text-stone-600">Recent submissions</h2><span className="flex gap-3 text-xs"><Link href={`/app/${slug}/settings/forms/submissions?form=${form.id}`} className="text-brand-700 underline">All submissions</Link><Link href={`/app/${slug}/settings/forms/${form.id}/export`} className="text-brand-700 underline">Export CSV</Link></span></div>
         {recent.length === 0 ? <p className="text-sm text-stone-500">Nobody has completed this form yet.</p> : (
           <Card>
             <ul className="divide-y divide-stone-100 text-sm">
@@ -61,11 +61,18 @@ export default async function EditFormPage({ params }: { params: Promise<{ slug:
             </ul>
           </Card>
         )}
-        <form action={deleteForm} className="mt-4">
-          <input type="hidden" name="slug" value={slug} />
-          <input type="hidden" name="formId" value={form.id} />
-          <ConfirmSubmit title="Delete this form?" body="If anyone has signed it, it is archived instead so their copies are kept." confirmLabel="Delete" variant="ghost">Delete form</ConfirmSubmit>
-        </form>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <form action={duplicateFormAction}>
+            <input type="hidden" name="slug" value={slug} />
+            <input type="hidden" name="formId" value={form.id} />
+            <Button type="submit" size="sm" variant="secondary">Duplicate form</Button>
+          </form>
+          <form action={deleteForm}>
+            <input type="hidden" name="slug" value={slug} />
+            <input type="hidden" name="formId" value={form.id} />
+            <ConfirmSubmit title="Delete this form?" body="If anyone has signed it, it is archived instead so their copies are kept." confirmLabel="Delete" variant="ghost">Delete form</ConfirmSubmit>
+          </form>
+        </div>
       </div>
     </FormPage>
   );
