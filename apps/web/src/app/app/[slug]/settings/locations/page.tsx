@@ -24,13 +24,14 @@ export default async function LocationsPage({ params }: { params: Promise<{ slug
       <Card>
         <ul className="divide-y divide-stone-100">
           {rows.map((l) => (
-            <li key={l.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+            <li key={l.id} className="relative flex flex-wrap items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-stone-50">
               <div className="min-w-0 flex-1">
-                <p className="font-medium"><Link href={`/app/${slug}/settings/locations/${l.id}`} className="hover:underline">{l.name}</Link>{l.isDefault ? <span className="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-xs text-brand-800">default</span> : null}</p>
+                {/* The name link covers the whole row (after:inset-0); the action buttons sit above it. */}
+                <p className="font-medium"><Link href={`/app/${slug}/settings/locations/${l.id}`} className="after:absolute after:inset-0 after:content-['']">{l.name}</Link>{l.isDefault ? <span className="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-xs text-brand-800">default</span> : null}</p>
                 <p className="text-xs text-stone-500">{[l.addressLine1, l.city, l.state, l.postalCode].filter(Boolean).join(", ") || "No address"}{l.phone ? ` · ${l.phone}` : ""}{l.timezone ? ` · ${l.timezone}` : ""}</p>
                 <p className="text-xs text-stone-500">{l.hours ? describeHours(l.hours).join(" · ") : "No opening hours set"}</p>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="relative z-10 flex items-center gap-1">
                 {!l.isDefault ? (
                   <>
                     <form action={setDefaultLocation}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={l.id} /><Button size="sm" variant="ghost" type="submit">Make default</Button></form>
