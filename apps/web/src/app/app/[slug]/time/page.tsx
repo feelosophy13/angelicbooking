@@ -124,10 +124,26 @@ export default async function TimePage({ params, searchParams }: { params: Promi
                     </tr>
                   ))}
                 </tbody>
-                <tfoot className="text-sm font-medium">
-                  {[...totals.entries()].map(([sid, min]) => (
-                    <tr key={sid}><td className="px-4 py-1" /><td className="px-4 py-1">{name.get(sid)}</td><td /><td className="px-4 py-1 text-right">{fmtHours(min)}</td><td /><td /></tr>
+                <tfoot className="border-t-2 border-stone-200 bg-stone-50 text-sm">
+                  <tr><td colSpan={multiLocation ? 7 : 6} className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-500">Hours by staff</td></tr>
+                  {[...totals.entries()].sort((x, y) => y[1] - x[1]).map(([sid, min]) => (
+                    <tr key={sid}>
+                      <td className="px-4 py-1" />
+                      <td className="px-4 py-1 text-stone-800">{name.get(sid)}</td>
+                      <td />
+                      {multiLocation ? <td /> : null}
+                      <td className="px-4 py-1 text-right tabular-nums">{fmtHours(min)}</td>
+                      <td colSpan={2} />
+                    </tr>
                   ))}
+                  <tr className="border-t border-stone-200 font-semibold">
+                    <td className="px-4 py-2" />
+                    <td className="px-4 py-2">Total</td>
+                    <td />
+                    {multiLocation ? <td /> : null}
+                    <td className="px-4 py-2 text-right tabular-nums">{fmtHours([...totals.values()].reduce((a, b) => a + b, 0))}</td>
+                    <td colSpan={2} />
+                  </tr>
                 </tfoot>
               </table></div>
             )}
