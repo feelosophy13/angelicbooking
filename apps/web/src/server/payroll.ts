@@ -2,6 +2,7 @@ import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { computePayroll, zonedToInstant, type Adjustment, type HoursEntry, type PayrollEmployee, type PayrollLine, type PayrollResult } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
+import { ratesForPeriod, syncCurrentRates } from "@/server/pay-rates";
 
 export interface PayrollPeriod {
   start: string; // YYYY-MM-DD inclusive
@@ -119,6 +120,8 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
   const [lines, rest] = await Promise.all([
     buildPayrollLines(business, period, locationId),
     withTenant(business.id, async (tx) => {
+      // Scheduled changes whose date has arrived land on the staff record here, so lists stay current.
+      await syncCurrentRates(tx, localDate(new Date(), business.timezone));
       const [staff, hours, adjustments] = await Promise.all([
         tx.select().from(schema.staff).orderBy(asc(schema.staff.displayName)),
         tx
@@ -130,33 +133,40 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
           .from(schema.payrollAdjustments)
           .where(and(eq(schema.payrollAdjustments.periodStart, period.start), eq(schema.payrollAdjustments.periodEnd, period.end))),
       ]);
-      return { staff, hours, adjustments };
+      // Pay settings as they stood at the end of the period, so an old period re-runs with its old rates.
+      const rates = await ratesForPeriod(tx, staff.map((x) => x.id), period.start, period.end);
+      return { staff, hours, adjustments, rates };
     }),
   ]);
-  const employees: PayrollEmployee[] = rest.staff.map((s) => ({
-    staffId: s.id,
-    name: s.fullName?.trim() || s.displayName,
-    position: s.position,
-    payType: s.payType,
-    mainCommissionBps: s.mainCommissionBps,
-    productCommissionBps: s.productCommissionBps,
-    ccTipFeeBps: s.ccTipFeeBps,
-    hourlyRateCents: s.hourlyRateCents,
-    salaryPerPeriodCents: s.salaryPerPeriodCents,
-    overtimeOverride: s.overtimeOverride,
-    taxDeductionCents: s.taxDeductionCents,
-    taxDeductionBps: s.taxDeductionBps,
-  }));
+  const employees: PayrollEmployee[] = rest.staff.map((s) => {
+    const r = rest.rates.byStaff.get(s.id) ?? s;
+    return {
+      staffId: s.id,
+      name: s.fullName?.trim() || s.displayName,
+      position: s.position,
+      payType: r.payType,
+      mainCommissionBps: r.mainCommissionBps,
+      productCommissionBps: r.productCommissionBps,
+      ccTipFeeBps: r.ccTipFeeBps,
+      hourlyRateCents: r.hourlyRateCents,
+      salaryPerPeriodCents: r.salaryPerPeriodCents,
+      overtimeOverride: r.overtimeOverride,
+      taxDeductionCents: r.taxDeductionCents,
+      taxDeductionBps: r.taxDeductionBps,
+    };
+  });
   const hours: HoursEntry[] = rest.hours.map((h) => ({ staffId: h.staffId, date: h.date, minutes: h.minutes }));
   const adjustments: Adjustment[] = rest.adjustments.map((a) => ({ staffId: a.staffId, label: a.label, amountCents: a.amountCents }));
-  return { employees, lines, hours, adjustments, adjustmentRows: rest.adjustments };
+  const nameOf = new Map(employees.map((e) => [e.staffId, e.name]));
+  const rateChanges = rest.rates.changes.map((c) => ({ ...c, name: nameOf.get(c.staffId) ?? "" }));
+  return { employees, lines, hours, adjustments, adjustmentRows: rest.adjustments, rateChanges };
 }
 
 /** `locationId` limits sales (commission, tips) to one site; hours and adjustments are per person and stay whole. */
-export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean, locationId?: string | null): Promise<PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[] }> {
+export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean, locationId?: string | null): Promise<PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[]; rateChanges: { staffId: string; name: string; effectiveFrom: string }[] }> {
   const inputs = await getPayrollInputs(business, period, locationId);
   const result = computePayroll({ ...inputs, overtime, weekStart: 1 });
-  return { ...result, adjustmentRows: inputs.adjustmentRows };
+  return { ...result, adjustmentRows: inputs.adjustmentRows, rateChanges: inputs.rateChanges };
 }
 
 export async function getFinalizedRun(businessId: string, period: PayrollPeriod) {

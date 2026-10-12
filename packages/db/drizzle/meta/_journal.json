@@ -442,6 +442,20 @@
       "when": 1791751305821,
       "tag": "0062_form_submission_void",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1791772745575,
+      "tag": "0063_staff_pay_rates",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1791772746168,
+      "tag": "0064_staff_pay_rates_rls",
+      "breakpoints": true
     }
   ]
 }

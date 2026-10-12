@@ -55,6 +55,11 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
       </PageHeader>
       <p className="mb-4 text-sm text-stone-600">{formatDateLong(start)} – {formatDateLong(end)}{locationFilter ? ` · ${locations.find((l) => l.id === locationFilter)?.name} sales only (hours and adjustments are per person)` : ""}{finalized ? <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">finalized {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(finalized.createdAt)}</span> : null}</p>
 
+      {result.rateChanges.length ? (
+        <p className="mb-4 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600">
+          Pay settings changed during this period: {result.rateChanges.map((c) => `${c.name} from ${formatDateLong(c.effectiveFrom)}`).join(", ")}. The whole period is paid at the settings in force on {formatDateLong(end)}.
+        </p>
+      ) : null}
       {unconfigured.length ? (
         <div className="mb-4"><Notice>{unconfigured.map((e) => e.employee.name).join(", ")} earned service revenue but {unconfigured.length > 1 ? "have" : "has"} no commission rate. Set it under Staff → Pay.</Notice></div>
       ) : null}

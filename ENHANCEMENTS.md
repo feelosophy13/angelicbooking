@@ -386,7 +386,7 @@ Track delivery in `TODO.md`; this file is the source list. ✅ marks items that 
   each with the person and time) plus a "Full history" disclosure on both pages; online actions attributed to
   "the client" (`server/activity.ts`).
 - **P2 Audit log gaps** [security] — nothing for settings, Stripe connect, role/member changes, invitations, pay
-  rates, numbers, domain, client edits, service prices, gift-card adjustments; page has no filters and shows raw JSON
+  rates (✅ logged with history), numbers, domain, client edits, service prices, gift-card adjustments; page has no filters and shows raw JSON
   diff (`settings/audit/page.tsx:50-56`).
 - ✅ **P2 Settings index** [ux] — 17 flat cards with no grouping or status; business basics split across index,
   Profile, Booking and Locations; Managers have no nav path to Roles (`layout.tsx:53`, `settings/page.tsx:16`); nav

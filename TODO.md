@@ -201,6 +201,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-11 (migrations 0063–0064): pay-rate history. `staff_pay_rates` holds every pay-settings change with
+      an effective date (backfilled from each staff record); the staff row mirrors the settings in force today
+      (`syncCurrentRates`, run on the Pay tab and every payroll run so scheduled changes land on their date).
+      Payroll resolves each person's settings as of the period end, so re-running an old period reproduces its old
+      figures, and the sheet notes anyone whose settings changed inside the period. Pay tab: "Takes effect from"
+      (future date = scheduled, shown as a notice) and a note; "Rate history" card with who/when/why; changes are
+      logged as `staff.pay_change` with the fields that differ.
 - [x] 2026-10-11 (migration 0062): Forms overhaul. Templates on New form (intake, lash, PMU, waxing, facial/peel,
       photo release, minor consent; `lib/form-templates.ts`) and Duplicate. Builder: Yes/No, Phone, Email, Initials,
       Section heading and Agreement box types; options survive a type switch; conditions key off yes/no too and are

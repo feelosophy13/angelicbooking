@@ -461,6 +461,33 @@ export interface FormFieldDef {
 /** One answer: text/number/date/select as string, checkbox as boolean, multiselect as string[], file as the file id. */
 export type FormAnswer = string | boolean | string[];
 
+// Pay settings over time: one row per change with the date it takes effect, so payroll for a past
+// period uses the rates in force then. `staff` keeps the values in force today for display.
+export const staffPayRates = pgTable(
+  "staff_pay_rates",
+  {
+    id: id(),
+    businessId: businessId(),
+    staffId: text("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "cascade" }),
+    effectiveFrom: date("effective_from").notNull(), // YYYY-MM-DD, salon-local
+    payType: payType("pay_type").notNull(),
+    mainCommissionBps: integer("main_commission_bps").notNull().default(0),
+    productCommissionBps: integer("product_commission_bps").notNull().default(0),
+    ccTipFeeBps: integer("cc_tip_fee_bps").notNull().default(0),
+    hourlyRateCents: integer("hourly_rate_cents").notNull().default(0),
+    salaryPerPeriodCents: integer("salary_per_period_cents").notNull().default(0),
+    overtimeOverride: boolean("overtime_override"),
+    taxDeductionCents: integer("tax_deduction_cents"),
+    taxDeductionBps: integer("tax_deduction_bps"),
+    note: text("note"),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("staff_pay_rates_staff_idx").on(t.businessId, t.staffId, t.effectiveFrom)],
+);
+
 export const forms = pgTable(
   "forms",
   {
@@ -1206,6 +1233,7 @@ export const workflowRuns = pgTable(
 export const TENANT_TABLES = [
   "locations",
   "staff",
+  "staff_pay_rates",
   "staff_schedules",
   "staff_schedule_overrides",
   "service_categories",

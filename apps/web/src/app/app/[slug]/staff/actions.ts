@@ -16,6 +16,7 @@ import { listRoles } from "@/server/roles";
 import { inviteEmail } from "@/lib/notify/templates";
 import { ClockError, randomPin, setClockPin } from "@/server/time-clock";
 import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
+import { recordPayChange } from "@/server/pay-rates";
 
 const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -342,30 +343,37 @@ export const savePay = formAction(
     overtimeOverride: z.enum(["default", "yes", "no"]),
     taxDeductionAmount: z.string().trim().regex(/^(\d{1,7}(\.\d{1,2})?)?$/, "Enter an amount like 48.30").transform((v) => (v ? Math.round(Number(v) * 100) : null)),
     taxDeductionPct: z.string().trim().regex(/^(\d{1,2}(\.\d{1,2})?)?$/, "Enter a percent").transform((v) => (v ? Math.round(Number(v) * 100) : null)),
+    effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
+    note: f.optional(200),
   }),
   async (d) => {
     const ctx = await requireAction(d.slug, "members.manage");
     if (d.payType === "hourly" && !d.hourlyRate) throw new FormError("Enter an hourly rate", "hourlyRate");
     if (d.payType === "salary" && !d.salaryPerPeriod) throw new FormError("Enter the salary per period", "salaryPerPeriod");
-    await withTenant(ctx.business.id, (tx) =>
-      tx
-        .update(schema.staff)
-        .set({
-          position: d.position,
-          payType: d.payType,
-          mainCommissionBps: d.mainCommissionPct,
-          productCommissionBps: d.productCommissionPct,
-          ccTipFeeBps: d.ccTipFeePct,
-          hourlyRateCents: d.hourlyRate,
-          salaryPerPeriodCents: d.salaryPerPeriod,
-          overtimeOverride: d.overtimeOverride === "default" ? null : d.overtimeOverride === "yes",
-          taxDeductionCents: d.taxDeductionAmount,
-          taxDeductionBps: d.taxDeductionPct,
-        })
-        .where(eq(schema.staff.id, d.staffId)),
-    );
+    const today = instantToISODate(new Date(), ctx.business.timezone);
+    // Position is descriptive, not pay: it changes on the record right away.
+    await withTenant(ctx.business.id, (tx) => tx.update(schema.staff).set({ position: d.position }).where(eq(schema.staff.id, d.staffId)));
+    await recordPayChange({
+      businessId: ctx.business.id,
+      timezone: ctx.business.timezone,
+      staffId: d.staffId,
+      effectiveFrom: d.effectiveFrom,
+      note: d.note,
+      actorUserId: ctx.user.id,
+      rates: {
+        payType: d.payType,
+        mainCommissionBps: d.mainCommissionPct,
+        productCommissionBps: d.productCommissionPct,
+        ccTipFeeBps: d.ccTipFeePct,
+        hourlyRateCents: d.hourlyRate ?? 0,
+        salaryPerPeriodCents: d.salaryPerPeriod ?? 0,
+        overtimeOverride: d.overtimeOverride === "default" ? null : d.overtimeOverride === "yes",
+        taxDeductionCents: d.taxDeductionAmount,
+        taxDeductionBps: d.taxDeductionPct,
+      },
+    });
     revalidatePath(`/app/${d.slug}/staff/${d.staffId}/pay`);
-    return "Pay settings saved";
+    return d.effectiveFrom > today ? `Saved. These settings start on ${d.effectiveFrom}; until then the current ones apply.` : "Pay settings saved";
   },
 );
 
