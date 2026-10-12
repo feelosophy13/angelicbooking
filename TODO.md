@@ -201,6 +201,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-11 (migration 0065): late cancellation fee. Settings → Online booking: none / flat / percent of the
+      booked services, and whether a paid deposit counts toward the fee or is kept on top. Cancelling from the
+      appointment page inside the window shows the fee, what the deposit covers, and offers to charge the rest to a
+      saved card (fee ticket + `appointment.late_fee` in the activity trail); without a card it notes the amount
+      to collect next visit. Booking page, confirmation and reminder state the fee next to the window. Online
+      cancellation inside the window stays closed, so nothing is charged without staff. Demo salon: $25 flat.
 - [x] 2026-10-11 (migrations 0063–0064): pay-rate history. `staff_pay_rates` holds every pay-settings change with
       an effective date (backfilled from each staff record); the staff row mirrors the settings in force today
       (`syncCurrentRates`, run on the Pay tab and every payroll run so scheduled changes land on their date).

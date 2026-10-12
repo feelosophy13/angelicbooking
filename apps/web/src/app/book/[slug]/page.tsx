@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { MapPin } from "lucide-react";
-import { instantToISODate, weekdayOf } from "@angelic/core";
+import { instantToISODate, weekdayOf, lateCancelFeeLabel } from "@angelic/core";
 import { getAvailableDates, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots, publicProvidersFor } from "@/server/public-booking";
 import { buildTree, pathTo, subtreeIds } from "@/server/categories";
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
@@ -54,6 +54,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const locId = locations.length > 1 ? (location?.id ?? null) : null;
   const me = business.clientAccountsEnabled ? await currentClient(business) : null;
   const hasPromos = await withTenant(business.id, async (tx) => !!(await tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.active, true) })));
+  const lateFee = lateCancelFeeLabel({ feeType: business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: business.lateCancelFeeValue, deposit: business.lateCancelDeposit as "toward" | "extra" }, (c) => formatMoney(c, business.currency));
   const defaults = me ? { firstName: me.firstName, lastName: me.lastName, phone: me.phone, email: me.email, smsOptIn: me.smsOptIn } : null;
   const tz = tzFor(business, location);
   const today = instantToISODate(new Date(), tz);
@@ -160,9 +161,9 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(sessionDate)} at ${formatTime(chosen.startAt, tz)}`, href: q({ session: undefined }) }, { label: "With", value: chosen.staffName }, { label: "Per person", value: formatMoney(service.priceCents, business.currency) }, { label: "Seats left", value: String(chosen.seatsLeft) }]} />
         {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">A {formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
         {req.mode === "none" ? (
-          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         ) : (
-          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} mode={req.mode} amountLabel={formatMoney(req.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} mode={req.mode} amountLabel={formatMoney(req.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         )}
       </>
     );
@@ -318,7 +319,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: slot.staffName, href: q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: serviceMeta(service) }, { label: "Price", value: formatMoney(service.priceCents, business.currency) }]} />
       {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">A {formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : service.depositCents > 0 ? <p className="mb-3 text-xs text-stone-600">A {formatMoney(service.depositCents, business.currency)} deposit may be required; the salon will confirm.</p> : null}
       {req.mode === "none" ? (
-        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
       ) : (
         <PaidBookingForm
           slug={slug}
@@ -326,7 +327,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           staffId={slot.staffId}
           startAt={startAt.toISOString()}
           policy={business.bookingPolicy}
-          cancelWindowHours={business.cancelWindowHours}
+          cancelWindowHours={business.cancelWindowHours} lateFee={lateFee}
           mode={req.mode}
           amountLabel={formatMoney(req.amountCents, business.currency)}
           publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!}

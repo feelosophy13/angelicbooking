@@ -33,10 +33,26 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <Field label="Book up to" name="maxAdvanceDays" hint="Days ahead."><Input name="maxAdvanceDays" type="number" min={1} max={365} defaultValue={business.maxAdvanceDays} /></Field>
               <Field label="Cancellation window" name="cancelWindowHours" hint="Hours before the visit."><Input name="cancelWindowHours" type="number" min={0} defaultValue={business.cancelWindowHours} /></Field>
             </div>
-            <details className="rounded-lg border border-stone-200 p-3" open={business.requireCardOnline || business.noShowFeeCents > 0}>
-              <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">Cards and no-shows <span className="font-normal text-stone-500">· {business.noShowFeeCents > 0 ? `$${(business.noShowFeeCents / 100).toFixed(0)} fee` : "no fee"}{business.requireCardOnline ? " · card required" : ""}</span></summary>
+            <details className="rounded-lg border border-stone-200 p-3" open={business.requireCardOnline || business.noShowFeeCents > 0 || business.lateCancelFeeType !== "none"}>
+              <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">Cards, no-shows and late cancellations <span className="font-normal text-stone-500">· {business.noShowFeeCents > 0 ? `$${(business.noShowFeeCents / 100).toFixed(0)} no-show` : "no no-show fee"}{business.lateCancelFeeType !== "none" ? " · late fee" : ""}{business.requireCardOnline ? " · card required" : ""}</span></summary>
               <div className="mt-3 space-y-3">
                 <Field label="No-show fee ($)" name="noShowFee" hint="Charged to a saved card from the appointment page. Deposits are set per service."><MoneyInput name="noShowFee" defaultValue={business.noShowFeeCents ? (business.noShowFeeCents / 100).toFixed(2) : ""} className="max-w-[10rem]" /></Field>
+                <div className="grid gap-3 sm:grid-cols-[14rem_10rem]">
+                  <Field label="Late cancellation fee" name="lateCancelFeeType" hint="For cancellations inside the window. Offered when staff cancel; shown in the booking policy.">
+                    <Select name="lateCancelFeeType" defaultValue={business.lateCancelFeeType}>
+                      <option value="none">No fee</option>
+                      <option value="flat">Flat amount</option>
+                      <option value="percent">Percent of the booked services</option>
+                    </Select>
+                  </Field>
+                  <Field label="Amount or %" name="lateCancelFeeValue"><Input name="lateCancelFeeValue" inputMode="decimal" defaultValue={business.lateCancelFeeType === "flat" ? (business.lateCancelFeeValue / 100).toFixed(2) : business.lateCancelFeeType === "percent" ? String(business.lateCancelFeeValue / 100) : ""} placeholder="25 or 50" /></Field>
+                </div>
+                <Field label="A paid deposit" name="lateCancelDeposit" hint="When a client who paid a deposit cancels late.">
+                  <Select name="lateCancelDeposit" defaultValue={business.lateCancelDeposit} className="max-w-xs">
+                    <option value="toward">Counts toward the fee</option>
+                    <option value="extra">Is kept on top of the fee</option>
+                  </Select>
+                </Field>
                 <Checkbox name="requireCardOnline" defaultChecked={business.requireCardOnline} label="Require a card on file to book online" hint="Needs Stripe connected. Nothing is charged at booking; the card is kept for no-show fees." />
                 <Field label="Returned deposits go" name="depositRefundAs" hint="When a client cancels inside the window, or staff refund a deposit.">
                   <Select name="depositRefundAs" defaultValue={business.depositRefundAs} className="max-w-xs">

@@ -6,7 +6,7 @@ import { ActivityTrail } from "@/components/activity-trail";
 import { appointmentActivity } from "@/server/activity";
 import { ConfirmSubmit } from "@/components/form";
 import { notFound } from "next/navigation";
-import { instantToISODate } from "@angelic/core";
+import { instantToISODate, isInsideCancelWindow, lateCancelFee } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { getAppointmentDetail } from "@/server/appointments";
 import { getStaffAvailability, timingFor } from "@/server/availability";
@@ -21,6 +21,7 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
 import { NoShowFeeForm } from "./no-show-form";
+import { CancelForm } from "./cancel-form";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForAppointment, tzFor } from "@/server/locations";
 import { MapPin, CalendarPlus } from "lucide-react";
@@ -78,6 +79,10 @@ export default async function AppointmentPage({
   const total = live.reduce((s, i) => s + i.priceCents, 0);
   const locked = ["completed", "cancelled", "no_show"].includes(appointment.status);
   const self = `/app/${slug}/appointments/${id}`;
+  // What a late cancellation would cost right now, for the cancel form.
+  const latePolicy = { feeType: business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: business.lateCancelFeeValue, deposit: business.lateCancelDeposit as "toward" | "extra" };
+  const lateFee = first && latePolicy.feeType !== "none" && !locked && appointment.kind !== "block" && isInsideCancelWindow(first.startAt, business.cancelWindowHours) ? lateCancelFee(latePolicy, total, appointment.depositStatus === "paid" ? appointment.depositCents : 0) : null;
+  const lateCancel = lateFee && lateFee.feeCents > 0 ? { feeLabel: formatMoney(lateFee.feeCents, business.currency), depositCoversLabel: lateFee.depositCoversCents > 0 ? formatMoney(lateFee.depositCoversCents, business.currency) : null, chargeLabel: lateFee.chargeCents > 0 ? formatMoney(lateFee.chargeCents, business.currency) : null, chargeCents: lateFee.chargeCents } : null;
 
   // Group segments by service so colour + finish show as one line.
   const groups = new Map<string, typeof items>();
@@ -326,13 +331,7 @@ export default async function AppointmentPage({
             {appointment.status !== "cancelled" ? (
               <details className="group mt-3 border-t border-stone-200 pt-3">
                 <summary className="cursor-pointer select-none text-sm text-stone-500 hover:text-stone-800 marker:content-none [&::-webkit-details-marker]:hidden">Cancel this appointment…</summary>
-                <form action={changeStatus} className="mt-2 space-y-2">
-                  <input type="hidden" name="slug" value={slug} />
-                  <input type="hidden" name="appointmentId" value={id} />
-                  <input type="hidden" name="status" value="cancelled" />
-                  <Input name="reason" placeholder="Reason (optional)" />
-                  <ConfirmSubmit title="Cancel this appointment?" body="The client is notified if they have messages turned on. The time becomes available again." confirmLabel="Cancel appointment" variant="danger" className="w-full">Cancel appointment</ConfirmSubmit>
-                </form>
+                <CancelForm slug={slug} appointmentId={id} late={lateCancel} cards={savedCards} />
               </details>
             ) : (
               <p className="mt-3 text-sm text-stone-500">

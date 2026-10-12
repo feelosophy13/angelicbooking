@@ -20,6 +20,7 @@ export function PaidBookingForm(props: {
   startAt: string;
   policy: string | null;
   cancelWindowHours: number;
+  lateFee?: string | null;
   mode: "deposit" | "card";
   amountLabel: string;
   publishableKey: string;
@@ -81,7 +82,7 @@ export function PaidBookingForm(props: {
           {pending ? "One moment…" : props.mode === "deposit" ? `Continue to pay ${props.amountLabel} deposit` : "Continue to add a card"}
         </button>
         <p className="text-xs text-stone-500">
-          {props.mode === "deposit" ? `A ${props.amountLabel} deposit is charged now and comes off your bill on the day.` : "Your card is saved to hold the booking. Nothing is charged now."} You can cancel or reschedule online up to {props.cancelWindowHours} hours before.{props.policy ? ` ${props.policy}` : ""}
+          {props.mode === "deposit" ? `A ${props.amountLabel} deposit is charged now and comes off your bill on the day.` : "Your card is saved to hold the booking. Nothing is charged now."} You can cancel or reschedule online up to {props.cancelWindowHours} hours before.{props.lateFee ? ` Cancellations inside that window carry a fee of ${props.lateFee}.` : ""}{props.policy ? ` ${props.policy}` : ""}
         </p>
       </form>
     );

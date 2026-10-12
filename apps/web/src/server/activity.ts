@@ -52,6 +52,7 @@ function describe(action: string, diff: Record<string, unknown>, currency: strin
   if (action === "appointment.remove_service") return { what: "removed a service", detail: null };
   if (action === "appointment.reschedule") return { what: "moved the appointment", detail: null };
   if (action === "appointment.notes") return { what: "edited the notes", detail: null };
+  if (action === "appointment.late_fee") return { what: "charged a late cancellation fee", detail: [money(diff.chargeCents), typeof diff.depositCoversCents === "number" && diff.depositCoversCents > 0 ? `deposit covered ${money(diff.depositCoversCents)}` : null].filter(Boolean).join(" · ") || null };
   if (action.startsWith("appointment.")) {
     const status = action.slice("appointment.".length);
     return { what: STATUS_WORDS[status] ?? `set it to ${status.replace("_", " ")}`, detail: reason };

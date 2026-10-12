@@ -73,6 +73,11 @@ export const businesses = pgTable("businesses", {
   minNoticeMin: integer("min_notice_min").notNull().default(120),
   maxAdvanceDays: integer("max_advance_days").notNull().default(60),
   cancelWindowHours: integer("cancel_window_hours").notNull().default(24),
+    // Late cancellation (inside the window): none, a flat amount (cents) or a percent of the booked services (bps).
+    lateCancelFeeType: text("late_cancel_fee_type").notNull().default("none"), // none | flat | percent
+    lateCancelFeeValue: integer("late_cancel_fee_value").notNull().default(0),
+    // Whether a paid deposit counts toward the fee ("toward") or is kept on top of it ("extra").
+    lateCancelDeposit: text("late_cancel_deposit").notNull().default("toward"), // toward | extra
   // When a deposit comes back (cancellation inside policy, staff refund): to the card, or as store credit.
   depositRefundAs: text("deposit_refund_as").notNull().default("original"), // original | store_credit
   requireCardOnline: boolean("require_card_online").notNull().default(false),

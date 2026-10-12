@@ -8,9 +8,9 @@ import { cancelSeriesFrom } from "@/server/series";
 import { formsForAppointment } from "@/server/forms";
 import { triggerAppointmentWorkflows } from "@/server/workflows";
 import { cancelQueuedReminders, notifyAppointment } from "@/lib/notify";
-import { parseMoney } from "@angelic/core";
+import { isInsideCancelWindow, lateCancelFee, parseMoney } from "@angelic/core";
 import { schema as dbSchema, withTenant } from "@angelic/db";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { setFlash } from "@/lib/flash";
 import { schema } from "@angelic/db";
@@ -124,6 +124,50 @@ export async function startCheckout(formData: FormData) {
     currency: ctx.business.currency,
   });
   redirect(`/app/${slug}/sales/${saleId}`);
+}
+
+/**
+ * Cancel from the appointment page. Inside the cancellation window with a fee set, optionally
+ * charge what the deposit doesn't cover to a saved card; the fee lands on a ticket of its own.
+ */
+export async function cancelAppointment(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const d = base.extend({ reason: z.string().trim().max(200).optional(), chargeFee: z.string().optional(), paymentMethodId: z.string().optional() }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "appointments.write.any");
+  const reason = d.reason || null;
+  try {
+    if (d.chargeFee === "on" && d.paymentMethodId) {
+      const { appt, servicesCents, startAt } = await withTenant(ctx.business.id, async (tx) => {
+        const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, d.appointmentId) });
+        const items = appt ? await tx.select({ priceCents: schema.appointmentItems.priceCents, startAt: schema.appointmentItems.startAt, status: schema.appointmentItems.status }).from(schema.appointmentItems).where(eq(schema.appointmentItems.appointmentId, d.appointmentId)).orderBy(asc(schema.appointmentItems.startAt)) : [];
+        const live = items.filter((i) => i.status !== "cancelled");
+        return { appt, servicesCents: live.reduce((n, i) => n + i.priceCents, 0), startAt: live[0]?.startAt ?? null };
+      });
+      if (!appt || !startAt) return { error: "Appointment not found." };
+      if (!isInsideCancelWindow(startAt, ctx.business.cancelWindowHours)) return { error: "This appointment is outside the cancellation window; no fee applies." };
+      const fee = lateCancelFee({ feeType: ctx.business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: ctx.business.lateCancelFeeValue, deposit: ctx.business.lateCancelDeposit as "toward" | "extra" }, servicesCents, appt.depositStatus === "paid" ? appt.depositCents : 0);
+      if (fee.chargeCents <= 0) return { error: "Nothing to charge: the deposit covers the fee." };
+      const pay = await paymentContextForAppointment(ctx.business, d.appointmentId);
+      if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
+      const saleId = await openSaleForAppointment({ businessId: ctx.business.id, appointmentId: d.appointmentId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, currency: ctx.business.currency });
+      await withTenant(ctx.business.id, async (tx) => {
+        const sale = await tx.query.sales.findFirst({ where: eq(dbSchema.sales.id, saleId) });
+        if (!sale || sale.status !== "open" || sale.paidCents > 0) throw new SaleError("This appointment already has a sale in progress.");
+        await tx.delete(dbSchema.saleLines).where(eq(dbSchema.saleLines.saleId, saleId));
+        await tx.insert(dbSchema.saleLines).values({ businessId: ctx.business.id, saleId, kind: "fee", name: "Late cancellation fee", quantity: 1, unitCents: fee.chargeCents, amountCents: fee.chargeCents, taxable: false });
+        await tx.update(dbSchema.sales).set({ subtotalCents: fee.chargeCents, discountCents: 0, taxCents: 0, tipCents: 0, totalCents: fee.chargeCents }).where(eq(dbSchema.sales.id, saleId));
+        await tx.insert(dbSchema.auditLog).values({ businessId: ctx.business.id, actorUserId: ctx.user.id, action: "appointment.late_fee", entity: "appointment", entityId: d.appointmentId, diff: JSON.stringify({ feeCents: fee.feeCents, depositCoversCents: fee.depositCoversCents, chargeCents: fee.chargeCents }) });
+      });
+      await chargeCardOnFile({ businessId: ctx.business.id, accountId: pay.accountId, saleId, paymentMethodId: d.paymentMethodId, amountCents: fee.chargeCents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    }
+    await setAppointmentStatus(ctx.business.id, d.appointmentId, "cancelled", ctx.user.id, reason);
+    await notifyAppointment(ctx.business, d.appointmentId, "cancellation");
+  } catch (e) {
+    if (e instanceof SaleError || e instanceof BookingError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath(`/app/${d.slug}/appointments/${d.appointmentId}`);
+  revalidatePath(`/app/${d.slug}`);
+  return { ok: true };
 }
 
 /** Charge the business's no-show fee (or a custom amount) to one of the client's saved cards. */

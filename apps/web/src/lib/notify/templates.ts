@@ -14,6 +14,8 @@ export interface ApptContext {
   manageUrl: string;
   policy: string | null;
   cancelWindowHours: number;
+  /** "$25.00" or "50% of the booked services" when a late-cancellation fee applies; null when none. */
+  lateCancelFee?: string | null;
   /** Formatted deposit already paid online, e.g. "$25.00"; null when none. */
   depositPaid?: string | null;
   /** True when a card was saved at booking (nothing charged). */
@@ -70,7 +72,7 @@ function prepNote(ctx: ApptContext) {
 
 function manage(ctx: ApptContext) {
   return `${prepNote(ctx)}${formsNote(ctx)}<p style="margin-top:16px"><a href="${ctx.manageUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Manage appointment</a></p>
-<p style="font-size:13px;color:#78716c">You can cancel or reschedule online up to ${ctx.cancelWindowHours} hours before your appointment.${ctx.policy ? ` ${esc(ctx.policy)}` : ""}</p>`;
+<p style="font-size:13px;color:#78716c">You can cancel or reschedule online up to ${ctx.cancelWindowHours} hours before your appointment.${ctx.lateCancelFee ? ` Cancellations inside that window carry a fee of ${esc(ctx.lateCancelFee)}.` : ""}${ctx.policy ? ` ${esc(ctx.policy)}` : ""}</p>`;
 }
 
 export const templates = {

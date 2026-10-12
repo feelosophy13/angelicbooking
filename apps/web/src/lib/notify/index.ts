@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { after } from "next/server";
 import { db, schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
-import { normalizePhone } from "@angelic/core";
+import { normalizePhone, lateCancelFeeLabel } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { formatMoney } from "@/lib/utils";
 import { formsForAppointment } from "@/server/forms";
@@ -48,6 +48,7 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
     manageUrl: appUrl(`/book/${business.slug}/manage/${appt.manageToken}`),
     policy: business.bookingPolicy,
     cancelWindowHours: business.cancelWindowHours,
+    lateCancelFee: lateCancelFeeLabel({ feeType: business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: business.lateCancelFeeValue, deposit: business.lateCancelDeposit as "toward" | "extra" }, (c) => formatMoney(c, business.currency)),
     depositPaid: appt.depositStatus === "paid" || appt.depositStatus === "applied" ? formatMoney(appt.depositCents, business.currency) : null,
     cardOnFile: !!appt.cardSetupIntentId,
     formsUrl: (await formsForAppointment(tx, appt.id)).some((f) => !f.current) ? appUrl(`/book/${business.slug}/manage/${appt.manageToken}/forms`) : null,
