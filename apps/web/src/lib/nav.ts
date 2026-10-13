@@ -25,6 +25,8 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       it(`${base}/clients`, "Clients", "Users"),
       ...(ok("clients.read") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
       it(`${base}/staff`, "Staff", "UserCog", { exclude: [`${base}/staff-hours`] }),
+      // Who may do what. A Settings page that is also a daily tool for whoever manages people, so it has its own entry (and Settings steps aside).
+      ...(ok("members.manage") ? [it(`${base}/settings/roles`, "Roles", "ShieldCheck")] : []),
     ] },
     { title: "Catalog", items: [
       it(`${base}/services`, "Services", "Scissors"),
@@ -44,7 +46,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       ...(ok("business.manage") ? [it(`${base}/settings/loyalty`, "Loyalty & referrals", "Heart")] : []),
       it(`${base}/reviews`, "Reviews", "Star"),
     ] },
-    { title: "", items: ok("business.manage") ? [it(`${base}/settings`, "Settings", "Settings", { exclude: [`${base}/settings/loyalty`] })] : [] },
+    { title: "", items: ok("business.manage") ? [it(`${base}/settings`, "Settings", "Settings", { exclude: [`${base}/settings/loyalty`, `${base}/settings/roles`] })] : [] },
   ].filter((s) => s.items.length > 0);
 }
 

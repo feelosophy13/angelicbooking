@@ -240,6 +240,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] 2026-10-13: calendar header is identical in Day/Week/Month (week-only picker and legend moved to their own row); the way back to now is Today /
       This week / This month; Block time and appointment pages use the shared BackLink on the left (test fails on a hand-written back link); LinkButton now
       passes aria-label through, so icon-only link buttons have names.
+- [x] 2026-10-13: Roles is in the People section of the sidebar (people who can manage members); Settings steps aside on its pages.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.
