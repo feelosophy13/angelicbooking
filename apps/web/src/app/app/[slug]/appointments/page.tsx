@@ -13,10 +13,13 @@ import { Button, Card, Empty, Input, LinkButton, PageHeader, Select } from "@/co
 import { LinkRow } from "@/components/table-row";
 import { StatusBadge } from "@/components/status-badge";
 import { LocationFilter } from "@/components/location-filter";
+import { ServicePicker } from "@/components/service-picker";
+import { serviceGroups, serviceIdsInScope } from "@/server/service-groups";
+import { parseScope, scopeValue } from "@/lib/service-scope";
 
 export const metadata: Metadata = { title: "Appointments" };
 
-type SP = { view?: string; source?: string; status?: string; staff?: string; location?: string; q?: string; page?: string };
+type SP = { view?: string; source?: string; status?: string; staff?: string; location?: string; service?: string; q?: string; page?: string };
 const VIEWS: { key: AppointmentsView; label: string }[] = [
   { key: "upcoming", label: "Upcoming" },
   { key: "today", label: "Today" },
@@ -43,19 +46,23 @@ export default async function AppointmentsPage({ params, searchParams }: { param
   const status = STATUSES.includes(sp.status ?? "") ? sp.status! : null;
   const staffId = providers.some((p) => p.id === sp.staff) ? sp.staff! : null;
   const locationId = locations.some((l) => l.id === sp.location) ? sp.location! : null;
+  const groups = await serviceGroups(business, { meta: "none", categories: true });
+  const scope = parseScope(sp.service, groups);
+  const scopeVal = scopeValue(scope);
+  const serviceIds = await serviceIdsInScope(business.id, scopeVal);
   const q = sp.q?.trim() || null;
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
-  const { rows, total, pageSize } = await listAppointments(business.id, { view, dayStart: zonedToInstant(today, "00:00", tz), dayEnd: zonedToInstant(shiftISODate(today, 1), "00:00", tz), source, status, staffId, locationId, q, page });
+  const { rows, total, pageSize } = await listAppointments(business.id, { view, dayStart: zonedToInstant(today, "00:00", tz), dayEnd: zonedToInstant(shiftISODate(today, 1), "00:00", tz), source, status, staffId, locationId, serviceIds, q, page });
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
   const params_ = (over: Partial<Record<keyof SP, string | null | undefined>> = {}) => {
-    const all: Record<string, string | null | undefined> = { view, source, status, staff: staffId, location: locationId, q, ...over };
+    const all: Record<string, string | null | undefined> = { view, source, status, staff: staffId, location: locationId, service: scopeVal, q, ...over };
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(all)) if (v) p.set(k, v);
     return p.toString();
   };
   const href = (over: Partial<Record<keyof SP, string | null | undefined>> = {}) => `?${params_(over)}`;
-  const filtered = !!(source || status || staffId || q);
+  const filtered = !!(source || status || staffId || scopeVal || q);
   const when = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: tz });
   const time = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz });
   const locName = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "").replace(/^.*? - /, "") : "");
@@ -91,9 +98,10 @@ export default async function AppointmentsPage({ params, searchParams }: { param
                 {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </Select>
             ) : null}
+            <ServicePicker name="service" groups={groups} value={scopeVal} noneLabel="Any service" compact />
             <Input name="q" defaultValue={q ?? ""} placeholder="Client, phone or service" className="h-9 min-w-0 flex-1 basis-40" aria-label="Search" />
             <Button type="submit" size="sm" variant="secondary">Apply</Button>
-            {filtered ? <Link href={href({ source: null, status: null, staff: null, q: null, page: null })} className="text-sm text-stone-600 underline">Clear</Link> : null}
+            {filtered ? <Link href={href({ source: null, status: null, staff: null, service: null, q: null, page: null })} className="text-sm text-stone-600 underline">Clear</Link> : null}
           </form>
         </div>
       </Card>

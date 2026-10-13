@@ -45,6 +45,8 @@ export interface AppointmentsListFilter {
   status?: string | null;
   staffId?: string | null;
   locationId?: string | null;
+  /** Visits with at least one of these services (a service, or everything in a category); null or absent = any. */
+  serviceIds?: string[] | null;
   q?: string | null;
   page?: number;
   pageSize?: number;
@@ -80,6 +82,9 @@ export async function listAppointments(businessId: string, f: AppointmentsListFi
     if (f.status) conds.push(sql`${schema.appointments.status} = ${f.status}`);
     if (f.staffId) conds.push(eq(it.staffId, f.staffId));
     if (f.locationId) conds.push(eq(schema.appointments.locationId, f.locationId));
+    if (f.serviceIds) {
+      conds.push(f.serviceIds.length ? sql`exists (select 1 from appointment_items ai_svc where ai_svc.appointment_id = ${schema.appointments.id} and ai_svc.service_id in (${sql.join(f.serviceIds.map((id) => sql`${id}`), sql`, `)}))` : sql`false`);
+    }
     const q = f.q?.trim();
     if (q) {
       const like = `%${q}%`;

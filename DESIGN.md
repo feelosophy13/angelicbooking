@@ -110,6 +110,10 @@ path ("Lash Extensions › Classic"). Build its groups with `serviceGroups(busin
   gets an "All of <category>" row (value `c:<id>`, including a category that only holds sub-categories). The page reads `c:` as the category
   and everything under it (`subtreeIds`); the Gallery does this. A page that only ever filters by category (Staff hours coverage) keeps a plain
   select, indented by depth, because that list is short.
+- **Meaning on each page.** Appointments: visits that include the service (or any service in the category), found through any of
+  their services. Reports: sales that include it, with every line on those sales counted; what is not split by service (pay, store
+  credit, refund reasons, referrals, stock) is hidden while the filter is on, and a line under the date says so. The CSV exports follow
+  the same filter. The value is `lib/service-scope.ts` (`parseScope`) on the way in and `serviceIdsInScope` on the server.
 
 ## Navigation and findability
 

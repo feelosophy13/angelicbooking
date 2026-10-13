@@ -19,13 +19,17 @@ import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
 import { listCategories, pathTo } from "@/server/categories";
 import { CategoryTable, type CategoryLine } from "./category-table";
+import { ServicePicker } from "@/components/service-picker";
+import { AutoSubmitForm } from "@/components/auto-submit-form";
+import { serviceGroups, serviceIdsInScope } from "@/server/service-groups";
+import { parseScope, scopeLabel, scopeValue } from "@/lib/service-scope";
 
 export default async function ReportsPage({
   params,
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ from?: string; to?: string; location?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; location?: string; service?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
@@ -35,7 +39,13 @@ export default async function ReportsPage({
   const locName = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "Unknown") : "No location");
   // In a table of this business's own sites the business name is noise: "Glow Collective - Reston" reads "Reston".
   const siteLabel = (name: string | null) => (name ? (name.startsWith(`${business.name} - `) ? name.slice(business.name.length + 3) : name) : "No location");
-  const lq = locationFilter ? `&location=${locationFilter}` : "";
+  // Optional filter: sales that include one service, or any service in a category (and below).
+  const groups = await serviceGroups(business, { meta: "none", categories: true });
+  const scope = parseScope(sp.service, groups);
+  const scopeVal = scopeValue(scope);
+  const serviceIds = await serviceIdsInScope(business.id, scopeVal);
+  const scoped = serviceIds !== null;
+  const lq = `${locationFilter ? `&location=${locationFilter}` : ""}${scopeVal ? `&service=${encodeURIComponent(scopeVal)}` : ""}`;
   const tz = business.timezone;
   const today = instantToISODate(new Date(), tz);
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -53,10 +63,11 @@ export default async function ReportsPage({
     await refundsByReason(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
     business.loyaltyEnabled ? await referralsInPeriod(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)) : [],
   ]);
-  const canPayroll = can(permissions, "payroll.view");
+  // Pay is not split by service, so it is left out while a service filter is on.
+  const canPayroll = can(permissions, "payroll.view") && !scoped;
   const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation }, prev, categories, pay, payBefore, payByLoc] = await Promise.all([
-    salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter),
-    salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter),
+    salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter, serviceIds),
+    salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter, serviceIds),
     listCategories(business.id, "service"),
     // What the period cost in pay: the same calculation as Payroll, overtime off, so the numbers agree.
     canPayroll ? runPayroll(business, { start: from, end: to }, false, locationFilter, { split: true }) : null,
@@ -144,7 +155,13 @@ export default async function ReportsPage({
   return (
     <>
       <PageHeader title="Reports">
-        <LocationFilter locations={locations} current={locationFilter} query={`from=${from}&to=${to}`} allLabel="All" />
+        <LocationFilter locations={locations} current={locationFilter} query={`from=${from}&to=${to}${scopeVal ? `&service=${encodeURIComponent(scopeVal)}` : ""}`} allLabel="All" />
+        <AutoSubmitForm>
+          <input type="hidden" name="from" value={from} />
+          <input type="hidden" name="to" value={to} />
+          {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
+          <ServicePicker name="service" groups={groups} value={scopeVal} noneLabel="Any service" compact />
+        </AutoSubmitForm>
         <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Period">
           {(
             [
@@ -162,6 +179,7 @@ export default async function ReportsPage({
               <span className="text-sm text-stone-500">to</span>
               <Input type="date" name="to" defaultValue={to} className="w-40" aria-label="To" />
               {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
+              {scopeVal ? <input type="hidden" name="service" value={scopeVal} /> : null}
               <Button type="submit" variant="secondary" size="sm">Show</Button>
             </form>
           </details>
@@ -176,8 +194,14 @@ export default async function ReportsPage({
         </details>
       </PageHeader>
       <p className="mb-4 text-sm text-stone-600">{from === to ? formatDateLong(from) : `${formatDateLong(from)} – ${formatDateLong(to)}`}{locationFilter ? ` · ${locName(locationFilter)}` : ""}</p>
+      {scoped ? (
+        <p className="mb-4 rounded-lg bg-brand-50 px-3 py-2 text-sm text-stone-700">
+          Showing sales that include <strong>{scopeLabel(scope, groups) ?? "this service"}</strong>; every line on those sales is counted. Pay, store credit, refund reasons, referrals and stock are not split by service, so they are hidden.{" "}
+          <Link href={`?from=${from}&to=${to}${locationFilter ? `&location=${locationFilter}` : ""}`} className="underline">Clear</Link>
+        </p>
+      ) : null}
 
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+      <div className={`mb-6 grid gap-3 sm:grid-cols-2 ${scoped ? "lg:grid-cols-5" : "lg:grid-cols-6"}`}>
         {(
           [
             ["Sales", sum("totalCents") - sum("tipCents"), sum("totalCents", prev.sales) - sum("tipCents", prev.sales), true],
@@ -187,7 +211,7 @@ export default async function ReportsPage({
             ["Refunds", sum("refundedCents"), sum("refundedCents", prev.sales), false],
             ["Store credit issued", credit.issuedCents, creditBefore.issuedCents, false],
           ] as [string, number, number, boolean][]
-        ).map(([label, v, before, goodUp]) => {
+        ).filter(([label]) => !(scoped && label === "Store credit issued")).map(([label, v, before, goodUp]) => {
           const d = delta(v, before);
           const positive = d ? d.up === goodUp : null;
           return (
@@ -352,7 +376,7 @@ export default async function ReportsPage({
             </>
           )}
         </Card>
-        <Card>
+        <Card className={scoped ? "hidden" : ""}>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Refunds by reason</h2>
           {byReason.length === 0 ? <div className="p-4"><Empty title="No refunds in this range" /></div> : (
             <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -366,7 +390,7 @@ export default async function ReportsPage({
           )}
           {can(permissions, "business.manage") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/refund-reasons`} className="text-brand-700 underline">Settings → Refund reasons</Link>.</p> : null}
         </Card>
-        {business.loyaltyEnabled ? (
+        {business.loyaltyEnabled && !scoped ? (
           <Card>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Referrals</h2>
             {referrals.length === 0 ? <div className="p-4"><Empty title="No referrals joined or had a first visit in this range" /></div> : (
@@ -457,7 +481,7 @@ export default async function ReportsPage({
           )}
         </Card>
       </div>
-      {stock.items.length ? (
+      {stock.items.length && !scoped ? (
         <Card className="mt-6">
           <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2"><h2 className="text-sm font-semibold text-stone-600">Stock on hand</h2><span className="text-xs text-stone-500">{stock.lowCount ? `${stock.lowCount} low · ` : ""}value at cost {money(stock.totalValueCents)} · retail {money(stock.totalRetailCents)}</span></div>
           <table className="w-full text-sm">

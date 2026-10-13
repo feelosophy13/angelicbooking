@@ -1,9 +1,9 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import type { ServiceGroup } from "@/components/service-picker";
 import { formatMoney } from "@/lib/utils";
 import { duration } from "@/lib/format";
-import { buildTree, listCategories, pathTo, type AnyCategory, type CategoryNode } from "./categories";
+import { buildTree, listCategories, pathTo, subtreeIds, type AnyCategory, type CategoryNode } from "./categories";
 
 type GroupOpts = { meta?: "duration-price" | "price" | "none"; note?: (serviceId: string) => string | null; include?: (serviceId: string) => boolean; /** Add an "All of <category>" row to each category that contains an included service, at any depth. */ categories?: boolean };
 type ServiceRow = { id: string; name: string; categoryId: string | null; durationMin: number; priceCents: number };
@@ -70,4 +70,17 @@ export async function serviceTree(business: { id: string }): Promise<ServiceTree
   const loose = services.filter((s) => !s.categoryId || !ids.has(s.categoryId)).map((s) => ({ id: s.id, name: s.name }));
   if (loose.length) tree.push({ id: "none", name: "Other", services: loose, children: [] });
   return tree;
+}
+
+/**
+ * The service ids a filter value covers: one service, or every service in a category and its sub-categories
+ * (retired services included, since old visits and sales still point at them). null means "no filter".
+ */
+export async function serviceIdsInScope(businessId: string, value: string | null | undefined): Promise<string[] | null> {
+  if (!value) return null;
+  if (!value.startsWith("c:")) return [value];
+  const ids = subtreeIds(await listCategories(businessId, "service"), value.slice(2));
+  if (ids.length === 0) return [];
+  const rows = await withTenant(businessId, (tx) => tx.select({ id: schema.services.id }).from(schema.services).where(inArray(schema.services.categoryId, ids)));
+  return rows.map((r) => r.id);
 }

@@ -797,13 +797,19 @@ export async function voidSale(input: { businessId: string; saleId: string; acto
 }
 
 /** Sales summary for a local-date range: by day, by staff, by payment method, by location. `locationId` narrows to one site. */
-export async function salesReport(businessId: string, from: Date, to: Date, locationId?: string | null) {
+/**
+ * Sales between two instants. With `serviceIds`, only sales that include a service line for one of them are counted
+ * (every line on those sales is then included, so a ticket with a facial and a product shows both).
+ */
+export async function salesReport(businessId: string, from: Date, to: Date, locationId?: string | null, serviceIds?: string[] | null) {
   return withTenant(businessId, async (tx) => {
+    const hasService = serviceIds ? (serviceIds.length ? sql`exists (select 1 from sale_lines sl_svc where sl_svc.sale_id = ${schema.sales.id} and sl_svc.kind = 'service' and sl_svc.service_id in (${sql.join(serviceIds.map((id) => sql`${id}`), sql`, `)}))` : sql`false`) : undefined;
     const closed = and(
       gte(schema.sales.closedAt, from),
       lt(schema.sales.closedAt, to),
       sql`${schema.sales.status} in ('paid','refunded')`,
       ...(locationId ? [eq(schema.sales.locationId, locationId)] : []),
+      ...(hasService ? [hasService] : []),
     );
     const [sales, byStaff, byMethod] = await Promise.all([
       tx
@@ -885,11 +891,11 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
         .select({ status: schema.appointments.status, source: schema.appointments.source, count: sql<number>`count(*)` })
         .from(schema.appointments)
         .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id))
-        .where(and(gte(schema.appointmentItems.startAt, from), lt(schema.appointmentItems.startAt, to), eq(schema.appointmentItems.sortOrder, 0), eq(schema.appointments.kind, "visit"), ...(locationId ? [eq(schema.appointments.locationId, locationId)] : [])))
+        .where(and(gte(schema.appointmentItems.startAt, from), lt(schema.appointmentItems.startAt, to), eq(schema.appointmentItems.sortOrder, 0), eq(schema.appointments.kind, "visit"), ...(locationId ? [eq(schema.appointments.locationId, locationId)] : []), ...(serviceIds ? [serviceIds.length ? sql`exists (select 1 from appointment_items ai_svc where ai_svc.appointment_id = ${schema.appointments.id} and ai_svc.service_id in (${sql.join(serviceIds.map((id) => sql`${id}`), sql`, `)}))` : sql`false`] : [])))
         .groupBy(schema.appointments.status, schema.appointments.source),
     ]);
     // Per-location totals (always across all sites so the owner sees the split even when filtered).
-    const allClosed = and(gte(schema.sales.closedAt, from), lt(schema.sales.closedAt, to), sql`${schema.sales.status} in ('paid','refunded')`);
+    const allClosed = and(gte(schema.sales.closedAt, from), lt(schema.sales.closedAt, to), sql`${schema.sales.status} in ('paid','refunded')`, ...(hasService ? [hasService] : []));
     const [byLocation, crossGift, crossCredit] = await Promise.all([
       tx
         .select({
