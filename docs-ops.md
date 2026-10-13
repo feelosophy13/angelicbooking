@@ -302,6 +302,30 @@ Mac awake (a run missed while asleep happens on wake) and local Postgres running
 paused task `refresh-demo-data` that does the same thing; leave it paused so the two don't both run. Run it by hand before a demo. To rebuild one tenant: `../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts [--profile glow] --reset`
 from `apps/web`.
 
+### Hosted demo (production)
+
+The demo salons can also live in the production database so they can be shown from `app.angelicbooking.com`
+(`/app/demo-salon`, `/book/demo-salon`), refreshed weekly by a Render cron job. Safeguards, all in code:
+- Businesses whose slug starts with `demo-` never email or text anyone: the notification queue marks their messages
+  "skipped" (`lib/notify`), so fake clients and staff addresses can't hurt sender reputation or cost SMS money.
+- The seed refuses a non-local database unless `DEMO_ALLOW_REMOTE=1` is set, and then also requires a `DEMO_PASSWORD` of your
+  own (the repo default is public). Changing `DEMO_PASSWORD` later is fine: the next refresh recreates the demo logins.
+- Demo pictures go into Postgres (R2 keys are never given to the job), about 40 MB per tenant per refresh.
+
+Render cron job `angelic-booking-demo-refresh` (same repo and `main` branch as the app, auto-deploys on push):
+
+| Setting | Value |
+|---|---|
+| Type, plan, region | Cron Job, Starter, Virginia |
+| Schedule | `0 10 * * 1` (Mondays 10:00 UTC, 6:00 AM Eastern in summer) |
+| Build command | `npm install -g pnpm@12 && pnpm install --frozen-lockfile` |
+| Command | `pnpm demo:refresh` |
+| Environment | `DATABASE_URL`, `DATABASE_ADMIN_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL` (the same values as the web service), `DEMO_ALLOW_REMOTE=1`, `DEMO_PASSWORD=<a secret of your own>` |
+
+It needs nothing else (no Stripe, Resend, Twilio or R2 keys). To run it now, use "Trigger Run" on the job. The demo logins are
+`demo@angelicbooking.com` (Luxe Beauty Studio) and `demo2@angelicbooking.com` (Glow Collective) with that `DEMO_PASSWORD`.
+`DEMO_PASSWORD` exists locally too (the default, for the local demo), which is the one deliberate difference from Render.
+
 ### What it creates
 
 The menu is Angelic Beauty's real one (angelicbeautyva.com, fetched 2026-10-11), with the studio's own category and service

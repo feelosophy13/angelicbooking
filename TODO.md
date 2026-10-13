@@ -220,6 +220,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       by category and day (and by site on the two-site tenant). Run `pnpm demo:refresh` (about 30 s) before a demo and
       monthly; everything is relative to the run date. Automated: the macOS launchd job `com.angelicbooking.demo-refresh` runs it every Monday
       at 6:00 (log: ~/Library/Logs/angelic-demo-refresh.log; if the Mac is asleep it runs on wake).
+- [ ] 2026-10-13: hosted demo refresh on Render. Code done and committed (demo businesses never send email or text,
+      DEMO_PASSWORD, DEMO_ALLOW_REMOTE guards; settings in docs-ops.md "Hosted demo"). Left: push, create the cron job
+      `angelic-booking-demo-refresh` (my Render API call was blocked by the safety classifier, so it needs the user or a
+      permission rule), set its env vars, trigger the first run, and check `/book/demo-salon` on app.angelicbooking.com.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.
