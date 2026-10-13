@@ -1,9 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import { db, schema } from "@angelic/db";
+import { db, schema, withTenant } from "@angelic/db";
 import { can, type Action, type Permissions, type Role } from "@angelic/core";
-import { permissionsForRole } from "@/server/roles";
+import { cookies } from "next/headers";
+import { listRoles, permissionsForRole } from "@/server/roles";
+import { VIEW_AS_COOKIE, viewAsEnabled } from "./dev-view-as";
 import { requireSession } from "./session";
 
 export type TenantContext = {
@@ -12,6 +14,11 @@ export type TenantContext = {
   /** Resolved from the business's roles table; use with can(). */
   permissions: Permissions;
   user: { id: string; name: string; email: string };
+  /** Development only: the role being viewed as, when it is not the person's real one (see lib/dev-view-as.ts). */
+  viewingAs?: string | null;
+  realRole?: string;
+  /** The staff member this login is (staff.user_id), or the one being viewed as in development; null when the login is not linked to one. */
+  staffId?: string | null;
 };
 
 /**
@@ -27,8 +34,17 @@ export const requireBusiness = cache(async (slug: string): Promise<TenantContext
     where: and(eq(schema.member.organizationId, business.id), eq(schema.member.userId, session.user.id)),
   });
   if (!membership) notFound();
+  const myStaff = await withTenant(business.id, (tx) => tx.query.staff.findFirst({ where: eq(schema.staff.userId, session.user.id), columns: { id: true } }));
+  // Development only: act as another role (optionally as a particular staff member: "provider:<staffId>"), so every page and permission check
+  // shows what that person gets.
+  if (viewAsEnabled()) {
+    const [as, asStaff] = ((await cookies()).get(VIEW_AS_COOKIE)?.value ?? "").split(":");
+    if (as && (as !== membership.role || asStaff) && (await listRoles(business.id)).some((r) => r.key === as)) {
+      return { business, role: as, permissions: await permissionsForRole(business.id, as), user: session.user, viewingAs: as, realRole: membership.role, staffId: asStaff || myStaff?.id || null };
+    }
+  }
   const permissions = await permissionsForRole(business.id, membership.role);
-  return { business, role: membership.role, permissions, user: session.user };
+  return { business, role: membership.role, permissions, user: session.user, viewingAs: null, realRole: membership.role, staffId: myStaff?.id ?? null };
 });
 
 export const PERMISSION_DENIED = "PERMISSION_DENIED";

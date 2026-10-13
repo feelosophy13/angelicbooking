@@ -130,6 +130,19 @@ The week opens on "Everyone (overview)" (`?staff=all`, also the default), and th
 in the stylist's colour, with a colour legend above the grid and no text, no buttons and no processing labels on them. Everything else comes from hovering
 (the hover card) or clicking (opens the visit). Cards still carry an `aria-label` so screen readers read what sighted users get from hovering.
 
+## Roles on the calendar and appointments
+
+- **Any or own.** Appointment permissions come in two kinds. "Any" (Manager, Front desk) covers every appointment. "Own" (Provider) covers appointments the person
+  is booked on, and only when their login is linked to a staff member. `lib/appointment-access.ts` is the rule; pages and actions call
+  `requireAppointmentAccess` (server/appointment-access.ts) instead of checking "any" directly. Never write a new appointment page or action that
+  requires only the "any" permission.
+- **A Provider's calendar is their own:** their column and their appointments, in every view, with no staff picker. A role with neither permission sees a note
+  instead. A login not linked to a staff member sees a note saying so. On an appointment a Provider can change status, notes, photos and check out; changing the booking
+  itself (services, moving, cancelling, series) stays with the desk.
+- **Revenue is for people who can see reports.** The day strip's "Expected" figure shows only with the reports permission.
+- **Testing roles in development.** The amber "Dev · View as" pill (bottom right, development only, never in production or on Render) shows the app as another role, and for
+  a Provider as a particular stylist. It changes `requireBusiness`, so every menu, page and permission check behaves exactly as that role would get.
+
 ## Calendar hover card
 
 Hovering an appointment on the calendar (or tabbing to it) shows a card after a short pause: client and phone, status, every service on the visit with who

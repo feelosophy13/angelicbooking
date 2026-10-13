@@ -3,12 +3,14 @@ import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, 
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
-import { asc, desc } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { permissionsForRole, listRoles } from "@/server/roles";
 import { appUrl } from "@/lib/stripe";
 import { Wordmark } from "@/components/brand";
 import { UserMenu } from "@/components/user-menu";
+import { DevViewAs } from "@/components/dev-view-as";
+import { viewAsEnabled } from "@/lib/dev-view-as";
 import { CommandPalette } from "@/components/command-palette";
 import { NavHistory } from "@/components/nav-history";
 import { navSections } from "@/lib/nav";
@@ -19,9 +21,11 @@ const ICON: Record<string, React.ComponentType<{ className?: string }>> = { Cale
 
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, user, role, permissions } = await requireBusiness(slug);
+  const { business, user, role, permissions, viewingAs, realRole, staffId } = await requireBusiness(slug);
   const [mine, roles, locations] = await Promise.all([listMyBusinesses(user.id), listRoles(business.id), withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations).orderBy(desc(schema.locations.isDefault), asc(schema.locations.name)))]);
   void permissionsForRole;
+  // Development only: the staff a Provider can be viewed as.
+  const viewAsStaff = viewAsEnabled() ? await withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName))) : [];
   const roleName = roles.find((r) => r.key === role)?.name ?? role.replace("_", " ");
   const base = `/app/${slug}`;
   // What clients see: the public booking page (custom domain when one is set). Opens in a new tab.
@@ -91,6 +95,14 @@ export default async function AppLayout({ children, params }: { children: React.
           {children}
         </main>
       </div>
+      {viewAsEnabled() ? (
+        <DevViewAs
+          roles={roles.map((r) => ({ key: r.key, name: r.name, needsStaff: !(r.permissions as string[]).includes("appointments.read.any") && (r.permissions as string[]).includes("appointments.read.own") }))}
+          staff={viewAsStaff}
+          realRole={realRole ?? role}
+          current={viewingAs ? (roles.find((r) => r.key === viewingAs && !(r.permissions as string[]).includes("appointments.read.any") && (r.permissions as string[]).includes("appointments.read.own")) ? `${viewingAs}:${staffId ?? ""}` : viewingAs) : null}
+        />
+      ) : null}
     </div>
   );
 }

@@ -3,7 +3,8 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { schema } from "@angelic/db";
-import { requireAction } from "@/lib/tenant";
+import { requireAction, requireBusiness } from "@/lib/tenant";
+import { requireAppointmentAccess } from "@/server/appointment-access";
 import { BookingError, rescheduleService, setAppointmentStatus } from "@/server/booking";
 import { notifyAppointment } from "@/lib/notify";
 import { triggerAppointmentWorkflows } from "@/server/workflows";
@@ -14,8 +15,8 @@ const statusSchema = z.enum(schema.appointmentStatus.enumValues);
 
 export async function updateAppointmentStatus(formData: FormData) {
   const slug = String(formData.get("slug"));
-  const ctx = await requireAction(slug, "appointments.write.any");
   const appointmentId = String(formData.get("appointmentId"));
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
   const status = statusSchema.parse(formData.get("status"));
   await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id);
   if (status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");
@@ -35,7 +36,11 @@ export async function moveAppointmentItem(input: {
     .object({ slug: z.string(), itemId: z.string().min(1), newStartISO: z.string().datetime(), newStaffId: z.string().nullish() })
     .safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid move" };
-  const ctx = await requireAction(parsed.data.slug, "appointments.write.any");
+  // A Provider may move their own appointments, but not to someone else's column.
+  const itemRow = await withTenant((await requireBusiness(parsed.data.slug)).business.id, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId), columns: { appointmentId: true } }));
+  if (!itemRow) return { ok: false, error: "That appointment no longer exists." };
+  const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, "write");
+  if (ctx.access === "own" && parsed.data.newStaffId && parsed.data.newStaffId !== ctx.staffId) return { ok: false, error: "You can only move your own appointments to your own column." };
   try {
     await rescheduleService({
       businessId: ctx.business.id,
@@ -58,7 +63,7 @@ export async function moveAppointmentItem(input: {
 export async function quickStatus(input: { slug: string; appointmentId: string; status: "checked_in" | "completed" | "confirmed" }): Promise<MoveResult> {
   const parsed = z.object({ slug: z.string(), appointmentId: z.string().min(1), status: z.enum(["checked_in", "completed", "confirmed"]) }).safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid" };
-  const ctx = await requireAction(parsed.data.slug, "appointments.write.any");
+  const ctx = await requireAppointmentAccess(parsed.data.slug, parsed.data.appointmentId, "write");
   await setAppointmentStatus(ctx.business.id, parsed.data.appointmentId, parsed.data.status, ctx.user.id);
   if (parsed.data.status === "completed") await triggerAppointmentWorkflows(ctx.business, "appointment_completed", parsed.data.appointmentId);
   revalidatePath(`/app/${parsed.data.slug}`);

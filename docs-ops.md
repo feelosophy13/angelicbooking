@@ -274,6 +274,12 @@ keeps using Postgres, so local development needs nothing.
   `next.config.ts`) because a visit can add several phone photos at once; each photo is resized on the server.
   Render and Cloudflare in front of the app must not impose a smaller limit.
 
+## Trying the app as another role (development only)
+
+With the dev server running, a small amber "Dev · View as" selector sits at the bottom right of every business page. Pick Manager, Front desk or
+"Provider · <stylist>" to see the menu, calendar and permission errors that role gets; pick "Owner (you)" to go back. It is a cookie read by
+`requireBusiness` (`lib/dev-view-as.ts`) and is ignored, and the selector not drawn, when `NODE_ENV` is production or `RENDER`/`VERCEL` is set.
+
 ## Demo tenant
 
 Two fake businesses for walkthroughs and screenshots, built by `apps/web/scripts/seed-demo.ts` (it never touches any other

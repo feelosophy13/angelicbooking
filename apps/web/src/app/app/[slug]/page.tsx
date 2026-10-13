@@ -23,6 +23,7 @@ import { can } from "@angelic/core";
 import { asc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { buildTip, type CalTip, type TipItem } from "@/lib/calendar-tip";
+import { seesNoCalendar, seesOwnOnly } from "@/lib/appointment-access";
 
 function startOfWeek(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -39,7 +40,10 @@ export default async function CalendarPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions, user } = await requireBusiness(slug);
+  const { business, permissions, user, staffId } = await requireBusiness(slug);
+  // A Provider's calendar is their own: their column and their appointments. A role with no calendar permission at all sees none.
+  const ownOnly = seesOwnOnly(permissions);
+  const noCalendar = seesNoCalendar(permissions);
   const locations = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.name)));
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
   // Filtered to one location: show its wall clock (it may sit in another timezone).
@@ -54,16 +58,17 @@ export default async function CalendarPage({
   const agenda = await getRangeAgenda(business.id, tz, from, days);
   // Day view: who works at this location on that weekday; week/month: anyone who works there on some day.
   const filtered = filterAgendaByLocation(agenda, locationFilter, view === "day" ? weekdayOf(date) : null);
-  const staff = filtered.staff;
+  const agendaItems = noCalendar ? [] : ownOnly ? filtered.items.filter((i) => i.staffId === staffId) : filtered.items;
+  const staff = noCalendar ? [] : ownOnly ? filtered.staff.filter((s) => s.id === staffId) : filtered.staff;
   // Which visits still have a required form outstanding (day view only: it's a per-appointment check).
-  const missingForms = view === "day" ? await withTenant(business.id, (tx) => appointmentsMissingForms(tx, [...new Set(filtered.items.filter((i) => !i.classSessionId).map((i) => i.appointmentId))])) : new Set<string>();
+  const missingForms = view === "day" ? await withTenant(business.id, (tx) => appointmentsMissingForms(tx, [...new Set(agendaItems.filter((i) => !i.classSessionId).map((i) => i.appointmentId))])) : new Set<string>();
   const formsFilter = sp.forms === "missing";
-  const items = formsFilter ? filtered.items.filter((i) => missingForms.has(i.appointmentId)) : filtered.items;
+  const items = formsFilter ? agendaItems.filter((i) => missingForms.has(i.appointmentId)) : agendaItems;
   // The week opens on the overview of everyone: each appointment is a text-free block in its stylist's colour, read by hover or click. Picking
   // a stylist (staff=<id>) shows that one person's week in full. Day view shows every column, month view everyone.
-  const staffFilter = view === "week" ? (staff.find((s) => s.id === sp.staff)?.id ?? null) : null;
+  const staffFilter = view === "week" ? (ownOnly ? (staff[0]?.id ?? null) : (staff.find((s) => s.id === sp.staff)?.id ?? null)) : null;
   const staffParam = view === "week" ? (staffFilter ?? "all") : null;
-  const overview = view === "week" && !staffFilter;
+  const overview = view === "week" && !staffFilter && !ownOnly && !noCalendar;
 
   const minuteOf = (d: Date) => {
     const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "numeric", hour12: false }).formatToParts(d);
@@ -195,7 +200,12 @@ export default async function CalendarPage({
       </PageHeader>
 
       {setup.length ? <SetupChecklist steps={setup} slug={slug} /> : null}
-      {view === "week" ? (
+      {noCalendar ? (
+        <p className="mb-4 rounded-lg border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600">Your role doesn&apos;t include calendars. Ask the owner if you need access.</p>
+      ) : ownOnly && !staffId ? (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Your login isn&apos;t linked to a staff member yet, so there is no calendar to show. Ask the owner to send you an invitation from Staff, or to link it under Staff → Access.</p>
+      ) : null}
+      {view === "week" && !ownOnly && !noCalendar ? (
         // The week's own controls live here, not in the header, so the header is the same in every view and nothing in it moves.
         <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-stone-600">
           <AutoSubmitForm className="contents">
@@ -233,7 +243,7 @@ export default async function CalendarPage({
               unconfirmed: appts.filter((a) => a.status === "booked").length,
               completed: appts.filter((a) => a.status === "completed").length,
               noShows: appts.filter((a) => a.status === "no_show").length,
-              expected: money(live.filter((i) => i.status !== "no_show").reduce((s, i) => s + i.priceCents, 0), business.currency),
+              expected: can(permissions, "reports.view") ? money(live.filter((i) => i.status !== "no_show").reduce((s, i) => s + i.priceCents, 0), business.currency) : null,
               nextUp: appts.filter((a) => a.startAt > new Date() && (a.status === "booked" || a.status === "confirmed")).sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0] ?? null,
               formsMissing: missingForms.size,
             };
@@ -260,7 +270,7 @@ export default async function CalendarPage({
           columns={columns}
           items={calItems}
           slotIntervalMin={business.slotIntervalMin}
-          canEdit={can(permissions, "appointments.write.any")}
+          canEdit={can(permissions, "appointments.write.any") || (ownOnly && can(permissions, "appointments.write.own"))}
           startHour={startHour}
           endHour={endHour}
         />

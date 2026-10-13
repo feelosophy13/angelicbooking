@@ -241,6 +241,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       This week / This month; Block time and appointment pages use the shared BackLink on the left (test fails on a hand-written back link); LinkButton now
       passes aria-label through, so icon-only link buttons have names.
 - [x] 2026-10-13: Roles is in the People section of the sidebar (people who can manage members); Settings steps aside on its pages.
+- [x] 2026-10-13: Provider role works: their calendar is only their own column and appointments, they can open and update their own appointments (status, notes,
+      photos, checkout), the day strip's Expected revenue needs the reports permission, and the hover cards follow because the calendar does. Dev-only "View as"
+      pill to test any role (and Provider as a given stylist). Still the desk's: booking new appointments for a provider (needs the new-appointment page to accept the
+      own permission), and a Provider-linked login for each stylist (invite from Staff).
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.

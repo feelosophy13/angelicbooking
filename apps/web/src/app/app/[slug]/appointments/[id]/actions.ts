@@ -8,13 +8,14 @@ import { cancelSeriesFrom } from "@/server/series";
 import { formsForAppointment } from "@/server/forms";
 import { triggerAppointmentWorkflows } from "@/server/workflows";
 import { cancelQueuedReminders, notifyAppointment } from "@/lib/notify";
-import { isInsideCancelWindow, lateCancelFee, parseMoney } from "@angelic/core";
+import { can, isInsideCancelWindow, lateCancelFee, parseMoney } from "@angelic/core";
 import { schema as dbSchema, withTenant } from "@angelic/db";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { setFlash } from "@/lib/flash";
 import { schema } from "@angelic/db";
-import { requireAction } from "@/lib/tenant";
+import { PermissionError, requireAction } from "@/lib/tenant";
+import { requireAppointmentAccess } from "@/server/appointment-access";
 import {
   addServiceToAppointment,
   BookingError,
@@ -30,7 +31,7 @@ const base = z.object({ slug: z.string(), appointmentId: z.string().min(1) });
 
 export async function changeStatus(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
-  const ctx = await requireAction(slug, "appointments.write.any");
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
   const status = z.enum(schema.appointmentStatus.enumValues).parse(formData.get("status"));
   const reason = String(formData.get("reason") ?? "").trim() || null;
   await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id, reason);
@@ -42,7 +43,7 @@ export async function changeStatus(formData: FormData) {
 
 export async function saveNotes(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
-  const ctx = await requireAction(slug, "appointments.write.any");
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
   const notes = String(formData.get("notes") ?? "").trim() || null;
   await updateAppointmentNotes(ctx.business.id, appointmentId, notes, ctx.user.id);
   revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
@@ -106,7 +107,8 @@ export async function removeService(formData: FormData) {
 
 export async function startCheckout(formData: FormData) {
   const { slug, appointmentId, skipForms } = base.extend({ skipForms: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(slug, "checkout.take");
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
+  if (!can(ctx.permissions, "checkout.take")) throw new PermissionError();
   // Required forms are prompted for at checkout; the desk can still proceed deliberately.
   if (!skipForms) {
     const due = (await withTenant(ctx.business.id, (tx) => formsForAppointment(tx, appointmentId))).filter((f) => !f.current);
