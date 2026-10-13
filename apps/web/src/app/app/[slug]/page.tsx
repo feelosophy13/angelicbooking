@@ -12,6 +12,7 @@ import { requireBusiness } from "@/lib/tenant";
 import { formatDateLong, shiftISODate } from "@/lib/utils";
 import { LinkButton, PageHeader, Empty } from "@/components/ui";
 import { CalendarGrid, type CalColumn, type CalItem } from "./calendar-grid";
+import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { MonthGrid } from "./month-grid";
 import { SetupChecklist, type SetupStep } from "./setup-checklist";
 import { TodayStrip } from "./today-strip";
@@ -38,7 +39,7 @@ export default async function CalendarPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions } = await requireBusiness(slug);
+  const { business, permissions, user } = await requireBusiness(slug);
   const locations = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.name)));
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
   // Filtered to one location: show its wall clock (it may sit in another timezone).
@@ -58,8 +59,11 @@ export default async function CalendarPage({
   const missingForms = view === "day" ? await withTenant(business.id, (tx) => appointmentsMissingForms(tx, [...new Set(filtered.items.filter((i) => !i.classSessionId).map((i) => i.appointmentId))])) : new Set<string>();
   const formsFilter = sp.forms === "missing";
   const items = formsFilter ? filtered.items.filter((i) => missingForms.has(i.appointmentId)) : filtered.items;
-  // The staff filter is a week-view control; day view shows every column, month view everyone.
-  const staffFilter = view === "week" && staff.some((s) => s.id === sp.staff) ? sp.staff! : null;
+  // The week shows one stylist at a time: the one chosen, else you (if you take appointments), else the first. "Everyone" (staff=all) is a
+  // text-free overview where each appointment is just a coloured block, read by hover or click. Day view shows every column, month everyone.
+  const staffFilter = view === "week" && sp.staff !== "all" ? (staff.find((s) => s.id === sp.staff)?.id ?? staff.find((s) => s.userId === user.id)?.id ?? staff[0]?.id ?? null) : null;
+  const staffParam = view === "week" ? (staffFilter ?? "all") : null;
+  const overview = view === "week" && !staffFilter;
 
   const minuteOf = (d: Date) => {
     const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "numeric", hour12: false }).formatToParts(d);
@@ -156,7 +160,7 @@ export default async function CalendarPage({
       { key: "booking", label: "Share your booking link", href: `/app/${slug}/settings/booking`, done: counts.appointments > 0 && business.onlineBookingEnabled, hint: "Put it on Instagram and Google." },
     ];
   }
-  const nav = (d: string) => `?view=${view}&date=${d}${staffFilter ? `&staff=${staffFilter}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${formsFilter ? "&forms=missing" : ""}`;
+  const nav = (d: string) => `?view=${view}&date=${d}${staffParam ? `&staff=${staffParam}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${formsFilter ? "&forms=missing" : ""}`;
   // Switching views keeps the location (and the staff pick when going to the week).
   const viewHref = (v: "day" | "week" | "month") => `?view=${v}&date=${date}${v === "week" && sp.staff ? `&staff=${sp.staff}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}`;
   const step = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
@@ -171,20 +175,20 @@ export default async function CalendarPage({
           <a href={viewHref("month")} className={`rounded-md px-3 py-1 ${view === "month" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Month</a>
         </div>
         {locations.length > 1 ? (
-          <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffFilter ? `&staff=${staffFilter}` : ""}`} />
+          <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffParam ? `&staff=${staffParam}` : ""}`} />
         ) : null}
         {view === "week" ? (
-          <form className="contents">
+          <AutoSubmitForm className="contents">
             <input type="hidden" name="view" value="week" />
             <input type="hidden" name="date" value={date} />
-            <select name="staff" defaultValue={staffFilter ?? ""} className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-sm">
-              <option value="">All staff</option>
+            {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
+            <select name="staff" defaultValue={staffParam ?? "all"} aria-label="Whose week" className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-sm">
               {staff.map((s) => (
                 <option key={s.id} value={s.id}>{s.displayName}</option>
               ))}
+              <option value="all">Everyone (overview)</option>
             </select>
-            <button className="h-8 rounded-lg border border-stone-300 bg-white px-3 text-sm">Go</button>
-          </form>
+          </AutoSubmitForm>
         ) : null}
         <div className="flex items-center gap-1">
           <LinkButton href={nav(shiftISODate(date, -step))} size="sm" aria-label="Previous"><ChevronLeft className="h-4 w-4" /></LinkButton>
@@ -200,6 +204,14 @@ export default async function CalendarPage({
       </PageHeader>
 
       {setup.length ? <SetupChecklist steps={setup} slug={slug} /> : null}
+      {overview ? (
+        <p className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-600" aria-label="Colours">
+          {staff.map((s) => (
+            <span key={s.id} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color ?? "#6366f1" }} />{s.displayName}</span>
+          ))}
+          <span className="text-stone-400">Hover an appointment for details, click to open it.</span>
+        </p>
+      ) : null}
       {view === "day" ? (
         <TodayStrip
           date={date}
@@ -234,6 +246,7 @@ export default async function CalendarPage({
       ) : (
         <CalendarGrid
           todayISO={today}
+          overview={overview}
           slug={slug}
           timeZone={tz}
           view={view}

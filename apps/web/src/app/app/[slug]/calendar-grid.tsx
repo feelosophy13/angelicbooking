@@ -40,6 +40,7 @@ const DEFAULT_START_H = 7;
 const DEFAULT_END_H = 21;
 const PX_PER_MIN = 1.2;
 const LOCKED = new Set(["completed", "cancelled", "no_show", "class"]);
+const GREYED = new Set(["cancelled", "no_show", "block"]);
 
 const STATUS: Record<string, string> = {
   booked: "bg-brand-100 text-brand-900",
@@ -140,6 +141,8 @@ export function CalendarGrid(props: {
   slug: string;
   timeZone: string;
   view: "day" | "week";
+  /** Week overview of everyone: appointments are plain coloured blocks with no text; hover or click shows the rest. */
+  overview?: boolean;
   columns: CalColumn[];
   items: CalItem[];
   slotIntervalMin: number;
@@ -358,7 +361,7 @@ export function CalendarGrid(props: {
                   const dragging = drag?.key === card.key && drag.moved;
                   const dyMin = dragging ? snap(drag.dy) : 0;
                   const draggable = props.canEdit && !LOCKED.has(card.first.status);
-                  // The quick buttons (check in, complete) need about 7rem; in a narrow card (the week view packs every stylist into one day column) they
+                  // The quick buttons (check in, complete) need about 6rem; in a narrow card (the week view packs every stylist into one day column) they
                   // would spill out and be clipped, so the card hides them until it has room (container query on the card).
                   const height = Math.max(22, (card.endMin - card.startMin) * PX_PER_MIN - 2);
                   return (
@@ -376,6 +379,7 @@ export function CalendarGrid(props: {
                       }}
                       onKeyDown={(e) => e.key === "Enter" && router.push(card.first.href)}
                       data-card
+                      aria-label={`${card.first.title}, ${card.first.subtitle}, ${fmt(card.startMin)} to ${fmt(card.endMin)}`}
                       className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", dragging && "z-30 ring-2 ring-brand-500 shadow-lg")}
                       style={{
                         top: top(card.startMin),
@@ -383,16 +387,18 @@ export function CalendarGrid(props: {
                         left: `calc(${(lane.lane * 100) / lane.lanes}% + 4px)`,
                         width: `calc(${100 / lane.lanes}% - ${lane.lanes > 1 ? 6 : 8}px)`,
                         borderLeftColor: card.first.color,
+                        // Overview: the stylist's colour is the only thing on the block, so tint it (cancelled and no-shows stay grey).
+                        ...(props.overview && !GREYED.has(card.first.status) ? { backgroundColor: `color-mix(in srgb, ${card.first.color} 32%, white)` } : {}),
                         transform: dragging ? `translate(${drag.dx}px, ${dyMin * PX_PER_MIN}px)` : undefined,
                       }}
                     >
                       {card.gaps.map((g, i) => (
                         <div key={i} className="pointer-events-none absolute inset-x-0 bg-[repeating-linear-gradient(135deg,transparent_0_6px,rgba(255,255,255,0.55)_6px_12px)]" style={{ top: (g.from - card.startMin) * PX_PER_MIN, height: (g.to - g.from) * PX_PER_MIN }}>
-                          <span className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-wide opacity-60">processing</span>
+                          {props.overview ? null : <span className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-wide opacity-60">processing</span>}
                         </div>
                       ))}
-                      {props.canEdit && height > 30 && (card.first.status === "booked" || card.first.status === "confirmed" || card.first.status === "checked_in") ? (
-                        <div className="absolute right-1 top-1 hidden gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 @min-[7rem]:flex [@media(pointer:coarse)]:opacity-100">
+                      {props.canEdit && !props.overview && height > 30 && (card.first.status === "booked" || card.first.status === "confirmed" || card.first.status === "checked_in") ? (
+                        <div className="absolute right-1 top-1 hidden gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 @min-[6rem]:flex [@media(pointer:coarse)]:opacity-100">
                           {card.first.status !== "checked_in" ? (
                             <button
                               type="button"
@@ -427,11 +433,13 @@ export function CalendarGrid(props: {
                           </button>
                         </div>
                       ) : null}
-                      <div className="px-2 py-1 leading-tight">
-                        <div className="truncate font-semibold">{card.first.title}</div>
-                        <div className="truncate">{card.first.subtitle}</div>
-                        {height > 44 ? <div className="truncate opacity-70">{fmt(card.startMin + dyMin)} – {fmt(card.endMin + dyMin)}</div> : null}
-                      </div>
+                      {props.overview ? null : (
+                        <div className="px-2 py-1 leading-tight">
+                          <div className="truncate font-semibold">{card.first.title}</div>
+                          <div className="truncate">{card.first.subtitle}</div>
+                          {height > 44 ? <div className="truncate opacity-70">{fmt(card.startMin + dyMin)} – {fmt(card.endMin + dyMin)}</div> : null}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

@@ -119,12 +119,19 @@ path ("Lash Extensions › Classic"). Build its groups with `serviceGroups(busin
   credit, refund reasons, referrals, stock) is hidden while the filter is on, and a line under the date says so. The CSV exports follow
   the same filter. The value is `lib/service-scope.ts` (`parseScope`) on the way in and `serviceIdsInScope` on the server.
 
+## Calendar week view
+
+The week shows one stylist at a time: the one picked, else the signed-in person if they take appointments, else the first. The picker applies on change
+and also offers "Everyone (overview)" (`?staff=all`). The overview is for seeing the shape of the week, not for reading it: appointments are plain blocks
+in the stylist's colour, with a colour legend above the grid and no text, no buttons and no processing labels on them. Everything else comes from hovering
+(the hover card) or clicking (opens the visit). Cards still carry an `aria-label` so screen readers read what sighted users get from hovering.
+
 ## Calendar hover card
 
 Hovering an appointment on the calendar (or tabbing to it) shows a card after a short pause: client and phone, status, every service on the visit with who
 does it, when and what it costs, how it was booked, the deposit, "Forms due", tags and the visit's notes. Blocked time shows its reason; a class shows
 its seats. The content is built on the server (`lib/calendar-tip.ts`) and drawn on the page, beside the appointment, so the scrolling grid never clips it;
-it ignores the mouse so it cannot get in the way of dragging, and it is not shown on touch screens, where a tap opens the visit. The quick check-in and complete buttons on a card need about 7rem of width (a container query on the card); the week view packs every stylist into one column, so its narrow cards show no buttons. Add new facts to
+it ignores the mouse so it cannot get in the way of dragging, and it is not shown on touch screens, where a tap opens the visit. The quick check-in and complete buttons on a card need about 6rem of width (a container query on the card); the week view packs every stylist into one column, so its narrow cards show no buttons. Add new facts to
 `buildTip`, not to the card markup.
 
 ## Navigation and findability
