@@ -201,15 +201,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
-- [x] 2026-10-13 (migration 0066): image storage on Cloudflare R2, built and tested against a fake S3 but NOT yet
-      live (R2 must be switched on for the account and the S3 key pair added). Uploads are resized (1600 px, 2000
-      for covers, 800 for logos and staff) and re-encoded as WebP, dropping EXIF/GPS. With the `R2_*` variables set,
-      public pictures go to a public bucket served from a CDN domain and client form photos and signatures to a
-      private bucket read through `/api/files/<id>`; without them everything stays in Postgres as before. Old
-      `/api/files` links redirect to the CDN. Move existing images with `scripts/migrate-files-to-r2.ts` or
-      `POST /api/jobs/migrate-files`. Setup: `scripts/provision-r2.ts` (buckets + `images.angelicbooking.com`),
-      check with `scripts/r2-check.ts`; steps in docs-ops.md. Remaining: enable R2, create the keys, provision,
-      set the vars locally and on Render, deploy, run the migration, `VACUUM FULL files`.
+- [x] 2026-10-13 (migration 0066): image storage on Cloudflare R2, live locally. Buckets `angelicbooking-public`
+      (served at images.angelicbooking.com) and `angelicbooking-private` exist; `scripts/r2-check.ts` passes and a real
+      upload, delete and one-file migration were verified. Uploads are resized (1600 px, 2000 for covers, 800 for
+      logos and staff) and re-encoded as WebP, dropping EXIF/GPS. Without the `R2_*` variables everything stays in
+      Postgres. Old `/api/files` links redirect to the CDN. Remaining for production: add `R2_ACCOUNT_ID` and
+      `R2_PUBLIC_BUCKET` on Render (the other four are set), push and deploy, run `POST /api/jobs/migrate-files`
+      until `left.files` is 0, then `VACUUM FULL files`. Restart the local dev server to pick up the R2 variables.
 - [x] 2026-10-13: stylist prices and durations. Each stylist can charge their own price and take their own time
       for a service (`staff_services` overrides, already filled by the Vagaro import); blank = the service's own.
       Fixed: saving a stylist's Services tab used to delete every override (it now keeps them, and a value equal to
