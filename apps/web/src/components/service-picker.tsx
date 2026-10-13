@@ -95,32 +95,47 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
           <ul role="listbox" className="max-h-80 overflow-y-auto pb-1 text-sm">
             {noneLabel && !needle ? (
               <li role="option" aria-selected={!picked}>
-                <button type="button" onClick={() => pick("")} className={cn("w-full px-3 py-1.5 text-left text-stone-600 hover:bg-stone-50", !picked && "bg-brand-50 text-brand-700")}>{noneLabel}</button>
+                <button type="button" onClick={() => pick("")} className={cn("w-full px-3 py-2 text-left text-stone-700 hover:bg-stone-50", !picked && "bg-brand-50 font-medium text-brand-700")}>{noneLabel}</button>
               </li>
             ) : null}
             {visible.length === 0 ? <li className="px-3 py-4 text-center text-stone-500">No service matches “{q.trim()}”.</li> : null}
-            {visible.map((g) => (
-              <li key={g.id}>
-                <p className="sticky top-0 z-10 bg-stone-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-stone-500">{g.name}</p>
-                <ul>
+            {visible.map((g) => {
+              // "Facial Treatments › Core Facials": the parents are context, the last name is the category.
+              const parts = g.name.split(" › ");
+              const last = parts.pop() ?? g.name;
+              const parents = parts.length ? `${parts.join(" › ")} › ` : "";
+              const title = (
+                <span className="min-w-0 truncate">
+                  {parents ? <span className="font-normal text-stone-500">{parents}</span> : null}
+                  <span className="font-semibold text-stone-900">{last}</span>
+                </span>
+              );
+              const headerCls = "sticky top-0 z-10 flex w-full items-center justify-between gap-3 border-y border-stone-200 bg-stone-100 px-3 py-1.5 text-left text-[13px]";
+              return (
+                <li key={g.id}>
                   {g.whole ? (
-                    <li role="option" aria-selected={g.whole.id === picked}>
-                      <button type="button" onClick={() => pick(g.whole!.id)} className={cn("flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left font-medium hover:bg-stone-50", g.whole.id === picked && "bg-brand-50 text-brand-700")}>
-                        <span className="min-w-0 truncate">{g.whole.name}</span>
+                    <div role="option" aria-selected={g.whole.id === picked}>
+                      <button type="button" onClick={() => pick(g.whole!.id)} title={`Everything in ${last}`} className={cn(headerCls, "hover:bg-brand-50", g.whole.id === picked && "!bg-brand-50")}>
+                        {title}
+                        <span className={cn("shrink-0 rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-stone-600 ring-1 ring-inset ring-stone-300", g.whole.id === picked && "bg-brand-600 text-white ring-brand-600")}>All</span>
                       </button>
-                    </li>
-                  ) : null}
-                  {g.services.map((s) => (
-                    <li key={s.id} role="option" aria-selected={s.id === picked}>
-                      <button type="button" onClick={() => pick(s.id)} className={cn("flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left hover:bg-stone-50", s.id === picked && "bg-brand-50 text-brand-700", s.note && "text-stone-400")}>
-                        <span className="min-w-0 truncate">{s.name}{s.note ? <span className="ml-1.5 text-xs text-stone-400">· {s.note}</span> : null}</span>
-                        {s.meta ? <span className="shrink-0 text-xs text-stone-500">{s.meta}</span> : null}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
+                    </div>
+                  ) : (
+                    <p className={headerCls}>{title}</p>
+                  )}
+                  <ul className="py-0.5">
+                    {g.services.map((s) => (
+                      <li key={s.id} role="option" aria-selected={s.id === picked}>
+                        <button type="button" onClick={() => pick(s.id)} className={cn("flex w-full items-center justify-between gap-3 py-1.5 pl-7 pr-3 text-left text-stone-800 hover:bg-stone-50", s.id === picked && "bg-brand-50 font-medium text-brand-700", s.note && "text-stone-400")}>
+                          <span className="min-w-0 truncate">{s.name}{s.note ? <span className="ml-1.5 text-xs text-stone-400">· {s.note}</span> : null}</span>
+                          {s.meta ? <span className="shrink-0 text-xs text-stone-500">{s.meta}</span> : null}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}
