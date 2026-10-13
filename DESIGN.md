@@ -101,7 +101,8 @@ path ("Lash Extensions › Classic"). Build its groups with `serviceGroups(busin
 - **Never** map a services list into `<option>`s. A test (`lib/__tests__/service-select-guard.test.ts`) fails if you do. The one
   exception is a list that is naturally short, such as group classes; add it to that test's allowlist with the reason.
 - **Toolbars and filters:** pass `compact` and `noneLabel="Any service"` (it shows as a normal value, not a grey placeholder).
-  List only what can match: the Gallery offers just the services that have photos.
+  Offer every category and service, never only the ones that already have data: a filter that hides options with nothing behind
+  them is empty on a new business and cannot be chosen before the first record exists. (An empty result says "No photos match".)
 - **Forms:** `noneLabel` adds a "None" row for optional services; `meta` shows duration and price, or `"none"` where they add nothing.
 - **Reacting to the pick:** `submitOnPick` submits the surrounding form; `onPick(id)` is for controlled uses such as the embed
   builder's live preview. Inside an `AutoSubmitForm` nothing extra is needed: the pick fires a `change` event.

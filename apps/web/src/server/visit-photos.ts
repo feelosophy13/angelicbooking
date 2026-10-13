@@ -131,11 +131,3 @@ export async function listGallery(businessId: string, f: GalleryFilters, pageSiz
     return { pairs: buildPairs(rows, page.map(pairKey)), hasMore };
   });
 }
-
-/** Services that have at least one photo, so the Gallery's service filter lists only what can match. */
-export async function photoServiceIds(businessId: string): Promise<Set<string>> {
-  return withTenant(businessId, async (tx) => {
-    const rows = await tx.selectDistinct({ id: vp.serviceId }).from(vp);
-    return new Set(rows.flatMap((r) => (r.id ? [r.id] : [])));
-  });
-}

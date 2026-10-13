@@ -4,7 +4,7 @@ import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { listLocations } from "@/server/locations";
-import { listGallery, photoServiceIds, photoTagsInUse } from "@/server/visit-photos";
+import { listGallery, photoTagsInUse } from "@/server/visit-photos";
 import { serviceGroups } from "@/server/service-groups";
 import { listCategories } from "@/server/categories";
 import { ServicePicker } from "@/components/service-picker";
@@ -21,16 +21,15 @@ export default async function GalleryPage({ params, searchParams }: { params: Pr
   const { slug } = await params;
   const sp = await searchParams;
   const { business } = await requireAction(slug, "clients.read");
-  const [locations, services, staff, tags, withPhotos, categories] = await Promise.all([
+  const [locations, services, staff, tags, categories] = await Promise.all([
     listLocations(business.id),
     withTenant(business.id, (tx) => tx.select({ id: schema.services.id, name: schema.services.name }).from(schema.services).orderBy(asc(schema.services.name))),
     withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName))),
     photoTagsInUse(business.id),
-    photoServiceIds(business.id),
     listCategories(business.id, "service"),
   ]);
-  // Only services that have photos, grouped by category and searchable, so a long menu stays easy to use.
-  const groups = await serviceGroups(business, { meta: "none", categories: true, include: (id) => withPhotos.has(id) });
+  // Every category and service, grouped and searchable: a filter that hides what has no photos yet cannot be chosen before the first photo.
+  const groups = await serviceGroups(business, { meta: "none", categories: true });
   const f = parseGalleryFilters(sp, { serviceIds: services.map((s) => s.id), categoryIds: categories.map((c) => c.id), staffIds: staff.map((s) => s.id), locationIds: locations.map((l) => l.id) });
   const { pairs, hasMore } = await listGallery(business.id, f);
   const views = pairViews(slug, pairs, business.timezone);
