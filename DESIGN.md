@@ -33,6 +33,9 @@ wrong: fix the page.
   table (`max-w-3xl`). Never pick a width per page by taste.
 - New and edit forms for the same thing share one fields component (`ProductFields`, `PackageFields`,
   `ServiceFields`, `PlanFields`): the page supplies the record (or nothing) and the submit button. Two copies drift.
+- Choosing a location uses `LocationSwitch` (via `LocationFilter` on list pages and the calendar's `LocationPills`):
+  buttons up to three sites, one dropdown from four, a search box in it from eight. Never lay out one button per
+  site by hand; it stops fitting around the fourth.
 - Money is typed in `MoneyInput` (currency symbol, decimal keypad, `0.00` placeholder), never a bare `Input`.
 - Validation errors appear under the field, worded for a person. The red banner at the top is only for errors no
   field on the page can show. Leaving a form with unsaved edits asks first (`ActionForm` does this).

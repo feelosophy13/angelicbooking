@@ -201,6 +201,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-13: location control scales past two sites. `LocationSwitch` (behind `LocationFilter` and the
+      calendar's `LocationPills`): buttons for up to three sites; from four a dropdown showing the current site with
+      "All" on top, opening toward the side with room; from eight a search box. Same links as before, so every page
+      keeps its filters. Site labels drop the shared business prefix unless that would make two look alike.
 - [x] 2026-10-13: Reports staff and location pay. The "By staff" and "Pay & commissions" cards are one "Staff"
       table: services, products and tips for everyone (plus the Unassigned row), and service commission, product
       commission, hourly/salary, total pay and cost of revenue for people with payroll permission. "By location" gains

@@ -1,8 +1,7 @@
 "use client";
-import Link from "next/link";
 import { useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { cn } from "@/lib/utils";
+import { LocationSwitch } from "@/components/location-switch";
 
 /**
  * One-click location filter for the calendar. The choice is remembered per
@@ -10,8 +9,6 @@ import { cn } from "@/lib/utils";
  * to the same location until "All" is picked.
  */
 export function LocationPills({ businessId, locations, current, query }: { businessId: string; locations: { id: string; name: string }[]; current: string | null; query: string }) {
-  // Server components can't hand us a function, so the other query params come as a string.
-  const hrefFor = (locationId: string | null) => `?${query}${query ? "&" : ""}location=${locationId ?? ""}`;
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -27,13 +24,5 @@ export function LocationPills({ businessId, locations, current, query }: { busin
       /* storage unavailable */
     }
   }, [params, pathname, key, locations, router]);
-  const short = (name: string) => name.replace(/^.*? - /, "");
-  return (
-    <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Location">
-      <Link href={hrefFor(null)} className={cn("rounded-md px-3 py-1", current === null ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>All</Link>
-      {locations.map((l) => (
-        <Link key={l.id} href={hrefFor(l.id)} className={cn("rounded-md px-3 py-1", current === l.id ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")} title={l.name}>{short(l.name)}</Link>
-      ))}
-    </div>
-  );
+  return <LocationSwitch locations={locations} current={current} query={query} allLabel="All" />;
 }
