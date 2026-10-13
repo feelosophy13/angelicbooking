@@ -1109,10 +1109,13 @@ export const files = pgTable(
     kind: text("kind").notNull(), // logo | cover | product | form (client upload) | signature
     contentType: text("content_type").notNull(),
     size: integer("size").notNull(),
-    data: customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" })("data").notNull(),
+    // Where the bytes live: "db" (the data column) or "r2" (object storage under storageKey).
+    storage: text("storage").notNull().default("db"),
+    storageKey: text("storage_key"),
+    data: customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" })("data"),
     createdAt: createdAt(),
   },
-  (t) => [index("files_business_idx").on(t.businessId)],
+  (t) => [index("files_business_idx").on(t.businessId), index("files_storage_key_idx").on(t.storageKey)],
 );
 
 // ---------------------------------------------------------------------------

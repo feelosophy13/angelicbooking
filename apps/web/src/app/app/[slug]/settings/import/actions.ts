@@ -19,7 +19,7 @@ const STAGE_TTL_MS = 24 * 3_600_000;
 export async function readStaged(businessId: string, id: string): Promise<Staged | null> {
   if (!/^[a-f0-9-]{36}$/.test(id)) return null;
   const row = await db.query.files.findFirst({ where: and(eq(schema.files.id, id), eq(schema.files.businessId, businessId), eq(schema.files.kind, STAGE_KIND)) });
-  if (!row) return null;
+  if (!row || !row.data) return null;
   try {
     const s = JSON.parse(Buffer.from(row.data).toString("utf8")) as Staged;
     return s.businessId === businessId ? s : null;

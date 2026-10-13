@@ -2,16 +2,17 @@ import { and, eq, or, sql } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
 import { getSession } from "@/lib/session";
 import { getClientSessionId } from "@/lib/client-session";
+import { getObject, publicObjectUrl, r2Config } from "@/lib/object-storage";
 
 const PUBLIC_KINDS = new Set(["logo", "cover", "product", "package", "service", "category", "staff"]);
 const PRIVATE_KINDS = new Set(["form", "signature"]);
 
 /**
  * Serve an uploaded file. Branding, product, service and category images are public and immutable
- * (cacheable for a year). Form attachments and signatures are private: only a
- * member of the business or the client who signed may view them, never cached
- * by intermediaries. Anything else stored in `files` (e.g. staged imports) is
- * not served at all.
+ * (cacheable for a year); one that lives in R2 is redirected to its CDN address, so old links keep
+ * working. Form attachments and signatures are private: only a member of the business or the client
+ * who signed may view them, never cached by intermediaries, and they are read from the private bucket
+ * here. Anything else stored in `files` (e.g. staged imports) is not served at all.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,10 +24,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     if (!PRIVATE_KINDS.has(row.kind)) return new Response("Not found", { status: 404 });
     if (!(await mayViewPrivate(row.businessId, row.id))) return new Response("Not found", { status: 404 });
   }
-  return new Response(new Uint8Array(row.data), {
+  let data: Uint8Array | null = row.data ? new Uint8Array(row.data) : null;
+  if (row.storage === "r2" && row.storageKey) {
+    const cfg = r2Config();
+    if (!cfg) return new Response("Storage is not configured", { status: 503 });
+    // A public picture is served by the CDN, not by this app.
+    if (isPublic) return new Response(null, { status: 301, headers: { Location: publicObjectUrl(cfg, row.storageKey), "Cache-Control": "public, max-age=86400" } });
+    const obj = await getObject(cfg, "private", row.storageKey);
+    data = obj ? new Uint8Array(obj.body) : null;
+  }
+  if (!data) return new Response("Not found", { status: 404 });
+  return new Response(data as unknown as BodyInit, {
     headers: {
       "Content-Type": row.contentType,
-      "Content-Length": String(row.size),
+      "Content-Length": String(data.byteLength),
       "Cache-Control": isPublic ? "public, max-age=31536000, immutable" : "private, no-store",
       "X-Content-Type-Options": "nosniff",
       ...(row.contentType === "image/svg+xml" ? { "Content-Security-Policy": "script-src 'none'" } : {}),

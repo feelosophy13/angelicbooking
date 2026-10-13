@@ -248,6 +248,25 @@ Current state (2026-10-10): sandbox endpoints exist and the sandbox keys are on 
   served from `/api/files/<id>` with immutable caching. Move to object storage if they grow past a few hundred MB.
 - **Provider calendar feeds** are public by secret token (`/api/calendar/<token>.ics`); reset from the staff profile.
 
+## Image storage (Cloudflare R2, added 2026-10-13)
+
+Pictures and client files can live in Cloudflare R2 instead of Postgres. Without the `R2_*` variables the app
+keeps using Postgres, so local development needs nothing.
+
+- **What goes where.** Public pictures (logos, covers, service, category, product, package and staff photos) are
+  resized to web size and stored as WebP in the public bucket, addressed from `R2_PUBLIC_BASE_URL` (a custom
+  domain such as `images.angelicbooking.com`, so Cloudflare's CDN caches them). Client form photos and
+  signatures go in the private bucket and are only read through `/api/files/<id>` after the permission check.
+- **Setup.** Switch R2 on in the Cloudflare dashboard, create an R2 API token (Object Read & Write) to get the S3
+  access key and secret, then run `apps/web/scripts/provision-r2.ts` to create both buckets and attach the CDN
+  domain. Put the `R2_*` values in `.env` and on Render (PUT the env var, then POST a deploy). Check with
+  `scripts/r2-check.ts`.
+- **Existing images.** After deploying, move what is already in Postgres with
+  `scripts/migrate-files-to-r2.ts`, or on the server: `POST /api/jobs/migrate-files?limit=20` with
+  `Authorization: Bearer $JOBS_SECRET`, repeated until `left.files` is 0 (`?dryRun=1` only reports). Old
+  `/api/files/<id>` links keep working (they redirect to the CDN). Postgres does not hand the freed space back to
+  the disk by itself; run `VACUUM FULL files` in a quiet moment when you want the size to drop.
+
 ## Demo tenant
 
 `apps/web/scripts/seed-demo.ts` builds a fully populated demo business for walkthroughs and screenshots (never touches
