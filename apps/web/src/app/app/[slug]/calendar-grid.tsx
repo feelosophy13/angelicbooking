@@ -358,6 +358,8 @@ export function CalendarGrid(props: {
                   const dragging = drag?.key === card.key && drag.moved;
                   const dyMin = dragging ? snap(drag.dy) : 0;
                   const draggable = props.canEdit && !LOCKED.has(card.first.status);
+                  // The quick buttons (check in, complete) need about 7rem; in a narrow card (the week view packs every stylist into one day column) they
+                  // would spill out and be clipped, so the card hides them until it has room (container query on the card).
                   const height = Math.max(22, (card.endMin - card.startMin) * PX_PER_MIN - 2);
                   return (
                     <div
@@ -374,7 +376,7 @@ export function CalendarGrid(props: {
                       }}
                       onKeyDown={(e) => e.key === "Enter" && router.push(card.first.href)}
                       data-card
-                      className={cn("group absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", dragging && "z-30 ring-2 ring-brand-500 shadow-lg")}
+                      className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", dragging && "z-30 ring-2 ring-brand-500 shadow-lg")}
                       style={{
                         top: top(card.startMin),
                         height,
@@ -390,7 +392,7 @@ export function CalendarGrid(props: {
                         </div>
                       ))}
                       {props.canEdit && height > 30 && (card.first.status === "booked" || card.first.status === "confirmed" || card.first.status === "checked_in") ? (
-                        <div className="absolute right-1 top-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(pointer:coarse)]:opacity-100">
+                        <div className="absolute right-1 top-1 hidden gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 @min-[7rem]:flex [@media(pointer:coarse)]:opacity-100">
                           {card.first.status !== "checked_in" ? (
                             <button
                               type="button"

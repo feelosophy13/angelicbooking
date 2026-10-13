@@ -124,7 +124,7 @@ path ("Lash Extensions › Classic"). Build its groups with `serviceGroups(busin
 Hovering an appointment on the calendar (or tabbing to it) shows a card after a short pause: client and phone, status, every service on the visit with who
 does it, when and what it costs, how it was booked, the deposit, "Forms due", tags and the visit's notes. Blocked time shows its reason; a class shows
 its seats. The content is built on the server (`lib/calendar-tip.ts`) and drawn on the page, beside the appointment, so the scrolling grid never clips it;
-it ignores the mouse so it cannot get in the way of dragging, and it is not shown on touch screens, where a tap opens the visit. Add new facts to
+it ignores the mouse so it cannot get in the way of dragging, and it is not shown on touch screens, where a tap opens the visit. The quick check-in and complete buttons on a card need about 7rem of width (a container query on the card); the week view packs every stylist into one column, so its narrow cards show no buttons. Add new facts to
 `buildTip`, not to the card markup.
 
 ## Navigation and findability
