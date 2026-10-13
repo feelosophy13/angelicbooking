@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * buttons; from four it is one dropdown showing the current site, with "All" on top and, from
  * eight, a search box. Every choice is a link that sets `location=` and keeps `query`.
  */
-export function LocationSwitch({ locations, current, query, allLabel = "All locations" }: { locations: { id: string; name: string }[]; current: string | null; query: string; allLabel?: string }) {
+export function LocationSwitch({ locations, current, query, allLabel = "All locations" }: { locations: { id: string; name: string }[]; current: string | null; query: string; /** `null` removes the "All" choice, for pages where only one site at a time makes sense. */ allLabel?: string | null }) {
   const kind = locationControlFor(locations.length);
   const labels = siteLabels(locations);
   const href = (id: string | null) => `?${query}${query ? "&" : ""}location=${id ?? ""}`;
@@ -18,7 +18,7 @@ export function LocationSwitch({ locations, current, query, allLabel = "All loca
   if (kind === "buttons") {
     return (
       <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Location">
-        <Link href={href(null)} className={cn("rounded-md px-3 py-1", current === null ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{allLabel}</Link>
+        {allLabel !== null ? <Link href={href(null)} className={cn("rounded-md px-3 py-1", current === null ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{allLabel}</Link> : null}
         {locations.map((l) => (
           <Link key={l.id} href={href(l.id)} className={cn("rounded-md px-3 py-1", current === l.id ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")} title={l.name}>{labels.get(l.id)}</Link>
         ))}
@@ -28,7 +28,7 @@ export function LocationSwitch({ locations, current, query, allLabel = "All loca
   return <Menu locations={locations} labels={labels} current={current} href={href} allLabel={allLabel} search={kind === "menu-search"} />;
 }
 
-function Menu({ locations, labels, current, href, allLabel, search }: { locations: { id: string; name: string }[]; labels: Map<string, string>; current: string | null; href: (id: string | null) => string; allLabel: string; search: boolean }) {
+function Menu({ locations, labels, current, href, allLabel, search }: { locations: { id: string; name: string }[]; labels: Map<string, string>; current: string | null; href: (id: string | null) => string; allLabel: string | null; search: boolean }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   // Open toward the side with room: the control sits at the left of some headers and the right of others.
@@ -51,7 +51,7 @@ function Menu({ locations, labels, current, href, allLabel, search }: { location
   }, [open]);
   const needle = q.trim().toLowerCase();
   const shown = needle ? locations.filter((l) => l.name.toLowerCase().includes(needle)) : locations;
-  const currentLabel = current ? labels.get(current) ?? "Location" : allLabel;
+  const currentLabel = current ? labels.get(current) ?? "Location" : (allLabel ?? "Location");
   const row = (id: string | null, label: string, title?: string) => (
     <li key={id ?? "all"}>
       <Link href={href(id)} onClick={() => { setOpen(false); setQ(""); }} title={title} className={cn("flex items-center justify-between gap-3 px-3 py-1.5 text-sm hover:bg-stone-50", current === id && "font-medium text-stone-900")}>
@@ -76,7 +76,7 @@ function Menu({ locations, labels, current, href, allLabel, search }: { location
             </div>
           ) : null}
           <ul className="max-h-72 overflow-y-auto py-1" role="listbox" aria-label="Locations">
-            {!needle ? row(null, allLabel) : null}
+            {!needle && allLabel !== null ? row(null, allLabel) : null}
             {shown.map((l) => row(l.id, labels.get(l.id) ?? l.name, l.name))}
             {shown.length === 0 ? <li className="px-3 py-2 text-sm text-stone-500">No location matches “{q}”.</li> : null}
           </ul>

@@ -10,7 +10,8 @@ import { dateLong } from "@/lib/format";
 import { describeHours, time12 } from "@/lib/hours";
 import { buildCoverage } from "@/server/coverage";
 import { listCategories, buildTree, flattenTree } from "@/server/categories";
-import { Card, Empty, LinkButton, PageHeader, Select } from "@/components/ui";
+import { Card, Empty, LinkButton, PageHeader } from "@/components/ui";
+import { ServicePicker, type ServiceGroup } from "@/components/service-picker";
 import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { LocationFilter } from "@/components/location-filter";
 import { rowClass, rowControl, RowLink } from "@/components/row";
@@ -51,18 +52,18 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
     };
   });
   const multi = locations.length > 1;
-  // One site at a time makes the question answerable; default to the main site when there are several.
-  const locationId = multi ? (locations.some((l) => l.id === sp.location) ? sp.location! : sp.location === "" ? null : (locations.find((l) => l.isDefault)?.id ?? locations[0]!.id)) : null;
+  // Hours differ by site, so coverage is always for one site: the one chosen, else the main site.
+  const locationId = multi ? (locations.some((l) => l.id === sp.location) ? sp.location! : (locations.find((l) => l.isDefault)?.id ?? locations[0]!.id)) : null;
   const scope = sp.scope ?? "";
   const serviceId = scope.startsWith("s:") && services.some((s) => s.id === scope.slice(2)) ? scope.slice(2) : null;
   const categoryId = scope.startsWith("c:") && cats.some((c) => c.id === scope.slice(2)) ? scope.slice(2) : null;
   const coverage = await buildCoverage(business, { weekStart, locationId, serviceId, categoryId });
 
-  // Query string for links, keeping the other choices. location="" means "all sites" on multi-site tenants.
+  // Query string for links, keeping the other choices.
   const qs = (over: Partial<Record<keyof SP, string | null>>) => {
-    const all: Record<keyof SP, string | null> = { week: weekStart === thisMonday ? null : weekStart, location: multi ? (locationId ?? "") : null, scope: scope || null, ...over };
+    const all: Record<keyof SP, string | null> = { week: weekStart === thisMonday ? null : weekStart, location: locationId, scope: scope || null, ...over };
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries(all)) if (v !== null && (v !== "" || k === "location")) p.set(k, v);
+    for (const [k, v] of Object.entries(all)) if (v) p.set(k, v);
     return p.toString();
   };
   const shortLoc = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "").replace(`${business.name} - `, "") : "");
@@ -70,6 +71,15 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const md = (d: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
   const weekLabel = `${md(weekStart)} – ${md(shiftISODate(weekStart, 6))}`;
   const tree = flattenTree(buildTree(cats));
+  // One group per category, named by its path ("Lash Extensions › Classic"), with a first row for the whole category.
+  const path: string[] = [];
+  const scopeGroups: ServiceGroup[] = tree.map((c) => {
+    path.length = Math.max(0, c.depth);
+    path.push(c.name);
+    return { id: c.id, name: path.join(" › "), whole: { id: `c:${c.id}`, name: `All of ${c.name}`, meta: "" }, services: services.filter((x) => x.categoryId === c.id).map((x) => ({ id: `s:${x.id}`, name: x.name, meta: "" })) };
+  });
+  const uncategorised = services.filter((x) => !x.categoryId);
+  if (uncategorised.length) scopeGroups.push({ id: "none", name: "Other", services: uncategorised.map((x) => ({ id: `s:${x.id}`, name: x.name, meta: "" })) });
   const hoursHref = (staffId: string) => (manage ? `${base}/staff/${staffId}/hours` : null);
 
   // Upcoming time off: consecutive identical dates collapse into one range per person.
@@ -99,27 +109,18 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
             <LinkButton href={`?${qs({ week: shiftISODate(weekStart, 7) })}`} size="sm"><ChevronRight className="h-4 w-4" /><span className="sr-only">Next week</span></LinkButton>
             <span className="ml-2 text-sm font-medium text-stone-800">{weekLabel}</span>
           </div>
-          {multi ? <LocationFilter locations={locations} current={locationId} query={qs({ location: null })} allLabel="All sites" /> : null}
+          {multi ? <LocationFilter locations={locations} current={locationId} query={qs({ location: null })} allLabel={null} /> : null}
           <AutoSubmitForm className="flex items-center gap-2">
             {weekStart !== thisMonday ? <input type="hidden" name="week" value={weekStart} /> : null}
             {multi ? <input type="hidden" name="location" value={locationId ?? ""} /> : null}
-            <Select name="scope" defaultValue={scope} aria-label="Services to check coverage for" className="h-9 w-auto max-w-[16rem]">
-              <option value="">Coverage for all services</option>
-              {tree.map((c) => (
-                <optgroup key={c.id} label={`${"– ".repeat(Math.max(0, c.depth))}${c.name}`}>
-                  <option value={`c:${c.id}`}>All of {c.name}</option>
-                  {services.filter((s) => s.categoryId === c.id).map((s) => <option key={s.id} value={`s:${s.id}`}>{s.name}</option>)}
-                </optgroup>
-              ))}
-              {services.some((s) => !s.categoryId) ? <optgroup label="Other">{services.filter((s) => !s.categoryId).map((s) => <option key={s.id} value={`s:${s.id}`}>{s.name}</option>)}</optgroup> : null}
-            </Select>
+            <ServicePicker name="scope" groups={scopeGroups} value={scope || null} placeholder="All services" noneLabel="All services" compact emptyIsChoice />
           </AutoSubmitForm>
         </div>
       </Card>
 
       <Card className="mb-6">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-2 text-sm">
-          <h2 className="font-semibold text-stone-600">Who covers what{multi ? ` · ${locationId ? shortLoc(locationId) : "all sites"}` : ""}</h2>
+          <h2 className="font-semibold text-stone-600">Who covers what{multi ? ` · ${shortLoc(locationId)}` : ""}</h2>
           <p className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
             <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-emerald-400 align-middle" />{coverage.scope.label === "All services" ? "every service covered" : `${coverage.scope.label} covered`}</span>
             <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-amber-400 align-middle" />some services uncovered</span>

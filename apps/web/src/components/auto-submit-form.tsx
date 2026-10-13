@@ -1,5 +1,5 @@
 "use client";
-import { useTransition } from "react";
+import { useEffect, useRef, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
@@ -12,18 +12,22 @@ export function AutoSubmitForm({ children, className }: { children: React.ReactN
   const router = useRouter();
   const pathname = usePathname();
   const [pending, start] = useTransition();
+  const form = useRef<HTMLFormElement>(null);
+  // A native listener, so custom pickers that set a hidden input and dispatch "change" are heard too.
+  useEffect(() => {
+    const el = form.current;
+    if (!el) return;
+    const onChange = () => {
+      const params = new URLSearchParams();
+      for (const [k, v] of new FormData(el)) if (typeof v === "string" && v) params.set(k, v);
+      const qs = params.toString();
+      start(() => router.push(qs ? `${pathname}?${qs}` : pathname));
+    };
+    el.addEventListener("change", onChange);
+    return () => el.removeEventListener("change", onChange);
+  }, [router, pathname]);
   return (
-    <form
-      method="get"
-      aria-busy={pending}
-      className={cn(pending && "opacity-70 transition-opacity", className)}
-      onChange={(e) => {
-        const params = new URLSearchParams();
-        for (const [k, v] of new FormData(e.currentTarget)) if (typeof v === "string" && v) params.set(k, v);
-        const qs = params.toString();
-        start(() => router.push(qs ? `${pathname}?${qs}` : pathname));
-      }}
-    >
+    <form ref={form} method="get" aria-busy={pending} className={cn(pending && "opacity-70 transition-opacity", className)}>
       {children}
     </form>
   );
