@@ -1,11 +1,12 @@
 import { MEMBERSHIP_INTERVALS } from "@angelic/core";
 import { Input, Select, Textarea } from "@/components/ui";
 import { Field } from "@/components/form";
+import { ServicePicker, type ServiceGroup } from "@/components/service-picker";
 
 type Plan = { name: string; priceCents: number; interval: string; intervalCount: number; includedServiceId: string | null; includedSessions: number; rolloverCap: number; cycleCount: number | null; discountBps: number; description: string | null };
 
 /** The shared body of the new / edit membership plan forms. */
-export function PlanFields({ plan, services }: { plan?: Plan; services: { id: string; name: string }[] }) {
+export function PlanFields({ plan, groups }: { plan?: Plan; groups: ServiceGroup[] }) {
 
   return (
     <>
@@ -19,7 +20,7 @@ export function PlanFields({ plan, services }: { plan?: Plan; services: { id: st
           </div>
         </Field>
       </div>
-      <Field label="Included service" name="includedServiceId"><Select name="includedServiceId" defaultValue={plan?.includedServiceId ?? ""}><option value="">None</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
+      <Field label="Included service" name="includedServiceId"><ServicePicker name="includedServiceId" groups={groups} value={plan?.includedServiceId ?? null} placeholder="None" noneLabel="None" /></Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Sessions per billing period" name="includedSessions"><Input name="includedSessions" type="number" min={0} defaultValue={plan?.includedSessions ?? 1} /></Field>
         <Field label="Unused sessions that carry over" name="rolloverCap" hint="0 means they expire at renewal"><Input name="rolloverCap" type="number" min={0} max={99} defaultValue={plan?.rolloverCap ?? 0} /></Field>

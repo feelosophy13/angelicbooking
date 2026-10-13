@@ -21,6 +21,8 @@ import { can } from "@angelic/core";
 import { and, desc, eq, ne } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
+import { ServicePicker } from "@/components/service-picker";
+import { serviceGroups } from "@/server/service-groups";
 import { NoShowFeeForm } from "./no-show-form";
 import { CancelForm } from "./cancel-form";
 import { VisitPhotosCard, type PhotoGroup } from "./visit-photos-card";
@@ -75,6 +77,7 @@ export default async function AppointmentPage({
   const stripeReady = pay.ready;
   const savedCards = await savedCardsFor(business.id, pay, client?.id);
   const tz = tzFor(business, pay.location);
+  const addGroups = await serviceGroups(business); // searchable, by category, for "Add a service"
   // One group of photos per service-and-stylist on the visit.
   const photoGroups: PhotoGroup[] = [];
   for (const it of items) if (!photoGroups.some((g) => g.serviceId === it.serviceId && g.staffId === it.staffId)) photoGroups.push({ serviceId: it.serviceId, staffId: it.staffId, serviceName: it.serviceName.replace(/ \(finish\)$/, ""), staffName: it.staffName });
@@ -246,10 +249,7 @@ export default async function AppointmentPage({
             <Disclosure title="Add a service" hint="another service on this visit" open={!!addSvc}>
               <form className="mb-3 grid grid-cols-[2fr_1fr_1fr_auto] items-end gap-2">
                 <Field label="Service">
-                  <Select name="addServiceId" defaultValue={addSvc?.id ?? ""} required>
-                    <option value="" disabled>Choose</option>
-                    {services.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.durationMin} min</option>)}
-                  </Select>
+                  <ServicePicker name="addServiceId" groups={addGroups} value={addSvc?.id ?? null} placeholder="Choose a service" />
                 </Field>
                 <Field label="Staff">
                   <Select name="addStaffId" defaultValue={addStaffId}>

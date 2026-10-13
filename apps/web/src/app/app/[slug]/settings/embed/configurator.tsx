@@ -1,11 +1,12 @@
 "use client";
 import { useMemo, useState } from "react";
 import { Field, Input, Select } from "@/components/ui";
+import { ServicePicker, type ServiceGroup } from "@/components/service-picker";
 
 type Opt = { id: string; name: string };
 
 /** Builds the embed snippet from a few choices and shows a live preview. */
-export function EmbedConfigurator({ slug, appUrl, brand, services, staff, locations }: { slug: string; appUrl: string; brand: string; services: Opt[]; staff: Opt[]; locations: Opt[] }) {
+export function EmbedConfigurator({ slug, appUrl, brand, groups, staff, locations }: { slug: string; appUrl: string; brand: string; groups: ServiceGroup[]; staff: Opt[]; locations: Opt[] }) {
   const [mode, setMode] = useState<"inline" | "popup">("inline");
   const [service, setService] = useState("");
   const [person, setPerson] = useState("");
@@ -47,7 +48,7 @@ export function EmbedConfigurator({ slug, appUrl, brand, services, staff, locati
           </div>
         ) : null}
         <Field label="Start at a service (optional)">
-          <Select value={service} onChange={(e) => setService(e.target.value)}><option value="">Let the client choose</option>{services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
+          <ServicePicker name="service" groups={groups} value={service || null} noneLabel="Let the client choose" onPick={setService} />
         </Field>
         <Field label="With a provider (optional)">
           <Select value={person} onChange={(e) => setPerson(e.target.value)}><option value="">Any provider</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>

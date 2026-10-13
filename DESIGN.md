@@ -87,11 +87,25 @@ wrong: fix the page.
 - Location pills (`LocationFilter`) appear only for businesses with more than one site.
 - Some pages only make sense for one site at a time (Staff hours: hours, rotations and coverage differ by site). There
   `LocationFilter` gets `allLabel={null}`, which removes the "All" choice, and the page falls back to the main site.
-- Filter by service *category* (a short list) with a plain select; use `ServicePicker` (search plus category groups) wherever a
-  specific service is chosen. Never a long `<select>` of every service.
+- Filtering by service follows "Choosing a service" below; a *category* filter (a short list) is a plain select.
 - Filters remember each other when you change one (carry the other query params).
 - A filter made only of choices (selects, switches) applies the moment it changes: wrap it in `AutoSubmitForm`
   and give it no Apply or Check button (Staff hours coverage). A filter with a text box keeps an explicit Apply.
+
+## Choosing a service
+
+A menu can have hundreds of services, so a flat dropdown of them is overwhelming. Wherever someone picks or filters by a
+service, use `ServicePicker` (`components/service-picker.tsx`): one field that opens a searchable list grouped by category
+path ("Lash Extensions › Classic"). Build its groups with `serviceGroups(business, opts)` (`server/service-groups.ts`).
+
+- **Never** map a services list into `<option>`s. A test (`lib/__tests__/service-select-guard.test.ts`) fails if you do. The one
+  exception is a list that is naturally short, such as group classes; add it to that test's allowlist with the reason.
+- **Toolbars and filters:** pass `compact` and `noneLabel="Any service"` (it shows as a normal value, not a grey placeholder).
+  List only what can match: the Gallery offers just the services that have photos.
+- **Forms:** `noneLabel` adds a "None" row for optional services; `meta` shows duration and price, or `"none"` where they add nothing.
+- **Reacting to the pick:** `submitOnPick` submits the surrounding form; `onPick(id)` is for controlled uses such as the embed
+  builder's live preview. Inside an `AutoSubmitForm` nothing extra is needed: the pick fires a `change` event.
+- **A category** filter (Staff hours coverage) is a short list and stays a plain select, indented by depth.
 
 ## Navigation and findability
 
@@ -192,3 +206,4 @@ Every uploaded picture is optimized before it is stored. This is a rule, not a p
 - [ ] Checked at 375px and at 1280px; nothing wraps around a control or overflows.
 - [ ] Empty, loading and error states exist.
 - [ ] Any upload goes through `lib/files.ts` so it is optimized (see Images and uploads).
+- [ ] Service choices use `ServicePicker`, never a long `<select>` (see Choosing a service).

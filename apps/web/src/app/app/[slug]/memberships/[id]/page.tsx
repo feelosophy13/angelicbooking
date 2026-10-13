@@ -3,22 +3,23 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { getOffersCatalog } from "@/server/offers";
 import { listLocations } from "@/server/locations";
 import { FormPage } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/form";
 import { PlanFields } from "@/components/plan-fields";
 import { ValidAt } from "@/components/offered-at";
 import { updatePlan } from "../../catalog-actions";
+import { serviceGroups } from "@/server/service-groups";
 
 export const metadata: Metadata = { title: "Edit membership plan" };
 
 export default async function EditPlanPage({ params }: { params: Promise<{ slug: string; id: string }> }) {
   const { slug, id } = await params;
   const { business } = await requireAction(slug, "services.manage");
-  const [p, { services }, locations] = await Promise.all([
+  const [p, groups, locations] = await Promise.all([
+
     withTenant(business.id, (tx) => tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, id) })),
-    getOffersCatalog(business.id),
+    serviceGroups(business, { meta: "none" }),
     listLocations(business.id),
   ]);
   if (!p) notFound();
@@ -28,7 +29,7 @@ export default async function EditPlanPage({ params }: { params: Promise<{ slug:
       <ActionForm action={updatePlan}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="id" value={p.id} />
-        <PlanFields plan={p} services={services} />
+        <PlanFields plan={p} groups={groups} />
         <ValidAt locations={locations} selected={p.validLocationIds} what="membership credits and discounts" />
         <SubmitButton pendingText="Saving…">Save plan</SubmitButton>
       </ActionForm>
