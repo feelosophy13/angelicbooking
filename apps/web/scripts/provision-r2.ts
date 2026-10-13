@@ -7,12 +7,12 @@
  * the dashboard and go in R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY; this script does not touch them.
  *
  * Usage (from apps/web):
- *   ../../packages/db/node_modules/.bin/tsx scripts/provision-r2.ts [--domain images.angelicbooking.com] [--public angelic-images] [--private angelic-private]
+ *   ../../packages/db/node_modules/.bin/tsx scripts/provision-r2.ts [--domain images.angelicbooking.com] [--public angelicbooking-public] [--private angelicbooking-private]
  */
 const arg = (name: string, fallback: string) => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? (process.argv[i + 1] ?? fallback) : fallback; };
 const DOMAIN = arg("domain", "images.angelicbooking.com");
-const PUBLIC = arg("public", "angelic-images");
-const PRIVATE = arg("private", "angelic-private");
+const PUBLIC = arg("public", "angelicbooking-public");
+const PRIVATE = arg("private", "angelicbooking-private");
 const ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID;
 const TOKEN = process.env.CLOUDFLARE_API_TOKEN;
 
