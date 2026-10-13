@@ -12,6 +12,8 @@
  *   luxe (default)  demo@angelicbooking.com  / demo-salon-2026  slug demo-salon     one studio
  *   glow            demo2@angelicbooking.com / demo-salon-2026  slug demo-twosites  two locations (Arlington, Reston)
  * --reset deletes that demo business first (never any other tenant) and rebuilds it.
+ * Hosted demo (Render cron job angelic-booking-demo-refresh): DEMO_ALLOW_REMOTE=1 and DEMO_PASSWORD=<secret> are set there;
+ * the demo businesses never send email or text (lib/notify skips slugs that start with "demo-").
  */
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, getSql, schema, withTenant, type TenantDb } from "@angelic/db";
@@ -27,6 +29,8 @@ import { seedDemoPhotos } from "./demo-photos";
 import { appUrl } from "../src/lib/stripe";
 import { PACKAGE_BLURBS, PACKAGE_PHOTOS, productArt } from "./demo-art";
 
+/** Local demos use a known password; a hosted demo must set DEMO_PASSWORD to its own secret (see the guard in main). */
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD || "demo-salon-2026";
 const RESET = process.argv.includes("--reset");
 const PROFILE_KEY = process.argv.includes("--profile") ? (process.argv[process.argv.indexOf("--profile") + 1] ?? "luxe") : "luxe";
 
@@ -43,7 +47,7 @@ const WEEK = { "0": null, "1": { open: "10:00", close: "18:00" }, "2": { open: "
 const PROFILES: Record<string, Profile> = {
   // One studio, every pay model, the richest history.
   luxe: {
-    email: "demo@angelicbooking.com", password: "demo-salon-2026", slug: "demo-salon", name: "Luxe Beauty Studio", tz: "America/New_York", brandColor: "#be185d",
+    email: "demo@angelicbooking.com", password: DEMO_PASSWORD, slug: "demo-salon", name: "Luxe Beauty Studio", tz: "America/New_York", brandColor: "#be185d",
     tagline: "Lashes, brows, facials, waxing and permanent makeup",
     about: "A calm, light-filled studio in the heart of Sterling. Our team of specialists has been making clients feel their best since 2019. Walk-ins welcome when the calendar allows; booking online guarantees your spot.",
     website: "https://luxebeauty.demo", instagram: "luxebeautystudio", phone: "(703) 555-0142", contactEmail: "hello@luxebeauty.demo", addressLine: "128 Market Street, Sterling, VA 20164", coverEmoji: "🌿", giftPrefix: "LUXE",
@@ -53,7 +57,7 @@ const PROFILES: Record<string, Profile> = {
   },
   // Two sites: the booking page asks for a location, reports and reviews filter by it, staff and hours differ per site.
   glow: {
-    email: "demo2@angelicbooking.com", password: "demo-salon-2026", slug: "demo-twosites", name: "Glow Collective", tz: "America/New_York", brandColor: "#0f766e",
+    email: "demo2@angelicbooking.com", password: DEMO_PASSWORD, slug: "demo-twosites", name: "Glow Collective", tz: "America/New_York", brandColor: "#0f766e",
     tagline: "Lash and skin studios in Arlington and Reston",
     about: "Glow Collective started as a two-chair studio in Arlington and opened its Reston location in 2023. Book at whichever is closer; your history, packages and points follow you.",
     website: "https://glowcollective.demo", instagram: "glowcollective", phone: "(571) 555-0190", contactEmail: "hello@glowcollective.demo", addressLine: "Arlington & Reston, VA", coverEmoji: "✨", giftPrefix: "GLOW",
@@ -276,7 +280,11 @@ async function main() {
   // Demo pictures stay in Postgres, never in the real R2 bucket; and this script only ever runs against a local database.
   process.env.R2_ACCESS_KEY_ID = "";
   process.env.R2_SECRET_ACCESS_KEY = "";
-  if (!/@(localhost|127\.0\.0\.1|\[::1\])(:|\/)/.test(process.env.DATABASE_URL ?? "") && !process.argv.includes("--allow-remote")) throw new Error("DATABASE_URL is not a local database. Pass --allow-remote if you really mean it.");
+  const local = /@(localhost|127\.0\.0\.1|\[::1\])(:|\/)/.test(process.env.DATABASE_URL ?? "");
+  const remoteOk = process.argv.includes("--allow-remote") || process.env.DEMO_ALLOW_REMOTE === "1";
+  if (!local && !remoteOk) throw new Error("DATABASE_URL is not a local database. Pass --allow-remote (or set DEMO_ALLOW_REMOTE=1) if you really mean to seed a hosted demo.");
+  // The repo's default password is public, so a hosted demo must use its own.
+  if (!local && (!process.env.DEMO_PASSWORD || process.env.DEMO_PASSWORD === "demo-salon-2026")) throw new Error("Set DEMO_PASSWORD to a secret of your own before seeding a hosted demo.");
   const pg = getSql();
   const existingBiz = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, SLUG) });
   if (existingBiz && !RESET) {
@@ -292,13 +300,23 @@ async function main() {
   }
 
   // --- User (Better Auth) and organization (runs the afterCreateOrganization hook)
-  let user = await db.query.user.findFirst({ where: eq(schema.user.email, EMAIL) });
-  if (!user) {
+  const makeUser = async () => {
     await auth.api.signUpEmail({ body: { email: EMAIL, password: PASSWORD, name: "Demo Owner" } });
-    user = (await db.query.user.findFirst({ where: eq(schema.user.email, EMAIL) }))!;
-    await db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.id, user.id));
+    const created = (await db.query.user.findFirst({ where: eq(schema.user.email, EMAIL) }))!;
+    await db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.id, created.id));
+    return created;
+  };
+  let user = (await db.query.user.findFirst({ where: eq(schema.user.email, EMAIL) })) ?? (await makeUser());
+  let signIn;
+  try {
+    signIn = await auth.api.signInEmail({ body: { email: EMAIL, password: PASSWORD }, returnHeaders: true });
+  } catch {
+    // The demo password was changed (DEMO_PASSWORD): the demo login is only for the demo, so make it again with the new one.
+    console.log("Demo login no longer matches DEMO_PASSWORD; recreating it.");
+    await db.delete(schema.user).where(eq(schema.user.id, user.id));
+    user = await makeUser();
+    signIn = await auth.api.signInEmail({ body: { email: EMAIL, password: PASSWORD }, returnHeaders: true });
   }
-  const signIn = await auth.api.signInEmail({ body: { email: EMAIL, password: PASSWORD }, returnHeaders: true });
   const cookie = (signIn.headers.getSetCookie?.() ?? [signIn.headers.get("set-cookie") ?? ""]).map((c) => c.split(";")[0]).filter(Boolean).join("; ");
   const h = new Headers({ cookie });
   const org = await auth.api.createOrganization({ headers: h, body: { name: NAME, slug: SLUG, metadata: { timezone: TZ } } });
