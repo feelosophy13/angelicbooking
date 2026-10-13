@@ -208,6 +208,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Postgres. Old `/api/files` links redirect to the CDN. Deployed 2026-10-13: all six `R2_*` variables are on Render and the
       production migration job found nothing left in the database (production holds no pictures yet), so new uploads there
       go straight to R2. Restart the local dev server to pick up the R2 variables.
+- [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
+      resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
+      photos stay as sent (the image library cannot read HEIC); SVG is not minified.
 - [x] 2026-10-13: stylist prices and durations. Each stylist can charge their own price and take their own time
       for a service (`staff_services` overrides, already filled by the Vagaro import); blank = the service's own.
       Fixed: saving a stylist's Services tab used to delete every override (it now keeps them, and a value equal to

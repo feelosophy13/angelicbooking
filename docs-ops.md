@@ -261,6 +261,9 @@ keeps using Postgres, so local development needs nothing.
   access key and secret, then run `apps/web/scripts/provision-r2.ts` to create both buckets and attach the CDN
   domain. Put the `R2_*` values in `.env` and on Render (PUT the env var, then POST a deploy). Check with
   `scripts/r2-check.ts`.
+- **Every upload is optimized,** whether R2 is on or not: resized, re-encoded as WebP, EXIF/GPS removed (see
+  "Images and uploads" in DESIGN.md). Form photos and signatures are optimized too before they reach the private
+  bucket. Only SVG, PDF and HEIC are stored as sent.
 - **Existing images.** After deploying, move what is already in Postgres with
   `scripts/migrate-files-to-r2.ts`, or on the server: `POST /api/jobs/migrate-files?limit=20` with
   `Authorization: Bearer $JOBS_SECRET`, repeated until `left.files` is 0 (`?dryRun=1` only reports). Old

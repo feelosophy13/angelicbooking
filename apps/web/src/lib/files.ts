@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
 import { appUrl } from "./stripe";
-import { prepareImage, ImageError } from "./images";
+import { optimizeUpload, ImageError } from "./images";
 import { deleteObject, keyFromPublicUrl, publicObjectUrl, putObject, r2Config, type Visibility } from "./object-storage";
 
 /** What a client may upload, before resizing. */
@@ -47,7 +47,7 @@ export async function storeImage(businessId: string, kind: "logo" | "cover" | "p
   if (!ALLOWED.has(file.type)) throw new FileError("Use a PNG, JPEG, WebP, GIF or SVG image.");
   if (file.size > MAX_FILE_BYTES) throw new FileError("Images must be 8 MB or smaller.");
   try {
-    const prepared = await prepareImage(kind, Buffer.from(await file.arrayBuffer()), file.type);
+    const prepared = await optimizeUpload(kind, Buffer.from(await file.arrayBuffer()), file.type);
     return await saveFile(businessId, kind, prepared);
   } catch (e) {
     if (e instanceof ImageError) throw new FileError(e.message);
@@ -80,8 +80,12 @@ export async function storeFormFile(businessId: string, file: File): Promise<str
   if (!file || file.size === 0) throw new FileError("Choose a file.");
   if (!FORM_ALLOWED.has(file.type)) throw new FileError("Attach a photo (PNG, JPEG, WebP, HEIC) or a PDF.");
   if (file.size > MAX_FORM_FILE_BYTES) throw new FileError("Files must be 5 MB or smaller.");
-  const ext = file.type === "application/pdf" ? "pdf" : (file.type.split("/")[1] ?? "bin");
-  return (await saveFile(businessId, "form", { data: Buffer.from(await file.arrayBuffer()), contentType: file.type, ext })).id;
+  try {
+    return (await saveFile(businessId, "form", await optimizeUpload("form", Buffer.from(await file.arrayBuffer()), file.type))).id;
+  } catch (e) {
+    if (e instanceof ImageError) throw new FileError(e.message);
+    throw e;
+  }
 }
 
 /** A drawn signature posted by the pad as a PNG data URL. */
@@ -90,7 +94,12 @@ export async function storeSignaturePng(businessId: string, dataUrl: string): Pr
   if (!m) throw new FileError("Signature image is not valid.");
   const data = Buffer.from(m[1]!, "base64");
   if (data.length < 200 || data.length > 400 * 1024) throw new FileError("Signature image is not valid.");
-  return (await saveFile(businessId, "signature", { data, contentType: "image/png", ext: "png" })).id;
+  try {
+    return (await saveFile(businessId, "signature", await optimizeUpload("signature", data, "image/png"))).id;
+  } catch (e) {
+    if (e instanceof ImageError) throw new FileError(e.message);
+    throw e;
+  }
 }
 
 export const fileUrl = (id: string) => appUrl(`/api/files/${id}`);

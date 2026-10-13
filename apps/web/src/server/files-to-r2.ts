@@ -1,13 +1,13 @@
 /**
  * Move files already stored in Postgres to Cloudflare R2, a batch at a time. Safe to run repeatedly:
  * only rows still in the database are touched, each one is copied before its bytes are dropped, and a
- * failure leaves that row where it was. Public pictures are resized on the way (like new uploads) and
+ * failure leaves that row where it was. Pictures are optimized on the way (like new uploads) and
  * the addresses saved on services, categories, products, packages, staff and the business are
  * rewritten to the CDN address so visitors skip the redirect through the app.
  */
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
-import { prepareImage } from "@/lib/images";
+import { optimizeUpload } from "@/lib/images";
 import { PRIVATE_KINDS, visibilityOf } from "@/lib/files";
 import { publicObjectUrl, putObject, r2Config } from "@/lib/object-storage";
 import { randomUUID } from "node:crypto";
@@ -15,7 +15,6 @@ import { randomUUID } from "node:crypto";
 /** File kinds that are pictures or client files. Anything else in `files` (staged imports) stays in Postgres. */
 const MOVABLE = ["logo", "cover", "product", "package", "service", "category", "staff", "form", "signature"];
 const IMMUTABLE = "public, max-age=31536000, immutable";
-const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/svg+xml": "svg", "image/heic": "heic", "application/pdf": "pdf" };
 
 export async function filesLeftInDatabase() {
   const [r] = await db
@@ -44,13 +43,10 @@ export async function migrateFilesToR2(limit = 20, only?: string[]): Promise<{ m
       const visibility = visibilityOf(row.kind);
       let data: Buffer = Buffer.from(row.data!);
       let contentType = row.contentType;
-      let ext = EXT[contentType] ?? "bin";
-      if (visibility === "public") {
-        const p = await prepareImage(row.kind, data, contentType);
-        data = p.data;
-        contentType = p.contentType;
-        ext = p.ext;
-      }
+      const p = await optimizeUpload(row.kind, data, contentType);
+      data = p.data;
+      contentType = p.contentType;
+      const ext = p.ext;
       const key = `${row.businessId}/${row.kind}/${randomUUID()}.${ext}`;
       await putObject(cfg, visibility, key, data, contentType, visibility === "public" ? IMMUTABLE : undefined);
       await db.update(schema.files).set({ storage: "r2", storageKey: key, contentType, size: data.length, data: null }).where(and(eq(schema.files.id, row.id), eq(schema.files.storage, "db")));

@@ -136,6 +136,25 @@ wrong: fix the page.
   marks. Hints explain consequences ("Nothing is charged at booking; the card is kept for no-show fees").
 - Name the person or thing, not the record ("Ava's hours", "Sale #1006").
 
+## Images and uploads
+
+Every uploaded picture is optimized before it is stored. This is a rule, not a preference.
+
+- **One door.** Upload code calls the helpers in `lib/files.ts` (`storeImage`, `uploadedImageFrom`, `storeFormFile`,
+  `storeSignaturePng`), which all run `optimizeUpload` from `lib/images.ts`. Never write upload bytes to the
+  `files` table or to object storage yourself, and never store the browser's original. A test
+  (`lib/__tests__/upload-guard.test.ts`) fails if another path does.
+- **What the door does.** JPEG, PNG, WebP and GIF are resized to web size (longest side 1600 px; covers and form
+  photos 2000; logos and staff photos 800) and re-encoded as WebP. Animated GIFs stay animated. EXIF data, including
+  the camera's GPS location, is removed. Drawn signatures become small palette PNGs. A picture is never enlarged.
+- **The only exceptions** are types that cannot be shrunk here, stored as sent: SVG (capped at 512 KB), PDF, and
+  HEIC. If a new kind of upload appears, add it to `optimizeUpload`, not around it.
+- **New kinds of picture.** Add the kind to `storeImage`, give it a size in `MAX_SIDE` if 1600 px is wrong, and add
+  it to `MOVABLE` in `server/files-to-r2.ts` so the R2 migration covers it.
+- **Showing pictures.** Use the address the helper returned (the CDN address when R2 is on). Set `width` and `height`
+  or a fixed aspect box so the page does not jump, and `loading="lazy"` below the fold.
+- **Pickers.** Use `ImageField` (see Forms). It already restricts the file type; the server enforces the rest.
+
 ## Checklist before calling a page done
 
 - [ ] One primary action, in the header.
@@ -144,3 +163,4 @@ wrong: fix the page.
 - [ ] Occasional controls collapsed; destructive ones behind a quiet link and a confirm.
 - [ ] Checked at 375px and at 1280px; nothing wraps around a control or overflows.
 - [ ] Empty, loading and error states exist.
+- [ ] Any upload goes through `lib/files.ts` so it is optimized (see Images and uploads).
