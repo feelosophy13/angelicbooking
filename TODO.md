@@ -218,8 +218,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       referrals, classes with seats, standing appointments, client memberships and packages, notes, submitted forms,
       campaigns, texts, refunds, payroll runs and Gallery photos; staff have different days and hours so coverage differs
       by category and day (and by site on the two-site tenant). Run `pnpm demo:refresh` (about 30 s) before a demo and
-      monthly; everything is relative to the run date. Automated: a scheduled task `refresh-demo-data` runs it every Monday
-      around 6am (it runs only while the Claude desktop app is open; if the Mac was off it runs at next launch).
+      monthly; everything is relative to the run date. Automated: the macOS launchd job `com.angelicbooking.demo-refresh` runs it every Monday
+      at 6:00 (log: ~/Library/Logs/angelic-demo-refresh.log; if the Mac is asleep it runs on wake).
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.

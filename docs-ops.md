@@ -294,9 +294,12 @@ pnpm demo:refresh
 ```
 
 It deletes and rebuilds both demo businesses in about 30 seconds (logins stay the same, only demo tenants are touched,
-and it refuses to run unless `DATABASE_URL` is a local database). It also runs by itself every Monday around 6am through the
-Claude desktop app's scheduled task `refresh-demo-data` (it needs the app open and local Postgres running; if the Mac was
-off it runs at next launch; pause or edit it under Scheduled in the app sidebar). Run it by hand before a demo. To rebuild one tenant: `../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts [--profile glow] --reset`
+and it refuses to run unless `DATABASE_URL` is a local database). It also runs by itself every Monday at 6:00 through the macOS launchd job
+`~/Library/LaunchAgents/com.angelicbooking.demo-refresh.plist` (log: `~/Library/Logs/angelic-demo-refresh.log`). It needs the
+Mac awake (a run missed while asleep happens on wake) and local Postgres running, which Homebrew starts at login. Manage it with
+`launchctl bootout gui/$(id -u)/com.angelicbooking.demo-refresh` (stop), `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.angelicbooking.demo-refresh.plist`
+(start) and `launchctl kickstart -k gui/$(id -u)/com.angelicbooking.demo-refresh` (run now). The Claude desktop app also has a
+paused task `refresh-demo-data` that does the same thing; leave it paused so the two don't both run. Run it by hand before a demo. To rebuild one tenant: `../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts [--profile glow] --reset`
 from `apps/web`.
 
 ### What it creates
