@@ -23,6 +23,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     ] },
     { title: "People", items: [
       it(`${base}/clients`, "Clients", "Users"),
+      ...(ok("clients.read") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
       it(`${base}/staff`, "Staff", "UserCog", { exclude: [`${base}/staff-hours`] }),
     ] },
     { title: "Catalog", items: [

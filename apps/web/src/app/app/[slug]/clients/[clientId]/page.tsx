@@ -20,6 +20,9 @@ import { inArray } from "drizzle-orm";
 import { Textarea as NoteArea } from "@/components/ui";
 import { ConfirmSubmit, SubmitButton as NoteSubmit } from "@/components/form";
 import { relative } from "@/lib/format";
+import { listGallery } from "@/server/visit-photos";
+import { pairViews } from "@/lib/gallery-view";
+import { PairCard } from "@/components/photo-pair";
 import { listForms, listSubmissionsForClient } from "@/server/forms";
 import { getClientLoyalty, referralsOf } from "@/server/loyalty";
 import { clientStats } from "@/server/clients";
@@ -129,6 +132,8 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
     { label: "Usually", value: stats.favouriteService ?? "—", hint: [stats.usualProvider ? `with ${stats.usualProvider}` : null, stats.visitEveryDays ? `every ${stats.visitEveryDays} days` : null].filter(Boolean).join(" · ") || undefined },
   ];
 
+  const clientPhotos = await listGallery(business.id, { serviceId: null, staffId: null, clientId, locationId: null, tag: null, periodDays: null, q: null, bothOnly: false, shareableOnly: false, page: 1 }, 6);
+  const photoViews = pairViews(slug, clientPhotos.pairs, business.timezone);
   return (
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/clients`}>Clients</BackLink></div>
@@ -187,6 +192,15 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               </div>
             ) : null}
           </Card>
+          {photoViews.length ? (
+            <Card>
+              <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2">
+                <h2 className="text-sm font-semibold text-stone-600">Photos</h2>
+                <Link href={`/app/${slug}/gallery?client=${clientId}`} className="text-sm text-brand-700 underline">{clientPhotos.hasMore ? "See all" : "Open in Gallery"}</Link>
+              </div>
+              <ul className="grid gap-3 p-3 min-[420px]:grid-cols-2">{photoViews.map((v) => <li key={v.key}><PairCard pair={v} /></li>)}</ul>
+            </Card>
+          ) : null}
           <Card>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Upcoming</h2>
             {upcoming.length === 0 ? <div className="p-4"><Empty title="Nothing booked" /></div> : (

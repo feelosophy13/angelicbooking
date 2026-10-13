@@ -208,6 +208,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Postgres. Old `/api/files` links redirect to the CDN. Deployed 2026-10-13: all six `R2_*` variables are on Render and the
       production migration job found nothing left in the database (production holds no pictures yet), so new uploads there
       go straight to R2. Restart the local dev server to pick up the R2 variables.
+- [x] 2026-10-13 (migration 0067): before/after photos and a Gallery. Photos belong to the appointment (and its service and
+      stylist), with tags and a "client agreed to public sharing" record per pair; added from the appointment's Photos
+      card (tap, shoot, uploads at once), stored privately with thumbnails. Gallery page (People) filters by service,
+      stylist, tag, time, client, location, complete pairs and shareable; client page shows that client's pairs. Not
+      built: a public portfolio page or booking-page gallery (consent is recorded, nothing is shown publicly), photos
+      from the stylist-only (own calendar) view, and client-visible photos in the client portal.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.

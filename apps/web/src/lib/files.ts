@@ -20,7 +20,7 @@ const IMMUTABLE = "public, max-age=31536000, immutable";
 export class FileError extends Error {}
 
 /** Kinds that only a signed-in member or the client who owns them may read. */
-export const PRIVATE_KINDS = new Set(["form", "signature"]);
+export const PRIVATE_KINDS = new Set(["form", "signature", "visit"]);
 export const visibilityOf = (kind: string): Visibility => (PRIVATE_KINDS.has(kind) ? "private" : "public");
 
 /** Store bytes in R2 when configured (else Postgres) and return the file id and the address to use. */
@@ -61,7 +61,18 @@ export async function deleteFileByUrl(url: string | null | undefined) {
   const id = fileIdFromUrl(url);
   const key = id ? null : cfg ? keyFromPublicUrl(cfg, url) : null;
   if (!id && !key) return;
-  const row = await db.query.files.findFirst({ where: id ? eq(schema.files.id, id) : eq(schema.files.storageKey, key!), columns: { id: true, kind: true, storage: true, storageKey: true } });
+  await deleteStoredFile(id ? eq(schema.files.id, id) : eq(schema.files.storageKey, key!));
+}
+
+/** Delete a stored file (bytes and row) by its id. */
+export async function deleteFileById(id: string | null | undefined) {
+  if (!id) return;
+  await deleteStoredFile(eq(schema.files.id, id));
+}
+
+async function deleteStoredFile(where: ReturnType<typeof eq>) {
+  const cfg = r2Config();
+  const row = await db.query.files.findFirst({ where, columns: { id: true, kind: true, storage: true, storageKey: true } });
   if (!row) return;
   if (row.storage === "r2" && row.storageKey && cfg) await deleteObject(cfg, visibilityOf(row.kind), row.storageKey).catch((e) => console.error("[files] could not delete object", row.storageKey, (e as Error).message));
   await db.delete(schema.files).where(eq(schema.files.id, row.id));
@@ -96,6 +107,30 @@ export async function storeSignaturePng(businessId: string, dataUrl: string): Pr
   if (data.length < 200 || data.length > 400 * 1024) throw new FileError("Signature image is not valid.");
   try {
     return (await saveFile(businessId, "signature", await optimizeUpload("signature", data, "image/png"))).id;
+  } catch (e) {
+    if (e instanceof ImageError) throw new FileError(e.message);
+    throw e;
+  }
+}
+
+const VISIT_ALLOWED = new Set(["image/png", "image/jpeg", "image/webp"]);
+export const MAX_VISIT_PHOTO_BYTES = 15 * 1024 * 1024;
+
+/** A before or after photo of a visit: the picture at working size plus a small copy for the Gallery grid. */
+export async function storeVisitPhoto(businessId: string, file: File): Promise<{ fileId: string; thumbFileId: string }> {
+  if (!file || file.size === 0) throw new FileError("Choose a photo.");
+  if (!VISIT_ALLOWED.has(file.type)) throw new FileError("Use a JPEG, PNG or WebP photo. On an iPhone, set Settings > Camera > Formats > Most Compatible.");
+  if (file.size > MAX_VISIT_PHOTO_BYTES) throw new FileError("Photos must be 15 MB or smaller.");
+  try {
+    const input = Buffer.from(await file.arrayBuffer());
+    const full = await saveFile(businessId, "visit", await optimizeUpload("visit", input, file.type));
+    try {
+      const thumb = await saveFile(businessId, "visit", await optimizeUpload("thumb", input, file.type));
+      return { fileId: full.id, thumbFileId: thumb.id };
+    } catch (e) {
+      await deleteFileById(full.id);
+      throw e;
+    }
   } catch (e) {
     if (e instanceof ImageError) throw new FileError(e.message);
     throw e;

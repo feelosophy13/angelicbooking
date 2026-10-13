@@ -516,6 +516,42 @@ export const forms = pgTable(
   (t) => [index("forms_business_idx").on(t.businessId)],
 );
 
+/**
+ * A before or after photo from a visit. Tied to the appointment (one visit, one date, one client) and to the
+ * service and stylist it shows, so the Gallery can be filtered by either. Photos of the same appointment, service
+ * and stylist form a pair. Tags and the "may be shown publicly" consent are kept the same across a pair.
+ * The pictures live in `files` (private kind "visit"); the thumbnail is a small copy for the Gallery grid.
+ */
+export const visitPhotos = pgTable(
+  "visit_photos",
+  {
+    id: id(),
+    businessId: businessId(),
+    appointmentId: text("appointment_id")
+      .notNull()
+      .references(() => appointments.id, { onDelete: "cascade" }),
+    clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
+    serviceId: text("service_id").references(() => services.id, { onDelete: "set null" }),
+    staffId: text("staff_id").references(() => staff.id, { onDelete: "set null" }),
+    phase: text("phase").notNull(), // "before" | "after"
+    fileId: text("file_id").notNull(),
+    thumbFileId: text("thumb_file_id"),
+    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    // The client agreed the salon may show these photos publicly (portfolio, social media).
+    shareOk: boolean("share_ok").notNull().default(false),
+    takenAt: timestamp("taken_at", { withTimezone: true }).notNull().defaultNow(),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("visit_photos_appointment_idx").on(t.appointmentId),
+    index("visit_photos_gallery_idx").on(t.businessId, t.takenAt),
+    index("visit_photos_client_idx").on(t.businessId, t.clientId),
+    index("visit_photos_service_idx").on(t.businessId, t.serviceId),
+    index("visit_photos_staff_idx").on(t.businessId, t.staffId),
+  ],
+);
+
 export const formSubmissions = pgTable(
   "form_submissions",
   {

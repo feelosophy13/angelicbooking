@@ -12,7 +12,7 @@ import sharp from "sharp";
 export class ImageError extends Error {}
 
 /** Longest side, in pixels, by what the picture is for. */
-export const MAX_SIDE: Record<string, number> = { cover: 2000, logo: 800, staff: 800, form: 2000 };
+export const MAX_SIDE: Record<string, number> = { cover: 2000, logo: 800, staff: 800, form: 2000, visit: 2000, thumb: 640 };
 export const DEFAULT_MAX_SIDE = 1600;
 export const MAX_SVG_BYTES = 512 * 1024;
 

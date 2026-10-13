@@ -13,7 +13,7 @@ import { publicObjectUrl, putObject, r2Config } from "@/lib/object-storage";
 import { randomUUID } from "node:crypto";
 
 /** File kinds that are pictures or client files. Anything else in `files` (staged imports) stays in Postgres. */
-const MOVABLE = ["logo", "cover", "product", "package", "service", "category", "staff", "form", "signature"];
+const MOVABLE = ["logo", "cover", "product", "package", "service", "category", "staff", "form", "signature", "visit"];
 const IMMUTABLE = "public, max-age=31536000, immutable";
 
 export async function filesLeftInDatabase() {

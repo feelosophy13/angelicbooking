@@ -14,6 +14,8 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["postgres", "exceljs"],
   typedRoutes: false,
   poweredByHeader: false,
+  // Phone photos are several megabytes each and a visit can add a few at once; they are resized on the server.
+  experimental: { serverActions: { bodySizeLimit: "40mb" } },
   async headers() {
     return [
       // Everything except the embeddable booking flow refuses to be framed.

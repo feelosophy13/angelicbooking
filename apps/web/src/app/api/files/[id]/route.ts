@@ -5,7 +5,7 @@ import { getClientSessionId } from "@/lib/client-session";
 import { getObject, publicObjectUrl, r2Config } from "@/lib/object-storage";
 
 const PUBLIC_KINDS = new Set(["logo", "cover", "product", "package", "service", "category", "staff"]);
-const PRIVATE_KINDS = new Set(["form", "signature"]);
+const PRIVATE_KINDS = new Set(["form", "signature", "visit"]);
 
 /**
  * Serve an uploaded file. Branding, product, service and category images are public and immutable

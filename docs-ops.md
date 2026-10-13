@@ -270,6 +270,10 @@ keeps using Postgres, so local development needs nothing.
   `/api/files/<id>` links keep working (they redirect to the CDN). Postgres does not hand the freed space back to
   the disk by itself; run `VACUUM FULL files` in a quiet moment when you want the size to drop.
 
+- **Upload size.** Server actions accept request bodies up to 40 MB (`experimental.serverActions.bodySizeLimit` in
+  `next.config.ts`) because a visit can add several phone photos at once; each photo is resized on the server.
+  Render and Cloudflare in front of the app must not impose a smaller limit.
+
 ## Demo tenant
 
 `apps/web/scripts/seed-demo.ts` builds a fully populated demo business for walkthroughs and screenshots (never touches
@@ -293,3 +297,6 @@ visits with sales/tips/reviews, three weeks of upcoming bookings, time-clock ent
 packages, membership plans, gift cards, a promo code, waitlist entries and enabled automations. `--reset` deletes and
 rebuilds it. Run it against production with `DATABASE_URL`/`DATABASE_ADMIN_URL` pointed at the prod database once a
 public demo login is wanted (change the password first).
+
+Fake before/after photos for the Gallery: `R2_ACCESS_KEY_ID= ../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo-photos.ts demo-salon`
+(blanking the R2 key keeps demo pictures in Postgres, out of the real bucket; only `demo-*` tenants are accepted).

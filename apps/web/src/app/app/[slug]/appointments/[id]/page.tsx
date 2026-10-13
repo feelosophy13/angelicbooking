@@ -23,6 +23,8 @@ import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
 import { NoShowFeeForm } from "./no-show-form";
 import { CancelForm } from "./cancel-form";
+import { VisitPhotosCard, type PhotoGroup } from "./visit-photos-card";
+import { pairsForAppointment, photoTagsInUse } from "@/server/visit-photos";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForAppointment, tzFor } from "@/server/locations";
 import { MapPin, CalendarPlus } from "lucide-react";
@@ -73,6 +75,10 @@ export default async function AppointmentPage({
   const stripeReady = pay.ready;
   const savedCards = await savedCardsFor(business.id, pay, client?.id);
   const tz = tzFor(business, pay.location);
+  // One group of photos per service-and-stylist on the visit.
+  const photoGroups: PhotoGroup[] = [];
+  for (const it of items) if (!photoGroups.some((g) => g.serviceId === it.serviceId && g.staffId === it.staffId)) photoGroups.push({ serviceId: it.serviceId, staffId: it.staffId, serviceName: it.serviceName.replace(/ \(finish\)$/, ""), staffName: it.staffName });
+  const [photoPairs, photoTags] = appointment.kind === "visit" ? await Promise.all([pairsForAppointment(business.id, id), photoTagsInUse(business.id)]) : [[], []];
   const live = items.filter((i) => i.status !== "cancelled");
   const first = live[0] ?? items[0];
   const apptDate = first ? instantToISODate(first.startAt, tz) : instantToISODate(new Date(), tz);
@@ -276,6 +282,8 @@ export default async function AppointmentPage({
               <Button type="submit" size="sm" variant="secondary">Save notes</Button>
             </form>
           </Card>
+
+          {appointment.kind === "visit" && can(permissions, "appointments.write.any") ? <VisitPhotosCard slug={slug} appointmentId={id} groups={photoGroups} pairs={photoPairs} tagSuggestions={photoTags} /> : null}
         </div>
 
         <div className="space-y-6">

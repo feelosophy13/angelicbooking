@@ -23,7 +23,7 @@ describe("upload guard", () => {
   });
   it("every store function in lib/files.ts calls optimizeUpload", () => {
     const text = files.find((f) => f.path === "lib/files.ts")!.text;
-    for (const fn of ["storeImage", "storeFormFile", "storeSignaturePng"]) {
+    for (const fn of ["storeImage", "storeFormFile", "storeSignaturePng", "storeVisitPhoto"]) {
       const body = text.slice(text.indexOf(`export async function ${fn}`));
       expect(body.slice(0, body.indexOf("\n}\n")), fn).toContain("optimizeUpload(");
     }

@@ -470,6 +470,13 @@
       "when": 1791906187126,
       "tag": "0066_files_object_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1791928561003,
+      "tag": "0067_visit_photos",
+      "breakpoints": true
     }
   ]
 }

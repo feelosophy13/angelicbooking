@@ -149,11 +149,31 @@ Every uploaded picture is optimized before it is stored. This is a rule, not a p
   the camera's GPS location, is removed. Drawn signatures become small palette PNGs. A picture is never enlarged.
 - **The only exceptions** are types that cannot be shrunk here, stored as sent: SVG (capped at 512 KB), PDF, and
   HEIC. If a new kind of upload appears, add it to `optimizeUpload`, not around it.
+- **Visit photos** go through `storeVisitPhoto` (full size 2000 px plus a 640 px thumbnail), JPEG, PNG or WebP only.
 - **New kinds of picture.** Add the kind to `storeImage`, give it a size in `MAX_SIDE` if 1600 px is wrong, and add
   it to `MOVABLE` in `server/files-to-r2.ts` so the R2 migration covers it.
 - **Showing pictures.** Use the address the helper returned (the CDN address when R2 is on). Set `width` and `height`
   or a fixed aspect box so the page does not jump, and `loading="lazy"` below the fold.
 - **Pickers.** Use `ImageField` (see Forms). It already restricts the file type; the server enforces the rest.
+
+## Before and after photos, and the Gallery
+
+- **Tied to the appointment.** A before/after pair describes one visit, one service and one stylist, so photos hang
+  off the appointment (`visit_photos`: appointment, client, service, stylist, phase, tags, consent). The client's
+  profile and the Gallery are views over the same rows; nothing is stored on the client.
+- **A pair** is every photo of one appointment, service and stylist (`pairKey` in `lib/visit-photos.ts`). Tags and the
+  "client agreed we can show these publicly" consent are set once per pair and shared by its photos. Consent is a
+  record only: nothing is published automatically.
+- **Adding photos** is `PhotoAdd` (`components/photo-add.tsx`): tap the tile, take or choose photos, they upload at
+  once with no Save step. It is the one multi-photo control; single pictures still use `ImageField`. The Photos card
+  lives on the appointment page under Notes, one Before and one After strip per service on the visit.
+- **Private by design.** Visit photos are stored as private kind `visit` (private bucket), served through
+  `/api/files/<id>` for signed-in members only, never cached. Each photo has a small thumbnail (640 px) for grids.
+- **The Gallery** (sidebar, People) shows pairs newest first as `PairCard`s; clicking one opens both photos large.
+  Filters follow the Toolbars rules: service, stylist, tag, time, client name, "Before and after" only, "OK to
+  share", plus location pills for multi-site businesses. Filters live in the query string so a filtered view can be
+  linked, and the client page links to the Gallery with `?client=`.
+- **Elsewhere** show pairs with `PairCard` and `pairViews`; do not draw your own photo grid.
 
 ## Checklist before calling a page done
 
