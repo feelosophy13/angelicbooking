@@ -229,6 +229,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] 2026-10-13: no more long service dropdowns. The Gallery, appointment "Add a service", membership plan and embed builder use the
       searchable ServicePicker (Gallery lists only services that have photos); the picker now shows its choice immediately and has
       `compact` / `onPick`. A test fails on any plain select of all services; DESIGN.md has a "Choosing a service" section.
+- [x] 2026-10-13: the Gallery's service filter also takes a whole category ("All of Lash Extensions", includes sub-categories) from the same picker;
+      other pages that filter by service (Appointments, Reports) could offer the same via `serviceGroups(..., { categories: true })`.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.

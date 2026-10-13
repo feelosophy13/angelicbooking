@@ -105,7 +105,10 @@ path ("Lash Extensions › Classic"). Build its groups with `serviceGroups(busin
 - **Forms:** `noneLabel` adds a "None" row for optional services; `meta` shows duration and price, or `"none"` where they add nothing.
 - **Reacting to the pick:** `submitOnPick` submits the surrounding form; `onPick(id)` is for controlled uses such as the embed
   builder's live preview. Inside an `AutoSubmitForm` nothing extra is needed: the pick fires a `change` event.
-- **A category** filter (Staff hours coverage) is a short list and stays a plain select, indented by depth.
+- **A whole category** is chosen in the same field: build the groups with `serviceGroups(business, { categories: true })` and each category
+  gets an "All of <category>" row (value `c:<id>`, including a category that only holds sub-categories). The page reads `c:` as the category
+  and everything under it (`subtreeIds`); the Gallery does this. A page that only ever filters by category (Staff hours coverage) keeps a plain
+  select, indented by depth, because that list is short.
 
 ## Navigation and findability
 

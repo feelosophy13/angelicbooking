@@ -5,14 +5,35 @@ import { formatMoney } from "@/lib/utils";
 import { duration } from "@/lib/format";
 import { buildTree, listCategories, pathTo, type AnyCategory, type CategoryNode } from "./categories";
 
+type GroupOpts = { meta?: "duration-price" | "price" | "none"; note?: (serviceId: string) => string | null; include?: (serviceId: string) => boolean; /** Add an "All of <category>" row to each category that contains an included service, at any depth. */ categories?: boolean };
+type ServiceRow = { id: string; name: string; categoryId: string | null; durationMin: number; priceCents: number };
+
+/** The pure part of `serviceGroups`: group services by category path, optionally with whole-category rows (value `c:<id>`). */
+export function groupServices(services: ServiceRow[], categories: AnyCategory[], currency: string, opts: GroupOpts = {}): ServiceGroup[] {
+  const meta = (s: ServiceRow) =>
+    opts.meta === "none" ? "" : opts.meta === "price" ? formatMoney(s.priceCents, currency) : `${duration(s.durationMin)} · ${formatMoney(s.priceCents, currency)}`;
+  const nameOf = (categoryId: string) => pathTo(categories, categoryId).map((c) => c.name).join(" › ") || "Services";
+  const groups = new Map<string, ServiceGroup>();
+  const ensure = (key: string, name: string) => { if (!groups.has(key)) groups.set(key, { id: key, name, services: [] }); return groups.get(key)!; };
+  for (const s of services) {
+    if (opts.include && !opts.include(s.id)) continue;
+    ensure(s.categoryId ?? "none", s.categoryId ? nameOf(s.categoryId) : "Other").services.push({ id: s.id, name: s.name, meta: meta(s), note: opts.note?.(s.id) ?? null });
+    if (opts.categories && s.categoryId) {
+      // Every category above the service gets a "whole category" row, even one that only holds sub-categories.
+      for (const c of pathTo(categories, s.categoryId)) {
+        const g = ensure(c.id, nameOf(c.id));
+        g.whole ??= { id: `c:${c.id}`, name: `All of ${c.name}`, meta: "" };
+      }
+    }
+  }
+  return [...groups.values()].sort((a, b) => (a.id === "none" ? 1 : b.id === "none" ? -1 : a.name.localeCompare(b.name)));
+}
+
 /**
  * Active services grouped by category path ("Lashes › Volume"), ready for the ServicePicker.
  * Pass `note` to flag individual services (e.g. "no one here"); `meta` defaults to duration · price.
  */
-export async function serviceGroups(
-  business: { id: string; currency: string },
-  opts: { meta?: "duration-price" | "price" | "none"; note?: (serviceId: string) => string | null; include?: (serviceId: string) => boolean } = {},
-): Promise<ServiceGroup[]> {
+export async function serviceGroups(business: { id: string; currency: string }, opts: GroupOpts = {}): Promise<ServiceGroup[]> {
   const [services, categories] = await Promise.all([
     withTenant(business.id, (tx) =>
       tx
@@ -23,16 +44,7 @@ export async function serviceGroups(
     ),
     listCategories(business.id, "service"),
   ]);
-  const meta = (s: (typeof services)[number]) =>
-    opts.meta === "none" ? "" : opts.meta === "price" ? formatMoney(s.priceCents, business.currency) : `${duration(s.durationMin)} · ${formatMoney(s.priceCents, business.currency)}`;
-  const groups = new Map<string, ServiceGroup>();
-  for (const s of services) {
-    if (opts.include && !opts.include(s.id)) continue;
-    const key = s.categoryId ?? "none";
-    if (!groups.has(key)) groups.set(key, { id: key, name: s.categoryId ? pathTo(categories, s.categoryId).map((c) => c.name).join(" › ") || "Services" : "Other", services: [] });
-    groups.get(key)!.services.push({ id: s.id, name: s.name, meta: meta(s), note: opts.note?.(s.id) ?? null });
-  }
-  return [...groups.values()].sort((a, b) => (a.id === "none" ? 1 : b.id === "none" ? -1 : a.name.localeCompare(b.name)));
+  return groupServices(services, categories, business.currency, opts);
 }
 
 /** A category subtree with the services at each level; empty branches are pruned. */

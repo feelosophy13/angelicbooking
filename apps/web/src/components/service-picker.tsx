@@ -5,7 +5,8 @@ import { useFieldId } from "@/components/form";
 import { cn } from "@/lib/utils";
 
 export type ServiceOption = { id: string; name: string; meta: string; /** Shown after the name, e.g. "no one here". */ note?: string | null };
-export type ServiceGroup = { id: string; name: string; services: ServiceOption[] };
+/** `whole` is an optional first row standing for the whole group ("All of Lash Extensions"), for filters that accept a category. */
+export type ServiceGroup = { id: string; name: string; services: ServiceOption[]; whole?: ServiceOption };
 
 /**
  * One service out of a menu of any size: a field that opens a searchable, category-grouped list.
@@ -31,7 +32,7 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const search = useRef<HTMLInputElement>(null);
-  const all = useMemo(() => groups.flatMap((g) => g.services), [groups]);
+  const all = useMemo(() => groups.flatMap((g) => (g.whole ? [g.whole, ...g.services] : g.services)), [groups]);
   // Show the choice straight away, even when the page does not reload (the hidden input carries it to the form).
   const [picked, setPicked] = useState(value);
   useEffect(() => setPicked(value), [value]);
@@ -41,8 +42,10 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
     if (!needle) return groups;
     const out: ServiceGroup[] = [];
     for (const g of groups) {
-      const services = g.name.toLowerCase().includes(needle) ? g.services : g.services.filter((x) => x.name.toLowerCase().includes(needle));
-      if (services.length) out.push({ ...g, services });
+      const groupHit = g.name.toLowerCase().includes(needle);
+      const services = groupHit ? g.services : g.services.filter((x) => x.name.toLowerCase().includes(needle));
+      const whole = g.whole && (groupHit || g.whole.name.toLowerCase().includes(needle)) ? g.whole : undefined;
+      if (services.length || whole) out.push({ ...g, services, whole });
     }
     return out;
   }, [groups, needle]);
@@ -100,6 +103,13 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
               <li key={g.id}>
                 <p className="sticky top-0 z-10 bg-stone-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-stone-500">{g.name}</p>
                 <ul>
+                  {g.whole ? (
+                    <li role="option" aria-selected={g.whole.id === picked}>
+                      <button type="button" onClick={() => pick(g.whole!.id)} className={cn("flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left font-medium hover:bg-stone-50", g.whole.id === picked && "bg-brand-50 text-brand-700")}>
+                        <span className="min-w-0 truncate">{g.whole.name}</span>
+                      </button>
+                    </li>
+                  ) : null}
                   {g.services.map((s) => (
                     <li key={s.id} role="option" aria-selected={s.id === picked}>
                       <button type="button" onClick={() => pick(s.id)} className={cn("flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left hover:bg-stone-50", s.id === picked && "bg-brand-50 text-brand-700", s.note && "text-stone-400")}>

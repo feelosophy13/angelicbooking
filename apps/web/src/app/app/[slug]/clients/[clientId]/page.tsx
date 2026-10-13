@@ -132,7 +132,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
     { label: "Usually", value: stats.favouriteService ?? "—", hint: [stats.usualProvider ? `with ${stats.usualProvider}` : null, stats.visitEveryDays ? `every ${stats.visitEveryDays} days` : null].filter(Boolean).join(" · ") || undefined },
   ];
 
-  const clientPhotos = await listGallery(business.id, { serviceId: null, staffId: null, clientId, locationId: null, tag: null, periodDays: null, q: null, bothOnly: false, shareableOnly: false, page: 1 }, 6);
+  const clientPhotos = await listGallery(business.id, { serviceId: null, categoryId: null, staffId: null, clientId, locationId: null, tag: null, periodDays: null, q: null, bothOnly: false, shareableOnly: false, page: 1 }, 6);
   const photoViews = pairViews(slug, clientPhotos.pairs, business.timezone);
   return (
     <>

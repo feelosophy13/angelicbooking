@@ -35,6 +35,12 @@ describe("parseGalleryFilters", () => {
     const f = parseGalleryFilters({ period: "90", both: "1", share: "1", page: "3", tag: "#Blonde" }, valid);
     expect(f).toMatchObject({ periodDays: 90, bothOnly: true, shareableOnly: true, page: 3, tag: "blonde" });
   });
+  it("reads a whole category from a c:<id> choice, and a service otherwise", () => {
+    const v = { ...valid, categoryIds: ["c1"] };
+    expect(parseGalleryFilters({ service: "c:c1" }, v)).toMatchObject({ categoryId: "c1", serviceId: null });
+    expect(parseGalleryFilters({ service: "s1" }, v)).toMatchObject({ categoryId: null, serviceId: "s1" });
+    expect(parseGalleryFilters({ service: "c:nope" }, v)).toMatchObject({ categoryId: null, serviceId: null });
+  });
   it("falls back safely on junk", () => {
     const f = parseGalleryFilters({ period: "7", page: "-4", client: "x y" }, valid);
     expect(f).toMatchObject({ periodDays: null, page: 1, clientId: null });

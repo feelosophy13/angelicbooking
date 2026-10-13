@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, ilike, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { deleteFileById, FileError, storeVisitPhoto } from "@/lib/files";
+import { listCategories, subtreeIds } from "./categories";
 import { buildPairs, parseTags, pairKey, type GalleryFilters, type PhotoPair, type PhotoQueryRow, type Phase } from "@/lib/visit-photos";
 
 const vp = schema.visitPhotos;
@@ -98,6 +99,10 @@ export async function photoTagsInUse(businessId: string): Promise<string[]> {
 export async function listGallery(businessId: string, f: GalleryFilters, pageSize = GALLERY_PAGE_SIZE): Promise<{ pairs: PhotoPair[]; hasMore: boolean }> {
   const conds: (SQL | undefined)[] = [];
   if (f.serviceId) conds.push(eq(vp.serviceId, f.serviceId));
+  if (f.categoryId) {
+    const ids = subtreeIds(await listCategories(businessId, "service"), f.categoryId);
+    conds.push(inArray(vp.serviceId, sql`(select id from services where category_id in (${sql.join(ids.map((id) => sql`${id}`), sql`, `)}))`));
+  }
   if (f.staffId) conds.push(eq(vp.staffId, f.staffId));
   if (f.clientId) conds.push(eq(vp.clientId, f.clientId));
   if (f.locationId) conds.push(eq(schema.appointments.locationId, f.locationId));

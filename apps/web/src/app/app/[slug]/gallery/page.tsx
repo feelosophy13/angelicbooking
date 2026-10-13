@@ -6,6 +6,7 @@ import { requireAction } from "@/lib/tenant";
 import { listLocations } from "@/server/locations";
 import { listGallery, photoServiceIds, photoTagsInUse } from "@/server/visit-photos";
 import { serviceGroups } from "@/server/service-groups";
+import { listCategories } from "@/server/categories";
 import { ServicePicker } from "@/components/service-picker";
 import { GALLERY_PERIODS, hasGalleryFilters, parseGalleryFilters, type GallerySearchParams } from "@/lib/visit-photos";
 import { pairViews } from "@/lib/gallery-view";
@@ -20,23 +21,24 @@ export default async function GalleryPage({ params, searchParams }: { params: Pr
   const { slug } = await params;
   const sp = await searchParams;
   const { business } = await requireAction(slug, "clients.read");
-  const [locations, services, staff, tags, withPhotos] = await Promise.all([
+  const [locations, services, staff, tags, withPhotos, categories] = await Promise.all([
     listLocations(business.id),
     withTenant(business.id, (tx) => tx.select({ id: schema.services.id, name: schema.services.name }).from(schema.services).orderBy(asc(schema.services.name))),
     withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName))),
     photoTagsInUse(business.id),
     photoServiceIds(business.id),
+    listCategories(business.id, "service"),
   ]);
   // Only services that have photos, grouped by category and searchable, so a long menu stays easy to use.
-  const groups = await serviceGroups(business, { meta: "none", include: (id) => withPhotos.has(id) });
-  const f = parseGalleryFilters(sp, { serviceIds: services.map((s) => s.id), staffIds: staff.map((s) => s.id), locationIds: locations.map((l) => l.id) });
+  const groups = await serviceGroups(business, { meta: "none", categories: true, include: (id) => withPhotos.has(id) });
+  const f = parseGalleryFilters(sp, { serviceIds: services.map((s) => s.id), categoryIds: categories.map((c) => c.id), staffIds: staff.map((s) => s.id), locationIds: locations.map((l) => l.id) });
   const { pairs, hasMore } = await listGallery(business.id, f);
   const views = pairViews(slug, pairs, business.timezone);
   const filtered = hasGalleryFilters(f);
   const clientName = f.clientId ? (pairs[0]?.clientName ?? null) : null;
 
   const qs = (over: Record<string, string | null | undefined> = {}) => {
-    const all: Record<string, string | null | undefined> = { service: f.serviceId, staff: f.staffId, client: f.clientId, location: f.locationId, tag: f.tag, period: f.periodDays ? String(f.periodDays) : null, q: f.q, both: f.bothOnly ? "1" : null, share: f.shareableOnly ? "1" : null, ...over };
+    const all: Record<string, string | null | undefined> = { service: f.categoryId ? `c:${f.categoryId}` : f.serviceId, staff: f.staffId, client: f.clientId, location: f.locationId, tag: f.tag, period: f.periodDays ? String(f.periodDays) : null, q: f.q, both: f.bothOnly ? "1" : null, share: f.shareableOnly ? "1" : null, ...over };
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(all)) if (v) p.set(k, v);
     return p.toString();
@@ -51,7 +53,7 @@ export default async function GalleryPage({ params, searchParams }: { params: Pr
           <form method="get" className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             {f.locationId ? <input type="hidden" name="location" value={f.locationId} /> : null}
             {f.clientId ? <input type="hidden" name="client" value={f.clientId} /> : null}
-            <ServicePicker name="service" groups={groups} value={f.serviceId} noneLabel="Any service" compact />
+            <ServicePicker name="service" groups={groups} value={f.categoryId ? `c:${f.categoryId}` : f.serviceId} noneLabel="Any service" compact />
             {staff.length > 1 ? (
               <Select name="staff" defaultValue={f.staffId ?? ""} aria-label="Stylist" className="h-9 w-auto">
                 <option value="">Any stylist</option>

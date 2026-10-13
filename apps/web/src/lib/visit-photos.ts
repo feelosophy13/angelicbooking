@@ -30,6 +30,8 @@ export const GALLERY_PERIODS = [
 
 export interface GalleryFilters {
   serviceId: string | null;
+  /** A whole service category (and everything under it), from a `c:<id>` choice in the service filter. */
+  categoryId: string | null;
   staffId: string | null;
   clientId: string | null;
   locationId: string | null;
@@ -45,11 +47,13 @@ export interface GalleryFilters {
 export type GallerySearchParams = Partial<Record<"service" | "staff" | "client" | "location" | "tag" | "period" | "q" | "both" | "share" | "page", string>>;
 
 /** Turn the page's query string into filters, dropping ids that are not in the lists the page offered. */
-export function parseGalleryFilters(sp: GallerySearchParams, valid: { serviceIds: string[]; staffIds: string[]; locationIds: string[] }): GalleryFilters {
+export function parseGalleryFilters(sp: GallerySearchParams, valid: { serviceIds: string[]; categoryIds?: string[]; staffIds: string[]; locationIds: string[] }): GalleryFilters {
   const pick = (v: string | undefined, ids: string[]) => (v && ids.includes(v) ? v : null);
   const period = GALLERY_PERIODS.find((p) => p.key === sp.period);
   return {
-    serviceId: pick(sp.service, valid.serviceIds),
+    // One field carries either a service id or `c:<category id>`.
+    serviceId: sp.service?.startsWith("c:") ? null : pick(sp.service, valid.serviceIds),
+    categoryId: sp.service?.startsWith("c:") ? pick(sp.service.slice(2), valid.categoryIds ?? []) : null,
     staffId: pick(sp.staff, valid.staffIds),
     clientId: sp.client && /^[0-9a-zA-Z_-]{6,64}$/.test(sp.client) ? sp.client : null,
     locationId: pick(sp.location, valid.locationIds),
@@ -62,7 +66,7 @@ export function parseGalleryFilters(sp: GallerySearchParams, valid: { serviceIds
   };
 }
 
-export const hasGalleryFilters = (f: GalleryFilters) => !!(f.serviceId || f.staffId || f.clientId || f.locationId || f.tag || f.periodDays || f.q || f.bothOnly || f.shareableOnly);
+export const hasGalleryFilters = (f: GalleryFilters) => !!(f.serviceId || f.categoryId || f.staffId || f.clientId || f.locationId || f.tag || f.periodDays || f.q || f.bothOnly || f.shareableOnly);
 
 export interface PhotoRow {
   id: string;
