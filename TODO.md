@@ -214,6 +214,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       stylist, tag, time, client, location, complete pairs and shareable; client page shows that client's pairs. Not
       built: a public portfolio page or booking-page gallery (consent is recorded, nothing is shown publicly), photos
       from the stylist-only (own calendar) view, and client-visible photos in the client portal.
+- [x] 2026-10-13: demo data refreshed and made refreshable. Both demo tenants now show time off and blocked time, waitlist,
+      referrals, classes with seats, standing appointments, client memberships and packages, notes, submitted forms,
+      campaigns, texts, refunds, payroll runs and Gallery photos; staff have different days and hours so coverage differs
+      by category and day (and by site on the two-site tenant). Run `pnpm demo:refresh` (about 30 s) before a demo and
+      monthly; everything is relative to the run date. Could still be automated on a schedule if wanted.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.

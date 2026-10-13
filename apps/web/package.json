@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "e2e": "playwright test",
-    "test": "vitest run"
+    "test": "vitest run",
+    "demo:refresh": "../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts --reset && ../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts --profile glow --reset"
   },
   "dependencies": {
     "@angelic/core": "workspace:*",

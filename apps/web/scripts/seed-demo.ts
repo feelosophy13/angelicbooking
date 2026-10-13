@@ -13,11 +13,17 @@
  *   glow            demo2@angelicbooking.com / demo-salon-2026  slug demo-twosites  two locations (Arlington, Reston)
  * --reset deletes that demo business first (never any other tenant) and rebuilds it.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db, getSql, schema, withTenant, type TenantDb } from "@angelic/db";
 import { zonedToInstant } from "@angelic/core";
 import { auth } from "../src/lib/auth";
 import { ensureTemplates } from "../src/server/workflows";
+import { insertSeat } from "../src/server/classes";
+import { createSeries } from "../src/server/series";
+import { refundPayment, refundToStoreCredit } from "../src/server/sales";
+import { finalizePayroll } from "../src/server/payroll";
+import { listRefundReasons } from "../src/server/refund-reasons";
+import { seedDemoPhotos } from "./demo-photos";
 import { appUrl } from "../src/lib/stripe";
 import { PACKAGE_BLURBS, PACKAGE_PHOTOS, productArt } from "./demo-art";
 
@@ -30,6 +36,8 @@ type Profile = {
   locations: LocationDef[];
   /** Which staff (by index into STAFF) work at which location; everyone else goes to location 0. */
   staffLocation: Record<number, number>;
+  /** Staff index -> weekday -> site index, for days a person works somewhere other than their home site. */
+  otherSite: Record<number, Record<number, number>>;
 };
 const WEEK = { "0": null, "1": { open: "10:00", close: "18:00" }, "2": { open: "09:00", close: "19:00" }, "3": { open: "09:00", close: "19:00" }, "4": { open: "09:00", close: "20:00" }, "5": { open: "09:00", close: "19:00" }, "6": { open: "09:00", close: "17:00" } };
 const PROFILES: Record<string, Profile> = {
@@ -41,6 +49,7 @@ const PROFILES: Record<string, Profile> = {
     website: "https://luxebeauty.demo", instagram: "luxebeautystudio", phone: "(703) 555-0142", contactEmail: "hello@luxebeauty.demo", addressLine: "128 Market Street, Sterling, VA 20164", coverEmoji: "🌿", giftPrefix: "LUXE",
     locations: [{ name: "Luxe Beauty Studio", address1: "128 Market Street", city: "Sterling", state: "VA", phone: "(703) 555-0142", hours: WEEK }],
     staffLocation: {},
+    otherSite: {},
   },
   // Two sites: the booking page asks for a location, reports and reviews filter by it, staff and hours differ per site.
   glow: {
@@ -53,6 +62,8 @@ const PROFILES: Record<string, Profile> = {
       { name: "Glow Collective - Reston", address1: "11900 Market Street", city: "Reston", state: "VA", phone: "(571) 555-0191", hours: { ...WEEK, "0": { open: "10:00", close: "16:00" }, "1": null } },
     ],
     staffLocation: { 2: 1, 3: 1, 4: 1 },
+    // Jordan lends Wednesdays to Reston; Priya, Sofia and Mina spend a few days at Arlington.
+    otherSite: { 1: { 3: 1 }, 2: { 2: 0, 6: 0 }, 3: { 1: 0, 5: 0 }, 4: { 4: 0 } },
   },
 };
 const PROFILE: Profile = PROFILES[PROFILE_KEY] ?? (() => { throw new Error(`Unknown profile "${PROFILE_KEY}". Known: ${Object.keys(PROFILES).join(", ")}`); })();
@@ -210,15 +221,37 @@ const MENU: Cat[] = [
   ] },
 ];
 
-type StaffDef = { name: string; email: string; color: string; position: string; payType: "commission" | "hourly" | "salary"; main?: number; product: number; hourly?: number; salary?: number; skills: string[]; days: number[]; frontDesk?: boolean };
+/** weekday (0 = Sunday) -> [start, end]. Hours differ by person and day so coverage differs by category. */
+type Hours = Record<number, [string, string]>;
+type StaffDef = { name: string; email: string; color: string; position: string; payType: "commission" | "hourly" | "salary"; main?: number; product: number; hourly?: number; salary?: number; skills: string[]; hours: Hours; frontDesk?: boolean };
 const STAFF: StaffDef[] = [
-  { name: "Ava Martinez", email: "ava@luxebeauty.demo", color: "#db2777", position: "Signature Master Lash Artist", payType: "commission", main: 4500, product: 1000, skills: ["Lash Extensions", "Korean Lash Lift & Tint"], days: [2, 3, 4, 5, 6] },
-  { name: "Jordan Lee", email: "jordan@luxebeauty.demo", color: "#2563eb", position: "Lash Artist", payType: "hourly", hourly: 2200, main: 1500, product: 500, skills: ["Lash Extensions", "Korean Lash Lift & Tint"], days: [1, 2, 3, 4, 5] },
-  { name: "Priya Nair", email: "priya@luxebeauty.demo", color: "#059669", position: "Esthetician", payType: "commission", main: 5000, product: 500, skills: ["Facial Treatments", "Waxing"], days: [2, 3, 4, 5, 6] },
-  { name: "Sofia Rossi", email: "sofia@luxebeauty.demo", color: "#7c3aed", position: "Brow & Wax Specialist", payType: "hourly", hourly: 2000, main: 2000, product: 500, skills: ["Brow Lamination & Tint", "Waxing", "Korean Lash Lift & Tint"], days: [1, 3, 4, 5, 6] },
-  { name: "Mina Park", email: "mina@luxebeauty.demo", color: "#d97706", position: "Color Consultant & PMU Artist", payType: "commission", main: 5500, product: 500, skills: ["Personal Color Analysis", "Permanent Makeup"], days: [1, 2, 4, 5, 6] },
-  { name: "Dana Whitfield", email: "dana@luxebeauty.demo", color: "#64748b", position: "Front Desk", payType: "salary", salary: 180000, product: 500, skills: [], days: [1, 2, 3, 4, 5], frontDesk: true },
+  // Lashes: Ava owns Thursday evenings and Saturdays, Jordan Mondays and Friday evenings; Thursday mornings have no lash artist.
+  { name: "Ava Martinez", email: "ava@luxebeauty.demo", color: "#db2777", position: "Signature Master Lash Artist", payType: "commission", main: 4500, product: 1000, skills: ["Lash Extensions", "Korean Lash Lift & Tint"], hours: { 2: ["09:00", "18:00"], 3: ["09:00", "18:00"], 4: ["12:00", "20:00"], 5: ["09:00", "18:00"], 6: ["09:00", "17:00"] } },
+  { name: "Jordan Lee", email: "jordan@luxebeauty.demo", color: "#2563eb", position: "Lash Artist", payType: "hourly", hourly: 2200, main: 1500, product: 500, skills: ["Lash Extensions", "Korean Lash Lift & Tint"], hours: { 1: ["10:00", "18:00"], 2: ["12:00", "19:00"], 3: ["09:00", "15:00"], 5: ["09:00", "19:00"] } },
+  // Facials: only Priya, so Mondays, Fridays and Thursday afternoons are uncovered.
+  { name: "Priya Nair", email: "priya@luxebeauty.demo", color: "#059669", position: "Esthetician", payType: "commission", main: 5000, product: 500, skills: ["Facial Treatments", "Waxing"], hours: { 2: ["09:00", "19:00"], 3: ["09:00", "19:00"], 4: ["09:00", "16:00"], 6: ["09:00", "17:00"] } },
+  // Brows: only Sofia (no Tuesday or Saturday). Waxing: Priya and Sofia overlap only some days.
+  { name: "Sofia Rossi", email: "sofia@luxebeauty.demo", color: "#7c3aed", position: "Brow & Wax Specialist", payType: "hourly", hourly: 2000, main: 2000, product: 500, skills: ["Brow Lamination & Tint", "Waxing", "Korean Lash Lift & Tint"], hours: { 1: ["10:00", "18:00"], 3: ["09:00", "19:00"], 4: ["12:00", "20:00"], 5: ["09:00", "19:00"] } },
+  // Colour analysis and permanent makeup: Mina is out Wednesdays and Fridays.
+  { name: "Mina Park", email: "mina@luxebeauty.demo", color: "#d97706", position: "Color Consultant & PMU Artist", payType: "commission", main: 5500, product: 500, skills: ["Personal Color Analysis", "Permanent Makeup"], hours: { 1: ["10:00", "18:00"], 2: ["10:00", "19:00"], 4: ["09:00", "17:00"], 6: ["09:00", "17:00"] } },
+  { name: "Dana Whitfield", email: "dana@luxebeauty.demo", color: "#64748b", position: "Front Desk", payType: "salary", salary: 180000, product: 500, skills: [], hours: { 1: ["10:00", "18:00"], 2: ["09:00", "18:00"], 3: ["09:00", "18:00"], 4: ["09:00", "18:00"], 5: ["09:00", "18:00"] }, frontDesk: true },
 ];
+
+// ---- Dates and working windows (all relative to the day the script runs) ----
+const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+const minToTime = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const dowOf = (day: string) => new Date(`${day}T00:00:00Z`).getUTCDay();
+/** Smallest day offset >= from that falls on `weekday`. */
+const dowOffset = (weekday: number, from: number) => { let o = from; while (dowOf(addDays(today, o)) !== weekday) o++; return o; };
+/** A person's regular window on a weekday at a site: their hours trimmed to the site's opening hours, or null. */
+function baseWindow(hours: Hours, siteIdx: number, weekday: number): { start: number; end: number } | null {
+  const mine = hours[weekday];
+  const site = PROFILE.locations[siteIdx]?.hours[String(weekday)];
+  if (!mine || !site) return null;
+  const start = Math.max(toMin(mine[0]), toMin(site.open));
+  const end = Math.min(toMin(mine[1]), toMin(site.close));
+  return end - start >= 120 ? { start, end } : null;
+}
 
 const FIRST = ["Emma", "Olivia", "Sophia", "Isabella", "Mia", "Charlotte", "Amelia", "Harper", "Evelyn", "Abigail", "Ella", "Scarlett", "Grace", "Chloe", "Victoria", "Riley", "Aria", "Lily", "Zoe", "Nora", "Hannah", "Layla", "Ellie", "Natalie", "Leah", "Liam", "Noah", "Ethan", "Lucas", "Mason", "Daniel", "James", "Aiden", "Henry", "Owen", "Maya", "Jasmine", "Naomi", "Camila", "Ruby"];
 const LAST = ["Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson", "White", "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson", "Walker", "Young", "Allen", "King", "Wright", "Scott", "Torres", "Nguyen", "Hill", "Flores", "Green"];
@@ -240,6 +273,10 @@ const PRODUCTS = [
 
 // ---------------------------------------------------------------------------
 async function main() {
+  // Demo pictures stay in Postgres, never in the real R2 bucket; and this script only ever runs against a local database.
+  process.env.R2_ACCESS_KEY_ID = "";
+  process.env.R2_SECRET_ACCESS_KEY = "";
+  if (!/@(localhost|127\.0\.0\.1|\[::1\])(:|\/)/.test(process.env.DATABASE_URL ?? "") && !process.argv.includes("--allow-remote")) throw new Error("DATABASE_URL is not a local database. Pass --allow-remote if you really mean it.");
   const pg = getSql();
   const existingBiz = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, SLUG) });
   if (existingBiz && !RESET) {
@@ -281,6 +318,8 @@ async function main() {
     clientAccountsEnabled: true, storeEnabled: true, giftCardsOnline: true, shippingFlatCents: 795, taxRateBps: 600,
   }).where(eq(schema.businesses.id, businessId));
 
+  /** Plans and ids the second phase (the app's own functions, outside the big transaction) needs. */
+  const post: { classPlan?: any[]; seriesPlan?: any[]; clientIds?: { id: string; first: string; last: string }[]; ownerUserId?: string } = { ownerUserId: user.id };
   await withTenant(businessId, async (tx) => {
     // Locations: the hook made "Main location"; rename it and add the rest.
     const [first] = await tx.select().from(schema.locations);
@@ -325,17 +364,103 @@ async function main() {
     const owner = (await tx.select().from(schema.staff))[0]!;
     await tx.update(schema.staff).set({ displayName: "Demo Owner", takesAppointments: false, bookableOnline: false, position: "Owner", payType: "salary", color: "#0f172a" }).where(eq(schema.staff.id, owner.id));
     await tx.delete(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, owner.id));
-    const staffRows: { id: string; name: string; skills: string[]; days: number[]; hourly: boolean; frontDesk: boolean; locationId: string }[] = [];
+    type StaffRow = { id: string; name: string; skills: string[]; hours: Hours; homeSite: number; siteByDay: Record<number, number>; hourly: boolean; frontDesk: boolean; locationId: string };
+    const staffRows: StaffRow[] = [];
     for (const [i, s] of STAFF.entries()) {
       const staffLoc = locIds[PROFILE.staffLocation[i] ?? 0]!;
       const [row] = await tx.insert(schema.staff).values({
         businessId, displayName: s.name, email: s.email, color: s.color, locationId: staffLoc, position: s.position, payType: s.payType, mainCommissionBps: s.main ?? 0, productCommissionBps: s.product, ccTipFeeBps: 300,
         hourlyRateCents: s.hourly ?? 0, salaryPerPeriodCents: s.salary ?? 0, takesAppointments: !s.frontDesk, bookableOnline: !s.frontDesk, sortOrder: i,
       }).returning({ id: schema.staff.id });
-      await tx.insert(schema.staffSchedules).values(s.days.map((weekday) => ({ businessId, staffId: row!.id, weekday, startTime: weekday === 1 ? "10:00" : "09:00", endTime: weekday === 6 ? "17:00" : "18:00", locationId: multi ? staffLoc : null })));
+      const homeSite = PROFILE.staffLocation[i] ?? 0;
+      const siteByDay: Record<number, number> = { ...(PROFILE.otherSite[i] ?? {}) };
+      const siteOn = (wd: number) => siteByDay[wd] ?? homeSite;
+      const schedRows = Object.keys(s.hours).map(Number).flatMap((weekday) => {
+        const w = baseWindow(s.hours, siteOn(weekday), weekday);
+        return w ? [{ businessId, staffId: row!.id, weekday, startTime: minToTime(w.start), endTime: minToTime(w.end), locationId: multi ? locIds[siteOn(weekday)]! : null }] : [];
+      });
+      await tx.insert(schema.staffSchedules).values(schedRows);
       const mine = serviceIds.filter((sv) => s.skills.includes(sv.group) || s.skills.includes(sv.root));
       if (mine.length) await tx.insert(schema.staffServices).values(mine.map((sv) => ({ businessId, staffId: row!.id, serviceId: sv.id })));
-      staffRows.push({ id: row!.id, name: s.name, skills: s.skills, days: s.days, hourly: s.payType !== "commission", frontDesk: !!s.frontDesk, locationId: staffLoc });
+      staffRows.push({ id: row!.id, name: s.name, skills: s.skills, hours: s.hours, homeSite, siteByDay, hourly: s.payType !== "commission", frontDesk: !!s.frontDesk, locationId: staffLoc });
+    }
+
+    // ---- Things that must be known before appointments are generated: time off, classes, standing visits ----
+    const byName = (n: string) => staffRows.find((r) => r.name === n)!;
+    const svcNamed = (n: string) => serviceIds.find((x) => x.name === n)!;
+    const overrides = new Map<string, { isOff: boolean; start?: string; end?: string }>(); // `${staffId}:${day}`
+    const busy = new Map<string, [number, number][]>(); // `${staffId}:${day}` -> minutes already taken (classes, standing visits, blocks)
+    const reserve = (staffId: string, day: string, start: number, end: number) => { const k = `${staffId}:${day}`; busy.set(k, [...(busy.get(k) ?? []), [start, end]]); };
+    const siteOnDay = (p: StaffRow, weekday: number) => p.siteByDay[weekday] ?? p.homeSite;
+    /** Someone's working window on a day, after time off and custom hours; null when they are not in. */
+    const workWindow = (p: StaffRow, day: string, weekday: number) => {
+      const ov = overrides.get(`${p.id}:${day}`);
+      if (ov?.isOff) return null;
+      const siteIdx = siteOnDay(p, weekday);
+      const base = baseWindow(p.hours, siteIdx, weekday);
+      if (!base) return null;
+      const start = ov?.start ? toMin(ov.start) : base.start;
+      const end = ov?.end ? toMin(ov.end) : base.end;
+      return end - start >= 90 ? { start, end, locationId: locIds[siteIdx]! } : null;
+    };
+    /** First start at or after `from` where `length` minutes fit between the day's reservations. */
+    const clearOfBusy = (staffId: string, day: string, from: number, length: number) => {
+      let t = from;
+      for (let guard = 0; guard < 12; guard++) {
+        const hit = (busy.get(`${staffId}:${day}`) ?? []).find(([a, b]) => t < b && t + length > a);
+        if (!hit) break;
+        t = hit[1] + 15;
+      }
+      return t;
+    };
+
+    // Group classes: the academy courses run on a Saturday, a Friday, and one was held a few weeks ago.
+    const classPlan = [
+      { staff: "Ava Martinez", service: "Classic Lash Foundations", offset: dowOffset(6, 9), start: "09:00", enrol: 5 },
+      { staff: "Ava Martinez", service: "Volume Lash Masterclass", offset: dowOffset(6, 24), start: "09:00", enrol: 2 },
+      { staff: "Sofia Rossi", service: "Korean ECO Lash Lift Certification", offset: dowOffset(5, 7), start: "10:00", enrol: 3 },
+      { staff: "Ava Martinez", service: "Classic Lash Foundations", offset: dowOffset(6, -40), start: "09:00", enrol: 4 },
+    ];
+    for (const c of classPlan) {
+      const sv = svcNamed(c.service);
+      reserve(byName(c.staff).id, addDays(today, c.offset), toMin(c.start), toMin(c.start) + sv.min + sv.gap + sv.finish);
+    }
+    // Standing appointments (every N weeks), created through the app's own code after the main data exists.
+    const seriesPlan = [
+      { staff: "Ava Martinez", service: "Classic 3 Week Fill", client: 26, offset: dowOffset(2, 6), start: "10:00", every: 3, times: 6 },
+      { staff: "Jordan Lee", service: "Volume 2 Week Fill", client: 27, offset: dowOffset(5, 7), start: "11:00", every: 2, times: 8 },
+      { staff: "Priya Nair", service: "Korean Skin Science Facial", client: 28, offset: dowOffset(2, 7), start: "14:00", every: 4, times: 5 },
+    ];
+    for (const sp of seriesPlan) {
+      const sv = svcNamed(sp.service);
+      for (let i = 0; i < sp.times; i++) reserve(byName(sp.staff).id, addDays(today, sp.offset + i * sp.every * 7), toMin(sp.start) - 15, toMin(sp.start) + sv.min + sv.gap + sv.finish + 15);
+    }
+    post.classPlan = classPlan.map((c) => ({ ...c, staffId: byName(c.staff).id, serviceId: svcNamed(c.service).id, minutes: svcNamed(c.service).min + svcNamed(c.service).gap + svcNamed(c.service).finish, price: svcNamed(c.service).price, capacity: svcNamed(c.service).capacity }));
+    post.seriesPlan = seriesPlan.map((sp) => ({ ...sp, staffId: byName(sp.staff).id, serviceId: svcNamed(sp.service).id, locationId: locIds[siteOnDay(byName(sp.staff), dowOf(addDays(today, sp.offset)))]! }));
+
+    // Time off: a week's vacation, single days, a late start and an early finish, all inside the next 90 days (one in the past).
+    const planOff: { who: string; from: number; span: number; note: string; hours?: [string, string]; working?: boolean }[] = [
+      { who: "Ava Martinez", from: 17, span: 7, note: "Vacation" },
+      { who: "Jordan Lee", from: 5, span: 1, note: "Dentist appointment", working: true },
+      { who: "Jordan Lee", from: 9, span: 1, note: "Leaving early", hours: ["10:00", "14:00"], working: true },
+      { who: "Priya Nair", from: 11, span: 1, note: "Training day", working: true },
+      { who: "Sofia Rossi", from: 3, span: 1, note: "Late start", hours: ["12:00", "17:00"], working: true },
+      { who: "Sofia Rossi", from: 38, span: 5, note: "Vacation" },
+      { who: "Mina Park", from: -12, span: 1, note: "Sick day", working: true },
+      { who: "Mina Park", from: 24, span: 2, note: "Industry conference" },
+    ];
+    for (const t of planOff) {
+      const p = byName(t.who);
+      let o = t.from;
+      if (t.working) {
+        const taken = (off: number) => { const d = addDays(today, off); return !workWindow(p, d, dowOf(d)) || busy.has(`${p.id}:${d}`) || overrides.has(`${p.id}:${d}`); };
+        while (taken(o)) o++;
+      }
+      for (let k = 0; k < t.span; k++) {
+        const date = addDays(today, o + k);
+        overrides.set(`${p.id}:${date}`, t.hours ? { isOff: false, start: t.hours[0], end: t.hours[1] } : { isOff: true });
+        await tx.insert(schema.staffScheduleOverrides).values({ businessId, staffId: p.id, date, isOff: !t.hours, startTime: t.hours?.[0] ?? null, endTime: t.hours?.[1] ?? null, note: t.note });
+      }
     }
 
     // --- Clients
@@ -352,6 +477,7 @@ async function main() {
       }).returning({ id: schema.clients.id });
       clientIds.push({ id: c!.id, first, last });
     }
+    post.clientIds = clientIds;
 
     // --- Appointments: 8 weeks of history + 3 weeks ahead, per provider per working day
     const providers = staffRows.filter((s) => !s.frontDesk);
@@ -364,20 +490,35 @@ async function main() {
       if (weekday === 0) continue;
       const past = offset < 0;
       for (const p of providers) {
-        if (!p.days.includes(weekday)) continue;
+        const win = workWindow(p, day, weekday);
+        if (!win) continue;
         const mine = bookable.filter((s) => p.skills.includes(s.group) || p.skills.includes(s.root));
         if (!mine.length) continue;
-        let cursorMin = (weekday === 1 ? 10 : 9) * 60 + pick([0, 15, 30, 45]);
-        const endOfDay = (weekday === 6 ? 17 : 18) * 60;
+        let cursorMin = win.start + pick([0, 15, 30, 45]);
+        const endOfDay = win.end;
+        // Now and then someone blocks time out of their day (lunch, a meeting, a delivery).
+        if (!past && chance(0.15)) {
+          const length = pick([45, 60, 90]);
+          const at = clearOfBusy(p.id, day, win.start + 60 + 15 * between(0, 8), length);
+          if (at + length <= win.end) {
+            const reason = pick(["Lunch", "Team meeting", "Supplier delivery", "Admin time", "Training video"]);
+            const [blk] = await tx.insert(schema.appointments).values({ businessId, locationId: win.locationId, clientId: null, kind: "block", notes: reason, source: "staff", createdByUserId: user!.id }).returning({ id: schema.appointments.id });
+            await tx.insert(schema.appointmentItems).values({ businessId, appointmentId: blk!.id, staffId: p.id, serviceId: null, serviceName: `Blocked · ${reason}`, startAt: zonedToInstant(day, minToTime(at), TZ), endAt: zonedToInstant(day, minToTime(at + length), TZ), priceCents: 0, sortOrder: 0 });
+            reserve(p.id, day, at, at + length);
+          }
+        }
         const perDay = past ? between(3, 5) : offset === 0 ? between(2, 4) : between(1, 3);
         for (let n = 0; n < perDay && cursorMin < endOfDay - 60; n++) {
           const svc = pick(mine);
           const client = pick(clientIds);
+          const len = svc.min + svc.gap + svc.finish;
+          cursorMin = clearOfBusy(p.id, day, cursorMin, len);
+          if (cursorMin + len > endOfDay) break;
           const startAt = zonedToInstant(day, `${String(Math.floor(cursorMin / 60)).padStart(2, "0")}:${String(cursorMin % 60).padStart(2, "0")}`, TZ);
           const total = svc.min + svc.gap + svc.finish;
           const endAt = new Date(startAt.getTime() + total * 60_000);
           const status = past ? (chance(0.9) ? "completed" : chance(0.5) ? "no_show" : "cancelled") : chance(0.5) ? "confirmed" : "booked";
-          const [appt] = await tx.insert(schema.appointments).values({ businessId, locationId: p.locationId, clientId: client.id, status, source: chance(0.6) ? "online" : "staff", createdAt: new Date(startAt.getTime() - between(1, 20) * 86_400_000), cancelledAt: status === "cancelled" ? new Date(startAt.getTime() - 86_400_000 * 2) : null, notes: chance(0.15) ? pick(["Wants to go a shade lighter", "Running 5 min late last time", "Bring inspiration photos"]) : null }).returning({ id: schema.appointments.id });
+          const [appt] = await tx.insert(schema.appointments).values({ businessId, locationId: win.locationId, clientId: client.id, status, source: chance(0.6) ? "online" : "staff", createdAt: new Date(startAt.getTime() - between(1, 20) * 86_400_000), cancelledAt: status === "cancelled" ? new Date(startAt.getTime() - 86_400_000 * 2) : null, notes: chance(0.15) ? pick(["Wants to go a shade lighter", "Running 5 min late last time", "Bring inspiration photos"]) : null }).returning({ id: schema.appointments.id });
           const [item] = await tx.insert(schema.appointmentItems).values({ businessId, appointmentId: appt!.id, staffId: p.id, serviceId: svc.id, serviceName: svc.name, startAt, endAt, priceCents: svc.price, status, allowOverlap: true }).returning({ id: schema.appointmentItems.id });
           cursorMin += total + pick([10, 15, 30, 45, 60]);
           if (!past) { upcoming++; continue; }
@@ -393,7 +534,7 @@ async function main() {
           const numRows = await tx.execute<{ n: number }>(sql`select next_sale_number(${businessId}) as n`);
           const number = Number(numRows[0]!.n);
           const closedAt = new Date(endAt.getTime() + 5 * 60_000);
-          const [sale] = await tx.insert(schema.sales).values({ businessId, number, appointmentId: appt!.id, locationId: p.locationId, clientId: client.id, status: "paid", subtotalCents: subtotal, taxCents: tax, tipCents: tip, totalCents, paidCents: totalCents, closedAt, createdAt: closedAt, createdByUserId: user!.id }).returning({ id: schema.sales.id });
+          const [sale] = await tx.insert(schema.sales).values({ businessId, number, appointmentId: appt!.id, locationId: win.locationId, clientId: client.id, status: "paid", subtotalCents: subtotal, taxCents: tax, tipCents: tip, totalCents, paidCents: totalCents, closedAt, createdAt: closedAt, createdByUserId: user!.id }).returning({ id: schema.sales.id });
           await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "service", staffId: p.id, serviceId: svc.id, appointmentItemId: item!.id, name: svc.name, quantity: 1, unitCents: svc.price, amountCents: svc.price, taxable: false, sortOrder: 0 });
           if (retail) await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "product", staffId: p.id, name: retail.name, quantity: 1, unitCents: retail.price, amountCents: retail.price, taxable: true, sortOrder: 1 });
           if (tip) await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "tip", staffId: p.id, name: "Tip", quantity: 1, unitCents: tip, amountCents: tip, taxable: false, sortOrder: 2 });
@@ -402,7 +543,7 @@ async function main() {
           salesN++;
           if (chance(0.3)) {
             const rating = chance(0.8) ? 5 : chance(0.7) ? 4 : 3;
-            await tx.insert(schema.reviews).values({ businessId, clientId: client.id, appointmentId: appt!.id, staffId: p.id, locationId: p.locationId, rating, comment: chance(0.7) ? pick(COMMENTS) : null, requestedAt: closedAt, submittedAt: new Date(closedAt.getTime() + between(2, 30) * 3_600_000), createdAt: closedAt });
+            await tx.insert(schema.reviews).values({ businessId, clientId: client.id, appointmentId: appt!.id, staffId: p.id, locationId: win.locationId, rating, comment: chance(0.7) ? pick(COMMENTS) : null, requestedAt: closedAt, submittedAt: new Date(closedAt.getTime() + between(2, 30) * 3_600_000), createdAt: closedAt });
             reviewsN++;
             reviewClients.add(client.id);
           }
@@ -417,10 +558,11 @@ async function main() {
       for (let offset = -21; offset < 0; offset++) {
         const day = addDays(today, offset);
         const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
-        if (!p.days.includes(weekday)) continue;
-        const start = zonedToInstant(day, weekday === 1 ? "09:55" : "08:52", TZ);
-        const minutes = between(420, 500);
-        await tx.insert(schema.timeEntries).values({ businessId, staffId: p.id, date: day, minutes, locationId: p.locationId, clockInAt: start, clockOutAt: new Date(start.getTime() + minutes * 60_000) });
+        const win = workWindow(p, day, weekday);
+        if (!win) continue;
+        const start = zonedToInstant(day, minToTime(win.start - 8), TZ);
+        const minutes = Math.max(240, win.end - win.start + between(-15, 20));
+        await tx.insert(schema.timeEntries).values({ businessId, staffId: p.id, date: day, minutes, locationId: win.locationId, clockInAt: start, clockOutAt: new Date(start.getTime() + minutes * 60_000) });
       }
     }
 
@@ -440,7 +582,7 @@ async function main() {
 
     // --- Forms
     const colour = colourIds;
-    await tx.insert(schema.forms).values([
+    const formRows = await tx.insert(schema.forms).values([
       { businessId, name: "New client intake", kind: "intake", description: "Helps us personalise your visit.", applyToAll: true, requireSignature: false, renewDays: 365, fields: [
         { id: "f1", type: "text", label: "How did you hear about us?", required: false },
         { id: "f2", type: "multiselect", label: "Any of the following?", options: ["Sensitive skin", "Allergies to hair colour", "Pregnant or nursing", "Recent chemical treatment"] },
@@ -452,38 +594,180 @@ async function main() {
         { id: "c2", type: "checkbox", label: "I have disclosed medications, allergies and skin conditions", required: true },
         { id: "c3", type: "checkbox", label: "I understand healed results may differ from the fresh result and that touch-ups are charged separately", required: true },
       ] },
-    ]);
+    ]).returning();
 
     // --- Packages, memberships, gift cards, promo, waitlist, automations
     const blowout = serviceIds.find((s) => s.name === "Glow Facial")!;
     const facial = serviceIds.find((s) => s.name === "Korean Skin Science Facial")!;
     const gel = serviceIds.find((s) => s.name === "Classic 2 Week Fill")!;
+    const pkgRows: { id: string; name: string; serviceId: string; sessions: number }[] = [];
     for (const pk of [
       { name: "Signature Glow & Lift (3 facials)", serviceId: blowout.id, sessions: 3, priceCents: 45000, validDays: 180 },
       { name: "Radiant Glow & Booster (6 facials)", serviceId: facial.id, sessions: 6, priceCents: 80000, validDays: 365 },
     ]) {
       const imageUrl = await photo(businessId, "package", PACKAGE_PHOTOS[pk.name], pk.name, "💆", 3);
-      await tx.insert(schema.packages).values({ businessId, ...pk, description: PACKAGE_BLURBS[pk.name] ?? null, imageUrl });
+      const [pkRow] = await tx.insert(schema.packages).values({ businessId, ...pk, description: PACKAGE_BLURBS[pk.name] ?? null, imageUrl }).returning({ id: schema.packages.id });
+      pkgRows.push({ id: pkRow!.id, name: pk.name, serviceId: pk.serviceId, sessions: pk.sessions });
     }
-    await tx.insert(schema.membershipPlans).values([
+    const planRows = await tx.insert(schema.membershipPlans).values([
       { businessId, name: "Classic Lash Membership", priceCents: 11000, includedServiceId: gel.id, includedSessions: 2, discountBps: 0, description: "Two classic refills a month ($55 each instead of $65)." },
       { businessId, name: "Lash Lift & Tint Membership", priceCents: 9000, includedServiceId: serviceIds.find((s) => s.name === "Korean Lash Lift (ECO) & Tint")!.id, includedSessions: 1, discountBps: 500, description: "One lash lift & tint a month and 5% off retail." },
       { businessId, name: "Fill Club", priceCents: 5500, interval: "week", intervalCount: 2, includedServiceId: gel.id, includedSessions: 1, rolloverCap: 1, discountBps: 0, description: "A refill every two weeks; skip one and it carries over." },
       { businessId, name: "Glow Year", priceCents: 99000, interval: "year", intervalCount: 1, includedServiceId: blowout.id, includedSessions: 12, discountBps: 1000, description: "Twelve facials a year and 10% off everything else." },
       { businessId, name: "12-Week Lash Course", priceCents: 6000, interval: "week", intervalCount: 2, cycleCount: 6, includedServiceId: gel.id, includedSessions: 1, discountBps: 0, description: "Six fills over twelve weeks, then it ends on its own." },
-    ]);
+    ]).returning({ id: schema.membershipPlans.id, name: schema.membershipPlans.name });
     for (const [i, c] of clientIds.slice(0, 3).entries()) await tx.insert(schema.giftCards).values({ businessId, code: `${PROFILE.giftPrefix}-GIFT-${1000 + i}`, initialCents: 10000, balanceCents: i === 0 ? 4500 : 10000, purchaserClientId: c.id, recipientName: `${c.first}'s friend`, locationId });
     await tx.insert(schema.promoCodes).values({ businessId, code: "WELCOME10", type: "percent", value: 10, maxUses: 100 });
+    // --- Waitlist: a few open requests for coming days, one already booked and one closed
+    const wl = (n: number) => clientIds[n]!.id;
+    const ava = byName("Ava Martinez"), priya = byName("Priya Nair"), sofia = byName("Sofia Rossi");
+    const agoDays = (n: number) => new Date(Date.now() - n * 86_400_000);
     await tx.insert(schema.waitlist).values([
-      { businessId, clientId: clientIds[5]!.id, serviceId: serviceIds.find((s) => s.name === "Volume Full Set")!.id, staffId: providers[0]!.id, locationId: providers[0]!.locationId, date: addDays(today, 3), notes: "Any time after 2pm" },
-      { businessId, clientId: clientIds[9]!.id, serviceId: gel.id, locationId: locIds[locIds.length - 1]!, date: addDays(today, 1), notes: "Lunchtime if possible" },
+      { businessId, clientId: wl(5), serviceId: svcNamed("Volume Full Set").id, staffId: ava.id, locationId: ava.locationId, date: addDays(today, 3), notes: "Any time after 2pm", createdAt: agoDays(2) },
+      { businessId, clientId: wl(9), serviceId: gel.id, locationId: locIds[locIds.length - 1]!, date: addDays(today, 1), notes: "Lunchtime if possible", createdAt: agoDays(1) },
+      { businessId, clientId: wl(14), serviceId: facial.id, staffId: priya.id, locationId: priya.locationId, date: addDays(today, 6), notes: "Mondays or Fridays only (she works nearby)", createdAt: agoDays(4) },
+      { businessId, clientId: wl(17), serviceId: serviceIds.find((x) => x.root === "Brow Lamination & Tint")!.id, staffId: sofia.id, locationId: sofia.locationId, date: addDays(today, 9), notes: "Wants Sofia specifically", createdAt: agoDays(3) },
+      { businessId, clientId: wl(21), serviceId: blowout.id, locationId: priya.locationId, date: addDays(today, 12), notes: "Saturday morning", createdAt: agoDays(6) },
+      { businessId, clientId: wl(3), serviceId: gel.id, staffId: ava.id, locationId: ava.locationId, date: addDays(today, -3), notes: "Booked into a cancelled slot", status: "booked" as const, createdAt: agoDays(9) },
+      { businessId, clientId: wl(11), serviceId: facial.id, locationId: priya.locationId, date: addDays(today, -6), notes: "Found a time elsewhere", status: "closed" as const, createdAt: agoDays(12) },
     ]);
+
+    // --- Referrals: a few friends brought in by existing clients; most already rewarded
+    const refPairs: [number, number, boolean][] = [[0, 6, true], [0, 7, true], [2, 8, true], [3, 9, true], [4, 10, false], [5, 11, false]];
+    for (const [i, [from, to, rewarded]] of refPairs.entries()) {
+      const when = agoDays([40, 30, 22, 15, 9, 3][i]!); // joined; rewarded nine days later (the newest two are still waiting for a first visit)
+      await tx.update(schema.clients).set({ createdAt: agoDays(300 - i * 10) }).where(eq(schema.clients.id, clientIds[from]!.id));
+      await tx.update(schema.clients).set({ referredByClientId: clientIds[from]!.id, createdAt: when, referralRewardedAt: rewarded ? new Date(when.getTime() + 9 * 86_400_000) : null }).where(eq(schema.clients.id, clientIds[to]!.id));
+      if (rewarded) {
+        const at = new Date(when.getTime() + 9 * 86_400_000);
+        await tx.insert(schema.loyaltyLedger).values([
+          { businessId, clientId: clientIds[from]!.id, delta: 500, reason: "referral", createdAt: at },
+          { businessId, clientId: clientIds[to]!.id, delta: 250, reason: "referral_friend", createdAt: at },
+        ]);
+      }
+    }
+
+    // --- Client notes: formulas, preferences and warnings, a few pinned
+    const NOTES: [number, string, boolean][] = [
+      [0, "Formula: 7N + 8.1 equal parts, 20 vol, 35 min. Root touch-up every five weeks.", true],
+      [1, "Prefers a quiet appointment, no small talk.", true],
+      [2, "Sensitive eyes: use the sensitive adhesive and tape.", true],
+      [3, "Bridal client. Trial done, wants a soft natural set for the day.", false],
+      [4, "Allergic to latex: use nitrile gloves.", true],
+      [5, "Likes the C curl, 12 mm centre, 10 mm outer. Never longer.", false],
+      [6, "Referred by a friend. Mentioned a birthday coming up.", false],
+      [7, "Runs late on Mondays because of school pickup. Book later slots.", false],
+      [8, "Brow shape: soft arch, keep the tail long. Tint 2 parts dark brown to 1 part black.", true],
+      [9, "Has asked about the lash membership twice.", false],
+      [10, "Patch test done, no reaction. Cleared for lash lift.", false],
+      [11, "Pays with the card on file; tips cash.", false],
+    ];
+    for (const [i, [c, body, pinned]] of NOTES.entries()) await tx.insert(schema.clientNotes).values({ businessId, clientId: clientIds[c]!.id, authorUserId: user!.id, body, pinned, createdAt: agoDays(70 - i * 5) });
+
+    // --- Memberships (active, paused, ended, cancelled) and package balances
+    const plan = (name: string) => planRows.find((r) => r.name === name)!.id;
+    const inDays = (n: number) => new Date(Date.now() + n * 86_400_000);
+    const MEMBERS: { c: number; plan: string; status?: "active" | "paused" | "cancelled" | "ended"; end: number; credits: number; cycles: number; auto: boolean; started: number; frozen?: [number, number]; cancelled?: number }[] = [
+      { c: 12, plan: "Classic Lash Membership", end: 12, credits: 1, cycles: 4, auto: true, started: 110 },
+      { c: 13, plan: "Classic Lash Membership", end: 3, credits: 2, cycles: 2, auto: true, started: 40 },
+      { c: 14, plan: "Classic Lash Membership", end: 25, credits: 2, cycles: 1, auto: false, started: 5 },
+      { c: 15, plan: "Lash Lift & Tint Membership", end: 9, credits: 1, cycles: 6, auto: true, started: 170 },
+      { c: 16, plan: "Fill Club", end: 5, credits: 1, cycles: 9, auto: true, started: 130 },
+      { c: 17, plan: "Fill Club", status: "paused", end: 21, credits: 1, cycles: 5, auto: true, started: 80, frozen: [6, -8] },
+      { c: 18, plan: "Glow Year", end: 260, credits: 9, cycles: 1, auto: false, started: 105 },
+      { c: 19, plan: "12-Week Lash Course", end: 9, credits: 1, cycles: 3, auto: true, started: 40 },
+      { c: 20, plan: "12-Week Lash Course", status: "ended", end: -20, credits: 0, cycles: 6, auto: false, started: 100 },
+      { c: 21, plan: "Classic Lash Membership", status: "cancelled", end: -5, credits: 0, cycles: 3, auto: false, started: 120, cancelled: 14 },
+    ];
+    for (const m of MEMBERS) {
+      await tx.insert(schema.clientMemberships).values({
+        businessId, clientId: clientIds[m.c]!.id, planId: plan(m.plan), status: m.status ?? "active", startedAt: agoDays(m.started), currentPeriodEnd: inDays(m.end), creditsRemaining: m.credits, cyclesBilled: m.cycles, autoRenew: m.auto,
+        frozenAt: m.frozen ? agoDays(m.frozen[0]) : null, frozenUntil: m.frozen ? inDays(-m.frozen[1]) : null, cancelledAt: m.cancelled ? agoDays(m.cancelled) : null, locationId: locationId,
+      });
+    }
+    const pkg = (name: string) => pkgRows.find((r) => r.name.startsWith(name))!;
+    for (const [c, name, remaining, expiresIn] of [[22, "Signature Glow", 2, 120], [23, "Radiant Glow", 6, 300], [24, "Radiant Glow", 1, 18], [25, "Signature Glow", 3, 170]] as [number, string, number, number][]) {
+      await tx.insert(schema.clientPackages).values({ businessId, clientId: clientIds[c]!.id, packageId: pkg(name).id, serviceId: pkg(name).serviceId, remaining, expiresAt: inDays(expiresIn), locationId });
+    }
+
+    // --- Forms completed by clients: intake for most, a signed consent for permanent makeup clients
+    const intake = formRows.find((f) => f.kind === "intake")!;
+    const consent = formRows.find((f) => f.kind === "consent")!;
+    const snap = (f: typeof intake) => ({ name: f.name, fields: f.fields, description: f.description });
+    for (let c = 0; c < 26; c++) {
+      await tx.insert(schema.formSubmissions).values({ businessId, formId: intake.id, clientId: clientIds[c]!.id, answers: { f1: pick(["Instagram", "A friend", "Google", "Walked past", "Yelp"]), f2: chance(0.4) ? [pick(["Sensitive skin", "Allergies to hair colour", "Recent chemical treatment"])] : [], f3: chance(0.3) ? pick(["First time getting lashes.", "I get dry eyes by evening.", "Please no fragrance."]) : "", f4: chance(0.6) }, formSnapshot: snap(intake), signedAt: null, createdAt: agoDays(between(3, 90)) });
+    }
+    for (const c of [28, 29, 30, 31]) {
+      const at = agoDays(between(5, 80));
+      await tx.insert(schema.formSubmissions).values({ businessId, formId: consent.id, clientId: clientIds[c]!.id, answers: { c2: true, c3: true }, signatureName: `${clientIds[c]!.first} ${clientIds[c]!.last}`, signedAt: at, ipAddress: `203.0.113.${between(2, 250)}`, formSnapshot: snap(consent), createdAt: at });
+    }
+
+    // --- Campaigns (two sent, one draft) and a few texts from clients
+    await tx.insert(schema.campaigns).values([
+      { businessId, name: "We miss you: a refill on us", channel: "email", subject: "It has been a while", body: "Hi {{firstName}}, it has been a few weeks since your last visit. Book a refill this month and we will add a free lash cleanse.", audience: { lapsedDays: 45 }, status: "sent", recipientCount: 11, sentAt: agoDays(9), createdByUserId: user!.id },
+      { businessId, name: "Lash lift refresh reminder", channel: "sms", body: "Hi {{firstName}}, your lash lift is due for a refresh. Reply or book online any time.", audience: { visitedWithinDays: 90 }, status: "sent", recipientCount: 14, sentAt: agoDays(26), createdByUserId: user!.id },
+      { businessId, name: "New Korean facial menu", channel: "email", subject: "Meet our new facials", body: "We have added new Korean skin science facials. Book yours this week.", audience: {}, status: "draft", recipientCount: 0, createdByUserId: user!.id },
+    ]);
+    const hoursAgo = (n: number) => new Date(Date.now() - n * 3_600_000);
+    const phoneOf = (i: number) => `+1703555${String(1000 + i).padStart(4, "0")}`;
+    await tx.insert(schema.inboundMessages).values([
+      { businessId, clientId: clientIds[3]!.id, fromNumber: phoneOf(3), toNumber: "+17035550142", body: "Running about 10 minutes late, so sorry!", receivedAt: hoursAgo(2), readAt: null },
+      { businessId, clientId: clientIds[7]!.id, fromNumber: phoneOf(7), toNumber: "+17035550142", body: "Can I move my appointment to Friday afternoon?", receivedAt: hoursAgo(20), readAt: null },
+      { businessId, clientId: clientIds[12]!.id, fromNumber: phoneOf(12), toNumber: "+17035550142", body: "Thank you! My lashes look amazing.", receivedAt: hoursAgo(50), readAt: hoursAgo(48) },
+      { businessId, clientId: clientIds[18]!.id, fromNumber: phoneOf(18), toNumber: "+17035550142", body: "Do you have any openings next week for a facial?", receivedAt: hoursAgo(75), readAt: hoursAgo(70) },
+    ]);
+
+    // --- Group classes: sessions with enrolled clients (one already held)
+    for (const [ci, c] of (post.classPlan ?? []).entries()) {
+      const startAt = zonedToInstant(addDays(today, c.offset), c.start, TZ);
+      const endAt = new Date(startAt.getTime() + c.minutes * 60_000);
+      const staffLoc = locIds[(byName(c.staff).siteByDay[dowOf(addDays(today, c.offset))] ?? byName(c.staff).homeSite)]!;
+      const [sess] = await tx.insert(schema.classSessions).values({ businessId, serviceId: c.serviceId, staffId: c.staffId, locationId: staffLoc, startAt, endAt, capacity: c.capacity, priceCents: c.price, notes: ci === 2 ? "Bring your own tweezers." : null, createdByUserId: user!.id }).returning({ id: schema.classSessions.id });
+      for (let n = 0; n < c.enrol; n++) {
+        const client = clientIds[30 + ((ci * 3 + n) % 10)]!;
+        if (c.offset > 0) {
+          await insertSeat(tx, { businessId, sessionId: sess!.id, clientId: client.id, notes: null, source: chance(0.5) ? "online" : "staff", createdByUserId: user!.id });
+        } else {
+          const [appt] = await tx.insert(schema.appointments).values({ businessId, locationId: staffLoc, clientId: client.id, status: "completed", source: "staff", createdByUserId: user!.id }).returning({ id: schema.appointments.id });
+          await tx.insert(schema.appointmentItems).values({ businessId, appointmentId: appt!.id, staffId: c.staffId, serviceId: c.serviceId, serviceName: c.service, startAt, endAt, priceCents: c.price, status: "completed", classSessionId: sess!.id, allowOverlap: true });
+        }
+      }
+    }
   });
 
   // Workflows: every template exists; turn on the ones a busy salon would use.
   const biz = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) }))!;
   await ensureTemplates(biz);
   await withTenant(businessId, (tx) => tx.update(schema.workflows).set({ enabled: true }).where(sql`${schema.workflows.templateKey} in ('reminder','review_request','rebook','no_show_follow_up','welcome','birthday','win_back','membership_save','low_rating_alert')`));
+
+  // ---- Second phase: what the app's own functions create (they open their own transactions) ----
+  const clients = post.clientIds!;
+  // Standing appointments: every few weeks with the same person
+  let seriesVisits = 0;
+  for (const sp of post.seriesPlan ?? []) {
+    try {
+      const r = await createSeries({ businessId, timeZone: TZ, slotIntervalMin: biz.slotIntervalMin, clientId: clients[sp.client]!.id, serviceId: sp.serviceId, staffId: sp.staffId, firstStartAt: zonedToInstant(addDays(today, sp.offset), sp.start, TZ), intervalWeeks: sp.every, occurrences: sp.times, notes: null, createdByUserId: user!.id, locationId: sp.locationId });
+      seriesVisits += r.created.length;
+      for (const k of r.skipped) console.warn(`  standing visit skipped (${sp.service}): ${k.reason}`);
+    } catch (e) { console.warn(`  standing appointment not created (${sp.service}): ${(e as Error).message}`); }
+  }
+  // Refunds, so reports show them: two to the card or cash, two to store credit
+  const reasons = await listRefundReasons(businessId); // also creates the default list
+  const reasonId = (name: string) => reasons.find((r) => r.name.toLowerCase().includes(name))?.id ?? reasons[0]?.id ?? null;
+  const pays = await withTenant(businessId, (tx) => tx.select({ id: schema.payments.id, amount: schema.payments.amountCents, clientId: schema.sales.clientId }).from(schema.payments).innerJoin(schema.sales, eq(schema.sales.id, schema.payments.saleId)).where(eq(schema.payments.status, "succeeded")).orderBy(desc(schema.sales.number)).limit(40));
+  let refunded = 0;
+  const tryRefund = async (label: string, fn: () => Promise<void>) => { try { await fn(); refunded++; } catch (e) { console.warn(`  refund skipped (${label}): ${(e as Error).message}`); } };
+  if (pays[6]) await tryRefund("full", () => refundPayment({ businessId, accountId: null, paymentId: pays[6]!.id, amountCents: pays[6]!.amount, reason: "Client unhappy with the result", reasonId: reasonId("service"), actorUserId: user!.id, taxRateBps: 600 }));
+  if (pays[15]) await tryRefund("partial", () => refundPayment({ businessId, accountId: null, paymentId: pays[15]!.id, amountCents: Math.round(pays[15]!.amount * 0.4), reason: "Goodwill adjustment", reasonId: reasonId("goodwill") ?? reasonId("other"), actorUserId: user!.id, taxRateBps: 600 }));
+  if (pays[22]?.clientId) await tryRefund("credit 1", () => refundToStoreCredit({ businessId, paymentId: pays[22]!.id, amountCents: Math.min(4500, pays[22]!.amount), reason: "Moved to store credit", reasonId: reasonId("changed mind") ?? reasonId("other"), actorUserId: user!.id }));
+  if (pays[30]?.clientId) await tryRefund("credit 2", () => refundToStoreCredit({ businessId, paymentId: pays[30]!.id, amountCents: Math.min(6500, pays[30]!.amount), reason: "Cancelled package", reasonId: reasonId("changed mind") ?? reasonId("other"), actorUserId: user!.id }));
+  // Payroll: the two periods before the current default one (the last 14 days) are finalized; the current one stays open
+  for (const end of [addDays(today, -29), addDays(today, -15)]) {
+    try { await finalizePayroll(biz, { start: addDays(end, -13), end }, false, user!.id); } catch (e) { console.warn(`  payroll not finalized for ${end}: ${(e as Error).message}`); }
+  }
+  // Gallery: before and after photos on recent visits
+  const photoPairs = await seedDemoPhotos(businessId, user!.id);
+  console.log(`Extras: ${seriesVisits} standing visits, ${refunded} refunds, 2 payroll periods finalized, photos on ${photoPairs} visits`);
 
   console.log(`\nDone. Sign in at ${appUrl("/sign-in")}\n  email:    ${EMAIL}\n  password: ${PASSWORD}\n  business: ${appUrl(`/app/${SLUG}`)}\n  booking:  ${appUrl(`/book/${SLUG}`)}`);
   await pg.end();

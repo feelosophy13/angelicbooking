@@ -276,27 +276,41 @@ keeps using Postgres, so local development needs nothing.
 
 ## Demo tenant
 
-`apps/web/scripts/seed-demo.ts` builds a fully populated demo business for walkthroughs and screenshots (never touches
-any other tenant). From `apps/web`:
+Two fake businesses for walkthroughs and screenshots, built by `apps/web/scripts/seed-demo.ts` (it never touches any other
+tenant). Both use the password `demo-salon-2026`:
+- `demo@angelicbooking.com`, business `demo-salon` ("Luxe Beauty Studio"), one studio.
+- `demo2@angelicbooking.com`, business `demo-twosites` ("Glow Collective"), two locations (Arlington, Reston) with
+  different hours, staff who work at one site on some days and the other site on others, and the booking page asks for a location.
+
+### Keep it fresh
+
+Every date in the data is relative to the day the script runs: eight weeks of history behind you, three weeks of bookings,
+time off, classes, waitlist requests and standing appointments ahead. Nothing is a fixed calendar date, so it never
+goes wrong, it just ages: after a few weeks the future runs out, the waitlist and time off are in the past and "this month"
+reports look thin. To refresh, from the repo root:
 
 ```
-../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts [--profile luxe|glow] [--reset]
+pnpm demo:refresh
 ```
 
-Two profiles, same password `demo-salon-2026`:
-- `luxe` (default): `demo@angelicbooking.com`, business `demo-salon` ("Luxe Beauty Studio"), one studio.
-- `glow`: `demo2@angelicbooking.com`, business `demo-twosites` ("Glow Collective"), two locations (Arlington, Reston) with
-  staff, hours, appointments, sales, reviews and time entries split between them; the booking page asks for a location.
+It deletes and rebuilds both demo businesses in about 30 seconds (logins stay the same, only demo tenants are touched,
+and it refuses to run unless `DATABASE_URL` is a local database). Do it before a demo or screenshot session and at
+least monthly. To rebuild one tenant: `../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts [--profile glow] --reset`
+from `apps/web`.
 
-Both profiles use Angelic Beauty's real menu (angelicbeautyva.com, fetched 2026-10-11: lash extensions by style, Korean lash
-lift, core/Korean facials and add-ons, waxing, brows, personal colour analysis, permanent makeup, training) with the
-studio's own category and service photos downloaded from its S3 bucket at seed time (a gradient tile is used if a
-fetch fails). Each profile creates its user and business:
-nested service menu with placeholder images, six staff across every pay model, 40 clients, eight weeks of completed
-visits with sales/tips/reviews, three weeks of upcoming bookings, time-clock entries, products with stock, two forms,
-packages, membership plans, gift cards, a promo code, waitlist entries and enabled automations. `--reset` deletes and
-rebuilds it. Run it against production with `DATABASE_URL`/`DATABASE_ADMIN_URL` pointed at the prod database once a
-public demo login is wanted (change the password first).
+### What it creates
 
-Fake before/after photos for the Gallery: `R2_ACCESS_KEY_ID= ../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo-photos.ts demo-salon`
-(blanking the R2 key keeps demo pictures in Postgres, out of the real bucket; only `demo-*` tenants are accepted).
+The menu is Angelic Beauty's real one (angelicbeautyva.com, fetched 2026-10-11), with the studio's own category and service
+photos fetched at seed time (a gradient tile if a fetch fails). Per tenant: six staff across every pay model with
+**different days and hours each**, so Staff hours coverage varies by category, day and time (facials only when Priya is in, no
+brow coverage Tuesdays, no lash artist Thursday mornings, colour analysis and permanent makeup not on Wednesdays or
+Fridays); 40 clients; eight weeks of completed visits with sales, tips, reviews and loyalty; three weeks of bookings and a few
+blocked-time slots; time off (a week's vacation, single days, a late start, an early finish); time clock; products with
+stock; two forms and 30 completed submissions (26 intake, 4 signed consents); packages and membership plans with 10 client
+memberships (active, paused, ended, cancelled) and 4 package balances; gift cards; a promo code; a waitlist (open, booked
+and closed); referrals (rewarded and waiting); client notes; three campaigns and four texts from clients; four group classes
+with seats (one already held); three standing appointments; four refunds (two to store credit); two finalized payroll
+periods; and 16 visits with before and after photos for the Gallery.
+
+Demo pictures always stay in Postgres: the script blanks the R2 keys, so nothing reaches the real bucket. Photos alone can be
+added to an existing demo tenant with `scripts/seed-demo-photos.ts [slug]`.

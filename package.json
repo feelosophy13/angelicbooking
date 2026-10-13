@@ -10,7 +10,8 @@
     "db:generate": "pnpm --filter @angelic/db generate",
     "db:migrate": "pnpm --filter @angelic/db migrate",
     "db:seed": "pnpm --filter @angelic/db seed",
-    "db:studio": "pnpm --filter @angelic/db studio"
+    "db:studio": "pnpm --filter @angelic/db studio",
+    "demo:refresh": "pnpm --filter @angelic/web demo:refresh"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
