@@ -49,6 +49,8 @@ export interface PayrollLine {
   discountCents: number;
   /** Amount paid for this line including its tips. */
   amtPaidCents: number;
+  /** The sale's location, so pay can be reported by site. */
+  locationId?: string | null;
 }
 
 export interface HoursEntry {

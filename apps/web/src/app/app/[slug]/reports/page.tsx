@@ -9,7 +9,7 @@ import { requireAction } from "@/lib/tenant";
 import { salesReport } from "@/server/sales";
 import { stockReport } from "@/server/inventory";
 import { withTenant } from "@angelic/db";
-import { runPayroll } from "@/server/payroll";
+import { payrollByLocation, runPayroll } from "@/server/payroll";
 import { storeCreditSummary } from "@/server/store-credit";
 import { refundsByReason } from "@/server/refund-reasons";
 import { referralsInPeriod } from "@/server/loyalty";
@@ -33,6 +33,8 @@ export default async function ReportsPage({
   const locations = await listLocations(business.id);
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
   const locName = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "Unknown") : "No location");
+  // In a table of this business's own sites the business name is noise: "Glow Collective - Reston" reads "Reston".
+  const siteLabel = (name: string | null) => (name ? (name.startsWith(`${business.name} - `) ? name.slice(business.name.length + 3) : name) : "No location");
   const lq = locationFilter ? `&location=${locationFilter}` : "";
   const tz = business.timezone;
   const today = instantToISODate(new Date(), tz);
@@ -52,18 +54,43 @@ export default async function ReportsPage({
     business.loyaltyEnabled ? await referralsInPeriod(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)) : [],
   ]);
   const canPayroll = can(permissions, "payroll.view");
-  const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation }, prev, categories, pay, payBefore] = await Promise.all([
+  const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation }, prev, categories, pay, payBefore, payByLoc] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter),
     listCategories(business.id, "service"),
     // What the period cost in pay: the same calculation as Payroll, overtime off, so the numbers agree.
-    canPayroll ? runPayroll(business, { start: from, end: to }, false, locationFilter) : null,
-    canPayroll ? runPayroll(business, { start: prevFrom, end: prevTo }, false, locationFilter) : null,
+    canPayroll ? runPayroll(business, { start: from, end: to }, false, locationFilter, { split: true }) : null,
+    canPayroll ? runPayroll(business, { start: prevFrom, end: prevTo }, false, locationFilter, { split: true }) : null,
+    // Pay by site (always every site, like the sales split) so the table adds up to the whole.
+    canPayroll && locations.length > 1 ? payrollByLocation(business, { start: from, end: to }, locations.map((l) => l.id)) : null,
   ]);
   const payRows = (pay?.employees ?? []).filter((e) => e.hasActivity && (e.totalCents !== 0 || e.serviceRevenueCents !== 0));
   const payTotal = (rows: typeof payRows, k: "wageCents" | "mainCommissionCents" | "productCommissionCents" | "totalCents" | "serviceRevenueCents") => rows.reduce((s, e) => s + e[k], 0);
   const payBeforeRows = (payBefore?.employees ?? []).filter((e) => e.hasActivity);
-  const tipsOf = (e: (typeof payRows)[number]) => e.cashTipsCents + e.cardTipsCents;
+  // One row per person: what was rung up (always) and what they cost (payroll permission only).
+  type StaffRow = { staffId: string | null; name: string; services: number; products: number; tips: number; e: (typeof payRows)[number] | null };
+  const staffRows: StaffRow[] = (() => {
+    const map = new Map<string, StaffRow>();
+    for (const r of byStaff) map.set(r.staffId ?? "none", { staffId: r.staffId, name: r.staffName ?? "Unassigned", services: Number(r.services), products: Number(r.products), tips: Number(r.tips), e: null });
+    for (const e of payRows) {
+      const row = map.get(e.employee.staffId) ?? { staffId: e.employee.staffId, name: e.employee.name, services: 0, products: 0, tips: 0, e: null };
+      row.e = e;
+      map.set(e.employee.staffId, row);
+    }
+    return [...map.values()].sort((a, b) => (a.staffId === null ? 1 : b.staffId === null ? -1 : (b.e?.totalCents ?? 0) - (a.e?.totalCents ?? 0) || b.services - a.services));
+  })();
+  // By location: every site that had sales or pay in the range.
+  type LocRow = { locationId: string | null; locationName: string | null; sales: number; tips: number; tax: number; refunded: number; count: number };
+  const locRows: LocRow[] = (() => {
+    const rows: LocRow[] = byLocation.map((r) => ({ locationId: r.locationId, locationName: r.locationName, sales: Number(r.sales), tips: Number(r.tips), tax: Number(r.tax), refunded: Number(r.refunded), count: Number(r.count) }));
+    if (payByLoc) {
+      for (const [id, p] of payByLoc) {
+        if (rows.some((r) => r.locationId === id) || (p.totalCents === 0 && p.wageCents === 0)) continue;
+        rows.push({ locationId: id, locationName: id ? locName(id) : null, sales: 0, tips: 0, tax: 0, refunded: 0, count: 0 });
+      }
+    }
+    return rows.sort((a, b) => (a.locationName === null ? 1 : b.locationName === null ? -1 : a.locationName.localeCompare(b.locationName)));
+  })();
   const laborPct = (cost: number, rev: number) => (rev > 0 ? `${Math.round((cost / rev) * 100)}%` : "—");
   // Service revenue by category: leaves roll up into their top-level category, with the second level shown under it.
   type CatRow = { id: string; name: string; amount: number; count: number; before: number; children: CatRow[] };
@@ -183,19 +210,58 @@ export default async function ReportsPage({
         {locations.length > 1 ? (
           <Card className="lg:col-span-2">
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By location</h2>
-            {byLocation.length === 0 ? <div className="p-4"><Empty title="No closed sales in this range" /></div> : (
+            {locRows.length === 0 ? <div className="p-4"><Empty title="No closed sales in this range" /></div> : (
               <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Location</th><th className="px-4 py-2 text-right">Sales</th><th className="px-4 py-2 text-right">Tips</th><th className="px-4 py-2 text-right">Tax</th><th className="px-4 py-2 text-right">Refunded</th><th className="px-4 py-2 text-right">Tickets</th></tr></thead>
+                <thead className="text-left text-xs text-stone-500">
+                  <tr>
+                    <th className="py-2 pl-3 pr-2">Location</th><th className="px-2 py-2 text-right">Sales</th><th className="px-2 py-2 text-right">Tips</th><th className="px-2 py-2 text-right">Tax</th><th className="px-2 py-2 text-right">Refunded</th><th className="px-2 py-2 text-right">Tickets</th>
+                    {payByLoc ? <><th className="px-2 py-2 text-right">Service commission</th><th className="px-2 py-2 text-right">Product commission</th><th className="px-2 py-2 text-right">Hourly / salary</th><th className="px-2 py-2 text-right">Total pay</th><th className="px-2 py-2 text-right">Cost of revenue</th></> : null}
+                  </tr>
+                </thead>
                 <tbody className="divide-y divide-stone-100">
-                  {byLocation.map((r) => (
-                    <tr key={r.locationId ?? "none"} className={r.locationId === locationFilter ? "bg-brand-50/40" : ""}>
-                      <td className="px-4 py-2"><Link href={`?from=${from}&to=${to}&location=${r.locationId ?? ""}`} className="hover:underline">{r.locationName ?? "No location"}</Link></td>
-                      <td className="px-4 py-2 text-right">{money(r.sales)}</td><td className="px-4 py-2 text-right">{money(r.tips)}</td><td className="px-4 py-2 text-right">{money(r.tax)}</td><td className="px-4 py-2 text-right">{money(r.refunded)}</td><td className="px-4 py-2 text-right">{Number(r.count)}</td>
-                    </tr>
-                  ))}
+                  {locRows.map((r) => {
+                    const lp = payByLoc?.get(r.locationId) ?? null;
+                    return (
+                      <tr key={r.locationId ?? "none"} className={r.locationId === locationFilter ? "bg-brand-50/40" : ""}>
+                        <td className="whitespace-nowrap py-2 pl-3 pr-2"><Link href={`?from=${from}&to=${to}&location=${r.locationId ?? ""}`} className="hover:underline">{siteLabel(r.locationName)}</Link></td>
+                        <td className="px-2 py-2 text-right">{money(r.sales)}</td><td className="px-2 py-2 text-right">{money(r.tips)}</td><td className="px-2 py-2 text-right">{money(r.tax)}</td><td className="px-2 py-2 text-right">{money(r.refunded)}</td><td className="px-2 py-2 text-right">{r.count}</td>
+                        {lp ? (
+                          <>
+                            <td className="px-2 py-2 text-right tabular-nums">{money(lp.mainCommissionCents)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{money(lp.productCommissionCents)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{money(lp.wageCents)}</td>
+                            <td className="px-2 py-2 text-right font-medium tabular-nums">{money(lp.totalCents)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-stone-600" title={lp.serviceRevenueCents ? `of ${money(lp.serviceRevenueCents)} service revenue` : undefined}>{laborPct(lp.mainCommissionCents + lp.productCommissionCents + lp.wageCents, lp.serviceRevenueCents)}</td>
+                          </>
+                        ) : null}
+                      </tr>
+                    );
+                  })}
                 </tbody>
+                {payByLoc ? (
+                  <tfoot className="border-t border-stone-200 font-semibold">
+                    <tr>
+                      <td className="py-2 pl-3 pr-2">Total</td>
+                      <td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.sales, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.tips, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.tax, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.refunded, 0))}</td><td className="px-2 py-2 text-right">{locRows.reduce((n, r) => n + r.count, 0)}</td>
+                      {(() => {
+                        const all = [...payByLoc.values()];
+                        const sum = (k: "mainCommissionCents" | "productCommissionCents" | "wageCents" | "totalCents" | "serviceRevenueCents") => all.reduce((n, p) => n + p[k], 0);
+                        return (
+                          <>
+                            <td className="px-2 py-2 text-right tabular-nums">{money(sum("mainCommissionCents"))}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{money(sum("productCommissionCents"))}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{money(sum("wageCents"))}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{money(sum("totalCents"))}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{laborPct(sum("mainCommissionCents") + sum("productCommissionCents") + sum("wageCents"), sum("serviceRevenueCents"))}</td>
+                          </>
+                        );
+                      })()}
+                    </tr>
+                  </tfoot>
+                ) : null}
               </table></div>
             )}
+            {payByLoc ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Pay by site, calculated the way Payroll does with overtime off and before adjustments or withholding. Commissions follow the location of the sale, hourly pay follows where the person clocked in, and salary is charged to their primary location. Tips are passed through, not a cost.</p> : null}
             {crossLocation.length ? (
               <div className="border-t border-stone-200 px-4 py-3 text-sm">
                 <p className="mb-1 font-medium text-stone-700">Redeemed here, sold elsewhere</p>
@@ -209,30 +275,14 @@ export default async function ReportsPage({
             ) : null}
           </Card>
         ) : null}
-        <Card>
+        <Card className="lg:col-span-2">
           <h2 className="flex items-center justify-between border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">
-            By staff
-            {can(permissions, "payroll.view") ? <Link href={`/app/${slug}/payroll?start=${from}&end=${to}${lq}`} className="text-xs font-normal text-brand-700 hover:underline">Payroll for this period</Link> : null}
+            Staff
+            {canPayroll ? <Link href={`/app/${slug}/payroll?start=${from}&end=${to}${lq}`} className="text-xs font-normal text-brand-700 hover:underline">Open in Payroll</Link> : null}
           </h2>
-          {byStaff.length === 0 ? <div className="p-4"><Empty title="No closed sales in this range" /></div> : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
-              <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Staff</th><th className="px-4 py-2 text-right">Services</th><th className="px-4 py-2 text-right">Products</th><th className="px-4 py-2 text-right">Tips</th></tr></thead>
-              <tbody className="divide-y divide-stone-100">
-                {byStaff.map((r) => (
-                  <tr key={r.staffId ?? "none"}><td className="px-4 py-2">{r.staffName ?? "Unassigned"}</td><td className="px-4 py-2 text-right">{money(r.services)}</td><td className="px-4 py-2 text-right">{money(r.products)}</td><td className="px-4 py-2 text-right">{money(r.tips)}</td></tr>
-                ))}
-              </tbody>
-            </table></div>
-          )}
-        </Card>
-        {canPayroll ? (
-          <Card className="lg:col-span-2">
-            <h2 className="flex items-center justify-between border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">
-              Pay &amp; commissions
-              <Link href={`/app/${slug}/payroll?start=${from}&end=${to}${lq}`} className="text-xs font-normal text-brand-700 hover:underline">Open in Payroll</Link>
-            </h2>
-            {payRows.length === 0 ? <div className="p-4"><Empty title="No pay in this range" body="Service and product commissions, hourly and salary pay appear here once staff have activity." /></div> : (
-              <>
+          {staffRows.length === 0 ? <div className="p-4"><Empty title="No closed sales in this range" body={canPayroll ? "Sales, tips and pay appear here once staff have activity." : undefined} /></div> : (
+            <>
+              {canPayroll && payRows.length ? (
                 <div className="grid grid-cols-2 gap-px border-b border-stone-200 bg-stone-100 md:grid-cols-4">
                   {([
                     ["Service commissions", payTotal(payRows, "mainCommissionCents"), payTotal(payBeforeRows, "mainCommissionCents")],
@@ -245,46 +295,63 @@ export default async function ReportsPage({
                       <div key={label} className="bg-white px-4 py-3">
                         <p className="text-xs uppercase tracking-wide text-stone-500">{label}</p>
                         <p className="text-lg font-semibold tabular-nums">{money(cur)}</p>
-                        <p className={`text-xs ${d === null ? "text-stone-400" : d.up ? "text-stone-500" : "text-stone-500"}`}>{d === null ? `no change vs ${periodLabel}` : d.pct === null ? `new vs ${periodLabel}` : `${d.pct > 0 ? "+" : ""}${d.pct}% vs ${periodLabel}`}</p>
+                        <p className="text-xs text-stone-500">{d === null ? `no change vs ${periodLabel}` : d.pct === null ? `new vs ${periodLabel}` : `${d.pct > 0 ? "+" : ""}${d.pct}% vs ${periodLabel}`}</p>
                       </div>
                     );
                   })}
                 </div>
-                <div className="overflow-x-auto"><table className="w-full text-sm">
-                  <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Staff</th><th className="px-4 py-2">Pay type</th><th className="px-4 py-2 text-right">Service revenue</th><th className="px-4 py-2 text-right">Service commission</th><th className="px-4 py-2 text-right">Product commission</th><th className="px-4 py-2 text-right">Hourly / salary</th><th className="px-4 py-2 text-right">Tips</th><th className="px-4 py-2 text-right">Total pay</th><th className="px-4 py-2 text-right">Cost of revenue</th></tr></thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {[...payRows].sort((a, b) => b.totalCents - a.totalCents).map((e) => (
-                      <tr key={e.employee.staffId}>
-                        <td className="px-4 py-2 font-medium">{e.employee.name}</td>
-                        <td className="px-4 py-2 text-stone-600">{e.employee.payType === "commission" ? "Commission" : e.employee.payType === "hourly" ? "Hourly" : "Salary"}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{money(e.serviceRevenueCents)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{money(e.mainCommissionCents)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{money(e.productCommissionCents)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{money(e.wageCents)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-stone-600">{money(tipsOf(e))}</td>
-                        <td className="px-4 py-2 text-right font-medium tabular-nums">{money(e.totalCents)}</td>
-                        <td className="px-4 py-2 text-right tabular-nums text-stone-600">{laborPct(e.mainCommissionCents + e.productCommissionCents + e.wageCents, e.serviceRevenueCents)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="border-t border-stone-200 font-semibold">
-                    <tr>
-                      <td className="px-4 py-2" colSpan={2}>Total</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{money(payTotal(payRows, "serviceRevenueCents"))}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{money(payTotal(payRows, "mainCommissionCents"))}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{money(payTotal(payRows, "productCommissionCents"))}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{money(payTotal(payRows, "wageCents"))}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{money(payRows.reduce((s, e) => s + tipsOf(e), 0))}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{money(payTotal(payRows, "totalCents"))}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">{laborPct(payTotal(payRows, "mainCommissionCents") + payTotal(payRows, "productCommissionCents") + payTotal(payRows, "wageCents"), payTotal(payRows, "serviceRevenueCents"))}</td>
+              ) : null}
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead className="text-left text-xs text-stone-500">
+                  <tr>
+                    <th className="py-2 pl-3 pr-2">Staff</th><th className="px-2 py-2 text-right">Services</th><th className="px-2 py-2 text-right">Products</th><th className="px-2 py-2 text-right">Tips</th>
+                    {canPayroll ? <><th className="px-2 py-2 text-right">Service commission</th><th className="px-2 py-2 text-right">Product commission</th><th className="px-2 py-2 text-right">Hourly / salary</th><th className="px-2 py-2 text-right">Total pay</th><th className="px-2 py-2 text-right">Cost of revenue</th></> : null}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {staffRows.map((r) => (
+                    <tr key={r.staffId ?? "none"}>
+                      <td className="whitespace-nowrap py-2 pl-3 pr-2"><span className="font-medium">{r.name}</span>{canPayroll && r.e ? <span className="block text-xs text-stone-500">{r.e.employee.payType === "commission" ? "Commission" : r.e.employee.payType === "hourly" ? "Hourly" : "Salary"}</span> : null}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{money(r.services)}</td><td className="px-2 py-2 text-right tabular-nums">{money(r.products)}</td><td className="px-2 py-2 text-right tabular-nums">{money(r.tips)}</td>
+                      {canPayroll ? (
+                        r.e ? (
+                          <>
+                            <td className="px-2 py-2 text-right tabular-nums">{money(r.e.mainCommissionCents)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{money(r.e.productCommissionCents)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums">{money(r.e.wageCents)}</td>
+                            <td className="px-2 py-2 text-right font-medium tabular-nums">{money(r.e.totalCents)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-stone-600" title={r.e.serviceRevenueCents ? `of ${money(r.e.serviceRevenueCents)} service revenue` : undefined}>{laborPct(r.e.mainCommissionCents + r.e.productCommissionCents + r.e.wageCents, r.e.serviceRevenueCents)}</td>
+                          </>
+                        ) : <td className="px-2 py-2 text-stone-400" colSpan={5} />
+                      ) : null}
                     </tr>
-                  </tfoot>
-                </table></div>
-                <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Calculated the way Payroll does for these dates, with overtime off and before adjustments or withholding. Tips are passed through, not a cost. Cost of revenue is commissions plus wages as a share of the service revenue that person generated.</p>
-              </>
-            )}
-          </Card>
-        ) : null}
+                  ))}
+                </tbody>
+                <tfoot className="border-t border-stone-200 font-semibold">
+                  <tr>
+                    <td className="py-2 pl-3 pr-2">Total</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(staffRows.reduce((n, r) => n + r.services, 0))}</td><td className="px-2 py-2 text-right tabular-nums">{money(staffRows.reduce((n, r) => n + r.products, 0))}</td><td className="px-2 py-2 text-right tabular-nums">{money(staffRows.reduce((n, r) => n + r.tips, 0))}</td>
+                    {canPayroll ? (
+                      <>
+                        <td className="px-2 py-2 text-right tabular-nums">{money(payTotal(payRows, "mainCommissionCents"))}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{money(payTotal(payRows, "productCommissionCents"))}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{money(payTotal(payRows, "wageCents"))}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{money(payTotal(payRows, "totalCents"))}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{laborPct(payTotal(payRows, "mainCommissionCents") + payTotal(payRows, "productCommissionCents") + payTotal(payRows, "wageCents"), payTotal(payRows, "serviceRevenueCents"))}</td>
+                      </>
+                    ) : null}
+                  </tr>
+                </tfoot>
+              </table></div>
+              {canPayroll ? (
+                <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
+                  Services, products and tips are what was rung up. Pay is calculated the way Payroll does for these dates, with overtime off and before adjustments or withholding: commissions on amounts paid after discounts, with package and membership credits counted for the provider. Tips are passed through, not a cost. Cost of revenue is commissions plus wages as a share of the service revenue Payroll credits to that person.
+                  {locationFilter ? ` Filtered to ${locName(locationFilter)}: commissions follow this site's sales, hourly pay its time-clock entries, and salary only people whose primary location it is.` : ""}
+                </p>
+              ) : null}
+            </>
+          )}
+        </Card>
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Refunds by reason</h2>
           {byReason.length === 0 ? <div className="p-4"><Empty title="No refunds in this range" /></div> : (

@@ -103,20 +103,27 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
           cardTipCents: cardTip,
           discountCents: disc,
           amtPaidCents: net + tip,
+          locationId: sale.locationId,
         });
       }
       // Tips for staff with no goods line on this sale (rare) → standalone row.
       for (const [staffId, tip] of tipByStaff) {
         if (seenStaffTip.has(staffId)) continue;
         const cashTip = Math.round(tip * cashShare);
-        out.push({ staffId, kind: "service", refunded: fullyRefunded, date: checkoutDate, customer, name: "Tip", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: cashTip, cardTipCents: tip - cashTip, discountCents: 0, amtPaidCents: tip });
+        out.push({ staffId, kind: "service", refunded: fullyRefunded, date: checkoutDate, customer, name: "Tip", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: cashTip, cardTipCents: tip - cashTip, discountCents: 0, amtPaidCents: tip, locationId: sale.locationId });
       }
     }
     return out.filter((l) => l.date >= period.start && l.date <= period.end);
   });
 }
 
-export async function getPayrollInputs(business: Business, period: PayrollPeriod, locationId?: string | null) {
+/**
+ * `split` (with a `locationId`) apportions the pay that is not tied to a sale to that site, for
+ * reports: hours are those clocked there, salary goes to people whose primary location it is, and
+ * per-person adjustments are left out. Without it a location filter narrows sales only, so a pay
+ * sheet still shows each person's whole pay.
+ */
+export async function getPayrollInputs(business: Business, period: PayrollPeriod, locationId?: string | null, opts: { split?: boolean } = {}) {
   const [lines, rest] = await Promise.all([
     buildPayrollLines(business, period, locationId),
     withTenant(business.id, async (tx) => {
@@ -125,7 +132,7 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
       const [staff, hours, adjustments] = await Promise.all([
         tx.select().from(schema.staff).orderBy(asc(schema.staff.displayName)),
         tx
-          .select({ staffId: schema.timeEntries.staffId, date: schema.timeEntries.date, minutes: schema.timeEntries.minutes })
+          .select({ staffId: schema.timeEntries.staffId, date: schema.timeEntries.date, minutes: schema.timeEntries.minutes, locationId: schema.timeEntries.locationId })
           .from(schema.timeEntries)
           .where(and(gte(schema.timeEntries.date, period.start), lte(schema.timeEntries.date, period.end))),
         tx
@@ -138,6 +145,7 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
       return { staff, hours, adjustments, rates };
     }),
   ]);
+  const split = !!opts.split && !!locationId;
   const employees: PayrollEmployee[] = rest.staff.map((s) => {
     const r = rest.rates.byStaff.get(s.id) ?? s;
     return {
@@ -149,24 +157,66 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
       productCommissionBps: r.productCommissionBps,
       ccTipFeeBps: r.ccTipFeeBps,
       hourlyRateCents: r.hourlyRateCents,
-      salaryPerPeriodCents: r.salaryPerPeriodCents,
+      salaryPerPeriodCents: split && s.locationId !== locationId ? 0 : r.salaryPerPeriodCents,
       overtimeOverride: r.overtimeOverride,
       taxDeductionCents: r.taxDeductionCents,
       taxDeductionBps: r.taxDeductionBps,
     };
   });
-  const hours: HoursEntry[] = rest.hours.map((h) => ({ staffId: h.staffId, date: h.date, minutes: h.minutes }));
-  const adjustments: Adjustment[] = rest.adjustments.map((a) => ({ staffId: a.staffId, label: a.label, amountCents: a.amountCents }));
+  const hours: HoursEntry[] = rest.hours.filter((h) => !split || h.locationId === locationId).map((h) => ({ staffId: h.staffId, date: h.date, minutes: h.minutes }));
+  const adjustments: Adjustment[] = split ? [] : rest.adjustments.map((a) => ({ staffId: a.staffId, label: a.label, amountCents: a.amountCents }));
   const nameOf = new Map(employees.map((e) => [e.staffId, e.name]));
   const rateChanges = rest.rates.changes.map((c) => ({ ...c, name: nameOf.get(c.staffId) ?? "" }));
-  return { employees, lines, hours, adjustments, adjustmentRows: rest.adjustments, rateChanges };
+  return {
+    employees,
+    lines,
+    hours,
+    adjustments,
+    adjustmentRows: split ? [] : rest.adjustments,
+    rateChanges,
+    /** Every time entry with its site, and each person's primary site, for reporting by location. */
+    hoursRaw: rest.hours,
+    primaryLocation: new Map(rest.staff.map((s) => [s.id, s.locationId ?? null] as const)),
+  };
 }
 
 /** `locationId` limits sales (commission, tips) to one site; hours and adjustments are per person and stay whole. */
-export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean, locationId?: string | null): Promise<PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[]; rateChanges: { staffId: string; name: string; effectiveFrom: string }[] }> {
-  const inputs = await getPayrollInputs(business, period, locationId);
-  const result = computePayroll({ ...inputs, overtime, weekStart: 1 });
+export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean, locationId?: string | null, opts: { split?: boolean } = {}): Promise<PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[]; rateChanges: { staffId: string; name: string; effectiveFrom: string }[] }> {
+  const inputs = await getPayrollInputs(business, period, locationId, opts);
+  const result = computePayroll({ employees: inputs.employees, lines: inputs.lines, hours: inputs.hours, adjustments: inputs.adjustments, overtime, weekStart: 1 });
   return { ...result, adjustmentRows: inputs.adjustmentRows, rateChanges: inputs.rateChanges };
+}
+
+export interface LocationPay {
+  mainCommissionCents: number;
+  productCommissionCents: number;
+  wageCents: number;
+  totalCents: number;
+  serviceRevenueCents: number;
+}
+
+/**
+ * Pay by site for reports, in one pass: commission follows the sale's location, hourly pay follows
+ * the time-clock location, salary is charged to the person's primary location, and per-person
+ * adjustments are left out. Overtime off, like the Reports pay card. Key `null` is "no location".
+ */
+export async function payrollByLocation(business: Business, period: PayrollPeriod, locationIds: string[]): Promise<Map<string | null, LocationPay>> {
+  const inputs = await getPayrollInputs(business, period);
+  const out = new Map<string | null, LocationPay>();
+  for (const key of [...locationIds, null]) {
+    const employees = inputs.employees.map((e) => ({ ...e, salaryPerPeriodCents: (inputs.primaryLocation.get(e.staffId) ?? null) === key ? e.salaryPerPeriodCents : 0 }));
+    const result = computePayroll({
+      employees,
+      lines: inputs.lines.filter((l) => (l.locationId ?? null) === key),
+      hours: inputs.hoursRaw.filter((h) => (h.locationId ?? null) === key).map((h) => ({ staffId: h.staffId, date: h.date, minutes: h.minutes })),
+      adjustments: [],
+      overtime: false,
+      weekStart: 1,
+    });
+    const sum = (k: keyof LocationPay) => result.employees.reduce((n, e) => n + e[k], 0);
+    out.set(key, { mainCommissionCents: sum("mainCommissionCents"), productCommissionCents: sum("productCommissionCents"), wageCents: sum("wageCents"), totalCents: sum("totalCents"), serviceRevenueCents: sum("serviceRevenueCents") });
+  }
+  return out;
 }
 
 export async function getFinalizedRun(businessId: string, period: PayrollPeriod) {

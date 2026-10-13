@@ -201,6 +201,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-13: Reports staff and location pay. The "By staff" and "Pay & commissions" cards are one "Staff"
+      table: services, products and tips for everyone (plus the Unassigned row), and service commission, product
+      commission, hourly/salary, total pay and cost of revenue for people with payroll permission. "By location" gains
+      the same pay columns and a total row: commission follows the sale's site, hourly pay the time-clock site,
+      salary the person's primary location (`payrollByLocation`, ties to the whole-business figures to the cent).
+      The location filter on Reports now apportions wages the same way (`runPayroll(..., { split: true })`), fixing
+      overstated wages for people who clock in at two sites; the Payroll page itself still shows each person whole.
 - [x] 2026-10-11 (migration 0065): late cancellation fee. Settings → Online booking: none / flat / percent of the
       booked services, and whether a paid deposit counts toward the fee or is kept on top. Cancelling from the
       appointment page inside the window shows the fee, what the deposit covers, and offers to charge the rest to a
