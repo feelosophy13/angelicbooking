@@ -9,13 +9,18 @@ const fmt = (min: number) => (min >= 24 * 60 ? "12am" : time12(`${String(Math.fl
 /** Service names when only a few are missing, otherwise the categories they fall in. */
 const describeMissing = (s: CoverageStrip) => (s.missingCount <= 3 ? s.missing.join(", ") : s.missingGroups.join(", "));
 const STRIP: Record<CoverageStrip["state"], string> = { closed: "hatched", none: "bg-red-400", partial: "bg-amber-400", full: "bg-emerald-400" };
+/** Coverage view: the whole stretch is tinted instead of showing people. */
+const BAND: Record<CoverageStrip["state"], string> = { closed: "", none: "bg-red-100 text-red-800", partial: "bg-amber-100 text-amber-900", full: "bg-emerald-100 text-emerald-800" };
+export type CoverageMode = "coverage" | "people";
 
 /**
  * Time down the side, the week across the top. Each day column shows opening hours as the white
  * area (closed time is hatched, as on the calendar), every provider on duty as a coloured lane, and a strip on the left edge that says whether
  * the services in scope are covered (green), partly covered (amber) or nobody is in (red).
+ * In "coverage" mode the people are left out and each stretch of the day is tinted by that state, with the
+ * uncovered categories written on it: the simple answer to "is every category covered when we are open?".
  */
-export function CoverageGrid({ coverage, today, hoursHref }: { coverage: Coverage; today: string; hoursHref: (staffId: string) => string | null }) {
+export function CoverageGrid({ coverage, today, hoursHref, mode = "people" }: { coverage: Coverage; today: string; hoursHref: (staffId: string) => string | null; mode?: CoverageMode }) {
   const { startMin, endMin, days } = coverage;
   const height = ((endMin - startMin) / 60) * PX_PER_HOUR;
   const y = (min: number) => ((Math.min(Math.max(min, startMin), endMin) - startMin) / 60) * PX_PER_HOUR;
@@ -32,7 +37,7 @@ export function CoverageGrid({ coverage, today, hoursHref }: { coverage: Coverag
           {days.map((d) => (
             <div key={d.date} className={cn("border-l border-stone-100 px-2 py-2", d.date === today && "bg-brand-50/60")}>
               <p className="font-semibold text-stone-800">{DAY_SHORT[d.weekday]} <span className="font-normal text-stone-500">{md(d.date)}</span></p>
-              <p className="text-stone-500">{d.open ? `${fmt(d.open.start)}–${fmt(d.open.end)}` : "Closed"}{d.lanes.length ? ` · ${d.lanes.length} in` : ""}</p>
+              <p className="text-stone-500">{d.open ? `${fmt(d.open.start)}–${fmt(d.open.end)}` : "Closed"}{mode === "people" && d.lanes.length ? ` · ${d.lanes.length} in` : ""}</p>
             </div>
           ))}
         </div>
@@ -41,14 +46,14 @@ export function CoverageGrid({ coverage, today, hoursHref }: { coverage: Coverag
           <div className="relative text-[11px] text-stone-500">
             {hours.map((t) => <span key={t} className="absolute right-2 -translate-y-1/2" style={{ top: y(t) }}>{fmt(t)}</span>)}
           </div>
-          {days.map((d) => <DayColumn key={d.date} day={d} y={y} hours={hours} height={height} isToday={d.date === today} hoursHref={hoursHref} />)}
+          {days.map((d) => <DayColumn key={d.date} day={d} y={y} hours={hours} height={height} isToday={d.date === today} hoursHref={hoursHref} mode={mode} />)}
         </div>
       </div>
     </div>
   );
 }
 
-function DayColumn({ day, y, hours, height, isToday, hoursHref }: { day: CoverageDay; y: (m: number) => number; hours: number[]; height: number; isToday: boolean; hoursHref: (staffId: string) => string | null }) {
+function DayColumn({ day, y, hours, height, isToday, hoursHref, mode }: { day: CoverageDay; y: (m: number) => number; hours: number[]; height: number; isToday: boolean; hoursHref: (staffId: string) => string | null; mode: CoverageMode }) {
   const laneW = day.lanes.length ? 100 / day.lanes.length : 100;
   // Two or more lanes leave no room for a name across; write it down the lane instead.
   const narrow = day.lanes.length >= 2;
@@ -70,8 +75,25 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref }: { day: Coverag
           title={`${fmt(s.start)}–${fmt(s.end)}: ${s.state === "none" ? "nobody in" : s.state === "full" ? "all covered" : `not covered: ${describeMissing(s)}`}`}
         />
       ))}
+      {/* Coverage view: tint each stretch and say what is missing */}
+      {mode === "coverage"
+        ? day.strip.filter((s) => s.state !== "closed").map((s, i) => {
+            const px = y(s.end) - y(s.start);
+            const label = s.state === "none" ? "Nobody in" : s.state === "partial" ? `No one for ${describeMissing(s)}` : px >= 40 ? "All covered" : "";
+            return (
+              <div key={`b${i}`} className={cn("absolute inset-x-2 flex items-center overflow-hidden rounded-md px-1.5 text-[11px] leading-tight ring-1 ring-white/70", BAND[s.state])} style={{ top: y(s.start) + 1, height: Math.max(3, px - 2) }} title={`${fmt(s.start)}–${fmt(s.end)}: ${s.state === "none" ? "nobody in" : s.state === "full" ? "all covered" : `not covered: ${describeMissing(s)}`}`}>
+                {px >= 22 ? (
+                  <span className={cn("block", s.state === "full" && "font-medium opacity-80")} style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: Math.min(6, Math.max(2, Math.floor((px - 10) / 14))), overflow: "hidden" }}>
+                    {label}
+                    {px >= 54 ? <span className="mt-0.5 block text-[10px] font-normal opacity-80">{fmt(s.start)}–{fmt(s.end)}</span> : null}
+                  </span>
+                ) : null}
+              </div>
+            );
+          })
+        : null}
       {/* Provider lanes */}
-      {day.lanes.map((l, i) =>
+      {mode === "people" && day.lanes.map((l, i) =>
         l.blocks.map((b, j) => {
           const href = hoursHref(l.staffId);
           const body = narrow ? (
@@ -91,7 +113,7 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref }: { day: Coverag
           );
         }),
       )}
-      {day.open && day.lanes.length === 0 ? <p className="absolute inset-x-0 px-2 text-center text-[11px] text-red-600" style={{ top: y(day.open.start) + 6 }}>Open, nobody in</p> : null}
+      {mode === "people" && day.open && day.lanes.length === 0 ? <p className="absolute inset-x-0 px-2 text-center text-[11px] text-red-600" style={{ top: y(day.open.start) + 6 }}>Open, nobody in</p> : null}
     </div>
   );
 }

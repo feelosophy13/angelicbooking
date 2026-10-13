@@ -5,7 +5,7 @@ import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can, instantToISODate, mondayOf } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
-import { shiftISODate } from "@/lib/utils";
+import { cn, shiftISODate } from "@/lib/utils";
 import { dateLong } from "@/lib/format";
 import { describeHours, time12 } from "@/lib/hours";
 import { buildCoverage } from "@/server/coverage";
@@ -14,11 +14,11 @@ import { Card, Empty, LinkButton, PageHeader, Select } from "@/components/ui";
 import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { LocationFilter } from "@/components/location-filter";
 import { rowClass, rowControl, RowLink } from "@/components/row";
-import { CoverageGaps, CoverageGrid } from "./coverage-grid";
+import { CoverageGaps, CoverageGrid, type CoverageMode } from "./coverage-grid";
 
 export const metadata: Metadata = { title: "Staff hours" };
 
-type SP = { week?: string; location?: string; scope?: string };
+type SP = { week?: string; location?: string; scope?: string; view?: string };
 const nextDay = (d: string) => shiftISODate(d, 1);
 
 /**
@@ -52,6 +52,8 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const multi = locations.length > 1;
   // Hours differ by site, so coverage is always for one site: the one chosen, else the main site.
   const locationId = multi ? (locations.some((l) => l.id === sp.location) ? sp.location! : (locations.find((l) => l.isDefault)?.id ?? locations[0]!.id)) : null;
+  // "people" (default) draws each person; "coverage" shows only whether the categories are covered.
+  const view: CoverageMode = sp.view === "coverage" ? "coverage" : "people";
   const scope = sp.scope ?? "";
   // Coverage is shown per service category (a service picker was too long to be useful).
   const categoryId = scope.startsWith("c:") && cats.some((c) => c.id === scope.slice(2)) ? scope.slice(2) : null;
@@ -59,7 +61,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
 
   // Query string for links, keeping the other choices.
   const qs = (over: Partial<Record<keyof SP, string | null>>) => {
-    const all: Record<keyof SP, string | null> = { week: weekStart === thisMonday ? null : weekStart, location: locationId, scope: categoryId ? `c:${categoryId}` : null, ...over };
+    const all: Record<keyof SP, string | null> = { week: weekStart === thisMonday ? null : weekStart, location: locationId, scope: categoryId ? `c:${categoryId}` : null, view: view === "coverage" ? "coverage" : null, ...over };
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(all)) if (v) p.set(k, v);
     return p.toString();
@@ -102,6 +104,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
           <AutoSubmitForm className="flex items-center gap-2">
             {weekStart !== thisMonday ? <input type="hidden" name="week" value={weekStart} /> : null}
             {multi ? <input type="hidden" name="location" value={locationId ?? ""} /> : null}
+            {view === "coverage" ? <input type="hidden" name="view" value="coverage" /> : null}
             <Select name="scope" defaultValue={categoryId ? `c:${categoryId}` : ""} aria-label="Service category to check coverage for" className="h-9 w-auto max-w-[16rem]">
               <option value="">All services</option>
               {tree.map((c) => <option key={c.id} value={`c:${c.id}`}>{"\u00a0\u00a0".repeat(Math.max(0, c.depth))}{c.name}</option>)}
@@ -113,6 +116,11 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
       <Card className="mb-6">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-2 text-sm">
           <h2 className="font-semibold text-stone-600">Who covers what{multi ? ` · ${shortLoc(locationId)}` : ""}</h2>
+          <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="What to show">
+            {([["people", "People"], ["coverage", "Coverage"]] as const).map(([key, label]) => (
+              <Link key={key} href={`?${qs({ view: key === "coverage" ? "coverage" : null })}`} aria-current={view === key ? "true" : undefined} className={cn("rounded-md px-3 py-0.5", view === key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{label}</Link>
+            ))}
+          </div>
           <p className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
             <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-emerald-400 align-middle" />{coverage.scope.label === "All services" ? "every service covered" : `${coverage.scope.label} covered`}</span>
             <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-amber-400 align-middle" />some services uncovered</span>
@@ -123,7 +131,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
         {people.length === 0 ? (
           <div className="p-4"><Empty title="No providers yet" body="Add staff and set their weekly hours." action={manage ? { href: `${base}/staff`, label: "Staff" } : undefined} /></div>
         ) : (
-          <CoverageGrid coverage={coverage} today={today} hoursHref={hoursHref} />
+          <CoverageGrid coverage={coverage} today={today} hoursHref={hoursHref} mode={view} />
         )}
         <div className="border-t border-stone-200">
           <h3 className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-500">Needs attention this week</h3>
@@ -131,7 +139,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
         </div>
         <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
           Rotations, time off and custom hours are already applied. A service nobody is assigned to counts as something everyone can do.
-          {manage ? " Click a provider's block to change their hours." : ""}
+          {view === "coverage" ? " Switch to People to see who is in each hour." : manage ? " Click a provider's block to change their hours." : ""}
         </p>
       </Card>
 

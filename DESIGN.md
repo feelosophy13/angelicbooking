@@ -80,6 +80,8 @@ wrong: fix the page.
 
 ## Toolbars and filters
 
+- A page with two ways to look at the same data (Staff hours: People or Coverage) gets one segmented control in the card header,
+  as links that set `?view=` and keep the other filters. The simpler answer is a view of its own, not a second page.
 - Period pickers are one segmented control (Today / 7 days / This month / Custom). Custom opens a small popover
   with the date inputs. Exports live in one "Export" menu.
 - Location pills (`LocationFilter`) appear only for businesses with more than one site.

@@ -224,6 +224,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       DEMO_PASSWORD, DEMO_ALLOW_REMOTE guards; settings in docs-ops.md "Hosted demo"). Left: push, create the cron job
       `angelic-booking-demo-refresh` (my Render API call was blocked by the safety classifier, so it needs the user or a
       permission rule), set its env vars, trigger the first run, and check `/book/demo-salon` on app.angelicbooking.com.
+- [x] 2026-10-13: Staff hours has a People / Coverage switch: People shows who is in each hour (as before), Coverage only tints each
+      stretch by whether every service category is covered and names what is missing. `?view=coverage`, kept when other filters change.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.
