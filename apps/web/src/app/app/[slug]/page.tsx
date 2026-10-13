@@ -59,9 +59,9 @@ export default async function CalendarPage({
   const missingForms = view === "day" ? await withTenant(business.id, (tx) => appointmentsMissingForms(tx, [...new Set(filtered.items.filter((i) => !i.classSessionId).map((i) => i.appointmentId))])) : new Set<string>();
   const formsFilter = sp.forms === "missing";
   const items = formsFilter ? filtered.items.filter((i) => missingForms.has(i.appointmentId)) : filtered.items;
-  // The week shows one stylist at a time: the one chosen, else you (if you take appointments), else the first. "Everyone" (staff=all) is a
-  // text-free overview where each appointment is just a coloured block, read by hover or click. Day view shows every column, month everyone.
-  const staffFilter = view === "week" && sp.staff !== "all" ? (staff.find((s) => s.id === sp.staff)?.id ?? staff.find((s) => s.userId === user.id)?.id ?? staff[0]?.id ?? null) : null;
+  // The week opens on the overview of everyone: each appointment is a text-free block in its stylist's colour, read by hover or click. Picking
+  // a stylist (staff=<id>) shows that one person's week in full. Day view shows every column, month view everyone.
+  const staffFilter = view === "week" ? (staff.find((s) => s.id === sp.staff)?.id ?? null) : null;
   const staffParam = view === "week" ? (staffFilter ?? "all") : null;
   const overview = view === "week" && !staffFilter;
 
@@ -164,6 +164,9 @@ export default async function CalendarPage({
   // Switching views keeps the location (and the staff pick when going to the week).
   const viewHref = (v: "day" | "week" | "month") => `?view=${v}&date=${date}${v === "week" && sp.staff ? `&staff=${sp.staff}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}`;
   const step = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
+  // The button back to now is named for the view (a week or a month is not "today") and quiet when you are already there.
+  const nowLabel = view === "week" ? "This week" : view === "month" ? "This month" : "Today";
+  const atNow = view === "week" ? from === startOfWeek(today) : view === "month" ? date.slice(0, 7) === today.slice(0, 7) : date === today;
   const title = view === "week" ? `Week of ${formatDateLong(from)}` : view === "month" ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(monthStart + "T00:00:00Z")) : formatDateLong(date);
 
   return (
@@ -174,27 +177,15 @@ export default async function CalendarPage({
           <a href={viewHref("week")} className={`rounded-md px-3 py-1 ${view === "week" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Week</a>
           <a href={viewHref("month")} className={`rounded-md px-3 py-1 ${view === "month" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Month</a>
         </div>
+        {/* Fixed place, whatever the view: Prev, a button back to now named for the view, Next. Optional controls follow it. */}
+        <div className="flex items-center gap-1">
+          <LinkButton href={nav(shiftISODate(date, -step))} size="sm" aria-label={`Previous ${view}`}><ChevronLeft className="h-4 w-4" /></LinkButton>
+          <LinkButton href={nav(today)} size="sm" variant={atNow ? "ghost" : "secondary"} aria-current={atNow ? "date" : undefined}>{nowLabel}</LinkButton>
+          <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label={`Next ${view}`}><ChevronRight className="h-4 w-4" /></LinkButton>
+        </div>
         {locations.length > 1 ? (
           <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffParam ? `&staff=${staffParam}` : ""}`} />
         ) : null}
-        {view === "week" ? (
-          <AutoSubmitForm className="contents">
-            <input type="hidden" name="view" value="week" />
-            <input type="hidden" name="date" value={date} />
-            {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
-            <select name="staff" defaultValue={staffParam ?? "all"} aria-label="Whose week" className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-sm">
-              {staff.map((s) => (
-                <option key={s.id} value={s.id}>{s.displayName}</option>
-              ))}
-              <option value="all">Everyone (overview)</option>
-            </select>
-          </AutoSubmitForm>
-        ) : null}
-        <div className="flex items-center gap-1">
-          <LinkButton href={nav(shiftISODate(date, -step))} size="sm" aria-label="Previous"><ChevronLeft className="h-4 w-4" /></LinkButton>
-          <LinkButton href={nav(today)} size="sm" variant={date === today ? "ghost" : "secondary"}>Today</LinkButton>
-          <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label="Next"><ChevronRight className="h-4 w-4" /></LinkButton>
-        </div>
         {can(permissions, "appointments.write.any") ? (
           <>
             <LinkButton href={`/app/${slug}/appointments/block?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}`} variant="secondary" size="sm"><Ban className="h-4 w-4" /> <span className="hidden sm:inline">Block time</span></LinkButton>
@@ -204,13 +195,29 @@ export default async function CalendarPage({
       </PageHeader>
 
       {setup.length ? <SetupChecklist steps={setup} slug={slug} /> : null}
-      {overview ? (
-        <p className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-600" aria-label="Colours">
-          {staff.map((s) => (
-            <span key={s.id} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color ?? "#6366f1" }} />{s.displayName}</span>
-          ))}
-          <span className="text-stone-400">Hover an appointment for details, click to open it.</span>
-        </p>
+      {view === "week" ? (
+        // The week's own controls live here, not in the header, so the header is the same in every view and nothing in it moves.
+        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-stone-600">
+          <AutoSubmitForm className="contents">
+            <input type="hidden" name="view" value="week" />
+            <input type="hidden" name="date" value={date} />
+            {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
+            <select name="staff" defaultValue={staffParam ?? "all"} aria-label="Whose week" className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-sm text-stone-900">
+              <option value="all">Everyone (overview)</option>
+              {staff.map((s) => (
+                <option key={s.id} value={s.id}>{s.displayName}</option>
+              ))}
+            </select>
+          </AutoSubmitForm>
+          {overview ? (
+            <p className="flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="Colours">
+              {staff.map((s) => (
+                <span key={s.id} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color ?? "#6366f1" }} />{s.displayName}</span>
+              ))}
+              <span className="text-stone-400">Hover an appointment for details, click to open it.</span>
+            </p>
+          ) : null}
+        </div>
       ) : null}
       {view === "day" ? (
         <TodayStrip

@@ -121,8 +121,12 @@ path ("Lash Extensions › Classic"). Build its groups with `serviceGroups(busin
 
 ## Calendar week view
 
-The week shows one stylist at a time: the one picked, else the signed-in person if they take appointments, else the first. The picker applies on change
-and also offers "Everyone (overview)" (`?staff=all`). The overview is for seeing the shape of the week, not for reading it: appointments are plain blocks
+The calendar header is the same in Day, Week and Month (view toggle, previous / name / next, Block time, New appointment), so nothing in it moves when the
+view changes; the button back to now is named for the view (Today, This week, This month) and quiet when you are already there. Controls that only one view
+has go in a row below the header, not in it.
+
+The week opens on "Everyone (overview)" (`?staff=all`, also the default), and the picker beside the view toggle switches to one stylist's week in full
+(`?staff=<id>`); it applies on change. The overview is for seeing the shape of the week, not for reading it: appointments are plain blocks
 in the stylist's colour, with a colour legend above the grid and no text, no buttons and no processing labels on them. Everything else comes from hovering
 (the hover card) or clicking (opens the visit). Cards still carry an `aria-label` so screen readers read what sighted users get from hovering.
 

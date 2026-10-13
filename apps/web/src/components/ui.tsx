@@ -40,16 +40,19 @@ export function LinkButton({
   size = "md",
   href,
   children,
+  ...rest
 }: {
   className?: string;
   variant?: ButtonProps["variant"];
   size?: ButtonProps["size"];
   href: string;
   children: React.ReactNode;
-}) {
+} & Pick<React.AnchorHTMLAttributes<HTMLAnchorElement>, "aria-label" | "aria-current" | "title" | "target" | "rel">) {
+  // aria-label and friends must reach the link: an icon-only button (the calendar's arrows) has no other name.
   return (
     <Link
       href={href}
+      {...rest}
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors",
         variants[variant!],

@@ -12,7 +12,7 @@ import { getAppointmentDetail } from "@/server/appointments";
 import { getStaffAvailability } from "@/server/availability";
 import { timingForStaff } from "@/server/stylist-pricing";
 import { formatDateLong, formatMoney, formatTime, shiftISODate } from "@/lib/utils";
-import { Button, Card, Field, Input, PageHeader, Select, Textarea, LinkButton } from "@/components/ui";
+import { BackLink, Button, Card, Field, Input, PageHeader, Select, Textarea, LinkButton } from "@/components/ui";
 import { addService, cancelSeries, changeStatus, moveService, refundDepositAction, removeService, saveNotes, startCheckout } from "./actions";
 import { getSeriesForAppointment } from "@/server/series";
 import { formsForAppointment } from "@/server/forms";
@@ -47,6 +47,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug, id } = await params;
   const { business } = await requireAction(slug, "appointments.read.any");
   const d = await getAppointmentDetail(business.id, id);
+  if (d?.appointment.kind === "block") return { title: "Blocked time" };
   const name = d?.client ? `${d.client.firstName} ${d.client.lastName}`.trim() : "Walk-in";
   return { title: d ? `${name} · Appointment` : "Appointment" };
 }
@@ -142,9 +143,8 @@ export default async function AppointmentPage({
     const blockItem = items[0];
     return (
       <>
-        <PageHeader title="Blocked time">
-          <Link href={`/app/${slug}?date=${apptDate}`} className="text-sm text-brand-700 underline">← Calendar</Link>
-        </PageHeader>
+        <div className="mb-2"><BackLink href={`/app/${slug}?date=${apptDate}`}>Calendar</BackLink></div>
+        <PageHeader title="Blocked time" />
         <Card className="max-w-lg p-4 text-sm">
           <p className="font-medium">{appointment.notes || "Blocked time"}</p>
           {blockItem ? <p className="text-stone-600">{staff.find((s) => s.id === blockItem.staffId)?.displayName} · {formatDateLong(apptDate)} · {formatTime(blockItem.startAt, tz)} – {formatTime(blockItem.endAt, tz)}</p> : null}
@@ -164,8 +164,8 @@ export default async function AppointmentPage({
 
   return (
     <>
+      <div className="mb-2"><BackLink href={`/app/${slug}?date=${apptDate}`}>Calendar</BackLink></div>
       <PageHeader title={client ? `${client.firstName} ${client.lastName}`.trim() : "Walk-in"}>
-        <Link href={`/app/${slug}?date=${apptDate}`} className="text-sm text-brand-700 underline">← Calendar</Link>
         {client && first && can(permissions, "appointments.write.any") ? (
           <Link
             href={`/app/${slug}/appointments/new?clientId=${client.id}${first.serviceId ? `&serviceId=${first.serviceId}` : ""}&staffId=${first.staffId}&date=${shiftISODate(apptDate, 28)}${multiLocation && pay.location ? `&location=${pay.location.id}` : ""}`}
