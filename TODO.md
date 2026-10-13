@@ -205,9 +205,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (served at images.angelicbooking.com) and `angelicbooking-private` exist; `scripts/r2-check.ts` passes and a real
       upload, delete and one-file migration were verified. Uploads are resized (1600 px, 2000 for covers, 800 for
       logos and staff) and re-encoded as WebP, dropping EXIF/GPS. Without the `R2_*` variables everything stays in
-      Postgres. Old `/api/files` links redirect to the CDN. Remaining for production: add `R2_ACCOUNT_ID` and
-      `R2_PUBLIC_BUCKET` on Render (the other four are set), push and deploy, run `POST /api/jobs/migrate-files`
-      until `left.files` is 0, then `VACUUM FULL files`. Restart the local dev server to pick up the R2 variables.
+      Postgres. Old `/api/files` links redirect to the CDN. Deployed 2026-10-13: all six `R2_*` variables are on Render and the
+      production migration job found nothing left in the database (production holds no pictures yet), so new uploads there
+      go straight to R2. Restart the local dev server to pick up the R2 variables.
 - [x] 2026-10-13: stylist prices and durations. Each stylist can charge their own price and take their own time
       for a service (`staff_services` overrides, already filled by the Vagaro import); blank = the service's own.
       Fixed: saving a stylist's Services tab used to delete every override (it now keeps them, and a value equal to
