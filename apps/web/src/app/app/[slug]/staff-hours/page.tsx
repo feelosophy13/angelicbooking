@@ -10,7 +10,8 @@ import { dateLong } from "@/lib/format";
 import { describeHours, time12 } from "@/lib/hours";
 import { buildCoverage } from "@/server/coverage";
 import { listCategories, buildTree, flattenTree } from "@/server/categories";
-import { Button, Card, Empty, LinkButton, PageHeader, Select } from "@/components/ui";
+import { Card, Empty, LinkButton, PageHeader, Select } from "@/components/ui";
+import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { LocationFilter } from "@/components/location-filter";
 import { rowClass, rowControl, RowLink } from "@/components/row";
 import { CoverageGaps, CoverageGrid } from "./coverage-grid";
@@ -99,7 +100,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
             <span className="ml-2 text-sm font-medium text-stone-800">{weekLabel}</span>
           </div>
           {multi ? <LocationFilter locations={locations} current={locationId} query={qs({ location: null })} allLabel="All sites" /> : null}
-          <form method="get" className="flex items-center gap-2">
+          <AutoSubmitForm className="flex items-center gap-2">
             {weekStart !== thisMonday ? <input type="hidden" name="week" value={weekStart} /> : null}
             {multi ? <input type="hidden" name="location" value={locationId ?? ""} /> : null}
             <Select name="scope" defaultValue={scope} aria-label="Services to check coverage for" className="h-9 w-auto max-w-[16rem]">
@@ -112,8 +113,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
               ))}
               {services.some((s) => !s.categoryId) ? <optgroup label="Other">{services.filter((s) => !s.categoryId).map((s) => <option key={s.id} value={`s:${s.id}`}>{s.name}</option>)}</optgroup> : null}
             </Select>
-            <Button type="submit" size="sm" variant="secondary">Check</Button>
-          </form>
+          </AutoSubmitForm>
         </div>
       </Card>
 

@@ -84,6 +84,8 @@ wrong: fix the page.
   with the date inputs. Exports live in one "Export" menu.
 - Location pills (`LocationFilter`) appear only for businesses with more than one site.
 - Filters remember each other when you change one (carry the other query params).
+- A filter made only of choices (selects, switches) applies the moment it changes: wrap it in `AutoSubmitForm`
+  and give it no Apply or Check button (Staff hours coverage). A filter with a text box keeps an explicit Apply.
 
 ## Navigation and findability
 
