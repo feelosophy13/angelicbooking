@@ -201,6 +201,17 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-13: stylist prices and durations. Each stylist can charge their own price and take their own time
+      for a service (`staff_services` overrides, already filled by the Vagaro import); blank = the service's own.
+      Fixed: saving a stylist's Services tab used to delete every override (it now keeps them, and a value equal to
+      the base is stored as "use base"). Edit them on the stylist's Services tab (price + minutes beside each ticked
+      service, bulk "add $ / add %") or on the service's page ("Prices by stylist" table). Public booking: service
+      rows say "from $X" when providers differ; each provider tile shows their price and length; "any provider"
+      time chips show the price; the details step quotes the exact stylist's price and the server refuses the
+      booking, before any deposit, if that price changed meanwhile. Open times use each stylist's own length
+      (public, series, add/move service). New appointment lists each stylist's price/length when they differ.
+      `server/stylist-pricing.ts`. Not changed: deposits stay per service; packages and memberships still cover a
+      line whatever its price; classes use the service's price per seat.
 - [x] 2026-10-13: public booking page. Header: the logo straddles the cover with the name below it (it was painted
       over by the photo); once a client starts choosing, the cover collapses to a slim bar with a small logo
       and name so the choices sit near the top. Category tiles: description clamp no longer shows a sliver of

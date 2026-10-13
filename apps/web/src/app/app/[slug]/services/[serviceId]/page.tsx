@@ -5,6 +5,7 @@ import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
 import { FormPage } from "@/components/ui";
+import { PricesByStylist } from "./prices-by-stylist";
 import { ActionForm, SubmitButton } from "@/components/form";
 import { ServiceFields } from "@/components/service-fields";
 import { updateService } from "../actions";
@@ -28,6 +29,7 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
   ]);
   if (!service) notFound();
   return (
+    <>
     <FormPage title={service.name} backHref={service.categoryId ? `/app/${slug}/services/categories/${service.categoryId}` : `/app/${slug}/services`} backLabel={service.categoryId ? (categories.find((c) => c.id === service.categoryId)?.name ?? "Services") : "Services"}>
       <ActionForm action={updateService}>
         <input type="hidden" name="slug" value={slug} />
@@ -36,5 +38,7 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
         <SubmitButton pendingText="Saving…">Save service</SubmitButton>
       </ActionForm>
     </FormPage>
+    <PricesByStylist slug={slug} businessId={business.id} currency={business.currency} service={service} />
+    </>
   );
 }

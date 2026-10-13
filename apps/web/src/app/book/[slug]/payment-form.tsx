@@ -20,6 +20,8 @@ export function PaidBookingForm(props: {
   startAt: string;
   policy: string | null;
   cancelWindowHours: number;
+  /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */
+  quotedPriceCents?: number;
   lateFee?: string | null;
   mode: "deposit" | "card";
   amountLabel: string;
@@ -64,6 +66,7 @@ export function PaidBookingForm(props: {
         <input type="hidden" name="serviceId" value={props.serviceId} />
         <input type="hidden" name="staffId" value={props.staffId} />
         <input type="hidden" name="startAt" value={props.startAt} />
+      {props.quotedPriceCents !== undefined ? <input type="hidden" name="quotedPriceCents" value={props.quotedPriceCents} /> : null}
         {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
         {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}
         {d ? <p className="text-sm text-stone-600">Booking as <b>{d.firstName} {d.lastName}</b>.</p> : null}

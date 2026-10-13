@@ -17,6 +17,7 @@ import { inviteEmail } from "@/lib/notify/templates";
 import { ClockError, randomPin, setClockPin } from "@/server/time-clock";
 import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
 import { recordPayChange } from "@/server/pay-rates";
+import { applyStaffServices, parseMinutesField, parsePriceField, TermError } from "@/server/stylist-pricing";
 
 const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -177,13 +178,17 @@ export async function saveStaffServices(formData: FormData) {
   const staffId = String(formData.get("staffId"));
   const ctx = await requireAction(slug, "staff.manage");
   const serviceIds = formData.getAll("serviceIds").map(String);
-  await withTenant(ctx.business.id, async (tx) => {
-    await tx.delete(schema.staffServices).where(and(eq(schema.staffServices.staffId, staffId)));
-    if (serviceIds.length) {
-      await tx.insert(schema.staffServices).values(serviceIds.map((serviceId) => ({ businessId: ctx.business.id, staffId, serviceId })));
+  try {
+    const picks = serviceIds.map((serviceId) => ({ serviceId, price: parsePriceField(formData.get(`price_${serviceId}`)), duration: parseMinutesField(formData.get(`duration_${serviceId}`)) }));
+    await withTenant(ctx.business.id, (tx) => applyStaffServices(tx, ctx.business.id, staffId, picks));
+  } catch (e) {
+    if (e instanceof TermError) {
+      await setFlash(e.message, "error");
+      return;
     }
-  });
-  await setFlash("Services saved");
+    throw e;
+  }
+  await setFlash("Services and prices saved");
   revalidatePath(`/app/${slug}/staff/${staffId}/services`);
 }
 

@@ -6,6 +6,7 @@ import { schema, withTenant } from "@angelic/db";
 import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { getStaffAvailability, staffForService, timingFor } from "@/server/availability";
+import { overridesForService, overridesForStaff, termsOf, type Override } from "@/server/stylist-pricing";
 import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
 import { duration } from "@/lib/format";
 import Link from "next/link";
@@ -76,8 +77,15 @@ export default async function NewAppointmentPage({
   const locName = (id: string) => (locations.find((l) => l.id === id)?.name ?? "").replace(`${business.name} - `, "");
   const worksAtNames = (sid: string) => [...(locIndex?.any.get(sid) ?? [])].map(locName).filter(Boolean);
   const switchTo = (locId: string) => { const p = new URLSearchParams(); p.set("location", locId); if (service) p.set("serviceId", service.id); if (sp.clientId) p.set("clientId", sp.clientId); p.set("date", date); return `?${p.toString()}`; };
+  // This stylist's own price and length for each service in the chain, and every stylist's for the main one.
+  const { svcOverrides, staffOverrides } = await withTenant(business.id, async (tx) => ({
+    svcOverrides: service ? await overridesForService(tx, service.id) : new Map<string, Override>(),
+    staffOverrides: staffId ? await overridesForStaff(tx, staffId) : new Map<string, Override>(),
+  }));
+  const termsFor = (svc: { id: string; priceCents: number; durationMin: number }) => termsOf(svc, staffOverrides.get(svc.id));
+  const mainTerms = service ? termsFor(service) : null;
   // Open times must fit the whole chain: the first service's timing plus every extra, end to end.
-  const chainMin = extras.reduce((s, x) => s + x.durationMin + x.gapMin + x.finishMin + x.bufferAfterMin, 0);
+  const chainMin = extras.reduce((s, x) => s + termsFor(x).durationMin + x.gapMin + x.finishMin + x.bufferAfterMin, 0);
   const slots =
     service && staffId
       ? await getStaffAvailability({
@@ -86,12 +94,12 @@ export default async function NewAppointmentPage({
           slotIntervalMin: business.slotIntervalMin,
           staffId,
           date,
-          service: chainMin > 0 ? { durationMin: service.durationMin + service.gapMin + service.finishMin + service.bufferAfterMin + chainMin, gapMin: 0, finishMin: 0, bufferAfterMin: 0 } : timingFor(service),
+          service: chainMin > 0 ? { durationMin: mainTerms!.durationMin + service.gapMin + service.finishMin + service.bufferAfterMin + chainMin, gapMin: 0, finishMin: 0, bufferAfterMin: 0 } : timingFor({ ...service, durationMin: mainTerms!.durationMin }),
           notBefore: new Date(),
           locationId: location?.id,
         })
       : [];
-  const chainPrice = (service?.priceCents ?? 0) + extras.reduce((s, x) => s + x.priceCents, 0);
+  const chainPrice = (mainTerms?.priceCents ?? 0) + extras.reduce((s, x) => s + termsFor(x).priceCents, 0);
   const chainLabel = service ? [service, ...extras].map((s) => s.name).join(" + ") : "";
 
   return (
@@ -121,9 +129,11 @@ export default async function NewAppointmentPage({
             ))}
             <Field label="Staff">
               <Select name="staffId" defaultValue={staffId ?? ""} disabled={!service}>
-                {eligibleStaff.map((s) => (
-                  <option key={s.id} value={s.id}>{s.displayName}</option>
-                ))}
+                {eligibleStaff.map((s) => {
+                  const t = service ? termsOf(service, svcOverrides.get(s.id)) : null;
+                  const note = t ? [t.priceCustom ? formatMoney(t.priceCents, business.currency) : null, t.durationCustom ? duration(t.durationMin) : null].filter(Boolean).join(" · ") : "";
+                  return <option key={s.id} value={s.id}>{s.displayName}{note ? ` · ${note}` : ""}</option>;
+                })}
               </Select>
             </Field>
             <Field label="Date"><Input name="date" type="date" defaultValue={date} /></Field>
@@ -165,7 +175,7 @@ export default async function NewAppointmentPage({
               clientId={sp.clientId ?? ""}
               serviceId={service.id}
               extraServiceIds={extras.map((x) => x.id)}
-              summary={`${chainLabel} · ${duration(service.durationMin + service.gapMin + service.finishMin + chainMin)} · ${formatMoney(chainPrice, business.currency)}`}
+              summary={`${chainLabel} · ${duration(mainTerms!.durationMin + service.gapMin + service.finishMin + chainMin)} · ${formatMoney(chainPrice, business.currency)}`}
               staffId={staffId}
               locationId={location?.id ?? null}
               date={date}

@@ -11,7 +11,8 @@ import { appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify
 import { triggerWorkflows } from "@/server/workflows";
 import { staffAlertEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
-import { shiftISODate } from "@/lib/utils";
+import { formatMoney, shiftISODate } from "@/lib/utils";
+import { overridesForService, priceForStaff } from "./stylist-pricing";
 import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt, tzFor } from "./locations";
 
 export type PublicBusiness = typeof schema.businesses.$inferSelect;
@@ -81,6 +82,7 @@ export async function getPublicSlots(business: PublicBusiness, serviceId: string
   const window = onlineBookingWindow(now, business);
   const eligible = await publicProvidersFor(business, serviceId, locationId);
   const chosen = staffId === "any" ? eligible : eligible.filter((s) => s.id === staffId);
+  const overrides = await withTenant(business.id, (tx) => overridesForService(tx, serviceId));
   const out = new Map<number, { at: Date; staffId: string; staffName: string }>();
   for (const s of chosen) {
     const slots = await getStaffAvailability({
@@ -89,7 +91,8 @@ export async function getPublicSlots(business: PublicBusiness, serviceId: string
       slotIntervalMin: business.slotIntervalMin,
       staffId: s.id,
       date,
-      service: timingFor(service),
+      // Each stylist's own length, so a slot is only offered when their whole appointment fits.
+      service: timingFor({ ...service, durationMin: overrides.get(s.id)?.duration ?? service.durationMin }),
       notBefore: window.notBefore,
       locationId,
     });
@@ -114,6 +117,7 @@ export async function getAvailableDates(business: PublicBusiness, serviceId: str
   const eligible = await publicProvidersFor(business, serviceId, locationId);
   const chosen = staffId === "any" ? eligible : eligible.filter((s) => s.id === staffId);
   const dates = Array.from({ length: days }, (_, i) => shiftISODate(from, i));
+  const overrides = await withTenant(business.id, (tx) => overridesForService(tx, serviceId));
   const open = new Set<string>();
   for (const s of chosen) {
     const remaining = dates.filter((d) => !open.has(d));
@@ -124,7 +128,7 @@ export async function getAvailableDates(business: PublicBusiness, serviceId: str
       slotIntervalMin: business.slotIntervalMin,
       staffId: s.id,
       dates: remaining,
-      service: timingFor(service),
+      service: timingFor({ ...service, durationMin: overrides.get(s.id)?.duration ?? service.durationMin }),
       notBefore: window.notBefore,
       locationId,
     });
@@ -154,6 +158,8 @@ export interface OnlineBookingInput {
   promoCode?: string | null;
   /** Location chosen on the booking page (businesses with several sites). */
   locationId?: string | null;
+  /** The price in cents the page showed for this stylist, to catch a price that changed while the form was open. */
+  quotedPriceCents?: number;
 }
 
 /** Find a client by phone or email, else create one. Runs inside the tenant tx. */
@@ -202,9 +208,19 @@ export async function assertSlotOpen(business: PublicBusiness, serviceId: string
   if (!slots.some((s) => s.at.getTime() === startAt.getTime())) throw new BookingError("That time was just taken. Please pick another.");
 }
 
+/** The price shown on the page must still be what this stylist charges. Classes are priced per seat and not checked. */
+export async function assertQuotedPrice(business: PublicBusiness, input: { serviceId: string; staffId: string; quotedPriceCents?: number; classSessionId?: string | null }) {
+  if (input.quotedPriceCents === undefined || input.classSessionId) return;
+  const current = await priceForStaff(business.id, input.serviceId, input.staffId);
+  if (current !== null && current !== input.quotedPriceCents) {
+    throw new BookingError(`The price for this appointment is now ${formatMoney(current, business.currency)}, not ${formatMoney(input.quotedPriceCents, business.currency)}. Please go back one step and check it.`);
+  }
+}
+
 export async function createOnlineBooking(business: PublicBusiness, input: OnlineBookingInput, now = new Date(), paid?: VerifiedIntent) {
   if (!input.classSessionId) {
     try {
+      await assertQuotedPrice(business, input);
       await assertSlotOpen(business, input.serviceId, input.staffId, input.startAt, now, input.locationId);
     } catch (e) {
       await undoPayment(business, paid);

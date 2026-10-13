@@ -8,7 +8,8 @@ import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { instantToISODate, seriesOccurrences } from "@angelic/core";
 import { bookAppointment, BookingError, setAppointmentStatus } from "./booking";
-import { getStaffAvailability, timingFor } from "./availability";
+import { getStaffAvailability } from "./availability";
+import { timingForStaff } from "./stylist-pricing";
 
 export const SERIES_INTERVALS = [1, 2, 3, 4, 5, 6, 8, 12] as const;
 export const MAX_SERIES_OCCURRENCES = 52;
@@ -56,6 +57,7 @@ export async function createSeries(input: CreateSeriesInput): Promise<CreateSeri
       .returning({ id: schema.appointmentSeries.id }),
   );
   const result: CreateSeriesResult = { seriesId: series!.id, created: [], skipped: [] };
+  const timing = await timingForStaff(input.businessId, service, input.staffId);
   for (const startAt of seriesOccurrences(input.firstStartAt, input.intervalWeeks, input.occurrences, input.timeZone)) {
     // Respect working hours and time off for each date, not just the DB overlap check.
     const slots = await getStaffAvailability({
@@ -64,7 +66,7 @@ export async function createSeries(input: CreateSeriesInput): Promise<CreateSeri
       slotIntervalMin: input.slotIntervalMin,
       staffId: input.staffId,
       date: instantToISODate(startAt, input.timeZone),
-      service: timingFor(service),
+      service: timing,
       locationId: input.locationId,
     });
     if (!slots.some((s) => s.getTime() === startAt.getTime())) {

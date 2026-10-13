@@ -9,7 +9,8 @@ import { notFound } from "next/navigation";
 import { instantToISODate, isInsideCancelWindow, lateCancelFee } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { getAppointmentDetail } from "@/server/appointments";
-import { getStaffAvailability, timingFor } from "@/server/availability";
+import { getStaffAvailability } from "@/server/availability";
+import { timingForStaff } from "@/server/stylist-pricing";
 import { formatDateLong, formatMoney, formatTime, shiftISODate } from "@/lib/utils";
 import { Button, Card, Field, Input, PageHeader, Select, Textarea, LinkButton } from "@/components/ui";
 import { addService, cancelSeries, changeStatus, moveService, refundDepositAction, removeService, saveNotes, startCheckout } from "./actions";
@@ -103,7 +104,7 @@ export default async function AppointmentPage({
           slotIntervalMin: business.slotIntervalMin,
           staffId: addStaffId,
           date: addDate,
-          service: timingFor(addSvc),
+          service: await timingForStaff(business.id, addSvc, addStaffId),
           notBefore: new Date(),
         })
       : [];
@@ -123,7 +124,7 @@ export default async function AppointmentPage({
           slotIntervalMin: business.slotIntervalMin,
           staffId: moveStaffId,
           date: moveDate,
-          service: timingFor(moveSvc),
+          service: await timingForStaff(business.id, moveSvc, moveStaffId),
           notBefore: new Date(),
         })
       : [];

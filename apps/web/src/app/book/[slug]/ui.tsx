@@ -65,7 +65,7 @@ export function CategoryTile({ href, name, imageUrl, description, meta }: { href
 }
 
 /** One bookable service: photo, name, duration, description, price. */
-export function ServiceCard({ href, name, imageUrl, description, durationLabel, price, from, deposit }: { href: string; name: string; imageUrl: string | null; description: string | null; durationLabel: string; price: string; from?: string; /** e.g. "$50.00" when the service takes a deposit. */ deposit?: string }) {
+export function ServiceCard({ href, name, imageUrl, description, durationLabel, price, priceFrom, from, deposit }: { href: string; name: string; imageUrl: string | null; description: string | null; durationLabel: string; price: string; /** Providers charge different amounts: the price shown is the lowest. */ priceFrom?: boolean; from?: string; /** e.g. "$50.00" when the service takes a deposit. */ deposit?: string }) {
   return (
     <li>
       <Link href={href} className="group flex items-center gap-3 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm transition hover:border-[var(--brand-ring)] hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)] sm:gap-4 sm:p-4">
@@ -81,7 +81,7 @@ export function ServiceCard({ href, name, imageUrl, description, durationLabel, 
           {description ? <p className="mt-1 line-clamp-2 text-xs text-stone-500">{description}</p> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="font-semibold text-stone-900">{price}</span>
+          <span className="font-semibold text-stone-900">{priceFrom ? <span className="mr-1 text-[11px] font-normal text-stone-500">from</span> : null}{price}</span>
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-100 text-stone-500 transition group-hover:bg-[var(--brand)] group-hover:text-white" aria-hidden><ChevronRight className="h-4 w-4" /></span>
         </div>
       </Link>

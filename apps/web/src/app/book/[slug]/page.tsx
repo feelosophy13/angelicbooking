@@ -11,6 +11,7 @@ import { PaidBookingForm } from "./payment-form";
 import { onlinePaymentRequirement } from "@/server/online-payments";
 import { paymentContextFor, tzFor } from "@/server/locations";
 import { publicSessions } from "@/server/classes";
+import { overridesForService, priceLabel, servicePriceRanges, termsOf } from "@/server/stylist-pricing";
 import { brandHex } from "@/lib/brand";
 import { describeHours } from "@/lib/hours";
 import { currentClient } from "@/server/client-auth";
@@ -73,6 +74,9 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   };
   const stepHrefs = (upTo: number) => [q({ service: undefined, staff: undefined, date: undefined, time: undefined, session: undefined }), q({ staff: undefined, date: undefined, time: undefined }), q({ time: undefined }), null].map((h, i) => (i < upTo ? h : null));
   const depositRow = service && service.depositCents > 0 ? [{ label: "Deposit", value: formatMoney(service.depositCents, business.currency) }] : [];
+  const money = (c: number) => formatMoney(c, business.currency);
+  // Prices differ between stylists: the service list says "from" the lowest one.
+  const ranges = service ? null : await withTenant(business.id, (tx) => servicePriceRanges(tx, services, staff));
   const serviceMeta = (s: (typeof services)[number]) => duration(s.durationMin + s.gapMin + s.finishMin);
 
   // ---- Step 1: service, browsed by category (Hair › Colour › Balayage)
@@ -101,7 +105,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           <section>
             {children.length ? <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">{current ? `More in ${current.name}` : "More services"}</h2> : null}
             <ul className="space-y-3">
-              {direct.map((s) => <ServiceCard key={s.id} href={q({ service: s.id, category: current?.id })} name={s.name} imageUrl={s.imageUrl} description={s.description} durationLabel={serviceMeta(s)} price={formatMoney(s.priceCents, business.currency)} from={s.capacity > 1 ? "class" : undefined} deposit={s.depositCents > 0 ? formatMoney(s.depositCents, business.currency) : undefined} />)}
+              {direct.map((s) => <ServiceCard key={s.id} href={q({ service: s.id, category: current?.id })} name={s.name} imageUrl={s.imageUrl} description={s.description} durationLabel={serviceMeta(s)} price={priceLabel(ranges?.get(s.id) ?? { min: s.priceCents, max: s.priceCents }, money).label} priceFrom={priceLabel(ranges?.get(s.id) ?? { min: s.priceCents, max: s.priceCents }, money).varies} from={s.capacity > 1 ? "class" : undefined} deposit={s.depositCents > 0 ? formatMoney(s.depositCents, business.currency) : undefined} />)}
             </ul>
           </section>
         ) : null}
@@ -110,9 +114,22 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     );
   }
 
+  // Each stylist's own price and length for this service; the page quotes the one who will do it.
+  const overrides = await withTenant(business.id, (tx) => overridesForService(tx, service.id));
+  const termsFor = (staffId: string) => termsOf(service, overrides.get(staffId));
+  const provTerms = providers.map((p) => ({ id: p.id, ...termsFor(p.id) }));
+  const priceVaries = new Set(provTerms.map((t) => t.priceCents)).size > 1;
+  const durationVaries = new Set(provTerms.map((t) => t.durationMin)).size > 1;
+  const scope = staffChoice && staffChoice !== "any" ? provTerms.filter((t) => t.id === staffChoice) : provTerms;
+  const scopePrices = scope.length ? scope.map((t) => t.priceCents) : [service.priceCents];
+  const scopeMins = scope.length ? scope.map((t) => t.durationMin) : [service.durationMin];
+  const fromIf = (min: number, max: number, text: string) => (min === max ? text : `from ${text}`);
+  const priceText = fromIf(Math.min(...scopePrices), Math.max(...scopePrices), money(Math.min(...scopePrices)));
+  const spanOf = (mins: number) => duration(mins + service.gapMin + service.finishMin);
+  const durationText = fromIf(Math.min(...scopeMins), Math.max(...scopeMins), spanOf(Math.min(...scopeMins)));
   const providerName = staffChoice === "any" ? "Any available provider" : staff.find((s) => s.id === staffChoice)?.displayName;
   const summaryRows = (extra: { label: string; value: string; href?: string }[] = []) => [
-    { label: "Duration", value: serviceMeta(service) },
+    { label: "Duration", value: durationText },
     ...(staffChoice ? [{ label: "With", value: providerName ?? "", href: q({ staff: undefined, date: undefined, time: undefined }) }] : []),
     ...extra,
   ];
@@ -178,12 +195,12 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       <>
         <Steps labels={stepLabels} current={2} hrefs={stepHrefs(1)} />
         <StepTitle title="Choose a provider" />
-        <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "Price", value: formatMoney(service.priceCents, business.currency) }, ...depositRow, { label: "Duration", value: serviceMeta(service), href: q({ service: undefined }) }]} />
+        <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "Price", value: priceText }, ...depositRow, { label: "Duration", value: durationText, href: q({ service: undefined }) }]} />
         <ul className="grid gap-3 sm:grid-cols-2">
           <li>
             <Link href={q({ staff: "any" })} className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-stone-300 bg-white p-4 transition hover:border-[var(--brand)] hover:shadow-md">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white" style={{ background: "var(--brand)" }}>✦</span>
-              <span><span className="block font-semibold text-stone-900">Any available provider</span><span className="block text-xs text-stone-500">Shows the most openings</span></span>
+              <span><span className="block font-semibold text-stone-900">Any available provider</span><span className="block text-xs text-stone-500">Shows the most openings{priceVaries ? ` · ${priceText}` : ""}</span></span>
             </Link>
           </li>
           {providers.map((s) => (
@@ -199,6 +216,12 @@ export default async function PublicBookingPage({ params, searchParams }: { para
                   <span className="block font-semibold text-stone-900">{s.displayName}</span>
                   {s.bio ? <span className="line-clamp-2 block text-xs text-stone-500">{s.bio}</span> : null}
                 </span>
+                {priceVaries || durationVaries ? (
+                  <span className="ml-auto shrink-0 text-right">
+                    {priceVaries ? <span className="block font-semibold text-stone-900">{money(termsFor(s.id).priceCents)}</span> : null}
+                    {durationVaries ? <span className="block text-[11px] text-stone-500">{spanOf(termsFor(s.id).durationMin)}</span> : null}
+                  </span>
+                ) : null}
               </Link>
             </li>
           ))}
@@ -236,7 +259,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       <>
         <Steps labels={stepLabels} current={3} hrefs={stepHrefs(2)} />
         <StepTitle title="Pick a time" />
-        <Summary imageUrl={service.imageUrl} title={service.name} rows={summaryRows([{ label: "Price", value: formatMoney(service.priceCents, business.currency) }, ...depositRow])} />
+        <Summary imageUrl={service.imageUrl} title={service.name} rows={summaryRows([{ label: "Price", value: priceText }, ...depositRow])} />
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
@@ -287,7 +310,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
                     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-3">
                       {g.list.map((s) => (
                         <Link key={s.at.toISOString()} href={q({ date, time: s.at.toISOString(), staff: staffChoice })} className="rounded-xl border border-stone-200 bg-white px-2 py-2 text-center text-sm font-medium text-stone-800 shadow-sm transition hover:border-[var(--brand)] hover:text-[var(--brand-dark)]">
-                          {formatTime(s.at, tz)}{staffChoice === "any" ? <span className="block truncate text-[10px] font-normal text-stone-500">{s.staffName}</span> : null}
+                          {formatTime(s.at, tz)}{staffChoice === "any" ? <><span className="block truncate text-[10px] font-normal text-stone-500">{s.staffName}</span>{priceVaries ? <span className="block text-[10px] font-medium text-stone-700">{money(termsFor(s.staffId).priceCents)}</span> : null}</> : null}
                         </Link>
                       ))}
                     </div>
@@ -319,16 +342,17 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     <>
       <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
       <StepTitle title="Your details" subtitle="Almost done. Tell us who you are and we'll hold this time." />
-      <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: slot.staffName, href: q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: serviceMeta(service) }, { label: "Price", value: formatMoney(service.priceCents, business.currency) }]} />
+      <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: slot.staffName, href: q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: spanOf(termsFor(slot.staffId).durationMin) }, { label: "Price", value: money(termsFor(slot.staffId).priceCents) }]} />
       {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">A {formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : service.depositCents > 0 ? <p className="mb-3 text-xs text-stone-600">This service has a {formatMoney(service.depositCents, business.currency)} deposit. The salon will contact you to arrange it.</p> : null}
       {req.mode === "none" ? (
-        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={termsFor(slot.staffId).priceCents} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
       ) : (
         <PaidBookingForm
           slug={slug}
           serviceId={service.id}
           staffId={slot.staffId}
           startAt={startAt.toISOString()}
+          quotedPriceCents={termsFor(slot.staffId).priceCents}
           policy={business.bookingPolicy}
           cancelWindowHours={business.cancelWindowHours} lateFee={lateFee}
           mode={req.mode}

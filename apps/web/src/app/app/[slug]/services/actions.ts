@@ -10,6 +10,7 @@ import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { setServiceLocations } from "@/server/locations";
 import { deleteFileByUrl, FileError, uploadedImageFrom } from "@/lib/files";
+import { applyServiceTerms, parseMinutesField, parsePriceField, TermError } from "@/server/stylist-pricing";
 
 const fields = z.object({
   slug: z.string(),
@@ -146,4 +147,24 @@ export async function moveService(formData: FormData) {
     for (let k = 0; k < ids.length; k++) await tx.update(schema.services).set({ sortOrder: k }).where(eq(schema.services.id, ids[k]!));
   });
   revalidateServices(d.slug);
+}
+
+/** From the service's own page: each stylist's price and minutes, for people who already perform it. */
+export async function saveServiceStylistTerms(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const serviceId = String(formData.get("serviceId"));
+  const ctx = await requireAction(slug, "services.manage");
+  const staffIds = formData.getAll("staffIds").map(String);
+  try {
+    const rows = staffIds.map((staffId) => ({ staffId, price: parsePriceField(formData.get(`price_${staffId}`)), duration: parseMinutesField(formData.get(`duration_${staffId}`)) }));
+    await withTenant(ctx.business.id, (tx) => applyServiceTerms(tx, serviceId, rows));
+  } catch (e) {
+    if (e instanceof TermError) {
+      await setFlash(e.message, "error");
+      return;
+    }
+    throw e;
+  }
+  await setFlash("Prices by stylist saved");
+  revalidatePath(`/app/${slug}/services/${serviceId}`);
 }
