@@ -201,6 +201,16 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visit). Codes are created at checkout for anyone once referrals are on, printed on the emailed receipt, and
       available to automations as {referral_code}; new "Refer a friend" template (off by default) after a first
       paid visit.
+- [x] 2026-10-13: public booking page. Header: the logo straddles the cover with the name below it (it was painted
+      over by the photo); once a client starts choosing, the cover collapses to a slim bar with a small logo
+      and name so the choices sit near the top. Category tiles: description clamp no longer shows a sliver of
+      the third line (padding moved off the clamped text). Service rows show "$50.00 deposit"; the provider and
+      time summaries list the deposit; the no-card wording is "This service has a $50 deposit. The salon will
+      contact you to arrange it." Tapping a calendar day lands on that day's times; month arrows keep the scroll
+      position. "Online booking" link became "Start over" (hidden on the landing view). Placeholders in normal
+      case, First name marked required, a note that a mobile number or email is needed. Policy: the late fee
+      sentence is skipped when the owner's text already states the same fee, and Settings warns when the policy
+      text quotes a different amount (`policyFeeCheck`). Demo policy text no longer says 50%.
 - [x] 2026-10-13: location control scales past two sites. `LocationSwitch` (behind `LocationFilter` and the
       calendar's `LocationPills`): buttons for up to three sites; from four a dropdown showing the current site with
       "All" on top, opening toward the side with room; from eight a search box. Same links as before, so every page

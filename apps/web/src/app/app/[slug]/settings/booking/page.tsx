@@ -9,6 +9,8 @@ export const metadata: Metadata = { title: "Online booking" };
 import { saveBookingSettings } from "./actions";
 import QRCode from "qrcode";
 import { listLocations } from "@/server/locations";
+import { lateCancelFeeLabel, policyFeeCheck } from "@angelic/core";
+import { formatMoney } from "@/lib/utils";
 
 export default async function BookingSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -19,6 +21,9 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
   const locations = await listLocations(business.id);
   const perLocation = locations.length > 1 ? await Promise.all(locations.map(async (l) => ({ id: l.id, name: l.name, url: `${url}?location=${l.id}`, qr: await QRCode.toDataURL(`${url}?location=${l.id}`, { margin: 1, width: 180, color: { dark: "#1c1917" } }) }))) : [];
   const embed = `<a href="${url}" target="_blank" rel="noopener" style="display:inline-block;background:${business.brandColor ?? "#6d28d9"};color:#fff;padding:12px 20px;border-radius:8px;font:600 15px system-ui,sans-serif;text-decoration:none">Book now</a>`;
+  const latePolicy = { feeType: business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: business.lateCancelFeeValue, deposit: business.lateCancelDeposit as "toward" | "extra" };
+  const policyCheck = policyFeeCheck(business.bookingPolicy, latePolicy);
+  const feeLabel = lateCancelFeeLabel(latePolicy, (c) => formatMoney(c, business.currency)) ?? "no fee";
   return (
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
@@ -76,7 +81,10 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
             <details className="rounded-lg border border-stone-200 p-3" open={!!business.bookingPolicy || business.clientAccountsEnabled}>
               <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">Policy, address and client accounts</summary>
               <div className="mt-3 space-y-3">
-                <Field label="Booking policy" name="bookingPolicy" hint="Shown to clients when they book."><Textarea name="bookingPolicy" rows={5} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
+                <Field label="Booking policy" name="bookingPolicy" hint={business.lateCancelFeeType !== "none" ? "Shown to clients when they book. The late cancellation fee above is added for you, so there is no need to repeat it." : "Shown to clients when they book."}><Textarea name="bookingPolicy" rows={5} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
+                {policyCheck.conflicts.length ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">Your policy says &ldquo;{policyCheck.conflicts[0]}&rdquo; but the late cancellation fee is set to {feeLabel}. Clients see both, and the fee above is the one that is charged. Edit the policy text so they agree.</p>
+                ) : null}
                 <Field label="Address shown on the booking page and in messages" name="addressLine"><Input name="addressLine" defaultValue={business.addressLine ?? ""} placeholder="123 Main St, Springfield" /></Field>
                 <Checkbox name="clientAccountsEnabled" defaultChecked={business.clientAccountsEnabled} label="Client accounts on the booking page" hint="Clients sign in with a code by email or text to see upcoming visits, rebook, and use saved cards and points." />
               </div>

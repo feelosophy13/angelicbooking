@@ -24,3 +24,23 @@ export function lateCancelFeeLabel(policy: LateCancelPolicy, money: (cents: numb
   if (policy.feeType === "percent" && policy.feeValue > 0) return `${policy.feeValue / 100}% of the booked services`;
   return null;
 }
+
+/**
+ * Compare the owner's free-text booking policy with the structured late fee. Looks at sentences
+ * about cancelling, lateness or fees that quote an amount. A sentence that quotes the same fee
+ * "repeats" it; one that quotes a different amount or percent "conflicts" with it.
+ */
+export function policyFeeCheck(text: string | null | undefined, policy: LateCancelPolicy): { repeats: string[]; conflicts: string[] } {
+  const out = { repeats: [] as string[], conflicts: [] as string[] };
+  if (!text || policy.feeType === "none" || policy.feeValue <= 0) return out;
+  for (const raw of text.split(/(?<=[.!?])\s+|\n+/)) {
+    const sentence = raw.trim();
+    if (!sentence || !/cancel|late|no-?show|fee|charge/i.test(sentence)) continue;
+    const money = [...sentence.matchAll(/\$\s?(\d+(?:\.\d{1,2})?)/g)].map((m) => Math.round(Number(m[1]) * 100));
+    const percent = [...sentence.matchAll(/(\d+(?:\.\d+)?)\s?%/g)].map((m) => Math.round(Number(m[1]) * 100));
+    if (!money.length && !percent.length) continue;
+    const same = policy.feeType === "flat" ? percent.length === 0 && money.every((c) => c === policy.feeValue) : money.length === 0 && percent.every((b) => b === policy.feeValue);
+    (same ? out.repeats : out.conflicts).push(sentence);
+  }
+  return out;
+}

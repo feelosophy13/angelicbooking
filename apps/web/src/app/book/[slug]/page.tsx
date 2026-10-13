@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { MapPin } from "lucide-react";
-import { instantToISODate, weekdayOf, lateCancelFeeLabel } from "@angelic/core";
+import { instantToISODate, weekdayOf, lateCancelFeeLabel, policyFeeCheck } from "@angelic/core";
 import { getAvailableDates, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots, publicProvidersFor } from "@/server/public-booking";
 import { buildTree, pathTo, subtreeIds } from "@/server/categories";
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
@@ -54,7 +54,9 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const locId = locations.length > 1 ? (location?.id ?? null) : null;
   const me = business.clientAccountsEnabled ? await currentClient(business) : null;
   const hasPromos = await withTenant(business.id, async (tx) => !!(await tx.query.promoCodes.findFirst({ where: eq(schema.promoCodes.active, true) })));
-  const lateFee = lateCancelFeeLabel({ feeType: business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: business.lateCancelFeeValue, deposit: business.lateCancelDeposit as "toward" | "extra" }, (c) => formatMoney(c, business.currency));
+  // The late fee is added to the policy line unless the owner's own text already states that same fee.
+  const latePolicy = { feeType: business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: business.lateCancelFeeValue, deposit: business.lateCancelDeposit as "toward" | "extra" };
+  const lateFee = policyFeeCheck(business.bookingPolicy, latePolicy).repeats.length ? null : lateCancelFeeLabel(latePolicy, (c) => formatMoney(c, business.currency));
   const defaults = me ? { firstName: me.firstName, lastName: me.lastName, phone: me.phone, email: me.email, smsOptIn: me.smsOptIn } : null;
   const tz = tzFor(business, location);
   const today = instantToISODate(new Date(), tz);
@@ -70,6 +72,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     return `?${p.toString()}`;
   };
   const stepHrefs = (upTo: number) => [q({ service: undefined, staff: undefined, date: undefined, time: undefined, session: undefined }), q({ staff: undefined, date: undefined, time: undefined }), q({ time: undefined }), null].map((h, i) => (i < upTo ? h : null));
+  const depositRow = service && service.depositCents > 0 ? [{ label: "Deposit", value: formatMoney(service.depositCents, business.currency) }] : [];
   const serviceMeta = (s: (typeof services)[number]) => duration(s.durationMin + s.gapMin + s.finishMin);
 
   // ---- Step 1: service, browsed by category (Hair › Colour › Balayage)
@@ -98,7 +101,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           <section>
             {children.length ? <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">{current ? `More in ${current.name}` : "More services"}</h2> : null}
             <ul className="space-y-3">
-              {direct.map((s) => <ServiceCard key={s.id} href={q({ service: s.id, category: current?.id })} name={s.name} imageUrl={s.imageUrl} description={s.description} durationLabel={serviceMeta(s)} price={formatMoney(s.priceCents, business.currency)} from={s.capacity > 1 ? "class" : undefined} />)}
+              {direct.map((s) => <ServiceCard key={s.id} href={q({ service: s.id, category: current?.id })} name={s.name} imageUrl={s.imageUrl} description={s.description} durationLabel={serviceMeta(s)} price={formatMoney(s.priceCents, business.currency)} from={s.capacity > 1 ? "class" : undefined} deposit={s.depositCents > 0 ? formatMoney(s.depositCents, business.currency) : undefined} />)}
             </ul>
           </section>
         ) : null}
@@ -175,7 +178,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       <>
         <Steps labels={stepLabels} current={2} hrefs={stepHrefs(1)} />
         <StepTitle title="Choose a provider" />
-        <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "Price", value: formatMoney(service.priceCents, business.currency) }, { label: "Duration", value: serviceMeta(service), href: q({ service: undefined }) }]} />
+        <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "Price", value: formatMoney(service.priceCents, business.currency) }, ...depositRow, { label: "Duration", value: serviceMeta(service), href: q({ service: undefined }) }]} />
         <ul className="grid gap-3 sm:grid-cols-2">
           <li>
             <Link href={q({ staff: "any" })} className="flex items-center gap-3 rounded-2xl border-2 border-dashed border-stone-300 bg-white p-4 transition hover:border-[var(--brand)] hover:shadow-md">
@@ -233,13 +236,13 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       <>
         <Steps labels={stepLabels} current={3} hrefs={stepHrefs(2)} />
         <StepTitle title="Pick a time" />
-        <Summary imageUrl={service.imageUrl} title={service.name} rows={summaryRows([{ label: "Price", value: formatMoney(service.priceCents, business.currency) }])} />
+        <Summary imageUrl={service.imageUrl} title={service.name} rows={summaryRows([{ label: "Price", value: formatMoney(service.priceCents, business.currency) }, ...depositRow])} />
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
-              <Link href={q({ month: prevMonth, date: undefined })} aria-label="Previous month" className={cn("flex h-8 w-8 items-center justify-center rounded-full text-stone-600 hover:bg-stone-100", prevMonth < today.slice(0, 7) && "pointer-events-none opacity-30")}>‹</Link>
+              <Link href={q({ month: prevMonth, date: undefined })} scroll={false} aria-label="Previous month" className={cn("flex h-8 w-8 items-center justify-center rounded-full text-stone-600 hover:bg-stone-100", prevMonth < today.slice(0, 7) && "pointer-events-none opacity-30")}>‹</Link>
               <p className="font-semibold text-stone-900">{monthLabel}</p>
-              <Link href={q({ month: nextMonth, date: undefined })} aria-label="Next month" className={cn("flex h-8 w-8 items-center justify-center rounded-full text-stone-600 hover:bg-stone-100", `${nextMonth}-01` > maxDate && "pointer-events-none opacity-30")}>›</Link>
+              <Link href={q({ month: nextMonth, date: undefined })} scroll={false} aria-label="Next month" className={cn("flex h-8 w-8 items-center justify-center rounded-full text-stone-600 hover:bg-stone-100", `${nextMonth}-01` > maxDate && "pointer-events-none opacity-30")}>›</Link>
             </div>
             <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase tracking-wide text-stone-400">{["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <div key={i}>{d}</div>)}</div>
             <div className="mt-1 grid grid-cols-7 gap-1">
@@ -253,13 +256,13 @@ export default async function PublicBookingPage({ params, searchParams }: { para
                 const label = formatDateLong(d);
                 if (ok) {
                   return (
-                    <Link key={d} href={q({ date: d, month: sp.month })} aria-label={`${label}: openings available`} aria-current={d === date ? "date" : undefined} className={cn("rounded-xl py-2 text-center text-sm font-semibold transition", d === date ? "text-white shadow" : "hover:brightness-95")} style={d === date ? { background: "var(--brand)" } : { background: "var(--brand-tint)", color: "var(--brand-dark)" }}>{i + 1}</Link>
+                    <Link key={d} href={`${q({ date: d, month: sp.month })}#times`} aria-label={`${label}: openings available`} aria-current={d === date ? "date" : undefined} className={cn("rounded-xl py-2 text-center text-sm font-semibold transition", d === date ? "text-white shadow" : "hover:brightness-95")} style={d === date ? { background: "var(--brand)" } : { background: "var(--brand-tint)", color: "var(--brand-dark)" }}>{i + 1}</Link>
                   );
                 }
                 // A full day can still be tapped to join the waitlist for it.
                 if (bookable) {
                   return (
-                    <Link key={d} href={q({ date: d, month: sp.month })} aria-label={`${label}: no openings, join the waitlist`} aria-current={d === date ? "date" : undefined} className={cn("rounded-xl border border-dashed py-2 text-center text-sm", d === date ? "border-stone-500 text-stone-800" : "border-stone-200 text-stone-400 hover:border-stone-400")}>{i + 1}</Link>
+                    <Link key={d} href={`${q({ date: d, month: sp.month })}#times`} aria-label={`${label}: no openings, join the waitlist`} aria-current={d === date ? "date" : undefined} className={cn("rounded-xl border border-dashed py-2 text-center text-sm", d === date ? "border-stone-500 text-stone-800" : "border-stone-200 text-stone-400 hover:border-stone-400")}>{i + 1}</Link>
                   );
                 }
                 return <div key={d} aria-hidden className="py-2 text-center text-sm text-stone-300">{i + 1}</div>;
@@ -267,7 +270,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
             </div>
             <p className="mt-3 text-[11px] text-stone-500">Highlighted days have openings. Tap a full day to join its waitlist.</p>
           </div>
-          <div>
+          <div id="times" className="scroll-mt-4">
             {!date ? (
               <div className="flex h-full min-h-32 items-center justify-center rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">Choose a day to see times.</div>
             ) : slots.length === 0 ? (
@@ -317,7 +320,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
       <StepTitle title="Your details" subtitle="Almost done. Tell us who you are and we'll hold this time." />
       <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: slot.staffName, href: q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: serviceMeta(service) }, { label: "Price", value: formatMoney(service.priceCents, business.currency) }]} />
-      {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">A {formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : service.depositCents > 0 ? <p className="mb-3 text-xs text-stone-600">A {formatMoney(service.depositCents, business.currency)} deposit may be required; the salon will confirm.</p> : null}
+      {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">A {formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : service.depositCents > 0 ? <p className="mb-3 text-xs text-stone-600">This service has a {formatMoney(service.depositCents, business.currency)} deposit. The salon will contact you to arrange it.</p> : null}
       {req.mode === "none" ? (
         <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
       ) : (

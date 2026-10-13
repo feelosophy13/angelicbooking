@@ -276,7 +276,7 @@ async function main() {
     phone: PROFILE.phone, email: PROFILE.contactEmail, addressLine: PROFILE.addressLine, tagline: PROFILE.tagline,
     about: PROFILE.about,
     website: PROFILE.website, instagram: PROFILE.instagram, brandColor: PROFILE.brandColor, logoUrl, coverUrl,
-    bookingPolicy: "Please arrive 5 minutes early. Cancellations inside 24 hours may be charged 50% of the service.", cancelWindowHours: 24, reminderHours: 24, maxAdvanceDays: 60,
+    bookingPolicy: "Please arrive 5 minutes early.", lateCancelFeeType: PROFILE_KEY === "glow" ? "percent" : "flat", lateCancelFeeValue: PROFILE_KEY === "glow" ? 5000 : 2500, cancelWindowHours: 24, reminderHours: 24, maxAdvanceDays: 60,
     reviewRequestEnabled: true, reviewRequestDelayHours: 2, googleReviewUrl: "https://g.page/r/demo/review", loyaltyEnabled: true, loyaltyPointsPerDollar: 1, loyaltyMinRedeemPoints: 500, referralBonusPoints: 500, referralFriendBonusPoints: 250,
     clientAccountsEnabled: true, storeEnabled: true, giftCardsOnline: true, shippingFlatCents: 795, taxRateBps: 600,
   }).where(eq(schema.businesses.id, businessId));
