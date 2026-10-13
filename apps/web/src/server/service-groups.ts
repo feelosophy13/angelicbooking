@@ -3,7 +3,7 @@ import { schema, withTenant } from "@angelic/db";
 import type { ServiceGroup } from "@/components/service-picker";
 import { formatMoney } from "@/lib/utils";
 import { duration } from "@/lib/format";
-import { buildTree, listCategories, pathTo, subtreeIds, type AnyCategory, type CategoryNode } from "./categories";
+import { buildTree, flattenTree, listCategories, pathTo, subtreeIds, type AnyCategory, type CategoryNode } from "./categories";
 
 type GroupOpts = { meta?: "duration-price" | "price" | "none"; note?: (serviceId: string) => string | null; include?: (serviceId: string) => boolean; /** Add an "All of <category>" row to each category that contains an included service, at any depth. */ categories?: boolean };
 type ServiceRow = { id: string; name: string; categoryId: string | null; durationMin: number; priceCents: number };
@@ -14,7 +14,13 @@ export function groupServices(services: ServiceRow[], categories: AnyCategory[],
     opts.meta === "none" ? "" : opts.meta === "price" ? formatMoney(s.priceCents, currency) : `${duration(s.durationMin)} · ${formatMoney(s.priceCents, currency)}`;
   const nameOf = (categoryId: string) => pathTo(categories, categoryId).map((c) => c.name).join(" › ") || "Services";
   const groups = new Map<string, ServiceGroup>();
-  const ensure = (key: string, name: string) => { if (!groups.has(key)) groups.set(key, { id: key, name, services: [] }); return groups.get(key)!; };
+  const ensure = (key: string, name: string) => {
+    if (!groups.has(key)) {
+      const cat = categories.find((c) => c.id === key);
+      groups.set(key, { id: key, name, services: [], title: cat?.name, depth: cat ? Math.max(0, pathTo(categories, key).length - 1) : 0 });
+    }
+    return groups.get(key)!;
+  };
   for (const s of services) {
     if (opts.include && !opts.include(s.id)) continue;
     ensure(s.categoryId ?? "none", s.categoryId ? nameOf(s.categoryId) : "Other").services.push({ id: s.id, name: s.name, meta: meta(s), note: opts.note?.(s.id) ?? null });
@@ -26,7 +32,10 @@ export function groupServices(services: ServiceRow[], categories: AnyCategory[],
       }
     }
   }
-  return [...groups.values()].sort((a, b) => (a.id === "none" ? 1 : b.id === "none" ? -1 : a.name.localeCompare(b.name)));
+  // The same order as the Services page: the tree by each category's own sort order, uncategorised services last.
+  const order = new Map(flattenTree(buildTree(categories)).map((c, i) => [c.id, i]));
+  const rank = (id: string) => (id === "none" ? Number.MAX_SAFE_INTEGER : (order.get(id) ?? Number.MAX_SAFE_INTEGER - 1));
+  return [...groups.values()].sort((a, b) => rank(a.id) - rank(b.id) || a.name.localeCompare(b.name));
 }
 
 /**

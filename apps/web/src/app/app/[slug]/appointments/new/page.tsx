@@ -12,6 +12,7 @@ import { duration } from "@/lib/format";
 import Link from "next/link";
 import { Button, Card, Field, Input, Label, PageHeader, Select, Empty } from "@/components/ui";
 import { ServicePicker, type ServiceGroup } from "@/components/service-picker";
+import { groupServices } from "@/server/service-groups";
 import { listCategories, pathTo } from "@/server/categories";
 import { BookForm } from "./book-form";
 import { ClientPicker } from "@/components/client-picker";
@@ -57,13 +58,8 @@ export default async function NewAppointmentPage({
   const mappedTo = new Map<string, Set<string>>();
   for (const m of mapping) mappedTo.set(m.serviceId, (mappedTo.get(m.serviceId) ?? new Set()).add(m.staffId));
   const hereCount = (serviceId: string) => { const m = mappedTo.get(serviceId); return m?.size ? providersHere.filter((p) => m.has(p.id)).length : providersHere.length; };
-  const groupsMap = new Map<string, ServiceGroup>();
-  for (const s of services) {
-    const key = s.categoryId ?? "none";
-    if (!groupsMap.has(key)) groupsMap.set(key, { id: key, name: s.categoryId ? pathTo(categories, s.categoryId).map((c) => c.name).join(" › ") || "Services" : "Other", services: [] });
-    groupsMap.get(key)!.services.push({ id: s.id, name: s.name, meta: `${duration(s.durationMin)} · ${formatMoney(s.priceCents, business.currency)}`, note: hereCount(s.id) === 0 ? (multi ? "no one here" : "no provider") : null });
-  }
-  const serviceGroups = [...groupsMap.values()].sort((a, b) => (a.id === "none" ? 1 : b.id === "none" ? -1 : a.name.localeCompare(b.name)));
+  // Grouped like everywhere else (menu order, indented), flagging services nobody here can do.
+  const serviceGroups: ServiceGroup[] = groupServices(services, categories, business.currency, { note: (id) => (hereCount(id) === 0 ? (multi ? "no one here" : "no provider") : null) });
 
   const service = services.find((s) => s.id === sp.serviceId) ?? services[0] ?? null;
   // More services on the same visit, booked back to back with the same provider.

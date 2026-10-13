@@ -98,8 +98,9 @@ A menu can have hundreds of services, so a flat dropdown of them is overwhelming
 service, use `ServicePicker` (`components/service-picker.tsx`): one field that opens a searchable list grouped by category
 path ("Lash Extensions › Classic"). Build its groups with `serviceGroups(business, opts)` (`server/service-groups.ts`).
 
-- **How the list reads:** each category is a header bar (parents muted, the category name bold: "Facial Treatments › **Core Facials**"),
-  with its services indented beneath. Where whole categories can be chosen, the header itself is the button and carries an "All" chip;
+- **How the list reads:** each category is a header bar showing its own name, indented by depth (a tree: Lash Extensions, then Classic and Hybrid
+  one step in), with its services indented one step further. Groups come in the order of the Services page, not alphabetically. While the
+  user is searching, the list is only a slice of the tree, so headers drop the indent and show the full path ("Facial Treatments › **Core Facials**"). Where whole categories can be chosen, the header itself is the button and carries an "All" chip;
   never repeat the category as an "All of …" row inside the group. "Any service" / "None" is the first row.
 - **Never** map a services list into `<option>`s. A test (`lib/__tests__/service-select-guard.test.ts`) fails if you do. The one
   exception is a list that is naturally short, such as group classes; add it to that test's allowlist with the reason.
