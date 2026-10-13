@@ -85,9 +85,8 @@ wrong: fix the page.
 - Location pills (`LocationFilter`) appear only for businesses with more than one site.
 - Some pages only make sense for one site at a time (Staff hours: hours, rotations and coverage differ by site). There
   `LocationFilter` gets `allLabel={null}`, which removes the "All" choice, and the page falls back to the main site.
-- Any filter on a service uses `ServicePicker` (search plus category groups), never a long `<select>`. Pass `compact`
-  in a toolbar, a group's `whole` row for "All of <category>", and `emptyIsChoice` when the empty state is a real
-  choice such as "All services".
+- Filter by service *category* (a short list) with a plain select; use `ServicePicker` (search plus category groups) wherever a
+  specific service is chosen. Never a long `<select>` of every service.
 - Filters remember each other when you change one (carry the other query params).
 - A filter made only of choices (selects, switches) applies the moment it changes: wrap it in `AutoSubmitForm`
   and give it no Apply or Check button (Staff hours coverage). A filter with a text box keeps an explicit Apply.

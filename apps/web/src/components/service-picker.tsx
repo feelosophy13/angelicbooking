@@ -5,15 +5,14 @@ import { useFieldId } from "@/components/form";
 import { cn } from "@/lib/utils";
 
 export type ServiceOption = { id: string; name: string; meta: string; /** Shown after the name, e.g. "no one here". */ note?: string | null };
-/** `whole` is an optional first row that stands for the whole group (e.g. "All of Hybrid"), for filters that accept a category. */
-export type ServiceGroup = { id: string; name: string; services: ServiceOption[]; whole?: ServiceOption };
+export type ServiceGroup = { id: string; name: string; services: ServiceOption[] };
 
 /**
  * One service out of a menu of any size: a field that opens a searchable, category-grouped list.
  * Posts the chosen id as a hidden input under `name`; with `submitOnPick` the surrounding form is
  * submitted as soon as something is picked (for pages that reload their options from the choice).
  */
-export function ServicePicker({ name, groups, value, placeholder = "Choose a service", noneLabel, submitOnPick, compact, emptyIsChoice }: {
+export function ServicePicker({ name, groups, value, placeholder = "Choose a service", noneLabel, submitOnPick }: {
   name: string;
   groups: ServiceGroup[];
   value: string | null;
@@ -21,10 +20,6 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
   /** Offer a "none" row at the top (for optional add-ons). */
   noneLabel?: string;
   submitOnPick?: boolean;
-  /** A short trigger for a toolbar, with a wider list that opens beneath it. */
-  compact?: boolean;
-  /** The empty state is a real choice ("All services"), so show it as a value rather than a grey placeholder. */
-  emptyIsChoice?: boolean;
 }) {
   const fieldId = useFieldId();
   const [open, setOpen] = useState(false);
@@ -32,17 +27,15 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const search = useRef<HTMLInputElement>(null);
-  const all = useMemo(() => groups.flatMap((g) => (g.whole ? [g.whole, ...g.services] : g.services)), [groups]);
+  const all = useMemo(() => groups.flatMap((g) => g.services), [groups]);
   const current = all.find((s) => s.id === value) ?? null;
   const needle = q.trim().toLowerCase();
   const visible = useMemo(() => {
     if (!needle) return groups;
     const out: ServiceGroup[] = [];
     for (const g of groups) {
-      const groupHit = g.name.toLowerCase().includes(needle);
-      const services = groupHit ? g.services : g.services.filter((x) => x.name.toLowerCase().includes(needle));
-      const whole = g.whole && (groupHit || g.whole.name.toLowerCase().includes(needle)) ? g.whole : undefined;
-      if (services.length || whole) out.push({ ...g, services, whole });
+      const services = g.name.toLowerCase().includes(needle) ? g.services : g.services.filter((x) => x.name.toLowerCase().includes(needle));
+      if (services.length) out.push({ ...g, services });
     }
     return out;
   }, [groups, needle]);
@@ -66,7 +59,7 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
   };
 
   return (
-    <div ref={box} className={cn("relative", compact && "w-auto min-w-[14rem] max-w-[22rem]")}>
+    <div ref={box} className="relative">
       <input ref={input} type="hidden" name={name} defaultValue={value ?? ""} />
       <button
         type="button"
@@ -74,15 +67,15 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={cn("flex w-full items-center justify-between gap-2 h-10 rounded-lg border border-stone-300 bg-white px-3 text-left text-sm text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-brand-500", compact && "!h-9")}
+        className={cn("flex w-full items-center justify-between gap-2 h-10 rounded-lg border border-stone-300 bg-white px-3 text-left text-sm text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-brand-500")}
       >
-        <span className={cn("min-w-0 truncate", !current && !emptyIsChoice && "text-stone-400")}>
+        <span className={cn("min-w-0 truncate", !current && "text-stone-400")}>
           {current ? <>{current.name}{current.meta ? <span className="text-stone-500"> · {current.meta}</span> : null}</> : placeholder}
         </span>
         <ChevronDown className="h-4 w-4 shrink-0 text-stone-400" aria-hidden />
       </button>
       {open ? (
-        <div className={cn("absolute left-0 z-30 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg", compact ? "w-[min(22rem,90vw)]" : "right-0")}>
+        <div className={cn("absolute left-0 z-30 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg", "right-0")}>
           <div className="relative border-b border-stone-100 p-2">
             <Search className="pointer-events-none absolute left-4.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" aria-hidden />
             <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a service…" aria-label="Find a service" className="h-9 w-full rounded-lg border border-stone-300 bg-white pl-8 pr-3 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-2 focus:outline-offset-0 focus:outline-brand-500" />
@@ -98,14 +91,6 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
               <li key={g.id}>
                 <p className="sticky top-0 z-10 bg-stone-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-stone-500">{g.name}</p>
                 <ul>
-                  {g.whole ? (
-                    <li role="option" aria-selected={g.whole.id === value}>
-                      <button type="button" onClick={() => pick(g.whole!.id)} className={cn("flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left font-medium hover:bg-stone-50", g.whole.id === value && "bg-brand-50 text-brand-700")}>
-                        <span className="min-w-0 truncate">{g.whole.name}</span>
-                        {g.whole.meta ? <span className="shrink-0 text-xs font-normal text-stone-500">{g.whole.meta}</span> : null}
-                      </button>
-                    </li>
-                  ) : null}
                   {g.services.map((s) => (
                     <li key={s.id} role="option" aria-selected={s.id === value}>
                       <button type="button" onClick={() => pick(s.id)} className={cn("flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left hover:bg-stone-50", s.id === value && "bg-brand-50 text-brand-700", s.note && "text-stone-400")}>

@@ -10,8 +10,7 @@ import { dateLong } from "@/lib/format";
 import { describeHours, time12 } from "@/lib/hours";
 import { buildCoverage } from "@/server/coverage";
 import { listCategories, buildTree, flattenTree } from "@/server/categories";
-import { Card, Empty, LinkButton, PageHeader } from "@/components/ui";
-import { ServicePicker, type ServiceGroup } from "@/components/service-picker";
+import { Card, Empty, LinkButton, PageHeader, Select } from "@/components/ui";
 import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { LocationFilter } from "@/components/location-filter";
 import { rowClass, rowControl, RowLink } from "@/components/row";
@@ -38,7 +37,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const weekStart = /^\d{4}-\d{2}-\d{2}$/.test(sp.week ?? "") ? mondayOf(sp.week!) : thisMonday;
   const horizon = shiftISODate(today, 90);
 
-  const { people, overrides, locations, cats, services } = await withTenant(business.id, async (tx) => {
+  const { people, overrides, locations, cats } = await withTenant(business.id, async (tx) => {
     const people = await tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName));
     const ids = people.map((p) => p.id);
     return {
@@ -48,20 +47,19 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
         : [],
       locations: await tx.select({ id: schema.locations.id, name: schema.locations.name, hours: schema.locations.hours, isDefault: schema.locations.isDefault }).from(schema.locations).orderBy(desc(schema.locations.isDefault), asc(schema.locations.name)),
       cats: await listCategories(business.id, "service"),
-      services: await tx.select({ id: schema.services.id, name: schema.services.name, categoryId: schema.services.categoryId }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
     };
   });
   const multi = locations.length > 1;
   // Hours differ by site, so coverage is always for one site: the one chosen, else the main site.
   const locationId = multi ? (locations.some((l) => l.id === sp.location) ? sp.location! : (locations.find((l) => l.isDefault)?.id ?? locations[0]!.id)) : null;
   const scope = sp.scope ?? "";
-  const serviceId = scope.startsWith("s:") && services.some((s) => s.id === scope.slice(2)) ? scope.slice(2) : null;
+  // Coverage is shown per service category (a service picker was too long to be useful).
   const categoryId = scope.startsWith("c:") && cats.some((c) => c.id === scope.slice(2)) ? scope.slice(2) : null;
-  const coverage = await buildCoverage(business, { weekStart, locationId, serviceId, categoryId });
+  const coverage = await buildCoverage(business, { weekStart, locationId, categoryId });
 
   // Query string for links, keeping the other choices.
   const qs = (over: Partial<Record<keyof SP, string | null>>) => {
-    const all: Record<keyof SP, string | null> = { week: weekStart === thisMonday ? null : weekStart, location: locationId, scope: scope || null, ...over };
+    const all: Record<keyof SP, string | null> = { week: weekStart === thisMonday ? null : weekStart, location: locationId, scope: categoryId ? `c:${categoryId}` : null, ...over };
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(all)) if (v) p.set(k, v);
     return p.toString();
@@ -71,15 +69,6 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const md = (d: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
   const weekLabel = `${md(weekStart)} – ${md(shiftISODate(weekStart, 6))}`;
   const tree = flattenTree(buildTree(cats));
-  // One group per category, named by its path ("Lash Extensions › Classic"), with a first row for the whole category.
-  const path: string[] = [];
-  const scopeGroups: ServiceGroup[] = tree.map((c) => {
-    path.length = Math.max(0, c.depth);
-    path.push(c.name);
-    return { id: c.id, name: path.join(" › "), whole: { id: `c:${c.id}`, name: `All of ${c.name}`, meta: "" }, services: services.filter((x) => x.categoryId === c.id).map((x) => ({ id: `s:${x.id}`, name: x.name, meta: "" })) };
-  });
-  const uncategorised = services.filter((x) => !x.categoryId);
-  if (uncategorised.length) scopeGroups.push({ id: "none", name: "Other", services: uncategorised.map((x) => ({ id: `s:${x.id}`, name: x.name, meta: "" })) });
   const hoursHref = (staffId: string) => (manage ? `${base}/staff/${staffId}/hours` : null);
 
   // Upcoming time off: consecutive identical dates collapse into one range per person.
@@ -113,7 +102,10 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
           <AutoSubmitForm className="flex items-center gap-2">
             {weekStart !== thisMonday ? <input type="hidden" name="week" value={weekStart} /> : null}
             {multi ? <input type="hidden" name="location" value={locationId ?? ""} /> : null}
-            <ServicePicker name="scope" groups={scopeGroups} value={scope || null} placeholder="All services" noneLabel="All services" compact emptyIsChoice />
+            <Select name="scope" defaultValue={categoryId ? `c:${categoryId}` : ""} aria-label="Service category to check coverage for" className="h-9 w-auto max-w-[16rem]">
+              <option value="">All services</option>
+              {tree.map((c) => <option key={c.id} value={`c:${c.id}`}>{"\u00a0\u00a0".repeat(Math.max(0, c.depth))}{c.name}</option>)}
+            </Select>
           </AutoSubmitForm>
         </div>
       </Card>
