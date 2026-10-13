@@ -119,6 +119,14 @@ path ("Lash Extensions › Classic"). Build its groups with `serviceGroups(busin
   credit, refund reasons, referrals, stock) is hidden while the filter is on, and a line under the date says so. The CSV exports follow
   the same filter. The value is `lib/service-scope.ts` (`parseScope`) on the way in and `serviceIdsInScope` on the server.
 
+## Calendar hover card
+
+Hovering an appointment on the calendar (or tabbing to it) shows a card after a short pause: client and phone, status, every service on the visit with who
+does it, when and what it costs, how it was booked, the deposit, "Forms due", tags and the visit's notes. Blocked time shows its reason; a class shows
+its seats. The content is built on the server (`lib/calendar-tip.ts`) and drawn on the page, beside the appointment, so the scrolling grid never clips it;
+it ignores the mouse so it cannot get in the way of dragging, and it is not shown on touch screens, where a tap opens the visit. Add new facts to
+`buildTip`, not to the card markup.
+
 ## Navigation and findability
 
 - Every page has one home in the sidebar. The sidebar, the Settings directory and the ⌘K page list are all built

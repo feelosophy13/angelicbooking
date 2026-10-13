@@ -233,6 +233,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Appointments and Reports now have the same service / category filter (Reports = sales that include it; pay, store credit, refund
       reasons, referrals and stock are hidden while it is on; CSV exports follow it). The Gallery picker offers every service and category,
       not only those with photos.
+- [x] 2026-10-13: calendar hover card on every appointment, block and class (client, phone, status, all services with staff and times, price,
+      how booked, deposit, forms due, tags, notes); content in `lib/calendar-tip.ts`, tested.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.

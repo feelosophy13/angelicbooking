@@ -5,6 +5,8 @@ import { TZDate } from "@date-fns/tz";
 import { cn } from "@/lib/utils";
 import { moveAppointmentItem, quickStatus } from "./actions";
 import { Check, LogIn } from "lucide-react";
+import type { CalTip } from "@/lib/calendar-tip";
+import { CalendarTip, type AnchorRect } from "./calendar-tooltip";
 
 export type CalColumn = {
   key: string;
@@ -30,6 +32,8 @@ export type CalItem = {
   href: string;
   /** Segments of a multi-part service share a group key so they render as one card. */
   groupKey: string;
+  /** What the hover card shows. */
+  tip: CalTip;
 };
 
 const DEFAULT_START_H = 7;
@@ -152,6 +156,14 @@ export function CalendarGrid(props: {
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The hover card: shown after a short pause over an appointment (mouse or keyboard focus), never while dragging or on touch.
+  const [hover, setHover] = useState<{ tip: CalTip; anchor: AnchorRect } | null>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTip = () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); hoverTimer.current = null; setHover(null); };
+  const showTip = (el: HTMLElement, tip: CalTip, delay: number) => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => { const r = el.getBoundingClientRect(); setHover({ tip, anchor: { left: r.left, right: r.right, top: r.top, bottom: r.bottom } }); }, delay);
+  };
   const [pending, startTransition] = useTransition();
   const colWidth = useRef(0);
   const nowMin = useNowMinutes(props.timeZone);
@@ -171,6 +183,12 @@ export function CalendarGrid(props: {
     for (const [k, cards] of cardsByCol) m.set(k, layoutLanes(cards));
     return m;
   }, [cardsByCol]);
+
+  // Scrolling moves the appointment out from under the card, so drop it.
+  useEffect(() => {
+    window.addEventListener("scroll", hideTip, true);
+    return () => { window.removeEventListener("scroll", hideTip, true); if (hoverTimer.current) clearTimeout(hoverTimer.current); };
+  }, []);
 
   // Scroll so the working day (or now) is in view on first paint.
   useEffect(() => {
@@ -346,12 +364,15 @@ export function CalendarGrid(props: {
                       key={card.key}
                       role="button"
                       tabIndex={0}
-                      onPointerDown={draggable ? (e) => onPointerDown(e, card) : undefined}
+                      onPointerDown={(e) => { hideTip(); if (draggable) onPointerDown(e, card); }}
+                      onMouseEnter={(e) => { if (lastPointer.current !== "touch" && !dragRef.current) showTip(e.currentTarget, card.first.tip, 350); }}
+                      onMouseLeave={hideTip}
+                      onFocus={(e) => showTip(e.currentTarget, card.first.tip, 0)}
+                      onBlur={hideTip}
                       onClick={() => {
                         if (!draggable || lastPointer.current === "touch") router.push(card.first.href);
                       }}
                       onKeyDown={(e) => e.key === "Enter" && router.push(card.first.href)}
-                      title={`${card.first.title} · ${card.first.subtitle} · ${fmt(card.startMin)}–${fmt(card.endMin)}`}
                       data-card
                       className={cn("group absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", dragging && "z-30 ring-2 ring-brand-500 shadow-lg")}
                       style={{
@@ -418,6 +439,7 @@ export function CalendarGrid(props: {
         </div>
       </div>
       {props.canEdit ? <p className="hidden text-xs text-stone-500 md:block">Drag an appointment to move it. Click to open it.</p> : null}
+      {hover && !drag?.moved ? <CalendarTip tip={hover.tip} anchor={hover.anchor} fmt={fmt} /> : null}
     </div>
   );
 }

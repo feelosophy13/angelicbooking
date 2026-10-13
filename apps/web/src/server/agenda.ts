@@ -21,6 +21,14 @@ export type AgendaItem = {
   locationId?: string | null;
   /** "block" for blocked time (lunch, late start); "visit" otherwise. */
   kind?: string;
+  // What the calendar tooltip shows besides the basics.
+  clientPhone?: string | null;
+  clientTags?: string[] | null;
+  source?: string | null;
+  depositCents?: number | null;
+  depositStatus?: string | null;
+  /** Class sessions: seats taken and the size of the group. */
+  seats?: { booked: number; capacity: number } | null;
 };
 
 /** Active staff plus every appointment item starting within [fromDate, fromDate + days). */
@@ -42,6 +50,11 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
           priceCents: schema.appointmentItems.priceCents,
           firstName: schema.clients.firstName,
           lastName: schema.clients.lastName,
+          clientPhone: schema.clients.phone,
+          clientTags: schema.clients.tags,
+          source: schema.appointments.source,
+          depositCents: schema.appointments.depositCents,
+          depositStatus: schema.appointments.depositStatus,
           notes: schema.appointments.notes,
           locationId: schema.appointments.locationId,
           kind: schema.appointments.kind,
@@ -86,6 +99,7 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
         notes: s.notes,
         classSessionId: s.id,
         locationId: s.locationId,
+        seats: { booked: Number(s.booked), capacity: s.capacity },
       })),
     ].sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
     return { staff: staffRows, items: agenda, locations: locIndex };

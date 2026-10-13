@@ -21,6 +21,7 @@ import { sql } from "drizzle-orm";
 import { can } from "@angelic/core";
 import { asc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
+import { buildTip, type CalTip, type TipItem } from "@/lib/calendar-tip";
 
 function startOfWeek(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -100,6 +101,22 @@ export default async function CalendarPage({
   const startHour = Math.max(0, Math.min(7, ...minutesSeen.map((m) => Math.floor(m / 60))));
   const endHour = Math.min(24, Math.max(21, ...minutesSeen.map((m) => Math.ceil(m / 60))));
   const staffById = new Map(staff.map((s) => [s.id, s]));
+  // One hover card per appointment: every service on the visit, who does it, the client, and anything to know.
+  const tipRows = new Map<string, TipItem[]>();
+  for (const i of items) {
+    const row: TipItem = {
+      appointmentId: i.appointmentId, serviceName: i.serviceName, staffName: staffById.get(i.staffId)?.displayName ?? "", startMin: minuteOf(i.startAt),
+      endMin: minuteOf(i.endAt) <= minuteOf(i.startAt) ? 24 * 60 : minuteOf(i.endAt), priceCents: i.priceCents, status: i.status, kind: i.kind, clientName: i.clientName,
+      clientPhone: i.clientPhone, clientTags: i.clientTags, source: i.source, depositCents: i.depositCents, depositStatus: i.depositStatus, notes: i.notes,
+      classSessionId: i.classSessionId, seats: i.seats,
+    };
+    tipRows.set(i.appointmentId, [...(tipRows.get(i.appointmentId) ?? []), row]);
+  }
+  const tipCache = new Map<string, CalTip>();
+  const tipFor = (appointmentId: string) => {
+    if (!tipCache.has(appointmentId)) tipCache.set(appointmentId, buildTip(tipRows.get(appointmentId)!, { money: (c) => money(c, business.currency), formsDue: missingForms.has(appointmentId) }));
+    return tipCache.get(appointmentId)!;
+  };
   const calItems: CalItem[] = items
     .filter((i) => !staffFilter || i.staffId === staffFilter)
     .map((i) => ({
@@ -115,6 +132,7 @@ export default async function CalendarPage({
       color: staffById.get(i.staffId)?.color ?? "#6366f1",
       href: i.classSessionId ? `/app/${slug}/classes/${i.classSessionId}` : `/app/${slug}/appointments/${i.appointmentId}`,
       groupKey: `${i.appointmentId}:${i.serviceName.replace(" (finish)", "")}:${i.staffId}:${instantToISODate(i.startAt, tz)}`,
+      tip: tipFor(i.appointmentId),
     }));
 
   let setup: SetupStep[] = [];
