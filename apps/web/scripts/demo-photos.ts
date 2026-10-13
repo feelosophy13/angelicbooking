@@ -29,18 +29,21 @@ export async function seedDemoPhotos(businessId: string, actorUserId: string, co
   process.env.R2_SECRET_ACCESS_KEY = "";
   const recent = await withTenant(businessId, (tx) =>
     tx
-      .select({ id: schema.appointments.id, serviceId: schema.appointmentItems.serviceId, staffId: schema.appointmentItems.staffId })
+      .select({ id: schema.appointments.id, serviceId: schema.appointmentItems.serviceId, staffId: schema.appointmentItems.staffId, startAt: schema.appointmentItems.startAt })
       .from(schema.appointments)
       .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id))
       .where(and(eq(schema.appointments.kind, "visit"), eq(schema.appointments.status, "completed")))
       .orderBy(desc(schema.appointmentItems.startAt))
-      .limit(count * 3),
+      .limit(600),
   );
+  // Spread the pairs across the whole history instead of bunching them on the latest days.
+  const step = Math.max(1, Math.floor(recent.length / count));
+  const picks = recent.filter((_, i) => i % step === 0);
   let made = 0;
   const seen = new Set<string>();
-  for (const [i, a] of recent.entries()) {
+  for (const a of picks) {
     if (made >= count) break;
-    if (!a.serviceId || seen.has(a.id) || i % 2 === 1) continue; // every other visit, one pair per appointment
+    if (!a.serviceId || seen.has(a.id)) continue; // one pair per appointment
     seen.add(a.id);
     const hue = (made * 47) % 360;
     const mk = async (phase: "before" | "after", n: number) => {
@@ -51,6 +54,8 @@ export async function seedDemoPhotos(businessId: string, actorUserId: string, co
     await mk("before", made % 5 === 0 ? 2 : 1);
     if (made % 6 !== 5) await mk("after", made % 4 === 0 ? 2 : 1); // a few visits only have the before so far
     await setPairDetails({ businessId, appointmentId: a.id, serviceId: a.serviceId, staffId: a.staffId, tags: TAGS[made % TAGS.length]!, shareOk: made % 3 === 0, actorUserId });
+    // Real photos are taken during the visit; give the demo ones the visit's date and time.
+    await withTenant(businessId, (tx) => tx.update(schema.visitPhotos).set({ takenAt: a.startAt }).where(eq(schema.visitPhotos.appointmentId, a.id)));
     made++;
   }
   return made;
