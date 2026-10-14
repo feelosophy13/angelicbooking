@@ -77,8 +77,8 @@ export function PaidBookingForm(props: {
           <Field label="Last name"><Input name="lastName" autoComplete="family-name" defaultValue={d?.lastName} /></Field>
         </div>
         <Field label="Mobile number" required><Input name="phone" type="tel" required autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
-        <Field label="Email"><Input name="email" type="email" autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
-      <p className="-mt-2 text-xs text-stone-500">We text your confirmation to this number.</p>
+        <p className="-mt-2 text-xs text-stone-500">We text your confirmation to this number.</p>
+        <Field label="Email" required><Input name="email" type="email" required autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
         {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
         <Field label="Anything we should know?"><Textarea name="notes" rows={4} /></Field>
         {props.referrals && !d ? <Field label="Referral code (optional)"><Input name="referralCode" placeholder="From a friend who comes here" className="uppercase placeholder:normal-case" /></Field> : null}

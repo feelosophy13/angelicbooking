@@ -34,6 +34,7 @@ function parseBooking(raw: Record<string, unknown>): { d: BookingFields } | { er
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form" };
   const d = parsed.data;
   if (!d.phone) return { error: "Enter your mobile number so we can confirm your booking." };
+  if (!d.email) return { error: "Enter your email so we can send your confirmation." };
   if (!normalizePhone(d.phone)) return { error: "Enter a valid mobile number." };
   return { d };
 }
