@@ -51,6 +51,31 @@ export const suppliers = pgTable(
   (t) => [index("suppliers_business_idx").on(t.businessId, t.name)],
 );
 
+/**
+ * A product that comes in options (sizes, shades). The group holds what the options share: name, category, kind, photo, description,
+ * tax, the online store and the usual supplier. Each option is a products row (its own price, cost, SKU, barcode, stock and levels)
+ * whose `name`, category and the rest are kept equal to the group's, so everything that works on a product works on an option.
+ */
+export const productGroups = pgTable(
+  "product_groups",
+  {
+    id: id(),
+    businessId: businessId(),
+    name: text("name").notNull(),
+    description: text("description"),
+    imageUrl: text("image_url"),
+    categoryId: text("category_id").references(() => productCategories.id, { onDelete: "set null" }),
+    kind: text("kind").notNull().default("retail"),
+    taxable: boolean("taxable").notNull().default(true),
+    sellOnline: boolean("sell_online").notNull().default(false),
+    supplierId: text("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("product_groups_business_idx").on(t.businessId, t.name)],
+);
+
 export const products = pgTable(
   "products",
   {
@@ -61,8 +86,9 @@ export const products = pgTable(
     sku: text("sku"),
     // What a scanner reads (EAN/UPC); the register and receiving find a product by it.
     barcode: text("barcode"),
-    // Sold in options (a size, a shade): products with the same name and a label here are shown together.
+    // Sold in options (a size, a shade): the option's label ("250 ml", "7N / 50 ml"), and the group it belongs to.
     variantLabel: text("variant_label"),
+    groupId: text("group_id").references(() => productGroups.id, { onDelete: "set null" }),
     // retail: sold to clients. backbar: used up in services (stock is tracked, never sold).
     kind: text("kind").notNull().default("retail"),
     priceCents: integer("price_cents").notNull(),
@@ -83,7 +109,7 @@ export const products = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("products_business_idx").on(t.businessId, t.name), index("products_barcode_idx").on(t.businessId, t.barcode)],
+  (t) => [index("products_business_idx").on(t.businessId, t.name), index("products_barcode_idx").on(t.businessId, t.barcode), index("products_group_idx").on(t.groupId)],
 );
 
 /** More barcodes for one product (a case, a different pack size, a re-labelled item). A scan of one adds `unitsPerScan` units. products.barcode stays the main one. */

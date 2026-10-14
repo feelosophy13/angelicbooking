@@ -18,6 +18,7 @@ import { appUrl } from "@/lib/stripe";
 import { isManualReason, locationAlerts, manualDelta, productLabel, SHRINKAGE_REASONS, stockStatus, suggestedOrderQty, daysOfStock, worstStatus, type LocationAlert, type ManualReason, type ParsedProductRow, type StockStatus } from "@/lib/inventory";
 import { ensureCategory } from "./categories";
 import { cleanCode, matchProduct } from "@/lib/scan";
+import { findGroupByName } from "./product-groups";
 
 export class InventoryError extends Error {}
 
@@ -628,7 +629,7 @@ export async function scannableProducts(businessId: string) {
   return withTenant(businessId, async (tx) => {
     const [rows, extras] = await Promise.all([
       tx
-        .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, sku: schema.products.sku, category: schema.productCategories.name, onHand: schema.products.stockQty, tracked: schema.products.trackStock })
+        .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, sku: schema.products.sku, category: schema.productCategories.name, onHand: schema.products.stockQty, tracked: schema.products.trackStock, groupId: schema.products.groupId })
         .from(schema.products)
         .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
         .where(eq(schema.products.active, true))
@@ -637,7 +638,7 @@ export async function scannableProducts(businessId: string) {
     ]);
     const codes = new Map<string, { code: string; units: number }[]>();
     for (const e of extras) codes.set(e.productId, [...(codes.get(e.productId) ?? []), { code: e.code, units: e.unitsPerScan }]);
-    return rows.map((r) => ({ id: r.id, label: productLabel(r), barcode: r.barcode, sku: r.sku, category: r.category, onHand: r.onHand, tracked: r.tracked, codes: codes.get(r.id) ?? [] }));
+    return rows.map((r) => ({ id: r.id, label: productLabel(r), barcode: r.barcode, sku: r.sku, category: r.category, onHand: r.onHand, tracked: r.tracked, codes: codes.get(r.id) ?? [], groupId: r.groupId, groupName: r.groupId ? r.name : null }));
   });
 }
 
@@ -1006,9 +1007,18 @@ export async function importProducts(input: { businessId: string; rows: ParsedPr
       }
       const categoryId = r.category ? await ensureCategory(input.businessId, "product", r.category) : undefined;
       const supId = await supplierId(r.supplier);
+      // A row with an option ("7N", "50 ml") belongs to the product of that name: found, or made now.
+      let group = r.variantLabel ? await findGroupByName(tx, r.name) : null;
+      if (r.variantLabel && !group) {
+        group = (await tx
+          .insert(schema.productGroups)
+          .values({ businessId: input.businessId, name: r.name, categoryId: categoryId ?? null, kind: r.retail === false ? "backbar" : "retail", taxable: r.taxable ?? true, sellOnline: r.sellOnline ?? false, supplierId: supId ?? null })
+          .returning())[0] ?? null;
+      }
       const set = {
-        name: r.name,
+        name: group?.name ?? r.name,
         ...(r.variantLabel ? { variantLabel: r.variantLabel } : {}),
+        ...(group ? { groupId: group.id } : {}),
         ...(categoryId !== undefined ? { categoryId } : {}),
         ...(r.sku ? { sku: r.sku } : {}),
         ...(r.barcode ? { barcode: r.barcode } : {}),

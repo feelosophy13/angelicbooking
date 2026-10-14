@@ -10,7 +10,7 @@ import { Card, FormPage, Input, LinkButton, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { Disclosure } from "@/components/disclosure";
 import { ProductFields } from "@/components/product-fields";
-import { addProductBarcode, adjustStock, deleteProductBarcode, transferStockAction, updateProduct } from "../actions";
+import { addProductBarcode, adjustStock, deleteProductBarcode, makeProductOptions, transferStockAction, updateProduct } from "../actions";
 import { listExtraBarcodes, listLocations, listSuppliers, productMovements, stockByLocation } from "@/server/inventory";
 import { MANUAL_REASONS, movementReason, productLabel, stockStatus } from "@/lib/inventory";
 
@@ -135,12 +135,23 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
       ) : null}
       {canEdit ? (
         <>
-          <p className="-mt-2 mb-3 text-sm"><Link href={`/app/${slug}/products/new?from=${product.id}`} className="text-brand-700 underline">Add another option of this product</Link> <span className="text-stone-500">(another size or shade, with its own stock)</span></p>
+          {product.groupId ? (
+            <p className="mb-3 rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-700">This is one option of <Link href={`/app/${slug}/products/group/${product.groupId}`} className="font-medium text-brand-700 underline">{product.name}</Link>. Its name, category, photo, description and online-store settings are shared, so change those there. Its own price, cost, codes and stock are below.</p>
+          ) : (
+            <Disclosure title="Comes in sizes or shades?" hint="turn it into a product with options" className="mb-4">
+              <ActionForm action={makeProductOptions}>
+                <input type="hidden" name="slug" value={slug} />
+                <input type="hidden" name="productId" value={product.id} />
+                <Field label="What is this one called?" name="label" hint={'It becomes the first option. For example "50 ml" or "7N". You add the others next.'}><Input name="label" placeholder="50 ml" /></Field>
+                <SubmitButton size="sm" variant="secondary" pendingText="Working…">Add options</SubmitButton>
+              </ActionForm>
+            </Disclosure>
+          )}
           <ActionForm action={updateProduct}>
             <input type="hidden" name="slug" value={slug} />
             <input type="hidden" name="productId" value={product.id} />
-            <ProductFields product={product} categories={categories} suppliers={suppliers} currency={business.currency} />
-            <SubmitButton pendingText="Saving…">Save product</SubmitButton>
+            <ProductFields mode={product.groupId ? "option" : "plain"} product={product} categories={categories} suppliers={suppliers} currency={business.currency} />
+            <SubmitButton pendingText="Saving…">Save {product.groupId ? "option" : "product"}</SubmitButton>
           </ActionForm>
         </>
       ) : (

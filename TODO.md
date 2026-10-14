@@ -291,6 +291,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       **A scan that matches nothing can make a new product**: name, sold or back-bar, category, price and cost, created tracked with the scanned barcode, counted into the delivery. Log usage now beeps (and buzzes on a code
       it doesn't know, with a message), reads other barcodes, and has the camera. Camera reading was not tried with a real camera here (the preview blocks it); the reader's setup is tested against drawn EAN-13 and UPC-A
       barcodes. Not built: torch/zoom controls, scanning on the register's own add-product box beyond the existing barcode field.
+- [x] 2026-10-14: Real product options (migration 0073). A product can come in sizes or shades: a parent (`product_groups`) holds the shared name, category, kind, photo, description, tax, online store and supplier; each option is its own product (label,
+      price, cost, SKU, barcode, stock, low-stock and order-up-to levels). New product: type the options one per line, and a second list to make every combination (7N / 50 ml…). A product on its own can become one ("Comes in sizes
+      or shades?" on its page). The group's page edits what they share (every option follows), lists the options, adds more (duplicates skipped; a new option takes the first option's price), and hides or shows them all. The product list folds
+      options under their product (price range, total stock, worst standing; expand to see each); Stock groups them under a heading with their total; the online shop shows one card per product with its options beneath;
+      an unknown scan can become a new size or shade of a product; spreadsheet rows with an Option join (or create) the product of that name. Existing products that were already "same name + label" were grouped by the migration.
+      Not built: option-specific photos, a size-picker dropdown in the shop (options are listed), per-option supplier shown on the group page, deleting a group (hide it instead).
 - [x] 2026-10-14: Service form timing in plain words: Hands-on time, Waiting (client waits, you're free), Then finish, Clean-up, with a live line saying what the numbers do to the calendar and a warning when a wait has no finish
       time (the booking rules only free the stylist during a wait when a finishing block follows it).
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos

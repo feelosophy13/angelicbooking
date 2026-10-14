@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import { eq, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { readProductRows, PRODUCT_CSV_HEADERS } from "../src/lib/inventory";
+import { addOptions, convertToGroup, createGroup, getGroup, GroupError, quickCreateOption, setGroupActive, updateGroup } from "../src/server/product-groups";
+import { optionCombos, parseOptionList } from "../src/lib/variants";
 import {
   applyCount, cancelOrder, createPurchaseOrder, decrementStockForSale, findProductByCode, getPurchaseOrder, listLocations, lowStock, markOrdered, onlineAvailability, receiveOrder,
   recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy, undoMovement, togglePin, pinnedProductIds, supplyCosts, recentUsage, attachBarcode, scannableProducts, quickCreateProduct, findProductByCode, listExtraBarcodes, removeExtraBarcode,
@@ -243,6 +245,60 @@ const back = await quickCreateProduct({ businessId: B, name: "Scanned Newcomer",
 assert.equal((await fresh(back.id)).priceCents, 0);
 await withTenant(B, (tx) => tx.delete(schema.products).where(eq(schema.products.name, "Scanned Newcomer")));
 ok("a product made from a scan is tracked from the start with the scanned barcode; back-bar has no price; a taken code, no price on a retail item or no name is refused");
+
+console.log("Products with options");
+const clean = async () => withTenant(B, async (tx) => { await tx.delete(schema.products).where(sql`${schema.products.name} like 'Check Tint%'`); await tx.delete(schema.productGroups).where(sql`${schema.productGroups.name} like 'Check Tint%'`); });
+await clean();
+const labels = optionCombos(parseOptionList("7N\n8N\n9N"), parseOptionList("50 ml, 100 ml"));
+assert.equal(labels.length, 6);
+const { group, productIds } = await createGroup({ businessId: B, shared: { name: "Check Tint", description: "A tint", imageUrl: null, categoryId: null, kind: "retail", taxable: true, sellOnline: true, supplierId: null }, labels, defaults: { priceCents: 1850, costCents: 600, lowStockThreshold: 2, trackStock: true } });
+assert.equal(productIds.length, 6);
+let g = (await getGroup(B, group.id))!;
+assert.deepEqual([...new Set(g.options.map((o) => o.name))], ["Check Tint"]);
+assert.ok(g.options.every((o) => o.priceCents === 1850 && o.groupId === group.id && o.trackStock && o.sellOnline && o.lowStockThreshold === 2));
+await assert.rejects(() => createGroup({ businessId: B, shared: { name: "Check Tint X", description: null, imageUrl: null, categoryId: null, kind: "retail", taxable: true, sellOnline: false, supplierId: null }, labels: ["a"], defaults: { priceCents: 0 } }), GroupError);
+ok("a product made with options becomes a group with one option per label, all sharing its details");
+const more = await addOptions({ businessId: B, groupId: group.id, labels: ["7n / 50 ml", "10N / 50 ml"], defaults: {} });
+assert.deepEqual([more.added, more.skipped.length], [1, 1]);
+g = (await getGroup(B, group.id))!;
+assert.equal(g.options.find((o) => o.variantLabel === "10N / 50 ml")!.priceCents, 1850);
+await assert.rejects(() => addOptions({ businessId: B, groupId: group.id, labels: ["8N / 50 ml"], defaults: {} }), GroupError);
+ok("adding options skips ones it already has (ignoring case) and a new option takes the first option's price");
+const cat = (await withTenant(B, (tx) => tx.select().from(schema.productCategories).limit(1)))[0]!;
+await updateGroup({ businessId: B, groupId: group.id, shared: { name: "Check Tint Renamed", categoryId: cat.id, description: "New words", taxable: false } });
+g = (await getGroup(B, group.id))!;
+assert.ok(g.options.every((o) => o.name === "Check Tint Renamed" && o.categoryId === cat.id && o.description === "New words" && o.taxable === false));
+await setGroupActive({ businessId: B, groupId: group.id, active: false });
+g = (await getGroup(B, group.id))!;
+assert.ok(g.options.every((o) => !o.active) && !g.group.active);
+await updateGroup({ businessId: B, groupId: group.id, shared: { kind: "backbar" } });
+g = (await getGroup(B, group.id))!;
+assert.ok(g.options.every((o) => o.kind === "backbar" && o.priceCents === 0 && o.trackStock && !o.sellOnline));
+ok("changing what the options share changes every option; hiding hides them all; back-bar drops the price and online sale");
+await updateGroup({ businessId: B, groupId: group.id, shared: { kind: "retail", name: "Check Tint" } });
+const lone = await withTenant(B, async (tx) => (await tx.insert(schema.products).values({ businessId: B, name: "Check Tint Solo", priceCents: 999, kind: "retail" }).returning())[0]!);
+const solo = await convertToGroup({ businessId: B, productId: lone.id, label: "Standard" });
+assert.equal((await fresh(lone.id)).groupId, solo.id);
+assert.equal((await fresh(lone.id)).variantLabel, "Standard");
+await addOptions({ businessId: B, groupId: solo.id, labels: ["Large"], defaults: {} });
+assert.equal((await getGroup(B, solo.id))!.options.find((o) => o.variantLabel === "Large")!.priceCents, 999);
+await assert.rejects(() => convertToGroup({ businessId: B, productId: lone.id, label: "x" }), GroupError);
+ok("a product on its own becomes the first option of a new group, and more options follow its price");
+const viaScan = await quickCreateOption({ businessId: B, groupId: solo.id, label: "XL", priceCents: null, costCents: null, code: "555000999666", actorUserId: actor });
+const scanned = await fresh(viaScan.id);
+assert.deepEqual([scanned.groupId, scanned.name, scanned.variantLabel, scanned.barcode, scanned.priceCents, scanned.trackStock], [solo.id, "Check Tint Solo", "XL", "555000999666", 999, true]);
+await assert.rejects(() => quickCreateOption({ businessId: B, groupId: solo.id, label: "xl", priceCents: null, costCents: null, code: "555000999667", actorUserId: actor }), GroupError);
+await assert.rejects(() => quickCreateOption({ businessId: B, groupId: solo.id, label: "XXL", priceCents: null, costCents: null, code: "555000999666", actorUserId: actor }), GroupError);
+ok("a scan can make a new option in a group (price from the first option), refusing a repeated label or a taken code");
+const imp = await importProducts({ businessId: B, rows: readProductRows([["Name", "Option", "Price", "Barcode"], ["Check Tint Imported", "Red", "12.00", "555000999701"], ["Check Tint Imported", "Blue", "12.00", "555000999702"]]).rows, dryRun: false, actorUserId: actor });
+assert.deepEqual([imp.created, imp.updated], [2, 0]);
+const impProducts = await withTenant(B, (tx) => tx.select().from(schema.products).where(eq(schema.products.name, "Check Tint Imported")));
+assert.equal(new Set(impProducts.map((p) => p.groupId)).size, 1);
+assert.ok(impProducts.every((p) => p.groupId));
+const reimport = await importProducts({ businessId: B, rows: readProductRows([["Name", "Option", "Barcode", "Price"], ["Check Tint Imported", "Red", "555000999701", "13.00"]]).rows, dryRun: false, actorUserId: actor });
+assert.deepEqual([reimport.created, reimport.updated], [0, 1]);
+ok("importing rows with an Option joins (or makes) one group per name, and a repeat updates instead of duplicating");
+await withTenant(B, async (tx) => { await tx.delete(schema.products).where(sql`${schema.products.name} like 'Check Tint%'`); await tx.delete(schema.productGroups).where(sql`${schema.productGroups.name} like 'Check Tint%'`); });
 
 console.log("Per-location alerts");
 const closeSaleAt = async (loc: string, lines: (typeof schema.saleLines.$inferInsert)[]) =>

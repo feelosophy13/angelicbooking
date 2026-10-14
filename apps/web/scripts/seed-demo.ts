@@ -274,12 +274,16 @@ const PRODUCTS: SeedProduct[] = [
   { cat: "Skin care", name: "Gentle Cleanser", price: 2600, cost: 1000, qty: 12, sold: 15, supplier: "Pure Skin Distributors", low: 4, upTo: 20 },
   { cat: "Skin care", name: "LAVIEN Centella Toner", price: 3800, cost: 1700, qty: 9, sold: 11, supplier: "Pure Skin Distributors", low: 3, upTo: 15 },
   { cat: "Skin care", name: "LAVIEN Collagen Essence", price: 5200, cost: 2400, qty: 7, sold: 8, supplier: "Pure Skin Distributors", low: 3, upTo: 12 },
+  { cat: "Brow care", name: "Brow Tint", label: "Black", price: 1800, cost: 600, qty: 9, sold: 10, supplier: "Pure Skin Distributors", low: 3, upTo: 12 },
+  { cat: "Brow care", name: "Brow Tint", label: "Dark Brown", price: 1800, cost: 600, qty: 6, sold: 14, supplier: "Pure Skin Distributors", low: 3, upTo: 12 },
+  { cat: "Brow care", name: "Brow Tint", label: "Auburn", price: 1800, cost: 600, qty: 2, sold: 7, supplier: "Pure Skin Distributors", low: 3, upTo: 12 },
+  { cat: "Brow care", name: "Brow Tint", label: "Blonde", price: 1800, cost: 600, qty: 5, sold: 3, supplier: "Pure Skin Distributors", low: 3, upTo: 12 },
   { cat: "Tools & Gifts", name: "Silk Sleep Mask", price: 2800, cost: 1200, qty: 6, sold: 3, supplier: "Salon Essentials Wholesale", low: 2, upTo: 8, written: ["theft", 1] },
   { cat: "Tools & Gifts", name: "Silk Pillowcase", price: 4500, cost: 2000, qty: 5, sold: 0, supplier: "Salon Essentials Wholesale", low: 2, upTo: 6 },
   { cat: "Tools & Gifts", name: "Luxe Gift Box", price: 7500, cost: 3500, qty: 3, sold: 0, supplier: "Salon Essentials Wholesale", low: 2, upTo: 6 },
   { cat: "Back-bar", name: "Lash Adhesive (pro)", price: 0, cost: 2800, qty: 3, sold: 18, supplier: "Luxe Lash Supply", low: 2, upTo: 8, backbar: true },
-  { cat: "Back-bar", name: "Classic lash trays", label: "0.15", price: 0, cost: 1500, qty: 10, sold: 30, supplier: "Luxe Lash Supply", low: 4, upTo: 16, backbar: true, recv: { qty: 20, po: 1, daysAgo: 30 } },
-  { cat: "Back-bar", name: "Volume lash trays", label: "0.07", price: 0, cost: 1800, qty: 4, sold: 26, supplier: "Luxe Lash Supply", low: 4, upTo: 16, backbar: true },
+  { cat: "Back-bar", name: "Lash trays", label: "Classic 0.15", price: 0, cost: 1500, qty: 10, sold: 30, supplier: "Luxe Lash Supply", low: 4, upTo: 16, backbar: true, recv: { qty: 20, po: 1, daysAgo: 30 } },
+  { cat: "Back-bar", name: "Lash trays", label: "Volume 0.07", price: 0, cost: 1800, qty: 4, sold: 26, supplier: "Luxe Lash Supply", low: 4, upTo: 16, backbar: true },
   { cat: "Back-bar", name: "Eye gel patches (pair)", price: 0, cost: 40, qty: 90, sold: 170, supplier: "Salon Essentials Wholesale", low: 60, upTo: 400, backbar: true },
   { cat: "Back-bar", name: "Facial mask sheets", price: 0, cost: 150, qty: 36, sold: 40, supplier: "Pure Skin Distributors", low: 15, upTo: 80, backbar: true },
   { cat: "Back-bar", name: "Disposable applicators", price: 0, cost: 10, qty: 150, sold: 120, supplier: "Salon Essentials Wholesale", low: 50, upTo: 300, backbar: true },
@@ -610,6 +614,7 @@ async function main() {
     const supplierId = (n: string) => supplierRows.find((r) => r.name === n)!.id;
     const siteQty = (q: number) => (multi ? [Math.ceil(q * 0.6), q - Math.ceil(q * 0.6)] : [q]);
     const pRows: { id: string; spec: SeedProduct }[] = [];
+    const groupIds = new Map<string, string>(); // products sold in options share one group
     // Completed visits, so some of the supplies used can be logged against a visit (as staff do from the appointment page).
     const doneVisits = await tx
       .select({ id: schema.appointments.id, locationId: schema.appointments.locationId, startAt: schema.appointmentItems.startAt, service: schema.appointmentItems.serviceName })
@@ -630,8 +635,17 @@ async function main() {
         const [row] = await tx.insert(schema.productCategories).values({ businessId, name: p.cat, sortOrder: prodCats.size }).returning({ id: schema.productCategories.id });
         prodCats.set(p.cat, row!.id);
       }
+      let groupId: string | null = null;
+      if (p.label) {
+        groupId = groupIds.get(p.name) ?? null;
+        if (!groupId) {
+          const [g] = await tx.insert(schema.productGroups).values({ businessId, name: p.name, categoryId: prodCats.get(p.cat)!, kind: p.backbar ? "backbar" : "retail", taxable: true, sellOnline: !p.backbar, supplierId: supplierId(p.supplier), description: p.backbar ? null : "Salon-grade, recommended by our team.", imageUrl }).returning({ id: schema.productGroups.id });
+          groupId = g!.id;
+          groupIds.set(p.name, groupId);
+        }
+      }
       const [row] = await tx.insert(schema.products).values({
-        businessId, categoryId: prodCats.get(p.cat)!, name: p.name, variantLabel: p.label ?? null, kind: p.backbar ? "backbar" : "retail",
+        businessId, categoryId: prodCats.get(p.cat)!, name: p.name, variantLabel: p.label ?? null, groupId, kind: p.backbar ? "backbar" : "retail",
         sku: `${p.backbar ? "BB" : "LX"}-${String(100 + i)}`, barcode: `8801234${String(10000 + i * 37).padStart(6, "0")}`.slice(0, 13), priceCents: p.price, costCents: p.cost, taxable: true, sellOnline: !p.backbar, trackStock: true, stockQty: p.qty,
         lowStockThreshold: p.low, reorderUpTo: p.upTo ?? null, supplierId: supplierId(p.supplier), description: p.backbar ? null : "Salon-grade, recommended by our team.", imageUrl,
       }).returning({ id: schema.products.id });
@@ -658,9 +672,9 @@ async function main() {
     // Orders to suppliers: one received a month ago, one partly received, one on its way, one drafted from the reorder list.
     const prod = (n: string, label?: string) => pRows.find((r) => r.spec.name === n && (r.spec.label ?? null) === (label ?? null))!;
     const orderPlan: { number: number; supplier: string; status: "received" | "partial" | "ordered" | "draft"; orderedAgo: number | null; receivedAgo?: number; expectedIn?: number; reference?: string; lines: [ReturnType<typeof prod>, number, number][] }[] = [
-      { number: 1, supplier: "Luxe Lash Supply", status: "received", orderedAgo: 34, receivedAgo: 30, reference: "INV-55102", lines: [[prod("Lash Cleanser Foam", "50 ml"), 24, 24], [prod("Classic lash trays", "0.15"), 20, 20]] },
+      { number: 1, supplier: "Luxe Lash Supply", status: "received", orderedAgo: 34, receivedAgo: 30, reference: "INV-55102", lines: [[prod("Lash Cleanser Foam", "50 ml"), 24, 24], [prod("Lash trays", "Classic 0.15"), 20, 20]] },
       { number: 2, supplier: "Pure Skin Distributors", status: "partial", orderedAgo: 12, expectedIn: 2, reference: "SO-77881", lines: [[prod("Daily SPF 50", "100 ml"), 12, 6], [prod("Vitamin C Serum"), 10, 0]] },
-      { number: 3, supplier: "Luxe Lash Supply", status: "ordered", orderedAgo: 2, expectedIn: 3, lines: [[prod("Lash Sealant"), 18, 0], [prod("Lash Growth Serum"), 8, 0], [prod("Volume lash trays", "0.07"), 12, 0], [prod("Lash Adhesive (pro)"), 6, 0]] },
+      { number: 3, supplier: "Luxe Lash Supply", status: "ordered", orderedAgo: 2, expectedIn: 3, lines: [[prod("Lash Sealant"), 18, 0], [prod("Lash Growth Serum"), 8, 0], [prod("Lash trays", "Volume 0.07"), 12, 0], [prod("Lash Adhesive (pro)"), 6, 0]] },
       { number: 4, supplier: "Salon Essentials Wholesale", status: "draft", orderedAgo: null, lines: [[prod("Eye gel patches (pair)"), 300, 0], [prod("Disposable applicators"), 150, 0]] },
     ];
     for (const o of orderPlan) {

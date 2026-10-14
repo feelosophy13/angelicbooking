@@ -17,7 +17,7 @@ export default async function ShopPage({ params, searchParams }: { params: Promi
   const location = locations.length > 1 ? (locations.find((l) => l.id === locParam) ?? locations.find((l) => l.isDefault) ?? locations[0] ?? null) : null;
   const ready = await storeReady(business, location?.id);
   const [rows, me] = await Promise.all([storeProducts(business.id, location?.id), business.clientAccountsEnabled ? currentClient(business) : Promise.resolve(null)]);
-  const products = rows.map(({ p, category, available }) => ({ id: p.id, name: productLabel(p), priceCents: p.priceCents, description: p.description, imageUrl: p.imageUrl, category, stockQty: available ?? 0, trackStock: available != null }));
+  const products = rows.map(({ p, category, available }) => ({ id: p.id, name: productLabel(p), groupId: p.groupId, optionLabel: p.variantLabel, groupName: p.groupId ? p.name : null, priceCents: p.priceCents, description: p.description, imageUrl: p.imageUrl, category, stockQty: available ?? 0, trackStock: available != null }));
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">

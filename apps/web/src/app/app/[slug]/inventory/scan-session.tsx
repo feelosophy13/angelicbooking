@@ -2,12 +2,12 @@
 import { useMemo, useReducer, useRef, useState, useTransition } from "react";
 import { Camera, Minus, Plus, ScanBarcode, Volume2, VolumeX, X } from "lucide-react";
 import { addScan, countDifference, matchScan, orderProgress, setQty, totalUnits, type OrderLineInfo, type ScanLine } from "@/lib/scan";
-import { attachBarcodeAction, countScannedAction, createProductFromScanAction, receiveOrderScannedAction, receiveScannedAction, type CreatedProduct, type ScanResult } from "./actions";
+import { attachBarcodeAction, countScannedAction, createProductFromScanAction, createOptionFromScanAction, receiveOrderScannedAction, receiveScannedAction, type CreatedProduct, type ScanResult } from "./actions";
 import { CameraScanner } from "@/components/camera-scanner";
 import { useBeeps } from "@/components/use-beeps";
 import { cn } from "@/lib/utils";
 
-export type ScanItem = { id: string; label: string; barcode: string | null; sku: string | null; category: string | null; onHand: number; tracked: boolean; codes: { code: string; units: number }[] };
+export type ScanItem = { id: string; label: string; barcode: string | null; sku: string | null; category: string | null; onHand: number; tracked: boolean; codes: { code: string; units: number }[]; groupId?: string | null; groupName?: string | null };
 type Mode = "receive" | "count" | "order";
 type Order = { id: string; number: number; supplier: string | null; reference: string; lines: OrderLineInfo[] };
 
@@ -41,7 +41,9 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
   const [camera, setCamera] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [unknown, setUnknown] = useState<string | null>(null);
-  const [tab, setTab] = useState<"existing" | "new">("existing");
+  const [tab, setTab] = useState<"existing" | "new" | "option">("existing");
+  const [optionOf, setOptionOf] = useState<{ id: string; name: string } | null>(null);
+  const [optForm, setOptForm] = useState({ label: "", price: "", cost: "" });
   const [pick, setPick] = useState("");
   const [chosen, setChosen] = useState<ScanItem | null>(null);
   const [packUnits, setPackUnits] = useState("1");
@@ -68,6 +70,8 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
       setProblem(null);
       setPackUnits("1");
       setForm({ name: "", kind: "retail", price: "", cost: "", categoryId: "" });
+      setOptionOf(null);
+      setOptForm({ label: "", price: "", cost: "" });
       return;
     }
     beeps.play(true);
@@ -133,6 +137,26 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
     });
   };
 
+  const groupChoices = useMemo(() => {
+    const n = pick.trim().toLowerCase();
+    const seen = new Map<string, { id: string; name: string; options: number }>();
+    for (const p of products) if (p.groupId && p.groupName) seen.set(p.groupId, { id: p.groupId, name: p.groupName, options: (seen.get(p.groupId)?.options ?? 0) + 1 });
+    return [...seen.values()].filter((g) => !n || g.name.toLowerCase().includes(n)).slice(0, 6);
+  }, [pick, products]);
+  const createOption = () => {
+    if (!unknown || !optionOf) return;
+    start(async () => {
+      const r = await createOptionFromScanAction({ slug, code: unknown, groupId: optionOf.id, ...optForm });
+      if (!r.ok) return setProblem(r.error);
+      const p: CreatedProduct = r.product;
+      beeps.play(true);
+      setCreated((cur) => [...cur, { ...p, groupId: optionOf.id, groupName: optionOf.name }]);
+      dispatch({ t: "scan", id: p.id });
+      setStatus({ ok: true, text: `${p.label} created and added` });
+      closeUnknown();
+    });
+  };
+
   const candidates = useMemo(() => {
     const n = pick.trim().toLowerCase();
     return (n ? products.filter((p) => `${p.label} ${p.category ?? ""}`.toLowerCase().includes(n)) : products).slice(0, 6);
@@ -189,8 +213,8 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
             <button type="button" onClick={closeUnknown} aria-label="Skip this scan" className="rounded p-1 text-amber-900 hover:bg-amber-100"><X className="h-4 w-4" /></button>
           </div>
           <div className="flex gap-1 rounded-lg bg-amber-100 p-0.5 text-sm" role="tablist">
-            {([["existing", "It's a product I have"], ["new", "It's a new product"]] as const).map(([k, label]) => (
-              <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => { setTab(k); setProblem(null); }} className={cn("flex-1 rounded-md px-3 py-1.5", tab === k ? "bg-white font-medium shadow-sm" : "text-amber-900")}>{label}</button>
+            {([["existing", "A product I have"], ["option", "A new size or shade"], ["new", "A new product"]] as const).map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => { setTab(k); setProblem(null); setPick(""); setOptionOf(null); }} className={cn("flex-1 rounded-md px-3 py-1.5", tab === k ? "bg-white font-medium shadow-sm" : "text-amber-900")}>{label}</button>
             ))}
           </div>
 
@@ -224,6 +248,35 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
                 <button type="button" disabled={busy} onClick={() => attach(chosen, "replace")} className="underline">Replace the old barcode instead</button>
                 <button type="button" onClick={() => { setChosen(null); setProblem(null); }} className="underline">Pick a different product</button>
               </div>
+            </div>
+          ) : null}
+
+          {tab === "option" ? (
+            <div className="space-y-2">
+              {!optionOf ? (
+                <>
+                  <input autoFocus value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Which product is it a size or shade of?" aria-label="Find the product this is another option of" className={field} />
+                  <ul className="divide-y divide-amber-100 overflow-hidden rounded-lg border border-amber-200 bg-white">
+                    {groupChoices.map((g) => (
+                      <li key={g.id}><button type="button" onClick={() => setOptionOf({ id: g.id, name: g.name })} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-stone-50"><span className="min-w-0 truncate">{g.name}</span><span className="shrink-0 text-xs text-stone-500">{g.options} option{g.options === 1 ? "" : "s"}</span></button></li>
+                    ))}
+                    {groupChoices.length === 0 ? <li className="px-3 py-2.5 text-sm text-stone-500">No product with options matches. For a product that doesn't have options yet, open it and choose "Comes in sizes or shades?".</li> : null}
+                  </ul>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm">A new option of <b>{optionOf.name}</b></p>
+                  <input autoFocus value={optForm.label} onChange={(e) => setOptForm({ ...optForm, label: e.target.value })} placeholder="What is it? A size or shade, e.g. 100 ml or 9N" aria-label="Name of the new option" className={field} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={optForm.price} onChange={(e) => setOptForm({ ...optForm, price: e.target.value })} inputMode="decimal" placeholder="Price (blank: same as its first option)" aria-label="Price" className={field} />
+                    <input value={optForm.cost} onChange={(e) => setOptForm({ ...optForm, cost: e.target.value })} inputMode="decimal" placeholder="Cost (optional)" aria-label="Cost per unit" className={field} />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button type="button" disabled={busy || !optForm.label.trim()} onClick={createOption} className="h-10 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white disabled:opacity-60">Create and add this one</button>
+                    <button type="button" onClick={() => { setOptionOf(null); setProblem(null); }} className="text-xs underline">Pick a different product</button>
+                  </div>
+                </>
+              )}
             </div>
           ) : null}
 

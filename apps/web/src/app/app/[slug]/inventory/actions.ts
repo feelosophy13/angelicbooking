@@ -7,6 +7,7 @@ import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
+import { GroupError, quickCreateOption } from "@/server/product-groups";
 import { productLabel } from "@/lib/inventory";
 import { setFlash } from "@/lib/flash";
 import { applyCount, attachBarcode, quickCreateProduct, trackedProductIds, logUsage, togglePin, undoMovement, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
@@ -320,6 +321,26 @@ export async function createProductFromScanAction(input: { slug: string; code: s
     return { ok: true, product };
   } catch (e) {
     if (e instanceof InventoryError) return { ok: false, error: e.message };
+    throw e;
+  }
+}
+
+/** A scan that matched nothing, and it is a new size or shade of a product that already has options: make that option with the scanned barcode. */
+export async function createOptionFromScanAction(input: { slug: string; code: string; groupId: string; label: string; price: string; cost: string }): Promise<{ ok: true; product: CreatedProduct } | { ok: false; error: string }> {
+  const ctx = await requireAction(input.slug, "inventory.manage");
+  const cents = (v: string) => {
+    const t = v.trim().replace("$", "");
+    return t === "" ? null : /^\d{1,7}(\.\d{1,2})?$/.test(t) ? Math.round(Number(t) * 100) : NaN;
+  };
+  const price = cents(input.price);
+  const cost = cents(input.cost);
+  if (Number.isNaN(price) || Number.isNaN(cost)) return { ok: false, error: "Enter amounts like 24 or 24.50." };
+  try {
+    const product = await quickCreateOption({ businessId: ctx.business.id, groupId: input.groupId, label: input.label, priceCents: price, costCents: cost, code: input.code, actorUserId: ctx.user.id });
+    refresh(input.slug);
+    return { ok: true, product };
+  } catch (e) {
+    if (e instanceof GroupError) return { ok: false, error: e.message };
     throw e;
   }
 }

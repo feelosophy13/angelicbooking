@@ -512,6 +512,13 @@
       "when": 1792011853130,
       "tag": "0072_product_barcodes",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1792012965314,
+      "tag": "0073_product_groups",
+      "breakpoints": true
     }
   ]
 }

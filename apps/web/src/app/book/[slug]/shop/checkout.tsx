@@ -6,7 +6,7 @@ import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-
 import { Field, Input, Notice, Textarea } from "@/components/ui";
 import { finishOrderAction, startOrderAction, type StartOrderResult } from "./actions";
 
-export type CartProduct = { id: string; name: string; priceCents: number; description: string | null; imageUrl: string | null; category: string | null; stockQty: number; trackStock: boolean };
+export type CartProduct = { id: string; name: string; groupId?: string | null; groupName?: string | null; optionLabel?: string | null; priceCents: number; description: string | null; imageUrl: string | null; category: string | null; stockQty: number; trackStock: boolean };
 type Started = Exclude<StartOrderResult, { error: string }>;
 
 function money(c: number, currency: string) {
@@ -36,6 +36,35 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
   const shipping = method === "ship" ? props.shippingFlatCents : 0;
   const stripePromise = useMemo(() => (started ? loadStripe(props.publishableKey, { stripeAccount: started.accountId }) : null), [props.publishableKey, started]);
   const canShip = props.shippingFlatCents > 0 && !isGift;
+  // A product with options is one entry with its options under it; anything else stands alone.
+  const shelf = useMemo(() => {
+    const out: ({ kind: "single"; p: CartProduct } | { kind: "group"; id: string; name: string; first: CartProduct; options: CartProduct[] })[] = [];
+    const at = new Map<string, number>();
+    for (const p of props.products) {
+      if (!p.groupId) {
+        out.push({ kind: "single", p });
+        continue;
+      }
+      const i = at.get(p.groupId);
+      if (i === undefined) {
+        at.set(p.groupId, out.length);
+        out.push({ kind: "group", id: p.groupId, name: p.groupName ?? p.name, first: p, options: [p] });
+      } else (out[i] as { options: CartProduct[] }).options.push(p);
+    }
+    return out;
+  }, [props.products]);
+  const stockNote = (p: CartProduct) => (p.trackStock && p.stockQty <= 0 ? <span className="ml-2 text-xs text-red-600">Sold out</span> : p.trackStock && p.stockQty <= 3 ? <span className="ml-2 text-xs text-amber-700">Only {p.stockQty} left</span> : null);
+  const Stepper = ({ p }: { p: CartProduct }) => {
+    const n = qty[p.id] ?? 0;
+    if (p.trackStock && p.stockQty <= 0) return null;
+    return (
+      <div className="flex items-center gap-1">
+        <button type="button" aria-label={`Less ${p.name}`} onClick={() => setQty({ ...qty, [p.id]: Math.max(0, n - 1) })} className="h-8 w-8 rounded-lg border border-stone-300 bg-white">−</button>
+        <span className="w-6 text-center text-sm">{n}</span>
+        <button type="button" aria-label={`More ${p.name}`} onClick={() => setQty({ ...qty, [p.id]: Math.min(p.trackStock ? p.stockQty : 20, n + 1) })} className="h-8 w-8 rounded-lg border border-stone-300 bg-white">+</button>
+      </div>
+    );
+  };
 
   if (started) {
     return (
@@ -78,27 +107,41 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
         </div>
       ) : (
         <ul className="divide-y divide-stone-200 overflow-hidden rounded-xl border border-stone-200 bg-white">
-          {props.products.map((p) => {
-            const n = qty[p.id] ?? 0;
-            const out = p.trackStock && p.stockQty <= 0;
-            return (
-              <li key={p.id} className="flex items-center gap-3 px-4 py-3">
-                {p.imageUrl ? <img src={p.imageUrl} alt="" className="h-14 w-14 rounded-lg border border-stone-200 object-cover" /> : null}
+          {shelf.map((entry) =>
+            entry.kind === "single" ? (
+              <li key={entry.p.id} className="flex items-center gap-3 px-4 py-3">
+                {entry.p.imageUrl ? <img src={entry.p.imageUrl} alt="" className="h-14 w-14 rounded-lg border border-stone-200 object-cover" /> : null}
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium">{p.name}</p>
-                  {p.description ? <p className="text-xs text-stone-500">{p.description}</p> : null}
-                  <p className="text-sm">{money(p.priceCents, props.currency)}{out ? <span className="ml-2 text-xs text-red-600">Sold out</span> : p.trackStock && p.stockQty <= 3 ? <span className="ml-2 text-xs text-amber-700">Only {p.stockQty} left</span> : null}</p>
+                  <p className="font-medium">{entry.p.name}</p>
+                  {entry.p.description ? <p className="text-xs text-stone-500">{entry.p.description}</p> : null}
+                  <p className="text-sm">{money(entry.p.priceCents, props.currency)}{stockNote(entry.p)}</p>
                 </div>
-                {!out ? (
-                  <div className="flex items-center gap-1">
-                    <button type="button" aria-label="Less" onClick={() => setQty({ ...qty, [p.id]: Math.max(0, n - 1) })} className="h-8 w-8 rounded-lg border border-stone-300 bg-white">−</button>
-                    <span className="w-6 text-center text-sm">{n}</span>
-                    <button type="button" aria-label="More" onClick={() => setQty({ ...qty, [p.id]: Math.min(p.trackStock ? p.stockQty : 20, n + 1) })} className="h-8 w-8 rounded-lg border border-stone-300 bg-white">+</button>
-                  </div>
-                ) : null}
+                <Stepper p={entry.p} />
               </li>
-            );
-          })}
+            ) : (
+              <li key={entry.id} className="px-4 py-3">
+                <div className="flex items-start gap-3">
+                  {entry.first.imageUrl ? <img src={entry.first.imageUrl} alt="" className="h-14 w-14 rounded-lg border border-stone-200 object-cover" /> : null}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">{entry.name}</p>
+                    {entry.first.description ? <p className="text-xs text-stone-500">{entry.first.description}</p> : null}
+                  </div>
+                </div>
+                <ul className="mt-2 divide-y divide-stone-100 rounded-lg border border-stone-100">
+                  {entry.options.map((p) => (
+                    <li key={p.id} className="flex items-center gap-3 px-3 py-2">
+                      <div className="min-w-0 flex-1 text-sm">
+                        <span className="font-medium">{p.optionLabel}</span>
+                        <span className="ml-2">{money(p.priceCents, props.currency)}</span>
+                        {stockNote(p)}
+                      </div>
+                      <Stepper p={p} />
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ),
+          )}
         </ul>
       )}
 

@@ -26,7 +26,7 @@ export default async function NewProductPage({ params, searchParams }: { params:
     <FormPage title={source ? `New option of ${source.name}` : "New product"} backHref={`/app/${slug}/products`} backLabel="Products">
       <ActionForm action={createProduct}>
         <input type="hidden" name="slug" value={slug} />
-        <ProductFields product={start} categories={categories} suppliers={suppliers} currency={business.currency} />
+        <ProductFields mode="new" product={start} categories={categories} suppliers={suppliers} currency={business.currency} />
         <SubmitButton pendingText="Saving…">Create product</SubmitButton>
       </ActionForm>
     </FormPage>

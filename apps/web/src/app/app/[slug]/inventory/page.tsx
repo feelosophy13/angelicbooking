@@ -86,10 +86,18 @@ export default async function InventoryStockPage({ params, searchParams }: { par
       ) : (
         <Card>
           <ul className="divide-y divide-stone-100">
-            {shown.map((i) => {
+            {shown.map((i, idx) => {
               const qty = qtyOf(i);
+              // A product with options gets a small heading above its options, with what they add up to.
+              const opts = i.groupId ? shown.filter((x) => x.groupId === i.groupId) : [];
+              const heading = i.groupId && shown[idx - 1]?.groupId !== i.groupId ? (
+                <li key={`h-${i.groupId}`} className="flex items-center justify-between gap-3 bg-stone-50 px-4 py-1.5 text-xs font-semibold text-stone-600">
+                  <Link href={`/app/${slug}/products/group/${i.groupId}`} className="hover:underline">{i.name}</Link>
+                  <span className="font-normal text-stone-500">{opts.length} option{opts.length === 1 ? "" : "s"} · {opts.reduce((a, x) => a + qtyOf(x), 0)} in all</span>
+                </li>
+              ) : null;
               const [badgeText, badgeCls] = BADGE[standing(i)];
-              return (
+              return [heading, (
                 <li key={i.id} className={`${rowClass} flex items-center gap-3 px-4 py-2.5`}>
                   <div className="min-w-0 flex-1">
                     <RowLink href={`/app/${slug}/products/${i.id}`} className="font-medium">{productLabel(i)}</RowLink>
@@ -111,7 +119,7 @@ export default async function InventoryStockPage({ params, searchParams }: { par
                   <span className={`w-14 shrink-0 text-right text-base font-semibold tabular-nums ${qty < 0 ? "text-red-700" : ""}`}>{qty}</span>
                   <span className="hidden w-24 shrink-0 text-right text-sm text-stone-600 tabular-nums sm:block">{i.costCents ? money(qty * i.costCents) : "—"}</span>
                 </li>
-              );
+              )];
             })}
           </ul>
         </Card>
