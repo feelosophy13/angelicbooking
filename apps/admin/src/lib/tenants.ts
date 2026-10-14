@@ -2,6 +2,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { adminDb } from "./db";
 import { requireAdmin } from "./admin";
+import { revive } from "./rows";
 import { effectivePriceBook, monthlyBill, type Bill, type PriceBook } from "@angelic/core/platform-pricing";
 import { getAllOverrides, getDefaultPriceBook, getOverrides, type Overrides } from "./pricing";
 
@@ -66,24 +67,26 @@ const SELECT = sql`
   from businesses b
 `;
 
+const TENANT_DATES = ["trialEndsAt", "currentPeriodEnd", "createdAt", "lastAppointmentAt", "suspendedAt", "lastLoginAt"] as const;
+
 export async function listTenants(): Promise<TenantRow[]> {
   await requireAdmin();
-  return (await adminDb().execute(sql`${SELECT} order by b.created_at desc`)) as unknown as TenantRow[];
+  return revive<TenantRow>(await adminDb().execute(sql`${SELECT} order by b.created_at desc`), TENANT_DATES);
 }
 
 export async function getTenant(id: string): Promise<TenantRow | null> {
   await requireAdmin();
-  const rows = (await adminDb().execute(sql`${SELECT} where b.id = ${id}`)) as unknown as TenantRow[];
+  const rows = revive<TenantRow>(await adminDb().execute(sql`${SELECT} where b.id = ${id}`), TENANT_DATES);
   return rows[0] ?? null;
 }
 
 export async function listMembers(id: string): Promise<{ name: string; email: string; role: string; joinedAt: Date }[]> {
   await requireAdmin();
-  return (await adminDb().execute(sql`
+  return revive<{ name: string; email: string; role: string; joinedAt: Date }>(await adminDb().execute(sql`
     select u.name, u.email, m.role, m.created_at as "joinedAt"
     from member m join "user" u on u.id = m.user_id
     where m.organization_id = ${id} order by m.created_at
-  `)) as unknown as { name: string; email: string; role: string; joinedAt: Date }[];
+  `), ["joinedAt"]);
 }
 
 function withBill(t: TenantRow, defaults: PriceBook, overrides: Overrides | undefined): TenantWithBill {

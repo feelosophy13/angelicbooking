@@ -2,6 +2,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { adminDb } from "./db";
 import { requireAdmin } from "./admin";
+import { revive } from "./rows";
 
 export type PlatformHealth = {
   queuedOverdue: number;
@@ -30,8 +31,8 @@ export async function platformHealth(): Promise<PlatformHealth> {
     oldestQueuedMinutes: o?.oldest ?? null,
     failed24h: failed as unknown as { channel: string; n: number }[],
     topErrors: errors as unknown as { error: string; n: number }[],
-    webhookErrors: hooks as unknown as PlatformHealth["webhookErrors"],
+    webhookErrors: revive<PlatformHealth["webhookErrors"][number]>(hooks, ["at"]),
     webhookUnprocessed: (unprocessed as unknown as { n: number }[])[0]?.n ?? 0,
-    signups: signups as unknown as { week: Date; n: number }[],
+    signups: revive<{ week: Date; n: number }>(signups, ["week"]),
   };
 }
