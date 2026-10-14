@@ -1326,7 +1326,6 @@ export const TENANT_TABLES = [
   "inbound_messages",
   "stock_movements",
   "product_stock",
-  "service_products",
   "suppliers",
   "purchase_orders",
   "purchase_order_lines",

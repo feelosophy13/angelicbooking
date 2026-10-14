@@ -40,7 +40,7 @@ describe("inventory rules", () => {
     expect(calls.length).toBeGreaterThan(5);
     // Everything needs inventory.manage, except logging supplies used, which is for whoever did the work.
     const others = calls.filter((c) => !c.includes('"inventory.manage"'));
-    expect(others).toEqual(['requireAction(d.slug, "inventory.log")']);
+    expect(others).toEqual(['requireAction(d.data.slug, "inventory.log")']);
   });
 });
 

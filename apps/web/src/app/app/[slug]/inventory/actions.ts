@@ -6,6 +6,7 @@ import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
+import { productLabel } from "@/lib/inventory";
 import { setFlash } from "@/lib/flash";
 import { applyCount, logUsage, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
 
@@ -188,11 +189,23 @@ export const receiveOrderAction = formAction(z.object({ slug: z.string(), orderI
   return r.done ? `Received ${r.units} unit${r.units === 1 ? "" : "s"}. The order is complete.` : `Received ${r.units} unit${r.units === 1 ? "" : "s"}. The rest is still on order.`;
 });
 
-// ---- Log supplies used (outside a particular visit) ----
+// ---- Log supplies used ----
 
-export const logUsageAction = formAction(z.object({ slug: z.string(), productId: f.id(), locationId: z.string().optional(), qty: f.int(1, 100000), note: f.optional(120) }), async (d) => {
-  const ctx = await requireAction(d.slug, "inventory.log");
-  await wrap("qty", () => logUsage({ businessId: ctx.business.id, locationId: d.locationId || null, items: [{ productId: d.productId, qty: d.qty }], note: d.note, actorUserId: ctx.user.id }));
-  refresh(d.slug);
-  return "Logged";
-});
+/** One product, one click: a stylist logs what they used. Goes against the chosen location; may leave a count negative rather than stop the work. */
+export async function logUsageQuick(formData: FormData) {
+  const d = z.object({ slug: z.string(), productId: f.id(), locationId: z.string().optional(), qty: z.coerce.number().int("Whole units only.").min(1, "Enter how many.").max(1000) }).safeParse(Object.fromEntries(formData));
+  if (!d.success) {
+    await setFlash(d.error.issues[0]?.message ?? "Check the amount.", "error");
+    return;
+  }
+  const ctx = await requireAction(d.data.slug, "inventory.log");
+  try {
+    await logUsage({ businessId: ctx.business.id, locationId: d.data.locationId || null, items: [{ productId: d.data.productId, qty: d.data.qty }], note: null, actorUserId: ctx.user.id });
+    const p = await withTenant(ctx.business.id, (tx) => tx.query.products.findFirst({ where: eq(schema.products.id, d.data.productId), columns: { name: true, variantLabel: true } }));
+    await setFlash(`Logged ${d.data.qty} × ${p ? productLabel(p) : "product"}`, "success");
+  } catch (e) {
+    if (e instanceof InventoryError) await setFlash(e.message, "error");
+    else throw e;
+  }
+  refresh(d.data.slug);
+}

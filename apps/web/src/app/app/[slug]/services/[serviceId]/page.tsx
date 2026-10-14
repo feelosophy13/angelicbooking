@@ -6,7 +6,6 @@ import { requireAction } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
 import { FormPage } from "@/components/ui";
 import { PricesByStylist } from "./prices-by-stylist";
-import { ProductsUsed } from "./products-used";
 import { ActionForm, SubmitButton } from "@/components/form";
 import { ServiceFields } from "@/components/service-fields";
 import { updateService } from "../actions";
@@ -40,7 +39,6 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
       </ActionForm>
     </FormPage>
     <PricesByStylist slug={slug} businessId={business.id} currency={business.currency} service={service} />
-    <ProductsUsed slug={slug} businessId={business.id} serviceId={service.id} />
     </>
   );
 }

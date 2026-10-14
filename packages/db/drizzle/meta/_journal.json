@@ -491,6 +491,13 @@
       "when": 1791943413316,
       "tag": "0069_supplies_log",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1792003665399,
+      "tag": "0070_drop_service_products",
+      "breakpoints": true
     }
   ]
 }

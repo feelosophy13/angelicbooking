@@ -7,7 +7,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { readProductRows, PRODUCT_CSV_HEADERS } from "../src/lib/inventory";
 import {
   applyCount, cancelOrder, createPurchaseOrder, decrementStockForSale, findProductByCode, getPurchaseOrder, listLocations, lowStock, markOrdered, onlineAvailability, receiveOrder,
-  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, setServiceUsage, inventoryReport, importProducts, exportProducts, lowStockCount, copyServiceUsage, logUsage, undoUsage, visitSupplies, productUsage,
+  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy,
 } from "../src/server/inventory";
 
 const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, "demo-twosites") });
@@ -67,27 +67,19 @@ const same = await applyCount({ businessId: B, locationId: main, counts: [{ prod
 assert.equal(same.changed, 0);
 ok("a count corrects what differs and leaves what matches");
 
-console.log("Sale: stock out, back-bar use, refund does not restock, put back on the shelf");
+console.log("Sale: stock out, refund does not restock, put back on the shelf");
 const serum = await product("Lash Growth Serum");
-const adhesive = await product("Lash Adhesive (pro)");
-const service = (await withTenant(B, (tx) => tx.select().from(schema.services))).find((s) => /classic/i.test(s.name))!;
-await setServiceUsage({ businessId: B, serviceId: service.id, productId: adhesive.id, quantity: 2, mode: "auto" });
 const serumBefore = await at(serum.id, second);
-const adhesiveBefore = await at(adhesive.id, second);
 const sale = await withTenant(B, async (tx) => {
   const rows = await tx.execute<{ n: number }>(sql`select next_sale_number(${B}) as n`);
   const [s] = await tx.insert(schema.sales).values({ businessId: B, number: Number(rows[0]!.n), locationId: second, status: "paid", subtotalCents: 1000, totalCents: 1000, paidCents: 1000, closedAt: new Date() }).returning();
-  await tx.insert(schema.saleLines).values([
-    { businessId: B, saleId: s!.id, kind: "product", productId: serum.id, name: serum.name, quantity: 2, unitCents: 500, amountCents: 1000 },
-    { businessId: B, saleId: s!.id, kind: "service", serviceId: service.id, name: service.name, quantity: 1, unitCents: 0, amountCents: 0 },
-  ]);
+  await tx.insert(schema.saleLines).values({ businessId: B, saleId: s!.id, kind: "product", productId: serum.id, name: serum.name, quantity: 2, unitCents: 500, amountCents: 1000 });
   await decrementStockForSale(tx, B, s!.id);
   await decrementStockForSale(tx, B, s!.id); // closing twice changes nothing more
   return s!;
 });
 assert.equal(await at(serum.id, second), serumBefore - 2);
-assert.equal(await at(adhesive.id, second), adhesiveBefore - 2);
-ok("closing a sale takes the products and the service's back-bar use off the sale's location, once");
+ok("closing a sale takes the products off the sale's location, once");
 await withTenant(B, (tx) => tx.update(schema.sales).set({ status: "refunded", refundedCents: 1000 }).where(eq(schema.sales.id, sale.id)));
 assert.equal(await at(serum.id, second), serumBefore - 2);
 ok("a refund leaves the stock alone");
@@ -147,19 +139,9 @@ await assert.rejects(() => cancelOrder({ businessId: B, id: po.id, actorUserId: 
 ok("an order is received in two parts, stock and cost follow, and a finished order can't be cancelled");
 assert.ok(Array.isArray(sugBefore));
 
-console.log("Supplies: automatic vs logged by staff");
+console.log("Supplies logged by staff");
 const t1 = await product("Eye gel patches (pair)");
-const svcLog = (await withTenant(B, (tx) => tx.select().from(schema.services))).find((x) => /classic/i.test(x.name))!;
-await setServiceUsage({ businessId: B, serviceId: svcLog.id, productId: t1.id, quantity: 2, mode: "log" });
 const t1Before = await at(t1.id, second);
-await withTenant(B, async (tx) => {
-  const rows = await tx.execute<{ n: number }>(sql`select next_sale_number(${B}) as n`);
-  const [sl] = await tx.insert(schema.sales).values({ businessId: B, number: Number(rows[0]!.n), locationId: second, status: "paid", subtotalCents: 100, totalCents: 100, paidCents: 100, closedAt: new Date() }).returning();
-  await tx.insert(schema.saleLines).values({ businessId: B, saleId: sl!.id, kind: "service", serviceId: svcLog.id, name: svcLog.name, quantity: 1, unitCents: 0, amountCents: 0 });
-  await decrementStockForSale(tx, B, sl!.id);
-});
-assert.equal(await at(t1.id, second), t1Before);
-ok("a product set to 'staff log it' is not taken off when the service is rung up");
 const appt = (await withTenant(B, (tx) => tx.select().from(schema.appointments).where(eq(schema.appointments.kind, "visit")).limit(1)))[0]!;
 await withTenant(B, (tx) => tx.update(schema.appointments).set({ locationId: second }).where(eq(schema.appointments.id, appt.id)));
 await withTenant(B, (tx) => tx.delete(schema.stockMovements).where(eq(schema.stockMovements.appointmentId, appt.id)));
@@ -182,29 +164,13 @@ const row = rep0.costSplit.find((c) => c.productId === t1.id)!;
 assert.ok(row.usedUnits >= 2);
 await withTenant(B, (tx) => tx.update(schema.products).set({ costCents: t1.costCents }).where(eq(schema.products.id, t1.id)));
 ok("each movement keeps the cost when it happened, so later price changes don't rewrite history");
-const toner2 = await product("Gentle Cleanser");
-await setServiceUsage({ businessId: B, serviceId: svcLog.id, productId: toner2.id, quantity: 1, mode: "log" });
-assert.ok((await productUsage(B, toner2.id)).some((u) => u.serviceId === svcLog.id && u.mode === "log"));
 const repSplit = await inventoryReport(B, 90);
 assert.equal(repSplit.soldCostCents + repSplit.usedCostCents, repSplit.costSplit.reduce((a, r) => a + r.soldCostCents + r.usedCostCents, 0));
-ok("a retail product can also be used in a service, and the report separates sold from used");
+ok("the report separates what was sold from what was used up");
 
-console.log("Copy a service's list");
-const [srcSvc, dstA, dstB] = (await withTenant(B, (tx) => tx.select().from(schema.services))).filter((x) => /classic|volume/i.test(x.name)).slice(0, 3);
-await setServiceUsage({ businessId: B, serviceId: srcSvc!.id, productId: t1.id, quantity: 3, mode: "log" });
-await withTenant(B, (tx) => tx.delete(schema.serviceProducts).where(eq(schema.serviceProducts.serviceId, dstA!.id)));
-await setServiceUsage({ businessId: B, serviceId: dstA!.id, productId: t1.id, quantity: 9, mode: "auto" });
-const kept = await copyServiceUsage({ businessId: B, fromServiceId: srcSvc!.id, toServiceIds: [dstA!.id, dstB!.id, srcSvc!.id], replace: false });
-assert.equal(kept, 2);
-const rowsA = await withTenant(B, (tx) => tx.select().from(schema.serviceProducts).where(eq(schema.serviceProducts.serviceId, dstA!.id)));
-assert.equal(rowsA.find((r) => r.productId === t1.id)!.quantity, 9);
-assert.ok(rowsA.length > 1);
-ok("copying adds what's missing and keeps what a service already has");
-await copyServiceUsage({ businessId: B, fromServiceId: srcSvc!.id, toServiceIds: [dstA!.id], replace: true });
-const rowsA2 = await withTenant(B, (tx) => tx.select().from(schema.serviceProducts).where(eq(schema.serviceProducts.serviceId, dstA!.id)));
-assert.equal(rowsA2.find((r) => r.productId === t1.id)!.quantity, 3);
-await assert.rejects(() => copyServiceUsage({ businessId: B, fromServiceId: srcSvc!.id, toServiceIds: [], replace: false }), InventoryError);
-ok("replacing makes the other list match; copying to nobody is refused");
+const mineList = await recentlyLoggedBy(B, actor);
+assert.equal(mineList[0], t1.id);
+ok("a person's most recently logged product comes first");
 
 console.log("Per-location alerts");
 const closeSaleAt = async (loc: string, lines: (typeof schema.saleLines.$inferInsert)[]) =>
@@ -232,12 +198,10 @@ ok("the reorder suggestion is for that location, so the order is delivered there
 const adhesiveP = await product("Lash Adhesive (pro)");
 await applyCount({ businessId: B, locationId: main, counts: [{ productId: adhesiveP.id, counted: 20 }], note: null, actorUserId: actor });
 await applyCount({ businessId: B, locationId: second, counts: [{ productId: adhesiveP.id, counted: 2 }], note: null, actorUserId: actor });
-const svc = (await withTenant(B, (tx) => tx.select().from(schema.services))).find((x) => /classic/i.test(x.name))!;
-await setServiceUsage({ businessId: B, serviceId: svc.id, productId: adhesiveP.id, quantity: 2, mode: "auto" });
-await closeSaleAt(second, [{ businessId: B, saleId: "", kind: "service", serviceId: svc.id, name: svc.name, quantity: 1, unitCents: 0, amountCents: 0 }]);
+await logUsage({ businessId: B, locationId: second, items: [{ productId: adhesiveP.id, qty: 2 }], note: null, actorUserId: actor });
 item = await ov(adhesiveP.id);
 assert.deepEqual(item.alerts.map((a) => [a.locationId, a.status]), [[second, "out"]]);
-ok("back-bar products used up by services alert at the location where the services were done");
+ok("back-bar products used up alert at the location where staff logged them");
 const pillow = await product("Silk Pillowcase");
 await applyCount({ businessId: B, locationId: second, counts: [{ productId: pillow.id, counted: 0 }], note: null, actorUserId: actor });
 await applyCount({ businessId: B, locationId: main, counts: [{ productId: pillow.id, counted: 5 }], note: null, actorUserId: actor });

@@ -9,7 +9,6 @@ import { ensureCategory } from "@/server/categories";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { setServiceLocations } from "@/server/locations";
-import { copyServiceUsage, InventoryError, setServiceUsage } from "@/server/inventory";
 import { deleteFileByUrl, FileError, uploadedImageFrom } from "@/lib/files";
 import { applyServiceTerms, parseMinutesField, parsePriceField, TermError } from "@/server/stylist-pricing";
 
@@ -168,34 +167,4 @@ export async function saveServiceStylistTerms(formData: FormData) {
   }
   await setFlash("Prices by stylist saved");
   revalidatePath(`/app/${slug}/services/${serviceId}`);
-}
-
-/** Add a product to a service's "Products used", change its amount or how it is counted, or take it off. Each change is saved as it is made. */
-export async function setServiceProduct(formData: FormData) {
-  const d = z.object({ slug: z.string(), serviceId: z.string().min(1), productId: z.string().min(1, "Choose a product."), quantity: z.coerce.number().int("Whole units only.").min(1, "Use at least 1. To stop using it, press Remove.").max(1000).default(1), mode: z.enum(["auto", "log"]).optional() }).safeParse(Object.fromEntries(formData));
-  if (!d.success) {
-    await setFlash(d.error.issues[0]?.message ?? "Check the amount.", "error");
-    return;
-  }
-  const ctx = await requireAction(d.data.slug, "services.manage");
-  const remove = !!formData.get("remove");
-  await setServiceUsage({ businessId: ctx.business.id, serviceId: d.data.serviceId, productId: d.data.productId, quantity: remove ? 0 : d.data.quantity, mode: d.data.mode });
-  await setFlash(remove ? "Removed" : "Saved", "success");
-  revalidatePath(`/app/${d.data.slug}/services/${d.data.serviceId}`);
-}
-
-/** Give other services the same products used. */
-export async function copyServiceProducts(formData: FormData) {
-  const slug = String(formData.get("slug"));
-  const ctx = await requireAction(slug, "services.manage");
-  const from = String(formData.get("fromServiceId"));
-  const to = formData.getAll("serviceId").map(String);
-  try {
-    const n = await copyServiceUsage({ businessId: ctx.business.id, fromServiceId: from, toServiceIds: to, replace: formData.get("how") === "replace" });
-    await setFlash(`Copied to ${n} service${n === 1 ? "" : "s"}`, "success");
-  } catch (e) {
-    if (e instanceof InventoryError) await setFlash(e.message, "error");
-    else throw e;
-  }
-  revalidatePath(`/app/${slug}/services/${from}`);
 }

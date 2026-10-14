@@ -284,13 +284,6 @@ const PRODUCTS: SeedProduct[] = [
   { cat: "Back-bar", name: "Facial mask sheets", price: 0, cost: 150, qty: 36, sold: 40, supplier: "Pure Skin Distributors", low: 15, upTo: 80, backbar: true },
   { cat: "Back-bar", name: "Disposable applicators", price: 0, cost: 10, qty: 150, sold: 120, supplier: "Salon Essentials Wholesale", low: 50, upTo: 300, backbar: true },
 ];
-// What one visit of a kind of service uses up (matched on the service's name or group).
-const USAGE: { match: RegExp; uses: [product: string, qty: number, mode: "auto" | "log"][] }[] = [
-  { match: /classic.*(set|fill)|(set|fill).*classic/i, uses: [["Lash Adhesive (pro)", 1, "log"], ["Classic lash trays", 1, "log"], ["Eye gel patches (pair)", 2, "auto"], ["Disposable applicators", 4, "auto"]] },
-  { match: /volume|hybrid|mega/i, uses: [["Lash Adhesive (pro)", 1, "log"], ["Volume lash trays", 1, "log"], ["Eye gel patches (pair)", 2, "auto"], ["Disposable applicators", 4, "auto"]] },
-  // A retail product that is also used in the treatment.
-  { match: /facial/i, uses: [["Facial mask sheets", 1, "auto"], ["Disposable applicators", 2, "auto"], ["Gentle Cleanser", 1, "log"]] },
-];
 
 // ---------------------------------------------------------------------------
 async function main() {
@@ -665,15 +658,6 @@ async function main() {
       await tx.insert(schema.purchaseOrderLines).values(o.lines.map(([p, ordered, received]) => ({ businessId, purchaseOrderId: po!.id, productId: p.id, orderedQty: ordered, receivedQty: received, unitCostCents: p.spec.cost })));
       // Link the history rows for deliveries to their order.
       if (o.status === "received" || o.status === "partial") for (const [p] of o.lines) await tx.update(schema.stockMovements).set({ purchaseOrderId: po!.id, note: `Order #${o.number}` }).where(and(eq(schema.stockMovements.productId, p.id), eq(schema.stockMovements.reason, "received")));
-    }
-    // What services use up.
-    for (const u of USAGE) {
-      for (const sv of serviceIds.filter((x) => u.match.test(`${x.name} ${x.group}`))) {
-        for (const [pn, q, mode] of u.uses) {
-          const hit = pRows.find((r) => r.spec.name === pn || `${r.spec.name}${r.spec.label ? ` ${r.spec.label}` : ""}` === pn);
-          if (hit) await tx.insert(schema.serviceProducts).values({ businessId, serviceId: sv.id, productId: hit.id, quantity: q, mode }).onConflictDoNothing();
-        }
-      }
     }
     console.log(`Inventory: ${PRODUCTS.length} products, ${supplierRows.length} suppliers, ${orderPlan.length} orders`);
 

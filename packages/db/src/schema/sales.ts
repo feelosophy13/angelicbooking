@@ -2,7 +2,7 @@
 import { sql } from "drizzle-orm";
 import { pgTable, pgEnum, text, integer, boolean, timestamp, index, uniqueIndex, check, jsonb } from "drizzle-orm/pg-core";
 import { user } from "./auth";
-import { appointments, businesses, clients, locations, services, staff } from "./domain";
+import { appointments, businesses, clients, locations, staff } from "./domain";
 
 const id = () =>
   text("id")
@@ -101,25 +101,6 @@ export const productStock = pgTable(
     qty: integer("qty").notNull().default(0),
   },
   (t) => [uniqueIndex("product_stock_uq").on(t.productId, t.locationId), index("product_stock_business_idx").on(t.businessId, t.locationId)],
-);
-
-/** What a service uses up (back-bar), taken off the shelf each time the service is rung up. */
-export const serviceProducts = pgTable(
-  "service_products",
-  {
-    id: id(),
-    businessId: businessId(),
-    serviceId: text("service_id")
-      .notNull()
-      .references(() => services.id, { onDelete: "cascade" }),
-    productId: text("product_id")
-      .notNull()
-      .references(() => products.id, { onDelete: "cascade" }),
-    quantity: integer("quantity").notNull().default(1),
-    // auto: taken off the stock when the service is rung up. log: staff record what they really used (this amount is the suggestion).
-    mode: text("mode").notNull().default("auto"),
-  },
-  (t) => [uniqueIndex("service_products_uq").on(t.serviceId, t.productId), index("service_products_product_idx").on(t.productId)],
 );
 
 export const purchaseOrderStatus = pgEnum("purchase_order_status", ["draft", "ordered", "partial", "received", "cancelled"]);
