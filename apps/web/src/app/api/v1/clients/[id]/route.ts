@@ -3,7 +3,7 @@ import { and, eq, ne, or, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { apiAudit, ApiErrors, readBody, route } from "@/lib/api";
-import { clientBody, getClientApi, serializeClient } from "@/server/api-v1";
+import { clientPatch, getClientApi, serializeClient } from "@/server/api-v1";
 
 export const GET = route<{ id: string }>("clients:read", async (ctx, _req, { id }) => {
   const c = await getClientApi(ctx.business.id, id);
@@ -12,7 +12,7 @@ export const GET = route<{ id: string }>("clients:read", async (ctx, _req, { id 
 
 /** PATCH /api/v1/clients/:id: send only the fields to change. */
 export const PATCH = route<{ id: string }>("clients:write", async (ctx, req, { id }) => {
-  const body = await readBody(req, clientBody.partial().strict());
+  const body = await readBody(req, clientPatch);
   if ("error" in body) return body.error;
   const d = body.data;
   const businessId = ctx.business.id;

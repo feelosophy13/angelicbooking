@@ -333,7 +333,7 @@ export async function blockTime(input: { businessId: string; staffId: string; st
       const locationId = await resolveAppointmentLocation(tx, input.staffId, input.startAt, biz?.timezone ?? "America/New_York", input.locationId);
       const [appt] = await tx
         .insert(schema.appointments)
-        .values({ businessId: input.businessId, locationId, clientId: null, kind: "block", notes: input.reason, createdByUserId: input.actorUserId, source: "staff" })
+        .values({ businessId: input.businessId, locationId, clientId: null, kind: "block", notes: input.reason, createdByUserId: input.actorUserId.startsWith("api:") ? null : input.actorUserId, source: "staff" }) // API keys are not users: the audit row below names the key
         .returning({ id: schema.appointments.id });
       await tx.insert(schema.appointmentItems).values({
         businessId: input.businessId,

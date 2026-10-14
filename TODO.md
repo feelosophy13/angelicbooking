@@ -95,8 +95,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       for business, services, staff, products, availability, clients (read/create/update), appointments (read/book/update/cancel),
       sales (read). Public docs at `/developers`. Cross-tenant isolation tests in `lib/__tests__/api-isolation.test.ts`.
 - [ ] Run migration 0076 on production (deploys do this) and try one key against production.
-- [ ] Later: webhooks to subscribers, rescheduling, payments/refunds, service and product writes, idempotency keys, a per-key usage log,
-      a shared (Redis) rate limiter once there is more than one web instance, per-plan gating of the API if wanted.
+- [x] Second round 2026-10-14: locations, categories, packages, plans, staff schedule, reviews, waitlist, blocks, reschedule, client notes/packages/memberships,
+      service and product create/update, inventory read and stock adjustments (scopes catalog:write, inventory:read/write, reviews:read).
+- [ ] Later: webhooks to subscribers, multi-service bookings, payments/refunds, staff writes, idempotency keys, a per-key usage log,
+      an OpenAPI file, a shared (Redis) rate limiter once there is more than one web instance, per-plan gating of the API if wanted.
 
 ## 3. Product backlog
 

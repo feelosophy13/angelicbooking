@@ -57,6 +57,7 @@ export default function DevelopersPage() {
         <li><strong>Field names</strong> are <code>snake_case</code>. Money is an integer number of cents. Times are ISO 8601 in UTC (<code>2026-11-02T19:00:00.000Z</code>). Dates are <code>YYYY-MM-DD</code>.</li>
         <li><strong>Lists</strong> return <code>{`{ "data": [...], "page": 1, "limit": 50, "has_more": false }`}</code> and accept <code>page</code> and <code>limit</code> (1 to 100, default 50). Some include <code>total</code>.</li>
         <li><strong>One item</strong> returns <code>{`{ "data": { ... } }`}</code>.</li>
+        <li><strong>Partial updates</strong> (<code>PATCH</code>) change only the fields you send. Unknown fields are rejected.</li>
         <li><strong>Request bodies</strong> are JSON with <code>Content-Type: application/json</code>, up to 100 KB.</li>
         <li><strong>Rate limit</strong>: 120 requests per minute per key. Over it, you get <code>429</code> and a <code>Retry-After</code> header (seconds).</li>
       </ul>
@@ -89,7 +90,13 @@ export default function DevelopersPage() {
       <Endpoint method="GET" path="/services/{id}" scope="catalog:read" />
       <Endpoint method="GET" path="/staff" scope="catalog:read"><p>Active team members: name, position, bio and photo. Pay, contact details and logins are never included.</p></Endpoint>
       <Endpoint method="GET" path="/staff/{id}" scope="catalog:read" />
+      <Endpoint method="GET" path="/staff/{id}/schedule" scope="catalog:read"><p>Weekly hours (24-hour local time, <code>weekday</code> 0 = Sunday), upcoming days off or changed hours, and the services the person performs with any price or length of their own.</p></Endpoint>
       <Endpoint method="GET" path="/products" scope="catalog:read"><p>Active products with price and (when tracked) stock. Cost and supplier are not included.</p></Endpoint>
+      <Endpoint method="GET" path="/products/{id}" scope="catalog:read" />
+      <Endpoint method="GET" path="/locations" scope="catalog:read"><p>Your sites: address, phone and opening hours. Also <code>/locations/{"{id}"}</code>.</p></Endpoint>
+      <Endpoint method="GET" path="/categories" scope="catalog:read"><p><code>?kind=service</code> (default, nested through <code>parent_id</code>) or <code>?kind=product</code>.</p></Endpoint>
+      <Endpoint method="GET" path="/packages" scope="catalog:read"><p>The prepaid packages you sell.</p></Endpoint>
+      <Endpoint method="GET" path="/membership-plans" scope="catalog:read"><p>The membership plans you sell.</p></Endpoint>
       <Endpoint method="GET" path="/availability" scope="catalog:read">
         <p>Open start times for a service on a date, as online booking would offer them (it follows your booking rules for notice and how far ahead).</p>
         <p>Query: <code>service_id</code>, <code>date=YYYY-MM-DD</code>, optional <code>staff_id</code> (default <code>any</code>).</p>
@@ -97,6 +104,21 @@ export default function DevelopersPage() {
       <Code>{`curl "${BASE}/availability?service_id=SERVICE_ID&date=2026-11-02" -H "Authorization: Bearer $KEY"
 
 { "data": [ { "start_at": "2026-11-02T14:00:00.000Z", "staff_id": "…", "staff_name": "Ana" } ] }`}</Code>
+
+      <h2>Changing the catalog</h2>
+      <Endpoint method="POST" path="/services" scope="catalog:write">
+        <p>Body: <code>name</code>, <code>duration_min</code> and <code>price_cents</code> are required. Optional: <code>description</code>, <code>prep_notes</code>, <code>category_id</code>, <code>gap_min</code>, <code>finish_min</code>, <code>buffer_after_min</code>, <code>deposit_type</code> (<code>flat</code>, <code>percent</code>, <code>full</code>), <code>deposit_cents</code>, <code>deposit_percent</code>, <code>capacity</code>, <code>bookable_online</code>, <code>active</code>, <code>location_ids</code> (empty or all = every site).</p>
+      </Endpoint>
+      <Endpoint method="PATCH" path="/services/{id}" scope="catalog:write"><p>Send only what changes. Services are never deleted, because past visits point at them: send <code>{`{"active": false}`}</code> to retire one.</p></Endpoint>
+      <Endpoint method="POST" path="/products" scope="catalog:write"><p>Required: <code>name</code>, <code>price_cents</code>. Optional: <code>description</code>, <code>kind</code> (<code>retail</code> or <code>backbar</code>), <code>category_id</code>, <code>sku</code>, <code>barcode</code>, <code>cost_cents</code>, <code>taxable</code>, <code>sell_online</code>, <code>track_stock</code>, <code>low_stock_threshold</code>, <code>active</code>. A barcode or SKU can belong to one product only (409).</p></Endpoint>
+      <Endpoint method="PATCH" path="/products/{id}" scope="catalog:write"><p>Send only what changes. Stock counts change through stock adjustments, never here.</p></Endpoint>
+
+      <h2>Inventory</h2>
+      <Endpoint method="GET" path="/inventory" scope="inventory:read"><p>Products with tracked stock: <code>on_hand</code>, <code>low_stock_threshold</code> and <code>is_low</code>.</p></Endpoint>
+      <Endpoint method="GET" path="/products/{id}/stock-movements" scope="inventory:read"><p>Every change to the product&apos;s stock, newest first.</p></Endpoint>
+      <Endpoint method="POST" path="/products/{id}/stock-adjustments" scope="inventory:write">
+        <p>Body: <code>reason</code> (<code>received</code>, <code>adjust</code>, <code>damage</code>, <code>theft</code>, <code>expired</code>, <code>lost</code>, <code>supplier_return</code>, <code>used</code>), <code>quantity</code>, optional <code>location_id</code> and <code>note</code>. <code>received</code> adds and the loss reasons take away (send a positive number for both); <code>adjust</code> is signed. Stock never goes below zero (409). Returns the new <code>on_hand</code>.</p>
+      </Endpoint>
 
       <h2>Clients</h2>
       <Endpoint method="GET" path="/clients" scope="clients:read"><p>Query: <code>q</code> (name, email or phone search), <code>email</code>, <code>phone</code>, <code>updated_since</code> (ISO time, for syncing). Includes <code>total</code>.</p></Endpoint>
@@ -106,6 +128,10 @@ export default function DevelopersPage() {
         <p>Only set <code>sms_opt_in</code> when the person has agreed to receive texts. If the email or phone is already on file you get <code>409</code> with <code>existing_id</code>.</p>
       </Endpoint>
       <Endpoint method="PATCH" path="/clients/{id}" scope="clients:write"><p>Same fields, all optional; send only what changes. Unknown fields are rejected.</p></Endpoint>
+      <Endpoint method="GET" path="/clients/{id}/notes" scope="clients:read"><p>Private notes on the client, pinned first.</p></Endpoint>
+      <Endpoint method="POST" path="/clients/{id}/notes" scope="clients:write"><p>Body: <code>body</code>, optional <code>pinned</code>.</p></Endpoint>
+      <Endpoint method="GET" path="/clients/{id}/packages" scope="clients:read"><p>Packages the client holds, with sessions remaining.</p></Endpoint>
+      <Endpoint method="GET" path="/clients/{id}/memberships" scope="clients:read"><p>Their memberships: status, period end and credits remaining.</p></Endpoint>
       <Code>{`curl -X POST ${BASE}/clients \\
   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\
   -d '{ "first_name": "Maya", "last_name": "Lopez", "email": "maya@example.com", "phone": "(212) 555-0142" }'`}</Code>
@@ -118,10 +144,23 @@ export default function DevelopersPage() {
         <p>Use <code>/availability</code> first to pick a time. If someone else holds the time you get <code>409 booking_conflict</code>.</p>
       </Endpoint>
       <Endpoint method="PATCH" path="/appointments/{id}" scope="appointments:write"><p>Change <code>status</code> (<code>booked</code>, <code>confirmed</code>, <code>checked_in</code>, <code>in_progress</code>, <code>completed</code>, <code>no_show</code>) and/or <code>notes</code>.</p></Endpoint>
+      <Endpoint method="POST" path="/appointments/{id}/reschedule" scope="appointments:write"><p>Body: <code>start_at</code>, optional <code>staff_id</code>, <code>notify</code> (default <code>true</code>). Moves the visit&apos;s service. 409 when the time is taken or outside the provider&apos;s hours.</p></Endpoint>
       <Endpoint method="POST" path="/appointments/{id}/cancel" scope="appointments:write"><p>Body: optional <code>reason</code>, <code>notify</code> (default <code>true</code>). No fee is charged and nothing is refunded; do those in the app.</p></Endpoint>
       <Code>{`curl -X POST ${BASE}/appointments \\
   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\
   -d '{ "client_id": "…", "service_id": "…", "staff_id": "…", "start_at": "2026-11-02T14:00:00-05:00" }'`}</Code>
+
+      <h2>Blocked time</h2>
+      <Endpoint method="POST" path="/blocks" scope="appointments:write"><p>Take time off a provider&apos;s calendar. Body: <code>staff_id</code>, <code>start_at</code>, <code>end_at</code> (up to 24 hours), optional <code>reason</code>, <code>location_id</code>. 409 if it collides with a booking.</p></Endpoint>
+      <Endpoint method="DELETE" path="/blocks/{id}" scope="appointments:write"><p>Remove blocked time. Only blocks: a client&apos;s appointment is cancelled, never deleted.</p></Endpoint>
+
+      <h2>Waitlist</h2>
+      <Endpoint method="GET" path="/waitlist" scope="appointments:read"><p>Optional <code>status</code> (<code>open</code>, <code>booked</code>, <code>closed</code>).</p></Endpoint>
+      <Endpoint method="POST" path="/waitlist" scope="appointments:write"><p>Body: <code>client_id</code>, <code>service_id</code>, <code>date</code>, optional <code>staff_id</code>, <code>location_id</code>, <code>notes</code>.</p></Endpoint>
+      <Endpoint method="PATCH" path="/waitlist/{id}" scope="appointments:write"><p>Body: <code>status</code>.</p></Endpoint>
+
+      <h2>Reviews</h2>
+      <Endpoint method="GET" path="/reviews" scope="reviews:read"><p>Submitted reviews, newest first. Optional <code>rating</code> (1 to 5) and <code>staff_id</code>.</p></Endpoint>
 
       <h2>Sales</h2>
       <Endpoint method="GET" path="/sales" scope="sales:read"><p>Sales, newest first. Query: <code>from</code>, <code>to</code>, <code>status</code> (<code>open</code>, <code>paid</code>, <code>refunded</code>, <code>void</code>), <code>client_id</code>. Includes <code>total</code>.</p></Endpoint>
@@ -138,7 +177,7 @@ export default function DevelopersPage() {
       <p>Found a security problem? Please tell us before you tell anyone else{process.env.SUPPORT_EMAIL ? <>: <a href={`mailto:${process.env.SUPPORT_EMAIL}`}>{process.env.SUPPORT_EMAIL}</a></> : "."}</p>
 
       <h2>Not in the API yet</h2>
-      <p>Taking payments, refunds, editing services and products, webhooks, and rescheduling. If you need one, tell us.</p>
+      <p>Taking payments and refunds, gift cards (their codes are as good as cash, so they are not exposed), staff and login management, webhooks, and booking several services in one request. If you need one, tell us.</p>
     </DocPage>
   );
 }

@@ -19,7 +19,7 @@ export const serializeBusiness = (b: typeof schema.businesses.$inferSelect) => (
 type ServiceRow = typeof schema.services.$inferSelect;
 export const serializeService = (s: ServiceRow) => ({
   id: s.id, name: s.name, description: s.description, category_id: s.categoryId, duration_min: s.durationMin, price_cents: s.priceCents,
-  deposit_cents: s.depositCents, capacity: s.capacity, bookable_online: s.bookableOnline, active: s.active,
+  deposit_cents: s.depositCents, deposit_type: s.depositType, deposit_percent: s.depositPercent, capacity: s.capacity, bookable_online: s.bookableOnline, active: s.active,
 });
 
 type StaffRow = typeof schema.staff.$inferSelect;
@@ -37,7 +37,7 @@ export const serializeClient = (c: ClientRow) => ({
 type ProductRow = typeof schema.products.$inferSelect;
 export const serializeProduct = (p: ProductRow) => ({
   id: p.id, name: p.name, sku: p.sku, barcode: p.barcode, variant_label: p.variantLabel, kind: p.kind, price_cents: p.priceCents, taxable: p.taxable,
-  active: p.active, description: p.description, image_url: p.imageUrl, track_stock: p.trackStock, stock_qty: p.trackStock ? p.stockQty : null,
+  active: p.active, description: p.description, image_url: p.imageUrl, track_stock: p.trackStock, stock_qty: p.trackStock ? p.stockQty : null, low_stock_threshold: p.lowStockThreshold, category_id: p.categoryId, sell_online: p.sellOnline,
 });
 
 export async function listServices(businessId: string, opts: { activeOnly: boolean; limit: number; offset: number }) {
@@ -158,16 +158,19 @@ export async function getSaleApi(businessId: string, id: string) {
   });
 }
 
-export const clientBody = z.object({
+// No `.default()` anywhere in these: a PATCH built with `.partial()` would otherwise apply the defaults and silently overwrite stored values
+// (opting a client out of texts, say). Defaults for a create are applied in the handler instead.
+export const clientPatch = z.object({
   first_name: z.string().trim().min(1).max(80),
-  last_name: z.string().trim().max(80).default(""),
-  email: z.string().trim().toLowerCase().email().max(200).nullish(),
-  phone: z.string().trim().max(40).nullish(),
-  notes: z.string().max(5000).nullish(),
-  tags: z.array(z.string().trim().min(1).max(40)).max(30).optional(),
-  birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  last_name: z.string().trim().max(80),
+  email: z.string().trim().toLowerCase().email().max(200).nullable(),
+  phone: z.string().trim().max(40).nullable(),
+  notes: z.string().max(5000).nullable(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(30),
+  birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   // Marketing consent is opt-in: texts only go to clients you say have agreed.
-  sms_opt_in: z.boolean().default(false),
-  email_opt_in: z.boolean().default(true),
-});
-
+  sms_opt_in: z.boolean(),
+  email_opt_in: z.boolean(),
+}).partial().strict();
+export const clientCreate = clientPatch.required({ first_name: true });
+export const CLIENT_DEFAULTS = { last_name: "", sms_opt_in: false, email_opt_in: true } as const;

@@ -97,40 +97,45 @@ export async function clientHoldingsApi(b: string, clientId: string) {
 
 // ---- Catalog writes ----
 const money = z.number().int().min(0).max(10_000_000);
-export const serviceInput = z.object({
+// Like the client schemas: no `.default()`, so a PATCH never resets what it did not mention. Create applies the defaults below.
+export const servicePatch = z.object({
   name: z.string().trim().min(1).max(80),
-  description: z.string().trim().max(300).nullish(),
-  prep_notes: z.string().trim().max(400).nullish(),
-  category_id: z.string().max(100).nullish(),
+  description: z.string().trim().max(300).nullable(),
+  prep_notes: z.string().trim().max(400).nullable(),
+  category_id: z.string().max(100).nullable(),
   duration_min: z.number().int().min(5).max(600),
-  gap_min: z.number().int().min(0).max(600).default(0),
-  finish_min: z.number().int().min(0).max(600).default(0),
-  buffer_after_min: z.number().int().min(0).max(120).default(0),
+  gap_min: z.number().int().min(0).max(600),
+  finish_min: z.number().int().min(0).max(600),
+  buffer_after_min: z.number().int().min(0).max(120),
   price_cents: money,
-  deposit_type: z.enum(["flat", "percent", "full"]).default("flat"),
-  deposit_cents: money.default(0),
-  deposit_percent: z.number().int().min(0).max(100).default(0),
-  capacity: z.number().int().min(1).max(500).default(1),
-  bookable_online: z.boolean().default(true),
-  active: z.boolean().default(true),
-  location_ids: z.array(z.string().max(100)).max(100).optional(),
-});
+  deposit_type: z.enum(["flat", "percent", "full"]),
+  deposit_cents: money,
+  deposit_percent: z.number().int().min(0).max(100),
+  capacity: z.number().int().min(1).max(500),
+  bookable_online: z.boolean(),
+  active: z.boolean(),
+  location_ids: z.array(z.string().max(100)).max(100),
+}).partial().strict();
+export const serviceCreate = servicePatch.required({ name: true, duration_min: true, price_cents: true });
+export const SERVICE_DEFAULTS = { gap_min: 0, finish_min: 0, buffer_after_min: 0, deposit_type: "flat", deposit_cents: 0, deposit_percent: 0, capacity: 1, bookable_online: true, active: true } as const;
 
-export const productInput = z.object({
+export const productPatch = z.object({
   name: z.string().trim().min(1).max(120),
-  description: z.string().trim().max(1000).nullish(),
-  kind: z.enum(["retail", "backbar"]).default("retail"),
-  category_id: z.string().max(100).nullish(),
-  sku: z.string().trim().max(60).nullish(),
-  barcode: z.string().trim().max(60).nullish(),
+  description: z.string().trim().max(1000).nullable(),
+  kind: z.enum(["retail", "backbar"]),
+  category_id: z.string().max(100).nullable(),
+  sku: z.string().trim().max(60).nullable(),
+  barcode: z.string().trim().max(60).nullable(),
   price_cents: money,
-  cost_cents: money.default(0),
-  taxable: z.boolean().default(true),
-  sell_online: z.boolean().default(false),
-  track_stock: z.boolean().default(false),
-  low_stock_threshold: z.number().int().min(0).max(100_000).default(3),
-  active: z.boolean().default(true),
-});
+  cost_cents: money,
+  taxable: z.boolean(),
+  sell_online: z.boolean(),
+  track_stock: z.boolean(),
+  low_stock_threshold: z.number().int().min(0).max(100_000),
+  active: z.boolean(),
+}).partial().strict();
+export const productCreate = productPatch.required({ name: true, price_cents: true });
+export const PRODUCT_DEFAULTS = { kind: "retail", cost_cents: 0, taxable: true, sell_online: false, track_stock: false, low_stock_threshold: 3, active: true } as const;
 
 export const noteInput = z.object({ body: z.string().trim().min(1).max(5000), pinned: z.boolean().default(false) });
 export const waitlistInput = z.object({

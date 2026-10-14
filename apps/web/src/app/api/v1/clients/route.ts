@@ -3,7 +3,7 @@ import { eq, or, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { apiAudit, list, pageParams, readBody, route } from "@/lib/api";
-import { clientBody, getClientApi, listClientsApi, serializeClient } from "@/server/api-v1";
+import { clientCreate, CLIENT_DEFAULTS, getClientApi, listClientsApi, serializeClient } from "@/server/api-v1";
 
 /** GET /api/v1/clients?q=&email=&phone=&updated_since=&page=&limit= */
 export const GET = route("clients:read", async (ctx, req) => {
@@ -24,9 +24,9 @@ export const GET = route("clients:read", async (ctx, req) => {
 
 /** POST /api/v1/clients. A client with the same email or phone already on file is a 409 that names the existing id. */
 export const POST = route("clients:write", async (ctx, req) => {
-  const body = await readBody(req, clientBody);
+  const body = await readBody(req, clientCreate);
   if ("error" in body) return body.error;
-  const d = body.data;
+  const d = { ...CLIENT_DEFAULTS, ...body.data };
   const phone = d.phone ? (normalizePhone(d.phone) ?? d.phone) : null;
   const businessId = ctx.business.id;
   const result = await withTenant(businessId, async (tx) => {
