@@ -128,6 +128,11 @@ export const businesses = pgTable("businesses", {
   subscriptionStatus: text("subscription_status").notNull().default("none"),
   currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+  // Platform admin controls (apps/admin). Suspended: the booking page and the staff app are closed.
+  suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+  suspendedReason: text("suspended_reason"),
+  // Comped: the platform never charges this business (free for friends, partners, our own demo).
+  comped: boolean("comped").notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

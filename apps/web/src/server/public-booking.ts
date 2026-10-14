@@ -20,7 +20,7 @@ export type PublicBusiness = typeof schema.businesses.$inferSelect;
 /** Unscoped lookup for the public page. Returns null if booking is off. */
 export async function getPublicBusiness(slug: string): Promise<PublicBusiness | null> {
   const b = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, slug) });
-  return b && b.onlineBookingEnabled ? b : null;
+  return b && b.onlineBookingEnabled && !b.suspendedAt ? b : null;
 }
 
 /** Average rating and count of submitted reviews, for the booking page header. */

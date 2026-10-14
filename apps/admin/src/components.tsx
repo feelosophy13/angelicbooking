@@ -8,6 +8,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <a href="/" className="text-lg font-semibold">Platform admin</a>
           <a href="/" className="text-sm text-stone-600 hover:text-stone-900">Tenants</a>
           <a href="/pricing" className="text-sm text-stone-600 hover:text-stone-900">Pricing</a>
+          <a href="/health" className="text-sm text-stone-600 hover:text-stone-900">Health</a>
+          <a href="/activity" className="text-sm text-stone-600 hover:text-stone-900">Activity</a>
         </nav>
         <form action={logout}>
           <button className="text-sm text-stone-600 hover:text-stone-900">Sign out</button>
@@ -28,6 +30,10 @@ const TONE: Record<string, string> = {
 
 export function StatusPill({ status }: { status: string }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${TONE[status] ?? "bg-stone-100 text-stone-700"}`}>{status.replace(/_/g, " ")}</span>;
+}
+
+export function dateTime(d: Date | string | null): string {
+  return d ? new Date(d).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
 }
 
 export function date(d: Date | string | null): string {

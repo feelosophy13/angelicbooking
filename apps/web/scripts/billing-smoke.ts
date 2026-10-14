@@ -8,7 +8,8 @@
 import { eq, isNull } from "drizzle-orm";
 import { db, getSql, schema, withTenant } from "@angelic/db";
 import { stripe } from "../src/lib/stripe";
-import { attachNumberItem, detachNumberItem, ensureCatalog, refreshSubscription, reportSmsUsage } from "../src/server/billing";
+import { attachNumberItem, detachNumberItem, ensureCatalog, reconcileSubscription, refreshSubscription, reportSmsUsage } from "../src/server/billing";
+import { priceBookFor } from "../src/server/price-book";
 
 async function main() {
   const slug = process.argv[2] ?? "angelic-salon";
@@ -16,11 +17,13 @@ async function main() {
   if (!business) throw new Error(`no business ${slug}`);
   console.log("business", business.name, "status", business.subscriptionStatus, "sub", business.stripeSubscriptionId);
 
-  const catalog = await ensureCatalog();
+  const catalog = await ensureCatalog(await priceBookFor(business.id));
   console.log("catalog", { base: catalog.basePriceId, number: catalog.numberPriceId, usage: catalog.usagePriceId, meter: catalog.meterId });
 
   const number = await withTenant(business.id, (tx) => tx.query.messagingNumbers.findFirst({ where: isNull(schema.messagingNumbers.releasedAt) }));
   if (!number) throw new Error("no active number row");
+
+  console.log("reconcile (locations / staff items to match usage):", await reconcileSubscription(business));
 
   await attachNumberItem(business, number.id);
   let sub = await stripe().subscriptions.retrieve(business.stripeSubscriptionId!);

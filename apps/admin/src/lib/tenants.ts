@@ -26,6 +26,13 @@ export type TenantRow = {
   appointments30d: number;
   sms30d: number;
   hasNumber: boolean;
+  suspendedAt: Date | null;
+  suspendedReason: string | null;
+  comped: boolean;
+  stripeSubscriptionId: string | null;
+  lastLoginAt: Date | null;
+  services: number;
+  onboarded: boolean;
 };
 
 export type TenantWithBill = TenantRow & { bill: Bill; price: PriceBook; hasOverrides: boolean };
@@ -48,7 +55,14 @@ const SELECT = sql`
          (select count(*)::int from staff s where s.business_id = b.id and s.active) as "activeStaff",
          (select count(*)::int from appointments a where a.business_id = b.id and a.created_at > now() - interval '30 days') as "appointments30d",
          (select count(*)::int from notifications n where n.business_id = b.id and n.channel = 'sms' and n.status = 'sent' and n.sent_at > now() - interval '30 days') as "sms30d",
-         exists (select 1 from messaging_numbers mn where mn.business_id = b.id and mn.released_at is null) as "hasNumber"
+         exists (select 1 from messaging_numbers mn where mn.business_id = b.id and mn.released_at is null) as "hasNumber",
+         b.suspended_at as "suspendedAt",
+         b.suspended_reason as "suspendedReason",
+         b.comped,
+         b.stripe_subscription_id as "stripeSubscriptionId",
+         (select max(se.updated_at) from session se join member m2 on m2.user_id = se.user_id where m2.organization_id = b.id) as "lastLoginAt",
+         (select count(*)::int from services sv where sv.business_id = b.id) as services,
+         (select count(*) > 0 from services sv where sv.business_id = b.id) and (select count(*) > 0 from staff s2 where s2.business_id = b.id) as onboarded
   from businesses b
 `;
 
@@ -74,7 +88,9 @@ export async function listMembers(id: string): Promise<{ name: string; email: st
 
 function withBill(t: TenantRow, defaults: PriceBook, overrides: Overrides | undefined): TenantWithBill {
   const price = effectivePriceBook(defaults, overrides);
-  const bill = monthlyBill({ locations: t.locations, activeStaff: t.activeStaff, hasNumber: t.hasNumber, smsLast30Days: t.sms30d }, price);
+  const full = monthlyBill({ locations: t.locations, activeStaff: t.activeStaff, hasNumber: t.hasNumber, smsLast30Days: t.sms30d }, price);
+  // A comped business is never charged: keep the lines so you can see what it would cost, but the total is $0.
+  const bill: Bill = t.comped ? { lines: full.lines, totalCents: 0 } : full;
   return { ...t, bill, price, hasOverrides: !!overrides && Object.values(overrides).some((v) => v != null) };
 }
 
@@ -87,4 +103,20 @@ export async function getTenantWithBill(id: string) {
   const [t, defaults, ov] = await Promise.all([getTenant(id), getDefaultPriceBook(), getOverrides(id)]);
   if (!t) return null;
   return { tenant: withBill(t, defaults, ov.overrides), defaults, overrides: ov.overrides, note: ov.note };
+}
+
+export async function listLocations(id: string): Promise<{ name: string; city: string | null; state: string | null; isDefault: boolean; stripeChargesEnabled: boolean }[]> {
+  await requireAdmin();
+  return (await adminDb().execute(sql`
+    select name, city, state, is_default as "isDefault", stripe_charges_enabled as "stripeChargesEnabled"
+    from locations where business_id = ${id} order by is_default desc, name
+  `)) as unknown as { name: string; city: string | null; state: string | null; isDefault: boolean; stripeChargesEnabled: boolean }[];
+}
+
+export async function listStaff(id: string): Promise<{ displayName: string; position: string | null; active: boolean; takesAppointments: boolean; hasLogin: boolean }[]> {
+  await requireAdmin();
+  return (await adminDb().execute(sql`
+    select display_name as "displayName", position, active, takes_appointments as "takesAppointments", user_id is not null as "hasLogin"
+    from staff where business_id = ${id} order by active desc, sort_order, display_name
+  `)) as unknown as { displayName: string; position: string | null; active: boolean; takesAppointments: boolean; hasLogin: boolean }[];
 }

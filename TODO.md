@@ -55,18 +55,24 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ## 2. Before real customers
 
-### Platform admin app (`apps/admin`, built 2026-10-14: tenant list + detail, per-business usage metrics, price book and per-business pricing, env-based login)
+### Platform admin app (`apps/admin`, built 2026-10-14: tenant list with filters and CSV, usage metrics, price book and custom pricing, suspend / comp / extend trial, audit log, health page, TOTP login)
 - [ ] Deploy it as its own Render web service (build `pnpm --filter @angelic/admin build`, start `pnpm --filter @angelic/admin start`)
       on `admin.angelicbooking.com`, and put Cloudflare Access (your email only) in front of it.
 - [ ] On the production DB run `packages/db/sql/admin-role.sql` as the owner, **change the `angelic_admin` password first**, then set
-      `ADMIN_DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` (`pnpm --filter @angelic/admin hash-password '…'`), `ADMIN_SESSION_SECRET`
-      on that service only. Never add `ADMIN_DATABASE_URL` to the web service.
-- [ ] After migrating production (0074), re-run `admin-role.sql` so `angelic_admin` gets write access to `platform_pricing`, `business_pricing` and `admin_audit_log` (its only writable tables).
-- [ ] **Charge from the price book.** The admin app stores the price book (base, per extra location, per extra active staff, text number, texts) and
-      per-business overrides, and estimates each bill, but `apps/web/src/server/billing.ts` still bills from the `BILLING_*` / `SMS_*` env vars. Wire it:
-      read `platform_pricing` + `business_pricing` through `effectivePriceBook` (`@angelic/core/platform-pricing`), add licensed Stripe items for
-      locations and staff, and keep their quantities in sync when a location or staff member is added, deactivated or removed. Needs the Stripe keys to test.
-- [ ] Admin actions: suspend/reactivate a tenant, extend a trial, view-as/impersonate (writes go through `admin_audit_log`).
+      `ADMIN_DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` (`pnpm --filter @angelic/admin hash-password '…'`), `ADMIN_SESSION_SECRET`,
+      and `ADMIN_TOTP_SECRET` (`pnpm --filter @angelic/admin totp-secret`, add the key to an authenticator app) on that service only.
+      Never add `ADMIN_DATABASE_URL` to the web service. Optional: a restricted read-only `STRIPE_SECRET_KEY` shows "actually billed" next to the estimate.
+- [ ] After migrating production (0074, 0075), re-run `admin-role.sql` so `angelic_admin` gets its write grants (pricing tables, audit log, and the
+      suspend / comp / trial columns of `businesses`; nothing else).
+- [ ] **Test the price-book billing against the Stripe sandbox** once keys exist (built 2026-10-14, only the planning logic is unit-tested):
+      `server/billing.ts` now starts subscriptions from the price book (base + extra locations + extra staff, metered texts) and
+      `reconcileSubscription` (daily, in the 07:00 UTC run of the reminders job) keeps quantities in line with locations and active staff.
+      Run `scripts/billing-smoke.ts <slug>` (it now exercises reconcile). Platform-wide price changes do NOT re-price existing subscribers on purpose;
+      a business with its own pricing deal is re-priced. Decide if you want an "apply to existing customers" button.
+- [ ] Suspend currently closes the staff app (`requireBusiness`), the public booking page and outgoing texts/emails. It does not pause the Stripe
+      subscription, and API routes that don't go through `requireBusiness` (mobile API, webhooks) still work.
+- [ ] Read-only view-as / impersonation was **not** built: it needs a read-only mode enforced across every server action in `apps/web`. The admin app
+      shows locations, staff and logins instead. Worth doing only if support needs it.
 - [ ] Platform billing overview (real MRR, failed payments) once Stripe keys exist.
 
 - [ ] Upgrade the Render Postgres from the free `0.1c-256mb` tier to a paid plan with backups and

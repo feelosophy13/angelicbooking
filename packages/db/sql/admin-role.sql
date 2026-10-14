@@ -25,3 +25,10 @@ DO $$ BEGIN
     GRANT INSERT ON admin_audit_log TO angelic_admin;
   END IF;
 END $$;
+
+-- The only business columns the admin app may change (suspend, comp, extend a trial). Re-run after migrating.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'businesses' AND column_name = 'suspended_at') THEN
+    GRANT UPDATE (suspended_at, suspended_reason, comped, trial_ends_at, updated_at) ON businesses TO angelic_admin;
+  END IF;
+END $$;

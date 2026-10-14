@@ -12,7 +12,11 @@ import type Stripe from "stripe";
 import { eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { appUrl, isStripeConfigured, stripe } from "@/lib/stripe";
+import { and, inArray, sql } from "drizzle-orm";
+import type { PriceBook } from "@angelic/core/platform-pricing";
 import { billingConfig, canBuyNumber, isDelinquent, isSubscribed, lookupKeys, SMS_METER_EVENT, type BillingConfig } from "@/lib/billing-config";
+import { desiredItems, planChanges, priceKey, type ManagedKind } from "@/lib/billing-plan";
+import { platformPriceBook, priceBookFor } from "@/server/price-book";
 
 type Business = typeof schema.businesses.$inferSelect;
 
@@ -26,7 +30,7 @@ export function billingEnabled(): boolean {
 // Catalog (idempotent)
 // ---------------------------------------------------------------------------
 
-const PRODUCT_IDS = { base: "angelic_platform", number: "angelic_sms_number", usage: "angelic_sms_usage" } as const;
+const PRODUCT_IDS = { base: "angelic_platform", number: "angelic_sms_number", usage: "angelic_sms_usage", location: "angelic_extra_location", staff: "angelic_extra_staff" } as const;
 
 async function ensureProduct(id: keyof typeof PRODUCT_IDS, name: string, description: string): Promise<string> {
   const s = stripe();
@@ -69,16 +73,19 @@ export interface Catalog {
   numberPriceId: string;
   usagePriceId: string;
   meterId: string;
+  /** Stripe price id for a per-location or per-staff monthly amount (created on first use). */
+  priceFor(kind: ManagedKind, cents: number): Promise<string>;
 }
 
-let catalogCache: { key: string; value: Catalog } | null = null;
+const catalogCache = new Map<string, Catalog>();
 
-/** Products, prices and the meter for the current env amounts. Cached per process. */
-export async function ensureCatalog(): Promise<Catalog> {
-  const config = billingConfig();
+/** Products, prices and the meter for a price book. Cached per process and per set of amounts. */
+export async function ensureCatalog(book: PriceBook): Promise<Catalog> {
+  const config: BillingConfig = { baseCents: book.baseCents, numberCents: book.numberCents, smsUsageCents: book.smsUsageCents, smsIncluded: book.smsIncluded, trialDays: book.trialDays };
   const keys = lookupKeys(config);
   const cacheKey = `${process.env.STRIPE_SECRET_KEY?.slice(0, 12)}:${keys.base}:${keys.number}:${keys.usage}`;
-  if (catalogCache?.key === cacheKey) return catalogCache.value;
+  const cached = catalogCache.get(cacheKey);
+  if (cached) return cached;
 
   const [baseProduct, numberProduct, usageProduct, meterId] = await Promise.all([
     ensureProduct("base", "Angelic Booking", "Online booking, calendar, clients, checkout and payroll for your salon."),
@@ -103,9 +110,23 @@ export async function ensureCatalog(): Promise<Catalog> {
         }
       : { product: usageProduct, currency: "usd", unit_amount: config.smsUsageCents, recurring: { interval: "month", usage_type: "metered", meter: meterId } },
   );
-  const value: Catalog = { config, basePriceId, numberPriceId, usagePriceId, meterId };
-  catalogCache = { key: cacheKey, value };
+  const priceFor = async (kind: ManagedKind, cents: number): Promise<string> => {
+    if (kind === "base") return ensurePrice(priceKey("base", cents), () => ({ product: baseProduct, currency: "usd", unit_amount: cents, recurring: { interval: "month" } }));
+    const product = await ensureProduct(kind, kind === "location" ? "Additional location" : "Additional staff member", kind === "location" ? "Each location beyond the ones included in your plan." : "Each active staff member beyond the ones included in your plan.");
+    return ensurePrice(priceKey(kind, cents), () => ({ product, currency: "usd", unit_amount: cents, recurring: { interval: "month" } }));
+  };
+  const value: Catalog = { config, basePriceId, numberPriceId, usagePriceId, meterId, priceFor };
+  catalogCache.set(cacheKey, value);
   return value;
+}
+
+/** What the business uses that the price book charges for. */
+export async function billableUsage(businessId: string): Promise<{ locations: number; activeStaff: number }> {
+  return withTenant(businessId, async (tx) => {
+    const [l] = await tx.select({ n: sql<number>`count(*)::int` }).from(schema.locations);
+    const [st] = await tx.select({ n: sql<number>`count(*)::int` }).from(schema.staff).where(eq(schema.staff.active, true));
+    return { locations: Number(l?.n ?? 0), activeStaff: Number(st?.n ?? 0) };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -163,10 +184,15 @@ export async function refreshSubscription(business: Business): Promise<void> {
 export async function startBilling(business: Business, slug: string): Promise<string> {
   if (!billingEnabled()) throw new BillingError("Billing is not configured on this platform yet.");
   if (business.stripeSubscriptionId && isSubscribed(business.subscriptionStatus)) return portalUrl(business, slug);
-  const catalog = await ensureCatalog();
+  if (business.comped) throw new BillingError("This account is complimentary: there is nothing to pay.");
+  const book = await priceBookFor(business.id);
+  const catalog = await ensureCatalog(book);
   const customer = await ensureCustomer(business);
   const number = await withTenant(business.id, (tx) => tx.query.messagingNumbers.findFirst({ where: (t, { isNull }) => isNull(t.releasedAt) }));
-  const items: Stripe.Checkout.SessionCreateParams.LineItem[] = [{ price: catalog.basePriceId, quantity: 1 }, { price: catalog.usagePriceId }];
+  const wanted = desiredItems(book, await billableUsage(business.id));
+  const items: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+  for (const d of wanted) items.push({ price: await catalog.priceFor(d.kind, d.cents), quantity: d.quantity });
+  items.push({ price: catalog.usagePriceId });
   if (number) items.push({ price: catalog.numberPriceId, quantity: 1 });
   const session = await stripe().checkout.sessions.create({
     mode: "subscription",
@@ -230,14 +256,15 @@ export function billingState(business: Business) {
     status: business.subscriptionStatus,
     subscribed: isSubscribed(business.subscriptionStatus),
     delinquent: isDelinquent(business.subscriptionStatus),
-    canBuyNumber: canBuyNumber({ billingEnabled: enabled, status: business.subscriptionStatus, config }),
+    comped: business.comped,
+    canBuyNumber: business.comped || canBuyNumber({ billingEnabled: enabled, status: business.subscriptionStatus, config }),
   };
 }
 
 /** Add the monthly number fee to the subscription (prorated). No-op when billing is off or the fee is $0. */
 export async function attachNumberItem(business: Business, numberId: string): Promise<void> {
-  if (!billingEnabled() || !business.stripeSubscriptionId) return;
-  const catalog = await ensureCatalog();
+  if (!billingEnabled() || !business.stripeSubscriptionId || business.comped) return;
+  const catalog = await ensureCatalog(await priceBookFor(business.id));
   if (catalog.config.numberCents === 0) return;
   const item = await stripe().subscriptionItems.create({ subscription: business.stripeSubscriptionId, price: catalog.numberPriceId, quantity: 1, proration_behavior: "create_prorations" });
   await withTenant(business.id, (tx) => tx.update(schema.messagingNumbers).set({ stripeItemId: item.id }).where(eq(schema.messagingNumbers.id, numberId)));
@@ -261,8 +288,8 @@ export async function detachNumberItem(business: Business, number: { id: string;
  */
 export async function reportSmsUsage(businessId: string, notificationIds: string[]): Promise<number> {
   if (!billingEnabled() || !notificationIds.length) return 0;
-  const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId), columns: { stripeCustomerId: true, subscriptionStatus: true } });
-  if (!business?.stripeCustomerId || !isSubscribed(business.subscriptionStatus)) return 0;
+  const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId), columns: { stripeCustomerId: true, subscriptionStatus: true, comped: true } });
+  if (!business?.stripeCustomerId || business.comped || !isSubscribed(business.subscriptionStatus)) return 0;
   let n = 0;
   for (const id of notificationIds) {
     try {
@@ -273,6 +300,72 @@ export async function reportSmsUsage(businessId: string, notificationIds: string
     }
   }
   return n;
+}
+
+// ---------------------------------------------------------------------------
+// Keep the subscription in line with the price book
+// ---------------------------------------------------------------------------
+
+export interface ReconcileResult {
+  created: number;
+  updated: number;
+  removed: number;
+}
+
+/**
+ * Make the subscription's base / extra-location / extra-staff items match what the business uses now (quantities)
+ * and, for a business with its own pricing deal, the price it was given. Platform-wide price changes deliberately do
+ * NOT re-price existing subscribers: they keep the price they signed up at. Changes are prorated.
+ */
+export async function reconcileSubscription(business: Business): Promise<ReconcileResult> {
+  const result: ReconcileResult = { created: 0, updated: 0, removed: 0 };
+  if (!billingEnabled() || !business.stripeSubscriptionId || business.comped || !isSubscribed(business.subscriptionStatus)) return result;
+  const [book, usage, hasDeal] = await Promise.all([
+    priceBookFor(business.id),
+    billableUsage(business.id),
+    withTenant(business.id, async (tx) => (await tx.select({ id: schema.businessPricing.businessId }).from(schema.businessPricing))[0] !== undefined),
+  ]);
+  const s = stripe();
+  const sub = await s.subscriptions.retrieve(business.stripeSubscriptionId);
+  const existing = sub.items.data.map((i) => ({ id: i.id, lookupKey: i.price.lookup_key, quantity: i.quantity ?? 1 }));
+  const catalog = await ensureCatalog(book);
+  const plan = planChanges(desiredItems(book, usage), existing);
+  const proration = "create_prorations" as const;
+  for (const c of plan.create) {
+    await s.subscriptionItems.create({ subscription: sub.id, price: await catalog.priceFor(c.kind, c.cents), quantity: c.quantity, proration_behavior: proration });
+    result.created++;
+  }
+  for (const u of plan.update) {
+    const switchPrice = u.priceChanged && hasDeal;
+    if (!u.quantityChanged && !switchPrice) continue;
+    await s.subscriptionItems.update(u.id, { quantity: u.desired.quantity, ...(switchPrice ? { price: await catalog.priceFor(u.desired.kind, u.desired.cents) } : {}), proration_behavior: proration });
+    result.updated++;
+  }
+  for (const id of plan.remove) {
+    await s.subscriptionItems.del(id, { proration_behavior: proration });
+    result.removed++;
+  }
+  if (result.created + result.updated + result.removed > 0) await refreshSubscription(business);
+  return result;
+}
+
+/** Daily sweep (called from the jobs route): reconcile every paying business. One failure never stops the rest. */
+export async function reconcileAllSubscriptions(): Promise<{ checked: number; changed: number; failed: number }> {
+  if (!billingEnabled()) return { checked: 0, changed: 0, failed: 0 };
+  const rows = await db.select().from(schema.businesses).where(and(inArray(schema.businesses.subscriptionStatus, ["active", "trialing", "past_due"]), eq(schema.businesses.comped, false)));
+  const out = { checked: 0, changed: 0, failed: 0 };
+  for (const b of rows) {
+    if (!b.stripeSubscriptionId) continue;
+    out.checked++;
+    try {
+      const r = await reconcileSubscription(b);
+      if (r.created + r.updated + r.removed > 0) out.changed++;
+    } catch (e) {
+      out.failed++;
+      console.error("[billing] reconcile failed", b.slug, (e as Error).message);
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

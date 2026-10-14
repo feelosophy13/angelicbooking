@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowRight, BadgePercent, CalendarDays, CreditCard, FileSignature, GraduationCap, Megaphone, ShoppingBag, Star, Wallet, Code2, CheckCircle2, MessageSquareText, Upload } from "lucide-react";
 import { Wordmark } from "@/components/brand";
 import { LinkButton } from "@/components/ui";
-import { billingConfig } from "@/lib/billing-config";
+import { platformPriceBook } from "@/server/price-book";
 
 const money = (c: number) => (c % 100 === 0 ? `$${c / 100}` : `$${(c / 100).toFixed(2)}`);
 
@@ -19,8 +19,9 @@ const FEATURES = [
 ];
 
 /** Signed-out landing page for the app host. */
-export function Landing() {
-  const price = billingConfig();
+export async function Landing() {
+  const price = await platformPriceBook();
+  const extras = price.perLocationCents > 0 || price.perStaffCents > 0;
   return (
     <div className="min-h-screen bg-white text-stone-900">
       <header className="sticky top-0 z-20 border-b border-stone-200/70 bg-white/85 backdrop-blur">
@@ -101,9 +102,9 @@ export function Landing() {
       <section id="pricing" className="border-t border-stone-100 bg-stone-50/60">
         <div className="mx-auto max-w-6xl px-5 py-16">
           <h2 className="text-center text-3xl font-semibold tracking-tight">Simple pricing</h2>
-          <p className="mx-auto mt-3 max-w-xl text-center text-stone-600">No per-seat fees, no feature tiers. Pay for what you send.</p>
+          <p className="mx-auto mt-3 max-w-xl text-center text-stone-600">{extras ? "Every feature in every plan. You pay for the locations and staff you add, and for what you send." : "No per-seat fees, no feature tiers. Pay for what you send."}</p>
           <div className="mx-auto mt-10 grid max-w-3xl gap-5 md:grid-cols-3">
-            <PriceCard label="Platform" value={price.baseCents === 0 ? "Free" : `${money(price.baseCents)}/mo`} note={price.baseCents === 0 ? "Every feature, every staff member." : `Every feature, every staff member.${price.trialDays ? ` ${price.trialDays}-day free trial.` : ""}`} highlight />
+            <PriceCard label="Platform" value={price.baseCents === 0 ? "Free" : `${money(price.baseCents)}/mo`} note={`${extras ? `Includes ${price.includedLocations} location${price.includedLocations === 1 ? "" : "s"} and ${price.includedStaff} active staff. ${[price.perLocationCents > 0 ? `${money(price.perLocationCents)}/mo per extra location` : "", price.perStaffCents > 0 ? `${money(price.perStaffCents)}/mo per extra staff member` : ""].filter(Boolean).join(", ")}.` : "Every feature, every staff member."}${price.trialDays ? ` ${price.trialDays}-day free trial.` : ""}`} highlight />
             <PriceCard label="Text number" value={`${money(price.numberCents)}/mo`} note="Your own toll-free number for appointment texts. Optional: email is always included." />
             <PriceCard label="Texts" value={`${price.smsUsageCents}¢ each`} note={price.smsIncluded ? `${price.smsIncluded} included each month.` : "Confirmations, reminders, marketing. Only what actually sends."} />
           </div>

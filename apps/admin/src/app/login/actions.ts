@@ -2,6 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { verifyTotp } from "@/lib/totp";
 import { COOKIE, SESSION_HOURS, checkPassword, clearFailures, createToken, recordFailure, throttled } from "@/lib/session";
 
 export async function login(_prev: { error: string } | null, form: FormData): Promise<{ error: string }> {
@@ -14,9 +15,12 @@ export async function login(_prev: { error: string } | null, form: FormData): Pr
   // Run the hash check even when the email is wrong so timing doesn't reveal which half failed.
   const passwordOk = checkPassword(password, process.env.ADMIN_PASSWORD_HASH);
   const emailOk = !!process.env.ADMIN_EMAIL && email === process.env.ADMIN_EMAIL.trim().toLowerCase();
-  if (!emailOk || !passwordOk) {
+  // When ADMIN_TOTP_SECRET is set a current authenticator code is required too. Checked last, and only after the password, so a code can't be guessed alone.
+  const totpSecret = process.env.ADMIN_TOTP_SECRET;
+  const codeOk = !totpSecret || (emailOk && passwordOk && verifyTotp(totpSecret, String(form.get("code") ?? "").replace(/\s/g, "")));
+  if (!emailOk || !passwordOk || !codeOk) {
     recordFailure(ip);
-    return { error: "Wrong email or password." };
+    return { error: totpSecret ? "Wrong email, password or code." : "Wrong email or password." };
   }
 
   clearFailures(ip);

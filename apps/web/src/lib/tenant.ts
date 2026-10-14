@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { db, schema, withTenant } from "@angelic/db";
 import { can, type Action, type Permissions, type Role } from "@angelic/core";
@@ -34,6 +34,8 @@ export const requireBusiness = cache(async (slug: string): Promise<TenantContext
     where: and(eq(schema.member.organizationId, business.id), eq(schema.member.userId, session.user.id)),
   });
   if (!membership) notFound();
+  // Closed by a platform admin (apps/admin): nothing in the staff app works until they reopen it.
+  if (business.suspendedAt) redirect("/suspended");
   const myStaff = await withTenant(business.id, (tx) => tx.query.staff.findFirst({ where: eq(schema.staff.userId, session.user.id), columns: { id: true } }));
   // Development only: act as another role (optionally as a particular staff member: "provider:<staffId>"), so every page and permission check
   // shows what that person gets.

@@ -8,7 +8,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "hash-password": "node scripts/hash-password.mjs"
+    "hash-password": "node scripts/hash-password.mjs",
+    "totp-secret": "node scripts/totp-secret.mjs"
   },
   "dependencies": {
     "@angelic/core": "workspace:*",
