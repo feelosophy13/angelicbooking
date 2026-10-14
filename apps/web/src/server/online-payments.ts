@@ -19,13 +19,29 @@ import type { PaymentContext } from "./locations";
 
 export type PaymentMode = "deposit" | "card" | "none";
 
+type DepositTerms = { depositCents: number; depositType: string; depositPercent: number };
+
+/** What booking this service online collects up front, in cents, given the price this stylist charges (never more than the price). */
+export function depositAmount(service: DepositTerms, priceCents: number): number {
+  const raw = service.depositType === "full" ? priceCents : service.depositType === "percent" ? Math.round((priceCents * service.depositPercent) / 100) : service.depositCents;
+  return Math.min(raw, priceCents);
+}
+
+/** The short label for a service's up-front payment ("$50.00 deposit", "25% deposit", "Pay in full"); null when there is none. */
+export function depositLabel(service: DepositTerms, money: (cents: number) => string): string | null {
+  if (service.depositType === "full") return "Pay in full";
+  if (service.depositType === "percent") return service.depositPercent > 0 ? `${service.depositPercent}% deposit` : null;
+  return service.depositCents > 0 ? `${money(service.depositCents)} deposit` : null;
+}
+
 /** What (if anything) the booking page must collect before this service can be booked at this location. */
-export function onlinePaymentRequirement(business: PublicBusiness, service: { depositCents: number }, pay: PaymentContext): { mode: PaymentMode; amountCents: number } {
+export function onlinePaymentRequirement(business: PublicBusiness, service: DepositTerms, pay: PaymentContext, priceCents: number): { mode: PaymentMode; amountCents: number; full: boolean } {
   const ready = pay.ready && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
-  if (!ready) return { mode: "none", amountCents: 0 };
-  if (service.depositCents >= 50) return { mode: "deposit", amountCents: service.depositCents };
-  if (business.requireCardOnline) return { mode: "card", amountCents: 0 };
-  return { mode: "none", amountCents: 0 };
+  if (!ready) return { mode: "none", amountCents: 0, full: false };
+  const due = depositAmount(service, priceCents);
+  if (due >= 50) return { mode: "deposit", amountCents: due, full: service.depositType === "full" || due >= priceCents };
+  if (business.requireCardOnline) return { mode: "card", amountCents: 0, full: false };
+  return { mode: "none", amountCents: 0, full: false };
 }
 
 export interface IntentMeta {

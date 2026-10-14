@@ -83,6 +83,8 @@ export const businesses = pgTable("businesses", {
   // When a deposit comes back (cancellation inside policy, staff refund): to the card, or as store credit.
   depositRefundAs: text("deposit_refund_as").notNull().default("original"), // original | store_credit
   requireCardOnline: boolean("require_card_online").notNull().default(false),
+  // Online bookings must include a mobile number (otherwise a mobile number or an email is enough).
+  requireMobile: boolean("require_mobile").notNull().default(false),
   noShowFeeCents: integer("no_show_fee_cents").notNull().default(0),
   bookingPolicy: text("booking_policy"),
   reminderHours: integer("reminder_hours").notNull().default(24),
@@ -307,6 +309,9 @@ export const services = pgTable(
     bufferAfterMin: smallint("buffer_after_min").notNull().default(0),
     priceCents: integer("price_cents").notNull(),
     depositCents: integer("deposit_cents").notNull().default(0),
+    // What online booking collects: a flat amount (depositCents), a percent of the price (depositPercent) or the full price.
+    depositType: text("deposit_type").notNull().default("flat"), // flat | percent | full
+    depositPercent: smallint("deposit_percent").notNull().default(0),
     // 1 = one client at a time. More = a class: staff schedule sessions and
     // several clients book the same session (see classSessions).
     capacity: smallint("capacity").notNull().default(1),

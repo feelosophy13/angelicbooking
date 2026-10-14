@@ -356,6 +356,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       salary the person's primary location (`payrollByLocation`, ties to the whole-business figures to the cent).
       The location filter on Reports now apportions wages the same way (`runPayroll(..., { split: true })`), fixing
       overstated wages for people who clock in at two sites; the Payroll page itself still shows each person whole.
+- [x] 2026-10-14 (migration 0077): online payment per service. Each service collects nothing, a fixed deposit, a
+      percent of the price (of the stylist's own price) or the full price when booked online; the amount rides the
+      existing deposit flow, so it comes off the bill at checkout and refunds on in-window cancellations. New
+      Settings → Booking switch "Require a mobile number" (otherwise phone or email). Not run against live Stripe
+      (`depositAmount`/`depositLabel` in `server/online-payments.ts`); check with a test card before relying on it.
 - [x] 2026-10-11 (migration 0065): late cancellation fee. Settings → Online booking: none / flat / percent of the
       booked services, and whether a paid deposit counts toward the fee or is kept on top. Cancelling from the
       appointment page inside the window shows the fee, what the deposit covers, and offers to charge the rest to a

@@ -17,6 +17,8 @@ export type ServiceRow = {
   bufferAfterMin: number;
   priceCents: number;
   depositCents: number;
+  depositType: string;
+  depositPercent: number;
   capacity: number;
   bookableOnline: boolean;
   active: boolean;
@@ -51,7 +53,7 @@ export function ServiceRows({ slug, title, titleHref, services, currency, manage
                 {s.gapMin ? ` + ${duration(s.gapMin)} processing` : ""}
                 {s.finishMin ? ` + ${duration(s.finishMin)} finish` : ""}
                 {s.bufferAfterMin ? ` + ${duration(s.bufferAfterMin)} buffer` : ""}
-                {s.depositCents ? ` · deposit ${formatMoney(s.depositCents, currency)}` : ""}
+                {s.depositType === "full" ? " · paid in full online" : s.depositType === "percent" && s.depositPercent ? ` · ${s.depositPercent}% deposit` : s.depositCents ? ` · deposit ${formatMoney(s.depositCents, currency)}` : ""}
                 {s.capacity > 1 ? ` · class of ${s.capacity}` : ""}
                 {!s.bookableOnline ? " · not online" : ""}
                 {onlyAt(s.id)}

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { MapPin } from "lucide-react";
+import { ChevronRight, MapPin } from "lucide-react";
 import { instantToISODate, weekdayOf, lateCancelFeeLabel, policyFeeCheck } from "@angelic/core";
 import { getAvailableDates, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots, publicProvidersFor } from "@/server/public-booking";
 import { buildTree, pathTo, subtreeIds } from "@/server/categories";
@@ -8,12 +8,12 @@ import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib
 import { duration } from "@/lib/format";
 import { BookingForm, WaitlistForm } from "./forms";
 import { PaidBookingForm } from "./payment-form";
-import { onlinePaymentRequirement } from "@/server/online-payments";
+import { depositLabel, onlinePaymentRequirement } from "@/server/online-payments";
 import { paymentContextFor, tzFor } from "@/server/locations";
 import { publicSessions } from "@/server/classes";
 import { overridesForService, priceLabel, servicePriceRanges, termsOf } from "@/server/stylist-pricing";
 import { brandHex } from "@/lib/brand";
-import { describeHours } from "@/lib/hours";
+import { hoursToday } from "@/lib/hours";
 import { currentClient } from "@/server/client-auth";
 import { schema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
@@ -36,15 +36,22 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <Steps labels={["Location", ...stepLabels]} current={1} hrefs={[null, null, null, null, null]} />
         <StepTitle title="Choose a location" subtitle="Where would you like to come in?" />
         <ul className="grid gap-3 sm:grid-cols-2">
-          {locations.map((l) => (
-            <li key={l.id}>
-              <Link href={`?location=${l.id}`} className="block rounded-2xl border border-stone-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--brand-ring)] hover:shadow-md">
-                <p className="font-semibold text-stone-900">{l.name}</p>
-                <p className="mt-0.5 flex items-center gap-1 text-xs text-stone-500"><MapPin className="h-3.5 w-3.5" aria-hidden />{[l.addressLine1, l.city, l.state].filter(Boolean).join(", ") || "Address on request"}</p>
-                {l.hours ? <p className="mt-1 text-xs text-stone-500">{describeHours(l.hours).join(" · ")}</p> : null}
-              </Link>
-            </li>
-          ))}
+          {locations.map((l) => {
+            const today = hoursToday(l.hours, tzFor(business, l));
+            return (
+              <li key={l.id}>
+                <Link href={`?location=${l.id}`} className="flex h-full items-center gap-3 rounded-2xl border border-stone-200 bg-white p-4 shadow-sm transition hover:border-[var(--brand-ring)] hover:shadow-md">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-stone-100 text-stone-500"><MapPin className="h-5 w-5" aria-hidden /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-semibold text-stone-900">{l.name}</span>
+                    <span className="mt-0.5 block text-sm text-stone-500">{[l.addressLine1, l.city, l.state].filter(Boolean).join(", ") || "Address on request"}</span>
+                    {today ? <span className="mt-1 block text-xs text-stone-500">{today}</span> : null}
+                  </span>
+                  <ChevronRight className="h-5 w-5 shrink-0 text-stone-300" aria-hidden />
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       </>
     );
@@ -73,8 +80,8 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     return `?${p.toString()}`;
   };
   const stepHrefs = (upTo: number) => [q({ service: undefined, staff: undefined, date: undefined, time: undefined, session: undefined }), q({ staff: undefined, date: undefined, time: undefined }), q({ time: undefined }), null].map((h, i) => (i < upTo ? h : null));
-  const depositRow = service && service.depositCents > 0 ? [{ label: "Deposit", value: formatMoney(service.depositCents, business.currency) }] : [];
   const money = (c: number) => formatMoney(c, business.currency);
+  const depositRow = service && depositLabel(service, money) ? [{ label: "Pay now", value: depositLabel(service, money)!.replace(/ deposit$/, " deposit") }] : [];
   // Prices differ between stylists: the service list says "from" the lowest one.
   const ranges = service ? null : await withTenant(business.id, (tx) => servicePriceRanges(tx, services, staff));
   const serviceMeta = (s: (typeof services)[number]) => duration(s.durationMin + s.gapMin + s.finishMin);
@@ -105,7 +112,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           <section>
             {children.length ? <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">{current ? `More in ${current.name}` : "More services"}</h2> : null}
             <ul className="space-y-3">
-              {direct.map((s) => <ServiceCard key={s.id} href={q({ service: s.id, category: current?.id })} name={s.name} imageUrl={s.imageUrl} description={s.description} durationLabel={serviceMeta(s)} price={priceLabel(ranges?.get(s.id) ?? { min: s.priceCents, max: s.priceCents }, money).label} priceFrom={priceLabel(ranges?.get(s.id) ?? { min: s.priceCents, max: s.priceCents }, money).varies} from={s.capacity > 1 ? "class" : undefined} deposit={s.depositCents > 0 ? formatMoney(s.depositCents, business.currency) : undefined} />)}
+              {direct.map((s) => <ServiceCard key={s.id} href={q({ service: s.id, category: current?.id })} name={s.name} imageUrl={s.imageUrl} description={s.description} durationLabel={serviceMeta(s)} price={priceLabel(ranges?.get(s.id) ?? { min: s.priceCents, max: s.priceCents }, money).label} priceFrom={priceLabel(ranges?.get(s.id) ?? { min: s.priceCents, max: s.priceCents }, money).varies} from={s.capacity > 1 ? "class" : undefined} deposit={depositLabel(s, money) ?? undefined} />)}
             </ul>
           </section>
         ) : null}
@@ -172,18 +179,18 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         </>
       );
     }
-    const req = onlinePaymentRequirement(business, service, pay);
+    const req = onlinePaymentRequirement(business, service, pay, service.priceCents);
     const sessionDate = instantToISODate(chosen.startAt, tz);
     return (
       <>
         <Steps labels={classLabels} current={3} hrefs={[q({ service: undefined, session: undefined }), q({ session: undefined }), null]} />
         <StepTitle title="Your details" />
         <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(sessionDate)} at ${formatTime(chosen.startAt, tz)}`, href: q({ session: undefined }) }, { label: "With", value: chosen.staffName }, { label: "Per person", value: formatMoney(service.priceCents, business.currency) }, { label: "Seats left", value: String(chosen.seatsLeft) }]} />
-        {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">A {formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
+        {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">{req.full ? `Payment of ${formatMoney(req.amountCents, business.currency)} in full is due now.` : `A ${formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.`}</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
         {req.mode === "none" ? (
-          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+          <BookingForm requireMobile={business.requireMobile} slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         ) : (
-          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} mode={req.mode} amountLabel={formatMoney(req.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} mode={req.mode} full={req.full} requireMobile={business.requireMobile} amountLabel={formatMoney(req.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         )}
       </>
     );
@@ -337,15 +344,15 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       </>
     );
   }
-  const req = onlinePaymentRequirement(business, service, pay);
+  const req = onlinePaymentRequirement(business, service, pay, termsFor(slot.staffId).priceCents);
   return (
     <>
       <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
       <StepTitle title="Your details" subtitle="Almost done. Tell us who you are and we'll hold this time." />
       <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: slot.staffName, href: q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: spanOf(termsFor(slot.staffId).durationMin) }, { label: "Price", value: money(termsFor(slot.staffId).priceCents) }]} />
-      {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">A {formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : service.depositCents > 0 ? <p className="mb-3 text-xs text-stone-600">This service has a {formatMoney(service.depositCents, business.currency)} deposit. The salon will contact you to arrange it.</p> : null}
+      {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">{req.full ? `Payment of ${formatMoney(req.amountCents, business.currency)} in full is due now.` : `A ${formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.`}</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
       {req.mode === "none" ? (
-        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={termsFor(slot.staffId).priceCents} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+        <BookingForm requireMobile={business.requireMobile} slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={termsFor(slot.staffId).priceCents} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
       ) : (
         <PaidBookingForm
           slug={slug}
@@ -356,6 +363,8 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           policy={business.bookingPolicy}
           cancelWindowHours={business.cancelWindowHours} lateFee={lateFee}
           mode={req.mode}
+          full={req.full}
+          requireMobile={business.requireMobile}
           amountLabel={formatMoney(req.amountCents, business.currency)}
           publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!}
           brand={brandHex(business.brandColor)}

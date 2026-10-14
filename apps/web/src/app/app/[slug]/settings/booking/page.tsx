@@ -38,12 +38,13 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <Field label="Book up to" name="maxAdvanceDays" hint="Days ahead."><Input name="maxAdvanceDays" type="number" min={1} max={365} defaultValue={business.maxAdvanceDays} /></Field>
               <Field label="Cancellation window" name="cancelWindowHours" hint="Hours before the visit."><Input name="cancelWindowHours" type="number" min={0} defaultValue={business.cancelWindowHours} /></Field>
             </div>
-            <details className="rounded-lg border border-stone-200 p-3" open={business.requireCardOnline || business.noShowFeeCents > 0 || business.lateCancelFeeType !== "none"}>
+            <details className="rounded-lg border border-stone-200 p-3" open={business.requireCardOnline || business.requireMobile || business.noShowFeeCents > 0 || business.lateCancelFeeType !== "none"}>
               <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">
                 Fees, deposits and cards <span className="font-normal text-stone-500">· {[
                   business.noShowFeeCents > 0 ? `$${(business.noShowFeeCents / 100).toFixed(0)} no-show` : null,
                   business.lateCancelFeeType === "flat" ? `$${(business.lateCancelFeeValue / 100).toFixed(0)} late cancel` : business.lateCancelFeeType === "percent" ? `${business.lateCancelFeeValue / 100}% late cancel` : null,
                   business.requireCardOnline ? "card required" : null,
+                  business.requireMobile ? "mobile required" : null,
                 ].filter(Boolean).join(" · ") || "no fees"}</span>
               </summary>
               <div className="mt-3 space-y-4">
@@ -75,6 +76,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
                   </Field>
                 </div>
                 <Checkbox name="requireCardOnline" defaultChecked={business.requireCardOnline} label="Require a card on file to book online" hint="Needs Stripe. Nothing is charged at booking; the card is kept for fees." />
+                <Checkbox name="requireMobile" defaultChecked={business.requireMobile} label="Require a mobile number to book online" hint="Otherwise a mobile number or an email is enough." />
                 <p className="text-xs text-stone-500">Deposits themselves are set per service.</p>
               </div>
             </details>

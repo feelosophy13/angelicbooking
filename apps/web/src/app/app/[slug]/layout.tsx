@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes } from "lucide-react";
+import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare } from "lucide-react";
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
@@ -18,7 +18,7 @@ import { NavLink } from "./nav-link";
 import { lowStockCount } from "@/server/inventory";
 import { MobileNav, type NavSection } from "./mobile-nav";
 
-const ICON: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes };
+const ICON: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare };
 
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;

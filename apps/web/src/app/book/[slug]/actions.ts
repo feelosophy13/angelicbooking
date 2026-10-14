@@ -4,6 +4,7 @@ import { z } from "zod";
 import { normalizePhone } from "@angelic/core";
 import { BookingError } from "@/server/booking";
 import { PromoError, validatePromo } from "@/server/promos";
+import { priceForStaff } from "@/server/stylist-pricing";
 import { assertQuotedPrice, assertSlotOpen, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
 import { appointmentForIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
 import { getSession } from "@/server/classes";
@@ -37,17 +38,30 @@ function parseBooking(raw: Record<string, unknown>): { d: BookingFields } | { er
   return { d };
 }
 
+/** The business may insist on a mobile number rather than accepting either one. */
+function mobileError(business: { requireMobile: boolean }, d: { phone: string | null }): string | null {
+  return business.requireMobile && !d.phone ? "Enter your mobile number so we can confirm your booking." : null;
+}
+
+/** What this stylist charges for the service (classes are priced per seat). */
+async function priceFor(business: { id: string }, service: { id: string; priceCents: number }, d: { staffId: string; classSessionId: string | null }): Promise<number> {
+  if (d.classSessionId) return service.priceCents;
+  return (await priceForStaff(business.id, service.id, d.staffId)) ?? service.priceCents;
+}
+
 export async function bookOnline(_prev: PublicState, formData: FormData): Promise<PublicState> {
   const p = parseBooking(Object.fromEntries(formData));
   if ("error" in p) return { error: p.error };
   const d = p.d;
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
+  const needMobile = mobileError(business, d);
+  if (needMobile) return { error: needMobile };
   // Services that need a deposit or a card must go through the payment steps below.
   const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, d.serviceId), eq(schema.services.active, true)) }));
   if (!service) return { error: "That service is no longer available." };
   const pay = await paymentContextFor(business, d.locationId);
-  if (onlinePaymentRequirement(business, service, pay).mode !== "none") return { error: "This booking needs a card. Please reload the page and try again." };
+  if (onlinePaymentRequirement(business, service, pay, await priceFor(business, service, d)).mode !== "none") return { error: "This booking needs a card. Please reload the page and try again." };
   let token: string;
   try {
     const r = await createOnlineBooking(business, { ...d, startAt: new Date(d.startAt) });
@@ -73,6 +87,8 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
   if (!business) return { error: "Online booking is not available." };
   const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, d.serviceId), eq(schema.services.active, true)) }));
   if (!service) return { error: "That service is no longer available." };
+  const needMobile = mobileError(business, d);
+  if (needMobile) return { error: needMobile };
   try {
     await assertQuotedPrice(business, d);
   } catch (e) {
@@ -80,7 +96,7 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
     throw e;
   }
   const pay = await paymentContextFor(business, d.locationId);
-  const req = onlinePaymentRequirement(business, service, pay);
+  const req = onlinePaymentRequirement(business, service, pay, await priceFor(business, service, d));
   if (req.mode === "none") return { error: "No payment is needed for this booking. Please reload the page." };
   const startAt = new Date(d.startAt);
   // A bad promo code must fail here, before a deposit is taken, not after (charge-then-refund).
@@ -111,6 +127,8 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
   const d = p.d;
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
+  const needMobile = mobileError(business, d);
+  if (needMobile) return { error: needMobile };
   const existing = await appointmentForIntent(business.id, intent.id);
   if (existing) redirect(confirmedPath(d, existing.manageToken));
   let token: string;

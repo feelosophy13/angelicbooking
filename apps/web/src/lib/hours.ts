@@ -20,6 +20,14 @@ export function describeHours(hours: WeeklyHours | null | undefined): string[] {
   });
 }
 
+/** "Open today 9am–7pm" or "Closed today"; null when the location has no hours set. */
+export function hoursToday(hours: WeeklyHours | null | undefined, tz: string, now = new Date()): string | null {
+  if (!hours) return null;
+  const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: tz }).format(now));
+  const h = hours[String(wd)];
+  return h ? `Open today ${time12(h.open)}–${time12(h.close)}` : "Closed today";
+}
+
 /** Parse the hours editor's fields (h{wd}_closed / h{wd}_open / h{wd}_close) into WeeklyHours; null when nothing was set. */
 export function parseHoursForm(get: (name: string) => string | null): WeeklyHours | null {
   const out: WeeklyHours = {};

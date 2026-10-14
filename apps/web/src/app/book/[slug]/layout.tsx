@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Gift, Globe, Instagram, MapPin, Phone, ShoppingBag, UserCircle } from "lucide-react";
+import { ChevronDown, Gift, Globe, Instagram, MapPin, Phone, ShoppingBag, UserCircle } from "lucide-react";
 import { getPublicBusiness, getPublicLocations, getPublicRating } from "@/server/public-booking";
 import { appUrl } from "@/lib/stripe";
 import { brandVars } from "@/lib/brand";
@@ -86,12 +86,14 @@ export default async function BookLayout({ children, params }: { children: React
           {business.about ? <p className="mb-4 whitespace-pre-line text-sm text-stone-700">{business.about}</p> : null}
           <div className="grid gap-5 sm:grid-cols-2">
             {withHours.length ? (
-              <div>
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">Hours</p>
-                {withHours.map((l) => (
-                  <div key={l.id} className="mb-2 text-xs leading-5">{withHours.length > 1 ? <p className="font-medium text-stone-800">{l.name}</p> : null}{describeHours(l.hours).map((line) => <p key={line}>{line}</p>)}</div>
-                ))}
-              </div>
+              <details className="group">
+                <summary className="mb-1.5 flex cursor-pointer list-none items-center gap-1 text-xs font-semibold uppercase tracking-wide text-stone-500 [&::-webkit-details-marker]:hidden">Hours <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" aria-hidden /></summary>
+                <div className={withHours.length > 1 ? "grid gap-3 sm:grid-cols-2" : ""}>
+                  {withHours.map((l) => (
+                    <div key={l.id} className="text-xs leading-5">{withHours.length > 1 ? <p className="font-medium text-stone-800">{l.name}</p> : null}{describeHours(l.hours).map((line) => <p key={line}>{line}</p>)}</div>
+                  ))}
+                </div>
+              </details>
             ) : business.hoursText ? <div><p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">Hours</p><p className="whitespace-pre-line text-xs leading-5">{business.hoursText}</p></div> : null}
             <div>
               <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-stone-500">Find us</p>

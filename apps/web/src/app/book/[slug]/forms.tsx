@@ -6,7 +6,7 @@ import { SubmitButton } from "@/components/form";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean } | null;
 
-export function BookingForm(props: { slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null }) {
+export function BookingForm(props: { requireMobile?: boolean; slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
   const d = props.defaults;
   return (
@@ -24,9 +24,9 @@ export function BookingForm(props: { slug: string; serviceId: string; staffId: s
         <Field label="First name" required><Input name="firstName" required autoComplete="given-name" defaultValue={d?.firstName} /></Field>
         <Field label="Last name"><Input name="lastName" autoComplete="family-name" defaultValue={d?.lastName} /></Field>
       </div>
-      <Field label="Mobile number"><Input name="phone" type="tel" autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
+      <Field label="Mobile number" required={props.requireMobile}><Input name="phone" type="tel" required={props.requireMobile} autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
       <Field label="Email"><Input name="email" type="email" autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
-      <p className="-mt-2 text-xs text-stone-500">A mobile number or an email is needed so we can confirm your booking.</p>
+      <p className="-mt-2 text-xs text-stone-500">{props.requireMobile ? "We text your confirmation to this number." : "A mobile number or an email is needed so we can confirm your booking."}</p>
       {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
       <Field label="Anything we should know?"><Textarea name="notes" rows={4} /></Field>
       {props.referrals && !d ? <Field label="Referral code (optional)"><Input name="referralCode" placeholder="From a friend who comes here" className="uppercase placeholder:normal-case" /></Field> : null}
