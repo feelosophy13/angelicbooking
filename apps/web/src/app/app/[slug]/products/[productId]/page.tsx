@@ -112,6 +112,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
               ))}
             </ul>
           ) : null}
+          {movements.length ? <Link href={`/app/${slug}/inventory/history?range=all&product=${product.id}`} className="mt-2 inline-block text-xs text-brand-700 underline">See all history</Link> : null}
         </Card>
       ) : null}
       {canStock ? (

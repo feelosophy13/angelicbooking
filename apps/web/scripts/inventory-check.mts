@@ -4,12 +4,13 @@ import "../../../packages/db/src/env";
 import assert from "node:assert/strict";
 import { eq, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
-import { readProductRows, PRODUCT_CSV_HEADERS } from "../src/lib/inventory";
+import { readProductRows, PRODUCT_CSV_HEADERS, reasonsFor } from "../src/lib/inventory";
 import { addOptions, convertToGroup, createGroup, getGroup, GroupError, quickCreateOption, setGroupActive, updateGroup } from "../src/server/product-groups";
+import { historyFilterFromParams } from "../src/lib/history-filter";
 import { optionCombos, parseOptionList } from "../src/lib/variants";
 import {
   applyCount, cancelOrder, createPurchaseOrder, decrementStockForSale, findProductByCode, getPurchaseOrder, listLocations, lowStock, markOrdered, onlineAvailability, receiveOrder,
-  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy, undoMovement, togglePin, pinnedProductIds, supplyCosts, recentUsage, attachBarcode, scannableProducts, codeTaken, undoReceipt, orderReceipts, quickCreateProduct, findProductByCode, listExtraBarcodes, removeExtraBarcode,
+  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy, undoMovement, togglePin, pinnedProductIds, supplyCosts, recentUsage, attachBarcode, scannableProducts, codeTaken, undoReceipt, orderReceipts, quickCreateProduct, findProductByCode, listExtraBarcodes, removeExtraBarcode, stockHistory, historyPeople,
 } from "../src/server/inventory";
 
 const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, "demo-twosites") });
@@ -408,6 +409,36 @@ const exported = await exportProducts(B);
 assert.ok(exported.some((p) => p.name === "Check Product" && p.onHand === 7));
 assert.equal(PRODUCT_CSV_HEADERS.length, 15);
 ok("export includes the new product with its count");
+
+console.log("Stock history");
+{
+  const all = await stockHistory(B, {});
+  assert.ok(all.total > 0 && all.rows.length <= 50);
+  const times = all.rows.map((r) => r.createdAt.getTime());
+  assert.deepEqual(times, [...times].sort((a, b) => b - a), "newest first");
+  ok("the history lists every movement, newest first, 50 to a page");
+  const one = await product("Check Product");
+  await recordMovement({ businessId: B, productId: one.id, locationId: main, entered: 3, reason: "received", note: "history-check", actorUserId: actor });
+  await recordMovement({ businessId: B, productId: one.id, locationId: main, entered: 1, reason: "damage", note: "history-check", actorUserId: actor });
+  const mine = await stockHistory(B, { productId: one.id });
+  assert.equal(mine.unitsIn >= 3 && mine.unitsOut >= 1, true);
+  assert.ok(mine.rows.every((r) => r.productId === one.id));
+  const ins = await stockHistory(B, { productId: one.id, reasons: reasonsFor("in") });
+  assert.ok(ins.rows.every((r) => r.delta > 0 || r.reason === "count"));
+  const dmg = await stockHistory(B, { productId: one.id, reasons: reasonsFor("damage"), q: "history-check" });
+  assert.equal(dmg.total, 1);
+  assert.equal(dmg.unitsOut, 1);
+  ok("filters by product, reason group, single reason and note text; totals add up what is shown");
+  const win = historyFilterFromParams({ range: "7" }, "America/New_York", new Date("2026-10-14T12:00:00Z")).filter;
+  assert.ok(win.from && !win.until && (new Date("2026-10-14T12:00:00Z").getTime() - win.from.getTime()) / 864e5 < 7);
+  const cust = historyFilterFromParams({ range: "custom", from: "2026-10-01", to: "2026-10-03" }, "America/New_York").filter;
+  assert.equal(cust.until!.getTime() - cust.from!.getTime(), 3 * 864e5, "the end date is included");
+  assert.equal(historyFilterFromParams({ range: "all" }, "UTC").filter.from, undefined);
+  const nobody = await stockHistory(B, { userId: "none" });
+  assert.ok(nobody.rows.every((r) => r.createdByUserId === null));
+  assert.ok((await historyPeople(B)).length >= 1);
+  ok("periods are read in the business's time zone with the end date included; 'nobody' finds automatic lines");
+}
 
 console.log("Report");
 const rep = await inventoryReport(B, 90);

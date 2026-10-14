@@ -9,7 +9,7 @@
  *    By hand (a write-off, a transfer) stock can never go below zero.
  *  - A refund gives money back; it does not put goods back on the shelf. Returns are recorded on purpose (`returnToShelf`).
  */
-import { and, asc, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
 import { instantToISODate, isAction } from "@angelic/core";
 import { queueOneOff } from "@/lib/notify";
@@ -673,6 +673,89 @@ export async function orderReceipts(businessId: string, purchaseOrderId: string)
       .where(and(eq(schema.stockMovements.purchaseOrderId, purchaseOrderId), eq(schema.stockMovements.reason, "received"), sql`${schema.stockMovements.delta} > 0`))
       .orderBy(desc(schema.stockMovements.createdAt));
     return rows.map((r) => ({ id: r.m.id, label: productLabel(r), qty: r.m.delta, at: r.m.createdAt, who: r.who, undone: !!r.reversed }));
+  });
+}
+
+// ---- Stock history: every movement, with filters ----
+
+export type HistoryFilter = { from?: Date; until?: Date; reasons?: string[]; userId?: string | "none"; locationId?: string; productId?: string; q?: string };
+
+function historyWhere(f: HistoryFilter): SQL | undefined {
+  const m = schema.stockMovements;
+  const conds: (SQL | undefined)[] = [];
+  if (f.from) conds.push(gte(m.createdAt, f.from));
+  if (f.until) conds.push(lt(m.createdAt, f.until));
+  if (f.reasons?.length) conds.push(inArray(m.reason, f.reasons));
+  if (f.userId === "none") conds.push(sql`${m.createdByUserId} is null`);
+  else if (f.userId) conds.push(eq(m.createdByUserId, f.userId));
+  if (f.locationId) conds.push(eq(m.locationId, f.locationId));
+  if (f.productId) conds.push(eq(m.productId, f.productId));
+  const q = f.q?.trim();
+  if (q) {
+    const like = `%${q.replace(/[%_]/g, "\\$&")}%`;
+    conds.push(or(ilike(schema.products.name, like), ilike(schema.products.variantLabel, like), ilike(schema.products.sku, like), eq(schema.products.barcode, q), ilike(m.note, like)));
+  }
+  return and(...conds);
+}
+
+/** One page of the ledger, newest first, with what the filter adds up to (units and value at cost, in and out). */
+export async function stockHistory(businessId: string, f: HistoryFilter, page = 1, pageSize = 50) {
+  return withTenant(businessId, async (tx) => {
+    const where = historyWhere(f);
+    const base = () => tx.select({ n: sql<number>`count(*)` }).from(schema.stockMovements).innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId));
+    const [rows, [count], [sum]] = await Promise.all([
+      tx
+        .select({
+          m: schema.stockMovements,
+          name: schema.products.name,
+          variantLabel: schema.products.variantLabel,
+          sku: schema.products.sku,
+          location: schema.locations.name,
+          who: schema.user.name,
+          saleNumber: schema.sales.number,
+          orderNumber: schema.purchaseOrders.number,
+          reversed: sql<boolean>`exists (select 1 from stock_movements r where r.reverses_movement_id = ${schema.stockMovements.id})`,
+        })
+        .from(schema.stockMovements)
+        .innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId))
+        .leftJoin(schema.locations, eq(schema.locations.id, schema.stockMovements.locationId))
+        .leftJoin(schema.user, eq(schema.user.id, schema.stockMovements.createdByUserId))
+        .leftJoin(schema.sales, eq(schema.sales.id, schema.stockMovements.saleId))
+        .leftJoin(schema.purchaseOrders, eq(schema.purchaseOrders.id, schema.stockMovements.purchaseOrderId))
+        .where(where)
+        .orderBy(desc(schema.stockMovements.createdAt), desc(schema.stockMovements.id))
+        .limit(pageSize)
+        .offset((Math.max(1, page) - 1) * pageSize),
+      base().where(where),
+      tx
+        .select({
+          unitsIn: sql<number>`coalesce(sum(${schema.stockMovements.delta}) filter (where ${schema.stockMovements.delta} > 0), 0)`,
+          unitsOut: sql<number>`coalesce(-sum(${schema.stockMovements.delta}) filter (where ${schema.stockMovements.delta} < 0), 0)`,
+          valueIn: sql<number>`coalesce(sum(${schema.stockMovements.delta} * coalesce(${schema.stockMovements.unitCostCents}, ${schema.products.costCents})) filter (where ${schema.stockMovements.delta} > 0), 0)`,
+          valueOut: sql<number>`coalesce(-sum(${schema.stockMovements.delta} * coalesce(${schema.stockMovements.unitCostCents}, ${schema.products.costCents})) filter (where ${schema.stockMovements.delta} < 0), 0)`,
+        })
+        .from(schema.stockMovements)
+        .innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId))
+        .where(where),
+    ]);
+    return {
+      rows: rows.map((r) => ({ ...r.m, label: productLabel({ name: r.name, variantLabel: r.variantLabel }), sku: r.sku, location: r.location, who: r.who, saleNumber: r.saleNumber, orderNumber: r.orderNumber, undone: !!r.reversed })),
+      total: Number(count?.n ?? 0),
+      page: Math.max(1, page),
+      pageSize,
+      unitsIn: Number(sum?.unitsIn ?? 0),
+      unitsOut: Number(sum?.unitsOut ?? 0),
+      valueInCents: Math.round(Number(sum?.valueIn ?? 0)),
+      valueOutCents: Math.round(Number(sum?.valueOut ?? 0)),
+    };
+  });
+}
+
+/** People who have moved stock (for the filter), plus whether some movements have no person (sales). */
+export async function historyPeople(businessId: string) {
+  return withTenant(businessId, async (tx) => {
+    const rows = await tx.selectDistinct({ id: schema.user.id, name: schema.user.name }).from(schema.stockMovements).innerJoin(schema.user, eq(schema.user.id, schema.stockMovements.createdByUserId)).orderBy(asc(schema.user.name));
+    return rows;
   });
 }
 

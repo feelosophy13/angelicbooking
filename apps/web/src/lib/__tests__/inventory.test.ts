@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysOfStock, locationAlerts, worstStatus, manualDelta, movementReason, productLabel, readProductRows, stockStatus, suggestedOrderQty } from "../inventory";
+import { daysOfStock, locationAlerts, MOVEMENT_REASONS, REASON_GROUPS, reasonsFor, worstStatus, manualDelta, movementReason, productLabel, readProductRows, stockStatus, suggestedOrderQty } from "../inventory";
 
 describe("stock status", () => {
   it("tells a count that is off from out, low and fine", () => {
@@ -109,5 +109,20 @@ describe("per-location alerts", () => {
   it("summarises as the worst status", () => {
     expect(worstStatus([])).toBe("ok");
     expect(worstStatus(["low", "out", "ok"])).toBe("out");
+  });
+});
+
+describe("filtering the stock history by reason", () => {
+  it("a group stands for several reasons, a reason for itself, anything else for all", () => {
+    expect(reasonsFor("in")).toContain("received");
+    expect(reasonsFor("out")).toEqual(expect.arrayContaining(["sale", "used"]));
+    expect(reasonsFor("damage")).toEqual(["damage"]);
+    expect(reasonsFor("")).toEqual([]);
+    expect(reasonsFor("nonsense")).toEqual([]);
+  });
+  it("every reason belongs to exactly one group, so nothing falls out of the filters", () => {
+    const grouped = Object.values(REASON_GROUPS).flat();
+    expect(new Set(grouped).size).toBe(grouped.length);
+    expect([...grouped].sort()).toEqual(Object.keys(MOVEMENT_REASONS).sort());
   });
 });

@@ -21,6 +21,7 @@ export default async function InventoryLayout({ children, params }: { children: 
     { href: `${base}/suppliers`, label: "Suppliers" },
     { href: `${base}/use`, label: "Log usage" },
     { href: `${base}/count`, label: "Count" },
+    { href: `${base}/history`, label: "History" },
     { href: `${base}/report`, label: "Report" },
   ];
   const current = (await headers()).get("x-pathname") ?? "";

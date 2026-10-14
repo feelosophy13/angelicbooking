@@ -75,6 +75,21 @@ export const MOVEMENT_REASONS = {
 export type MovementReason = keyof typeof MOVEMENT_REASONS;
 export const movementReason = (r: string) => (MOVEMENT_REASONS as Record<string, string>)[r] ?? r;
 
+/** For the history filter: reasons grouped by what they do to the shelf. */
+export const REASON_GROUPS = {
+  in: ["received", "return", "transfer_in", "opening"],
+  out: ["sale", "used", "transfer_out", "supplier_return"],
+  fixes: ["adjust", "count", "damage", "theft", "expired", "lost"],
+} as const;
+export const REASON_GROUP_LABELS: Record<keyof typeof REASON_GROUPS, string> = { in: "Stock coming in", out: "Stock going out", fixes: "Corrections and write-offs" };
+
+/** A filter value ("in", "out", "fixes", or one reason) as the list of reasons it stands for; empty means every reason. */
+export function reasonsFor(value: string | undefined | null): string[] {
+  if (!value) return [];
+  if (value in REASON_GROUPS) return [...REASON_GROUPS[value as keyof typeof REASON_GROUPS]];
+  return value in MOVEMENT_REASONS ? [value] : [];
+}
+
 /** What a person may record by hand on a product. (Sales, returns, counts and transfers have their own screens.) */
 export const MANUAL_REASONS = ["received", "adjust", "damage", "theft", "expired", "lost", "supplier_return", "used"] as const;
 export type ManualReason = (typeof MANUAL_REASONS)[number];
