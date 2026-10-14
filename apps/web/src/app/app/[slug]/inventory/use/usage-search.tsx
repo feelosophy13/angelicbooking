@@ -12,13 +12,16 @@ export type UsageProduct = { id: string; label: string; category: string | null;
 export function UsageSearch({ slug, products, recentIds, locations, defaultLocationId }: { slug: string; products: UsageProduct[]; recentIds: string[]; locations: { id: string; name: string }[]; defaultLocationId: string }) {
   const [q, setQ] = useState("");
   const [loc, setLoc] = useState(defaultLocationId);
+  const [cat, setCat] = useState("");
   const needle = q.trim().toLowerCase();
+  const categories = useMemo(() => [...new Set(products.map((p) => p.category ?? "Other"))], [products]);
   const shown = useMemo(() => {
-    if (needle) return products.filter((p) => `${p.label} ${p.category ?? ""}`.toLowerCase().includes(needle)).slice(0, 30);
+    // A search and/or a category narrows the whole list; with neither, show what this person logged recently.
+    if (needle || cat) return products.filter((p) => (!cat || (p.category ?? "Other") === cat) && (!needle || `${p.label} ${p.category ?? ""}`.toLowerCase().includes(needle))).slice(0, 50);
     const recent = recentIds.map((id) => products.find((p) => p.id === id)).filter((p): p is UsageProduct => !!p);
     return recent.length ? recent : products.slice(0, 8);
-  }, [needle, products, recentIds]);
-  const heading = needle ? `${shown.length} match${shown.length === 1 ? "" : "es"}${shown.length === 30 ? " (showing the first 30)" : ""}` : recentIds.length ? "You logged these recently" : "Start typing to find a product";
+  }, [needle, cat, products, recentIds]);
+  const heading = needle || cat ? `${shown.length} match${shown.length === 1 ? "" : "es"}${shown.length === 50 ? " (showing the first 50)" : ""}` : recentIds.length ? "You logged these recently" : "Search, or pick a category";
 
   return (
     <div className="space-y-3">
@@ -27,6 +30,12 @@ export function UsageSearch({ slug, products, recentIds, locations, defaultLocat
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400" aria-hidden />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search products" aria-label="Search products" autoComplete="off" autoFocus className="h-10 w-full rounded-lg border border-stone-300 bg-white pl-9 pr-3 text-sm focus:outline-2 focus:outline-brand-500" />
         </div>
+        {categories.length > 1 ? (
+          <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Category" className="h-10 rounded-lg border border-stone-300 bg-white px-3 text-sm">
+            <option value="">All categories</option>
+            {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        ) : null}
         {locations.length > 1 ? (
           <select value={loc} onChange={(e) => setLoc(e.target.value)} aria-label="Where" className="h-10 rounded-lg border border-stone-300 bg-white px-3 text-sm">
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -35,7 +44,7 @@ export function UsageSearch({ slug, products, recentIds, locations, defaultLocat
       </div>
       <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{heading}</p>
       {shown.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-500">No product matches “{q}”.</p>
+        <p className="rounded-lg border border-dashed border-stone-300 p-4 text-sm text-stone-500">No product matches{q ? ` “${q}”` : ""}{cat ? ` in ${cat}` : ""}.</p>
       ) : (
         <ul className="divide-y divide-stone-100 rounded-xl border border-stone-200 bg-white">
           {shown.map((p) => (
