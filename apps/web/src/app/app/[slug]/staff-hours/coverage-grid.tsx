@@ -35,7 +35,7 @@ export function CoverageGrid({ coverage, today, hoursHref, mode = "people" }: { 
         <div className="grid grid-cols-[3.5rem_repeat(7,minmax(0,1fr))] border-b border-stone-200 text-xs">
           <div />
           {days.map((d) => (
-            <div key={d.date} className={cn("border-l border-stone-100 px-2 py-2", d.date === today && "bg-brand-50/60")}>
+            <div key={d.date} className={cn("border-l border-stone-300 px-2 py-2", d.date === today && "bg-brand-50/60")}>
               <p className="font-semibold text-stone-800">{DAY_SHORT[d.weekday]} <span className="font-normal text-stone-500">{md(d.date)}</span></p>
               <p className="text-stone-500">{d.open ? `${fmt(d.open.start)}–${fmt(d.open.end)}` : "Closed"}{mode === "people" && d.lanes.length ? ` · ${d.lanes.length} in` : ""}</p>
             </div>
@@ -58,7 +58,7 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref, mode }: { day: C
   // Two or more lanes leave no room for a name across; write it down the lane instead.
   const narrow = day.lanes.length >= 2;
   return (
-    <div className={cn("hatched relative border-l border-stone-100")} style={{ height }}>
+    <div className={cn("hatched relative border-l border-stone-300")} style={{ height }}>
       {/* Opening hours: the white area */}
       {/* Opaque, so the hatching never shows through open hours (today is tinted, not translucent). */}
       {day.open ? <div className={cn("absolute inset-x-0", isToday ? "bg-brand-50" : "bg-white")} style={{ top: y(day.open.start), height: y(day.open.end) - y(day.open.start) }} /> : null}
