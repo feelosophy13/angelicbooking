@@ -69,8 +69,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `reconcileSubscription` (daily, in the 07:00 UTC run of the reminders job) keeps quantities in line with locations and active staff.
       Run `scripts/billing-smoke.ts <slug>` (it now exercises reconcile). Platform-wide price changes do NOT re-price existing subscribers on purpose;
       a business with its own pricing deal is re-priced. Decide if you want an "apply to existing customers" button.
-- [ ] Suspend currently closes the staff app (`requireBusiness`), the public booking page and outgoing texts/emails. It does not pause the Stripe
-      subscription, and API routes that don't go through `requireBusiness` (mobile API, webhooks) still work.
+- [ ] Suspend closes the staff app, booking page, client self-service links, calendar feeds, clock kiosk, mobile API and outgoing messages, and the daily sweep pauses the Stripe subscription (untested against Stripe). Stripe/Twilio webhooks still process.
 - [ ] Read-only view-as / impersonation was **not** built: it needs a read-only mode enforced across every server action in `apps/web`. The admin app
       shows locations, staff and logins instead. Worth doing only if support needs it.
 - [ ] Platform billing overview (real MRR, failed payments) once Stripe keys exist.

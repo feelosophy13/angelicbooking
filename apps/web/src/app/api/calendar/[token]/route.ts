@@ -20,7 +20,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const person = await withJobs((tx) => tx.query.staff.findFirst({ where: eq(schema.staff.calendarToken, token) }));
   if (!person) return new Response("Not found", { status: 404 });
   const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, person.businessId) });
-  if (!business) return new Response("Not found", { status: 404 });
+  if (!business || business.suspendedAt) return new Response("Not found", { status: 404 });
   const now = Date.now();
   const items = await withTenant(business.id, (tx) =>
     tx

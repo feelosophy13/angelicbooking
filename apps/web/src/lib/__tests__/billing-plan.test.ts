@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PRICE_BOOK } from "@angelic/core/platform-pricing";
-import { desiredItems, kindOf, planChanges, priceKey } from "../billing-plan";
+import { desiredItems, kindOf, pauseAction, planChanges, priceKey } from "../billing-plan";
 
 const book = { ...DEFAULT_PRICE_BOOK, baseCents: 2900, includedLocations: 1, perLocationCents: 1500, includedStaff: 2, perStaffCents: 500 };
 
@@ -46,5 +46,17 @@ describe("planChanges", () => {
     expect(kindOf("angelic_staff_monthly_500")).toBe("staff");
     expect(kindOf("angelic_sms_number_monthly_1500")).toBeNull();
     expect(kindOf(null)).toBeNull();
+  });
+});
+
+describe("pauseAction", () => {
+  it("pauses a suspended business that is still collecting", () => {
+    expect(pauseAction({ suspended: true, paused: false, pausedBySuspend: false })).toBe("pause");
+    expect(pauseAction({ suspended: true, paused: true, pausedBySuspend: true })).toBeNull();
+  });
+  it("resumes only a pause we made", () => {
+    expect(pauseAction({ suspended: false, paused: true, pausedBySuspend: true })).toBe("resume");
+    expect(pauseAction({ suspended: false, paused: true, pausedBySuspend: false })).toBeNull();
+    expect(pauseAction({ suspended: false, paused: false, pausedBySuspend: false })).toBeNull();
   });
 });

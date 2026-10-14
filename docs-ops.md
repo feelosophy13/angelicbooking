@@ -281,6 +281,35 @@ With the dev server running, a small amber "Dev · View as" selector sits at the
 "Provider · <stylist>" to see the menu, calendar and permission errors that role gets; pick "Owner (you)" to go back. It is a cookie read by
 `requireBusiness` (`lib/dev-view-as.ts`) and is ignored, and the selector not drawn, when `NODE_ENV` is production or `RENDER`/`VERCEL` is set.
 
+## Platform admin app (added 2026-10-14)
+`apps/admin` is a separate Next.js app (port 3002 locally: `pnpm dev:admin`) for you, not for salons. It lists every
+business with usage metrics, edits the price book and per-business pricing, suspends / comps businesses, extends
+trials, exports CSV and shows platform health and an audit log. It never shares a process or credentials with `apps/web`.
+
+**Database role.** It connects as `angelic_admin` (`packages/db/sql/admin-role.sql`): bypasses row-level security, read-only
+except `platform_pricing`, `business_pricing`, `admin_audit_log` and the columns `suspended_at`, `suspended_reason`,
+`comped`, `trial_ends_at`, `updated_at` of `businesses`. Run the file as the DB owner after every migration that adds tables,
+and change the password before using it in production. `ADMIN_DATABASE_URL` goes on the admin service only.
+
+**Env (admin service).** `ADMIN_DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` (`pnpm --filter @angelic/admin hash-password '…'`),
+`ADMIN_SESSION_SECRET` (32+ random chars), `ADMIN_TOTP_SECRET` (`pnpm --filter @angelic/admin totp-secret`, then add the key to an
+authenticator app; login then needs the 6-digit code), optional `STRIPE_SECRET_KEY` (restricted, read-only: shows what Stripe actually bills).
+
+**Deploy.** A second Render web service from the same repo: build `pnpm install && pnpm --filter @angelic/admin build`, start
+`pnpm --filter @angelic/admin start`, domain `admin.angelicbooking.com`, with a Cloudflare Access policy (your email only) in front.
+Sessions last 8 hours; logins are throttled to 5 failures per IP per 15 minutes per instance.
+
+**Locked out?** Generate a new hash/secret with the scripts above and update the env vars; there is no account table to repair.
+
+**What suspend does.** Closes the staff app (redirects to `/suspended`), the public booking page, client self-service links, calendar
+feeds, the clock-in kiosk and the mobile API, and skips outgoing texts and emails. Data is kept. The daily billing sweep also pauses
+invoice collection on the business's Stripe subscription (invoices are voided) and resumes it after reactivation.
+
+**What the price book does.** Defaults to the old `BILLING_*` / `SMS_*` env amounts until an admin saves one. New subscriptions are
+built from it (base + extra locations + extra staff + metered texts); the 07:00 UTC run of the reminders job keeps quantities in
+line with each business's locations and active staff. Platform-wide price changes do not re-price existing subscribers; a business
+with its own pricing deal is re-priced. Comped businesses are never charged.
+
 ## Demo tenant
 
 Two fake businesses for walkthroughs and screenshots, built by `apps/web/scripts/seed-demo.ts` (it never touches any other

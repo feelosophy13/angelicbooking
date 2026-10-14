@@ -72,3 +72,14 @@ export function planChanges(desired: DesiredItem[], existing: ExistingItem[]): P
   for (const e of managed) if (!used.has(e.id)) plan.remove.push(e.id);
   return plan;
 }
+
+/**
+ * Whether to pause or resume invoice collection for a suspended / reactivated business. We only resume a pause
+ * we made ourselves (marked in the subscription's metadata), never one someone set in the Stripe dashboard.
+ */
+export function pauseAction(opts: { suspended: boolean; paused: boolean; pausedBySuspend: boolean }): "pause" | "resume" | null {
+  if (opts.suspended) return opts.paused ? null : "pause";
+  return opts.paused && opts.pausedBySuspend ? "resume" : null;
+}
+
+export const SUSPEND_PAUSE_MARKER = "paused_by_suspend";

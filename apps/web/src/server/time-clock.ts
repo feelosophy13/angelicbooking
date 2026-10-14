@@ -57,7 +57,7 @@ export async function resolveClock(token: string) {
   const location = await withJobs((tx) => tx.query.locations.findFirst({ where: eq(schema.locations.clockToken, token) }));
   if (!location) return null;
   const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, location.businessId) });
-  return business ? { business, location } : null;
+  return business && !business.suspendedAt ? { business, location } : null;
 }
 
 export type Punch = { staffName: string; action: "in" | "out"; at: Date; minutes: number | null; timeZone: string };

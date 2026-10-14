@@ -285,7 +285,7 @@ function isoDateIn(at: Date, tz: string) {
 /** Everything the client's self-service page needs, by secret token. */
 export async function getManagedAppointment(slug: string, token: string) {
   const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, slug) });
-  if (!business) return null;
+  if (!business || business.suspendedAt) return null;
   return withTenant(business.id, async (tx) => {
     const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.manageToken, token) });
     if (!appt) return null;

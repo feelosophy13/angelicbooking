@@ -15,7 +15,7 @@ import { appUrl, isStripeConfigured, stripe } from "@/lib/stripe";
 import { and, inArray, sql } from "drizzle-orm";
 import type { PriceBook } from "@angelic/core/platform-pricing";
 import { billingConfig, canBuyNumber, isDelinquent, isSubscribed, lookupKeys, SMS_METER_EVENT, type BillingConfig } from "@/lib/billing-config";
-import { desiredItems, planChanges, priceKey, type ManagedKind } from "@/lib/billing-plan";
+import { desiredItems, pauseAction, planChanges, priceKey, SUSPEND_PAUSE_MARKER, type ManagedKind } from "@/lib/billing-plan";
 import { platformPriceBook, priceBookFor } from "@/server/price-book";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -320,6 +320,9 @@ export interface ReconcileResult {
 export async function reconcileSubscription(business: Business): Promise<ReconcileResult> {
   const result: ReconcileResult = { created: 0, updated: 0, removed: 0 };
   if (!billingEnabled() || !business.stripeSubscriptionId || business.comped || !isSubscribed(business.subscriptionStatus)) return result;
+  // A suspended business is not charged: pause invoice collection (invoices are voided) until it is reactivated.
+  const pausing = await syncSuspendPause(business);
+  if (pausing || business.suspendedAt) return result;
   const [book, usage, hasDeal] = await Promise.all([
     priceBookFor(business.id),
     billableUsage(business.id),
@@ -347,6 +350,17 @@ export async function reconcileSubscription(business: Business): Promise<Reconci
   }
   if (result.created + result.updated + result.removed > 0) await refreshSubscription(business);
   return result;
+}
+
+/** Pause or resume collection to match the business's suspended state. Returns true when it changed the subscription. */
+async function syncSuspendPause(business: Business): Promise<boolean> {
+  if (!business.stripeSubscriptionId) return false;
+  const s = stripe();
+  const sub = await s.subscriptions.retrieve(business.stripeSubscriptionId);
+  const action = pauseAction({ suspended: !!business.suspendedAt, paused: !!sub.pause_collection, pausedBySuspend: sub.metadata?.[SUSPEND_PAUSE_MARKER] === "1" });
+  if (action === "pause") await s.subscriptions.update(sub.id, { pause_collection: { behavior: "void" }, metadata: { [SUSPEND_PAUSE_MARKER]: "1" } });
+  else if (action === "resume") await s.subscriptions.update(sub.id, { pause_collection: "", metadata: { [SUSPEND_PAUSE_MARKER]: "" } });
+  return action !== null;
 }
 
 /** Daily sweep (called from the jobs route): reconcile every paying business. One failure never stops the rest. */
