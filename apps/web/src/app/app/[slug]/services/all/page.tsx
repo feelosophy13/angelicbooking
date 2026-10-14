@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Plus } from "lucide-react";
+import { CreditCard, Plus } from "lucide-react";
 import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { buildTree, flattenTree, pathTo } from "@/server/categories";
@@ -23,6 +23,7 @@ export default async function AllServicesPage({ params }: { params: Promise<{ sl
     <>
       <div className="mb-2"><BackLink href={base}>Services</BackLink></div>
       <PageHeader title="All services">
+        {manage && services.length ? <LinkButton href={`${base}/payments`}><CreditCard className="h-4 w-4" /> Online payments</LinkButton> : null}
         {manage ? <LinkButton href={`${base}/new`} variant="primary"><Plus className="h-4 w-4" /> New service</LinkButton> : null}
       </PageHeader>
       <div className="space-y-4">
