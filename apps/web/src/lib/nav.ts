@@ -49,7 +49,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       it(`${base}/reviews`, "Reviews", "Star"),
       ...(ok("business.manage") ? [it(`${base}/settings/notifications`, "Messages", "MessageSquare")] : []),
     ] },
-    { title: "", items: ok("business.manage") ? [it(`${base}/settings`, "Settings", "Settings", { exclude: [`${base}/settings/loyalty`, `${base}/settings/roles`, `${base}/settings/forms`, `${base}/settings/notifications`] })] : [] },
+    { title: "", items: ok("business.manage") ? [it(`${base}/settings/api`, "API", "KeyRound"), it(`${base}/settings`, "Settings", "Settings", { exclude: [`${base}/settings/loyalty`, `${base}/settings/roles`, `${base}/settings/forms`, `${base}/settings/notifications`, `${base}/settings/api`] })] : [] },
   ].filter((s) => s.items.length > 0);
 }
 
