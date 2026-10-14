@@ -1,94 +1,133 @@
 import Link from "next/link";
-import { Shell, StatusPill, date } from "@/components";
-import { SORTS, STATUS_FILTERS, applyQuery, parseQuery, type SortKey } from "@/lib/filters";
+import { date } from "@/components";
+import { Shell } from "@/components";
+import { needsAttention } from "@/lib/attention";
+import { actionLabel, listAudit } from "@/lib/audit";
+import { platformHealth } from "@/lib/health";
+import { platformWeekly, weekLabel } from "@/lib/metrics";
 import { money } from "@/lib/price-form";
 import { listTenantsWithBills } from "@/lib/tenants";
+import { Bars, Sparkline, Stack } from "@/ui/chart";
+import { Icon } from "@/ui/icons";
+import { Avatar, Badge, Card, Empty, PageHeader, Stat, relativeDay } from "@/ui/kit";
 
 export const dynamic = "force-dynamic";
 
-export default async function TenantsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const query = parseQuery(await searchParams);
-  const { tenants: all } = await listTenantsWithBills();
-  const tenants = applyQuery(all, query);
-  const paying = all.filter((t) => t.subscriptionStatus === "active").length;
-  const trialing = all.filter((t) => t.subscriptionStatus === "trialing" || (t.plan === "trial" && t.subscriptionStatus === "none")).length;
-  const attention = all.filter((t) => ["past_due", "unpaid"].includes(t.subscriptionStatus)).length;
-  const estimated = all.reduce((s, t) => s + t.bill.totalCents, 0);
-  const exportHref = `/export.csv?${new URLSearchParams({ q: query.q, status: query.status, sort: query.sort, dir: query.dir })}`;
-  // Clicking a column heading sorts by it; clicking again flips the direction.
-  const sortHref = (k: SortKey) => `/?${new URLSearchParams({ q: query.q, status: query.status, sort: k, dir: query.sort === k && query.dir === "desc" ? "asc" : "desc" })}`;
-  const th = (label: string, k: SortKey, right = false) => (
-    <th className={`px-3 py-2 ${right ? "text-right" : ""}`}>
-      <Link href={sortHref(k)} className="hover:text-stone-900">{label}{query.sort === k ? (query.dir === "asc" ? " ↑" : " ↓") : ""}</Link>
-    </th>
-  );
+export default async function Dashboard() {
+  const [{ tenants }, weekly, audit, health] = await Promise.all([listTenantsWithBills(), platformWeekly(), listAudit({ limit: 6 }), platformHealth()]);
+  const now = Date.now();
+  const live = tenants.filter((t) => !t.suspendedAt);
+  const paying = live.filter((t) => t.subscriptionStatus === "active").length;
+  const trial = live.filter((t) => t.subscriptionStatus === "trialing" || (t.plan === "trial" && t.subscriptionStatus === "none")).length;
+  const failing = live.filter((t) => ["past_due", "unpaid"].includes(t.subscriptionStatus)).length;
+  const suspended = tenants.length - live.length;
+  const comped = tenants.filter((t) => t.comped).length;
+  const other = Math.max(0, live.length - paying - trial - failing);
+  const estimated = tenants.reduce((s, t) => s + t.bill.totalCents, 0);
+  const attention = needsAttention(tenants, now);
+  const thisWeek = weekly[weekly.length - 1];
+  const sum = (k: "bookings" | "sms" | "signups" | "clients") => weekly.reduce((s, w) => s + w[k], 0);
+  const spark = (k: "bookings" | "sms" | "signups" | "clients", label: string) => <Sparkline values={weekly.map((w) => w[k])} label={label} />;
+  const overdue = health.queuedOverdue > 0 || health.webhookUnprocessed > 0 || health.failed24h.reduce((s, r) => s + r.n, 0) > 0;
+  const recent = [...tenants].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 5);
 
   return (
     <Shell>
-      <h1 className="text-xl font-semibold">Tenants</h1>
-      <p className="mt-1 text-sm text-stone-600">
-        {all.length} total · {paying} paying · {trialing} on trial{attention > 0 && <> · <span className="font-medium text-amber-700">{attention} need attention</span></>}
-        {" · "}{money(estimated)}/mo if everyone paid the <Link href="/pricing" className="underline">price book</Link>
-      </p>
-      <form className="mt-4 flex flex-wrap items-center gap-2" role="search">
-        <input name="q" defaultValue={query.q} placeholder="Search name, slug or owner email" className="w-72 rounded-md border border-stone-300 bg-white px-3 py-1.5 text-sm" />
-        <select name="status" defaultValue={query.status} className="rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm">
-          {STATUS_FILTERS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-        </select>
-        <select name="sort" defaultValue={query.sort} className="rounded-md border border-stone-300 bg-white px-2 py-1.5 text-sm">
-          {SORTS.map(([k, label]) => <option key={k} value={k}>Sort: {label}</option>)}
-        </select>
-        <input type="hidden" name="dir" value={query.dir} />
-        <button className="rounded-md bg-violet-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-violet-800">Apply</button>
-        {(query.q || query.status !== "all") && <Link href="/" className="text-sm text-stone-600 underline">Clear</Link>}
-        <a href={exportHref} className="ml-auto text-sm text-stone-600 underline">Export CSV ({tenants.length})</a>
-      </form>
-      <div className="mt-3 overflow-x-auto rounded-lg border border-stone-200 bg-white">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-stone-200 text-xs uppercase tracking-wide text-stone-500">
-            <tr>
-              {th("Business", "name")}
-              <th className="px-3 py-2">Owner</th>
-              <th className="px-3 py-2">Plan</th>
-              {th("Locations", "locations", true)}
-              {th("Staff", "staff", true)}
-              {th("Clients", "clients", true)}
-              {th("Texts 30d", "texts", true)}
-              {th("Est. / month", "estimate", true)}
-              {th("Last booking", "activity")}
-              {th("Signed up", "created")}
-            </tr>
-          </thead>
-          <tbody>
-            {tenants.map((t) => (
-              <tr key={t.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50">
-                <td className="p-0">
-                  <Link href={`/tenants/${t.id}`} className="block px-3 py-2">
-                    <span className="font-medium">{t.name}</span>
-                    {t.suspendedAt && <span className="ml-2 rounded bg-red-100 px-1 text-xs text-red-800">suspended</span>}
-                    {t.comped && <span className="ml-2 rounded bg-sky-100 px-1 text-xs text-sky-800">comped</span>}
-                    <span className="block text-xs text-stone-500">{t.slug}</span>
-                  </Link>
-                </td>
-                <td className="px-3 py-2">{t.ownerEmail ?? "—"}</td>
-                <td className="px-3 py-2"><span className="mr-2 capitalize">{t.plan}</span><StatusPill status={t.subscriptionStatus} /></td>
-                <td className="px-3 py-2 text-right tabular-nums">{t.locations}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{t.activeStaff}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{t.clients}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{t.sms30d}</td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {money(t.bill.totalCents)}
-                  {t.hasOverrides && <span title="Custom pricing" className="ml-1 rounded bg-violet-100 px-1 text-xs text-violet-800">custom</span>}
-                </td>
-                <td className="px-3 py-2">{date(t.lastAppointmentAt)}</td>
-                <td className="px-3 py-2">{date(t.createdAt)}</td>
-              </tr>
-            ))}
-            {tenants.length === 0 && (
-              <tr><td colSpan={10} className="px-3 py-6 text-center text-stone-500">{all.length === 0 ? "No tenants yet." : "No tenants match."}</td></tr>
+      <PageHeader
+        title="Dashboard"
+        subtitle={`${tenants.length} businesses · ${new Date(now).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`}
+        actions={<Link href="/tenants" className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium hover:bg-surface-2">All tenants <Icon name="arrow" /></Link>}
+      />
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Businesses" value={tenants.length} hint={`${thisWeek?.signups ?? 0} new this week · ${sum("signups")} in 12 weeks`} spark={spark("signups", "New businesses per week")} href="/tenants" />
+        <Stat label="Est. monthly revenue" value={money(estimated)} hint={`If every business paid the price book${comped ? ` · ${comped} comped` : ""}`} href="/pricing" />
+        <Stat label="Bookings made" value={sum("bookings").toLocaleString()} hint="Last 12 weeks, all businesses" spark={spark("bookings", "Bookings per week")} />
+        <Stat label="Texts sent" value={sum("sms").toLocaleString()} hint="Last 12 weeks" spark={spark("sms", "Texts per week")} />
+      </div>
+
+      <div className="mt-6 grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="space-y-6">
+          <Card title="Needs attention" aside={attention.length ? `${attention.length} business${attention.length === 1 ? "" : "es"}` : undefined} pad={false}>
+            {attention.length === 0 ? (
+              <div className="p-4"><Empty title="Nothing needs you right now">Failing payments, ending trials, stalled setups and quiet businesses show up here.</Empty></div>
+            ) : (
+              <ul className="divide-y divide-line">
+                {attention.slice(0, 8).map((a) => (
+                  <li key={a.tenant.id} className="relative flex items-center gap-3 px-4 py-3 hover:bg-surface-2">
+                    <Avatar name={a.tenant.name} size={32} />
+                    <div className="min-w-0 flex-1">
+                      <Link href={`/tenants/${a.tenant.id}`} className="font-medium after:absolute after:inset-0">{a.tenant.name}</Link>
+                      <div className="truncate text-xs text-ink-2">{a.reason}</div>
+                    </div>
+                    <Badge tone={a.tone}>{a.tone === "bad" ? "Urgent" : a.tone === "warn" ? "Soon" : a.tone === "info" ? "Heads up" : "FYI"}</Badge>
+                  </li>
+                ))}
+              </ul>
             )}
-          </tbody>
-        </table>
+            {attention.length > 8 && <div className="border-t border-line px-4 py-2.5 text-sm"><Link href="/tenants" className="text-brand hover:underline">See all {attention.length} in Tenants</Link></div>}
+          </Card>
+
+          <Card title="Bookings made per week" aside="Last 12 weeks, all businesses">
+            <Bars label="Bookings made per week" data={weekly.map((w) => ({ label: weekLabel(w.week), value: w.bookings }))} />
+          </Card>
+        </div>
+
+        <div className="space-y-6">
+          <Card title="Where businesses stand">
+            <Stack
+              label="Businesses by status"
+              parts={[
+                { label: "Paying", value: paying, color: "var(--good)" },
+                { label: "On trial", value: trial, color: "var(--info)" },
+                { label: "Payment failing", value: failing, color: "var(--bad)" },
+                { label: "Other", value: other, color: "var(--ink-3)" },
+                { label: "Suspended", value: suspended, color: "var(--warn)" },
+              ]}
+            />
+          </Card>
+
+          <Card title="Platform health" aside={<Link href="/health" className="text-brand hover:underline">Details</Link>}>
+            <div className="flex items-center gap-2">
+              <span className={`h-2.5 w-2.5 rounded-full ${overdue ? "bg-warn" : "bg-good"}`} />
+              <span className="text-sm font-medium">{overdue ? "Something needs a look" : "All quiet"}</span>
+            </div>
+            <dl className="mt-3 space-y-1.5 text-sm">
+              <div className="flex justify-between"><dt className="text-ink-2">Messages overdue</dt><dd className="tabular-nums">{health.queuedOverdue}</dd></div>
+              <div className="flex justify-between"><dt className="text-ink-2">Failed (24h)</dt><dd className="tabular-nums">{health.failed24h.reduce((s, r) => s + r.n, 0)}</dd></div>
+              <div className="flex justify-between"><dt className="text-ink-2">Stuck webhooks</dt><dd className="tabular-nums">{health.webhookUnprocessed}</dd></div>
+            </dl>
+          </Card>
+
+          <Card title="Newest businesses" pad={false}>
+            <ul className="divide-y divide-line">
+              {recent.map((t) => (
+                <li key={t.id} className="relative flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2">
+                  <Avatar name={t.name} size={28} />
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/tenants/${t.id}`} className="block truncate text-sm font-medium after:absolute after:inset-0">{t.name}</Link>
+                    <div className="text-xs text-ink-3">{relativeDay(t.createdAt, now)}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+
+          <Card title="Recent changes" aside={<Link href="/activity" className="text-brand hover:underline">All</Link>} pad={false}>
+            {audit.length === 0 ? (
+              <div className="p-4 text-sm text-ink-3">Nothing changed from this app yet.</div>
+            ) : (
+              <ul className="divide-y divide-line">
+                {audit.map((a) => (
+                  <li key={a.id} className="px-4 py-2.5 text-sm">
+                    <div className="font-medium">{actionLabel(a.action)}{a.businessName ? ` · ${a.businessName}` : ""}</div>
+                    <div className="text-xs text-ink-3">{a.actor} · {date(a.at)}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
       </div>
     </Shell>
   );

@@ -8,16 +8,16 @@ export function PriceInputs({ values, defaults }: { values: Partial<Record<keyof
       {FIELDS.map((f) => (
         <label key={f.key} className="block text-sm">
           <span className="font-medium">{f.label}</span>
-          <span className="ml-2 text-xs text-stone-500">{f.help}</span>
-          <div className="mt-1 flex items-center rounded-md border border-stone-300 bg-white focus-within:ring-2 focus-within:ring-violet-300">
-            {f.kind === "money" && <span className="pl-3 text-stone-500">$</span>}
+          <span className="ml-2 text-xs text-ink-3">{f.help}</span>
+          <div className="mt-1 flex items-center rounded-lg border border-line bg-surface focus-within:outline-2 focus-within:outline-brand">
+            {f.kind === "money" && <span className="pl-3 text-ink-3">$</span>}
             <input
               name={f.key}
               inputMode="decimal"
               defaultValue={inputValue(f, values[f.key])}
               placeholder={defaults ? inputValue(f, defaults[f.key]) || "0" : undefined}
               required={!defaults}
-              className="w-full rounded-md bg-transparent px-3 py-2 outline-none"
+              className="w-full bg-transparent px-3 py-2 outline-none placeholder:text-ink-3"
             />
           </div>
         </label>
