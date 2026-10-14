@@ -572,6 +572,22 @@ export async function setServiceUsage(input: { businessId: string; serviceId: st
 }
 
 
+/** Give other services the same list of products used. By default it adds what they lack and keeps what they have; `replace` makes their lists the same. */
+export async function copyServiceUsage(input: { businessId: string; fromServiceId: string; toServiceIds: string[]; replace: boolean }) {
+  return withTenant(input.businessId, async (tx) => {
+    const source = await tx.select().from(schema.serviceProducts).where(eq(schema.serviceProducts.serviceId, input.fromServiceId));
+    if (!source.length) throw new InventoryError("This service doesn't use any products yet.");
+    const targets = [...new Set(input.toServiceIds)].filter((id) => id !== input.fromServiceId);
+    if (!targets.length) throw new InventoryError("Choose at least one service to copy to.");
+    const found = await tx.select({ id: schema.services.id }).from(schema.services).where(inArray(schema.services.id, targets));
+    for (const { id } of found) {
+      if (input.replace) await tx.delete(schema.serviceProducts).where(eq(schema.serviceProducts.serviceId, id));
+      await tx.insert(schema.serviceProducts).values(source.map((r) => ({ businessId: input.businessId, serviceId: id, productId: r.productId, quantity: r.quantity, mode: r.mode }))).onConflictDoNothing();
+    }
+    return found.length;
+  });
+}
+
 /** The services that use a product up, for the hint on the product's page. */
 export async function productUsage(businessId: string, productId: string) {
   return withTenant(businessId, (tx) =>

@@ -7,7 +7,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { readProductRows, PRODUCT_CSV_HEADERS } from "../src/lib/inventory";
 import {
   applyCount, cancelOrder, createPurchaseOrder, decrementStockForSale, findProductByCode, getPurchaseOrder, listLocations, lowStock, markOrdered, onlineAvailability, receiveOrder,
-  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, setServiceUsage, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, productUsage,
+  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, setServiceUsage, inventoryReport, importProducts, exportProducts, lowStockCount, copyServiceUsage, logUsage, undoUsage, visitSupplies, productUsage,
 } from "../src/server/inventory";
 
 const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, "demo-twosites") });
@@ -188,6 +188,23 @@ assert.ok((await productUsage(B, toner2.id)).some((u) => u.serviceId === svcLog.
 const repSplit = await inventoryReport(B, 90);
 assert.equal(repSplit.soldCostCents + repSplit.usedCostCents, repSplit.costSplit.reduce((a, r) => a + r.soldCostCents + r.usedCostCents, 0));
 ok("a retail product can also be used in a service, and the report separates sold from used");
+
+console.log("Copy a service's list");
+const [srcSvc, dstA, dstB] = (await withTenant(B, (tx) => tx.select().from(schema.services))).filter((x) => /classic|volume/i.test(x.name)).slice(0, 3);
+await setServiceUsage({ businessId: B, serviceId: srcSvc!.id, productId: t1.id, quantity: 3, mode: "log" });
+await withTenant(B, (tx) => tx.delete(schema.serviceProducts).where(eq(schema.serviceProducts.serviceId, dstA!.id)));
+await setServiceUsage({ businessId: B, serviceId: dstA!.id, productId: t1.id, quantity: 9, mode: "auto" });
+const kept = await copyServiceUsage({ businessId: B, fromServiceId: srcSvc!.id, toServiceIds: [dstA!.id, dstB!.id, srcSvc!.id], replace: false });
+assert.equal(kept, 2);
+const rowsA = await withTenant(B, (tx) => tx.select().from(schema.serviceProducts).where(eq(schema.serviceProducts.serviceId, dstA!.id)));
+assert.equal(rowsA.find((r) => r.productId === t1.id)!.quantity, 9);
+assert.ok(rowsA.length > 1);
+ok("copying adds what's missing and keeps what a service already has");
+await copyServiceUsage({ businessId: B, fromServiceId: srcSvc!.id, toServiceIds: [dstA!.id], replace: true });
+const rowsA2 = await withTenant(B, (tx) => tx.select().from(schema.serviceProducts).where(eq(schema.serviceProducts.serviceId, dstA!.id)));
+assert.equal(rowsA2.find((r) => r.productId === t1.id)!.quantity, 3);
+await assert.rejects(() => copyServiceUsage({ businessId: B, fromServiceId: srcSvc!.id, toServiceIds: [], replace: false }), InventoryError);
+ok("replacing makes the other list match; copying to nobody is refused");
 
 console.log("Per-location alerts");
 const closeSaleAt = async (loc: string, lines: (typeof schema.saleLines.$inferInsert)[]) =>

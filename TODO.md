@@ -266,6 +266,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       "Take back") or on Inventory → Log usage; new permission `inventory.log` (Provider, Front desk and Manager by default; stored roles updated by the migration). Logging may take a count negative
       (never stop work mid-service). Every stock movement keeps what a unit cost when it moved, and Inventory → Report shows cost of goods sold vs supplies used per product. The product page lists the
       services that use it; the service page tags products that are also sold. Not built: fractional units, usage taken off for services done without a sale or a log, and online stock reduced by service use.
+- [x] 2026-10-13: Service "Products used", reworked: two headed lists ("Taken off at checkout" with Units per visit; "Staff log these on the appointment" with Usually), every change saves as it is made
+      (amount, move between lists, Remove), a one-line summary, stock on hand and low/out chips with a link to each product, a searchable product picker, and "Copy this list to other services" (add what's missing
+      or replace). Fits a phone. An amount of 0 no longer deletes a row; Remove does.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.
