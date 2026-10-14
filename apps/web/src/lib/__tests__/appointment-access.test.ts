@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROLE_PERMISSIONS } from "@angelic/core";
-import { appointmentAccess, bookingAccess, seesNoCalendar, seesOwnOnly } from "../appointment-access";
+import { appointmentAccess, blockingAccess, bookingAccess, seesNoCalendar, seesOwnOnly } from "../appointment-access";
 
 const provider = DEFAULT_ROLE_PERMISSIONS.provider;
 const frontDesk = DEFAULT_ROLE_PERMISSIONS.front_desk;
@@ -60,5 +60,27 @@ describe("what the owner can switch on for a provider", () => {
     for (const mode of ["write", "change", "cancel"] as const) expect(appointmentAccess(frontDesk, mode, null, ["x"])).toBe("any");
     expect(bookingAccess(frontDesk, null)).toBe("any");
     expect(bookingAccess(DEFAULT_ROLE_PERMISSIONS.manager, null)).toBe("any");
+  });
+});
+
+describe("blocking time", () => {
+  const withPerm = (...extra: string[]) => new Set([...provider, ...extra]) as unknown as typeof provider;
+  it("is off for a provider by default and on when the owner grants it", () => {
+    expect(blockingAccess(provider, "me")).toBeNull();
+    expect(appointmentAccess(provider, "block", "me", ["me"])).toBeNull();
+    const granted = withPerm("appointments.block.own");
+    expect(blockingAccess(granted, "me")).toBe("own");
+    expect(blockingAccess(granted, null)).toBeNull();
+    expect(appointmentAccess(granted, "block", "me", ["me"])).toBe("own");
+    expect(appointmentAccess(granted, "block", "me", ["other"])).toBeNull();
+  });
+  it("does not unlock the other abilities", () => {
+    const granted = withPerm("appointments.block.own");
+    expect(appointmentAccess(granted, "change", "me", ["me"])).toBeNull();
+    expect(bookingAccess(granted, "me")).toBeNull();
+  });
+  it("is something front desk and managers can do for anyone", () => {
+    expect(blockingAccess(frontDesk, null)).toBe("any");
+    expect(blockingAccess(DEFAULT_ROLE_PERMISSIONS.manager, null)).toBe("any");
   });
 });

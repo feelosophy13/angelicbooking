@@ -8,7 +8,7 @@ import { createAccessControl } from "better-auth/plugins/access";
 import { adminAc, defaultStatements, memberAc, ownerAc } from "better-auth/plugins/organization/access";
 import { nextCookies } from "better-auth/next-js";
 import { eq, and, isNull } from "drizzle-orm";
-import { DEFAULT_ROLE_META, DEFAULT_ROLE_PERMISSIONS } from "@angelic/core";
+import { DEFAULT_ROLE_META, DEFAULT_ROLE_PERMISSIONS, worksOwnCalendar } from "@angelic/core";
 import { sql } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
 
@@ -129,13 +129,16 @@ export const auth = betterAuth({
             } else {
               const already = await tx.query.staff.findFirst({ where: eq(schema.staff.userId, user.id) });
               if (!already) {
+                // Whether they work their own calendar follows the role's permissions, not its name, so a role the business made up works too.
+                const { permissionsForRole } = await import("@/server/roles");
+                const worksCalendar = worksOwnCalendar(await permissionsForRole(org.id, invitation.role));
                 await tx.insert(schema.staff).values({
                   businessId: org.id,
                   userId: user.id,
                   displayName: user.name,
                   email: user.email,
-                  bookableOnline: invitation.role === "provider",
-                  takesAppointments: invitation.role !== "front_desk",
+                  bookableOnline: worksCalendar,
+                  takesAppointments: worksCalendar,
                 });
               }
             }

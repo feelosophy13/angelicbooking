@@ -5,7 +5,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { headers } from "next/headers";
 import { schema, withTenant } from "@angelic/db";
-import { instantToISODate, mondayOf } from "@angelic/core";
+import { instantToISODate, isAction, mondayOf, worksOwnCalendar } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
 import { auth } from "@/lib/auth";
 import { requireAction } from "@/lib/tenant";
@@ -279,7 +279,10 @@ export async function inviteStaff(_prev: InviteState, formData: FormData): Promi
     .safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: "Enter a valid email and role." };
   const roles = await listRoles(ctx.business.id);
-  if (!roles.some((r) => r.key === parsed.data.role) || parsed.data.role === "owner") return { error: "Pick a role from the list." };
+  const chosen = roles.find((r) => r.key === parsed.data.role);
+  if (!chosen || parsed.data.role === "owner") return { error: "Pick a role from the list." };
+  // Someone whose role only sees their own calendar is a bookable stylist; desk and management roles are not (editable per person under Staff).
+  const worksCalendar = worksOwnCalendar(new Set(chosen.permissions.filter(isAction)));
   const h = await headers();
   try {
     const inv = await auth.api.createInvitation({
@@ -296,8 +299,8 @@ export async function inviteStaff(_prev: InviteState, formData: FormData): Promi
             businessId: ctx.business.id,
             displayName: parsed.data.email.split("@")[0]!,
             email: parsed.data.email,
-            bookableOnline: parsed.data.role === "provider",
-            takesAppointments: parsed.data.role !== "front_desk",
+            bookableOnline: worksCalendar,
+            takesAppointments: worksCalendar,
           })
           .returning({ id: schema.staff.id });
         // Default hours so they are bookable as soon as they accept; editable under Staff.

@@ -158,7 +158,7 @@ export default async function AppointmentPage({
         <Card className="max-w-lg p-4 text-sm">
           <p className="font-medium">{appointment.notes || "Blocked time"}</p>
           {blockItem ? <p className="text-stone-600">{staff.find((s) => s.id === blockItem.staffId)?.displayName} · {formatDateLong(apptDate)} · {formatTime(blockItem.startAt, tz)} – {formatTime(blockItem.endAt, tz)}</p> : null}
-          {appointment.status === "cancelled" ? <p className="mt-2 text-stone-500">This block was removed.</p> : can(permissions, "appointments.write.any") ? (
+          {appointment.status === "cancelled" ? <p className="mt-2 text-stone-500">This block was removed.</p> : canWriteAny || (access === "own" && can(permissions, "appointments.block.own")) ? (
             <form action={changeStatus} className="mt-3">
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="appointmentId" value={id} />

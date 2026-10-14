@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { schema } from "@angelic/db";
 import { requireAction, requireBusiness } from "@/lib/tenant";
-import { requireAppointmentAccess } from "@/server/appointment-access";
+import { modeForKind, requireAppointmentAccess } from "@/server/appointment-access";
 import { BookingError, rescheduleService, setAppointmentStatus } from "@/server/booking";
 import { notifyAppointment } from "@/lib/notify";
 import { triggerAppointmentWorkflows } from "@/server/workflows";
@@ -17,7 +17,7 @@ export async function updateAppointmentStatus(formData: FormData) {
   const slug = String(formData.get("slug"));
   const appointmentId = String(formData.get("appointmentId"));
   const status = statusSchema.parse(formData.get("status"));
-  const ctx = await requireAppointmentAccess(slug, appointmentId, status === "cancelled" ? "cancel" : "write");
+  const ctx = await requireAppointmentAccess(slug, appointmentId, await modeForKind((await requireBusiness(slug)).business.id, appointmentId, status === "cancelled" ? "cancel" : "write"));
   await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id);
   if (status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");
   revalidatePath(`/app/${slug}`);
@@ -37,9 +37,11 @@ export async function moveAppointmentItem(input: {
     .safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid move" };
   // A Provider may move their own appointments, but not to someone else's column.
-  const itemRow = await withTenant((await requireBusiness(parsed.data.slug)).business.id, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId), columns: { appointmentId: true } }));
+  const bizId = (await requireBusiness(parsed.data.slug)).business.id;
+  const itemRow = await withTenant(bizId, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId), columns: { appointmentId: true } }));
   if (!itemRow) return { ok: false, error: "That appointment no longer exists." };
-  const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, "change");
+  // Dragging a block of time is a block permission; dragging a visit is a change to the booking.
+  const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, await modeForKind(bizId, itemRow.appointmentId, "change"));
   if (ctx.access === "own" && parsed.data.newStaffId && parsed.data.newStaffId !== ctx.staffId) return { ok: false, error: "You can only move your own appointments to your own column." };
   try {
     await rescheduleService({

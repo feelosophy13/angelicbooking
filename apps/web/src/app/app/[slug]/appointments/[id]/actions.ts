@@ -14,8 +14,8 @@ import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { setFlash } from "@/lib/flash";
 import { schema } from "@angelic/db";
-import { PermissionError, requireAction } from "@/lib/tenant";
-import { requireAppointmentAccess } from "@/server/appointment-access";
+import { PermissionError, requireAction, requireBusiness } from "@/lib/tenant";
+import { modeForKind, requireAppointmentAccess } from "@/server/appointment-access";
 import {
   addServiceToAppointment,
   BookingError,
@@ -32,8 +32,8 @@ const base = z.object({ slug: z.string(), appointmentId: z.string().min(1) });
 export async function changeStatus(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
   const status = z.enum(schema.appointmentStatus.enumValues).parse(formData.get("status"));
-  // Cancelling is its own permission; every other status change is part of updating an appointment.
-  const ctx = await requireAppointmentAccess(slug, appointmentId, status === "cancelled" ? "cancel" : "write");
+  // Cancelling is its own permission, removing blocked time is another; every other status change is part of updating an appointment.
+  const ctx = await requireAppointmentAccess(slug, appointmentId, await modeForKind((await requireBusiness(slug)).business.id, appointmentId, status === "cancelled" ? "cancel" : "write"));
   const reason = String(formData.get("reason") ?? "").trim() || null;
   await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id, reason);
   if (status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");

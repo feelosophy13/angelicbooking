@@ -17,6 +17,7 @@ export const ACTIONS = [
   "appointments.book.own",
   "appointments.change.own",
   "appointments.cancel.own",
+  "appointments.block.own",
   "checkout.take",
   "reports.view",
   "payroll.view",
@@ -33,6 +34,7 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
       { action: "appointments.book.own", label: "Book appointments for themselves", description: "Create new appointments on their own calendar." },
       { action: "appointments.change.own", label: "Change their own bookings", description: "Add, remove or move the services on their own appointments, and drag them to new times." },
       { action: "appointments.cancel.own", label: "Cancel their own appointments", description: "Cancel their own appointments, charge no-show or late fees, and end standing appointments." },
+      { action: "appointments.block.own", label: "Block time on their own calendar", description: "Take time off the books (lunch, training, a late start) and move or remove their own blocks." },
       { action: "appointments.read.any", label: "See every calendar", description: "View all staff members' appointments." },
       { action: "appointments.write.any", label: "Manage any appointment", description: "Book, move, cancel and change status for anyone." },
     ],
@@ -62,6 +64,24 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
     ],
   },
 ];
+
+/**
+ * Everything a person can do to an appointment, each with the permission for doing it to anyone's ("any") and to their own ("own").
+ * One table drives the access checks on the web and in the app, so a new capability is one line here, one in PERMISSION_GROUPS, and a
+ * default for the built-in roles (usually off). "Any" for the changing kinds is the broad `appointments.write.any`.
+ *   read    see it                              write   update it: status, notes, photos, checkout
+ *   change  add, remove or move its services    cancel  cancel it, charge fees, end a series
+ *   block   blocked time (create, move, remove) book    create a new appointment
+ */
+export const APPOINTMENT_CAPABILITIES = {
+  read: { any: "appointments.read.any", own: "appointments.read.own" },
+  write: { any: "appointments.write.any", own: "appointments.write.own" },
+  change: { any: "appointments.write.any", own: "appointments.change.own" },
+  cancel: { any: "appointments.write.any", own: "appointments.cancel.own" },
+  block: { any: "appointments.write.any", own: "appointments.block.own" },
+  book: { any: "appointments.write.any", own: "appointments.book.own" },
+} as const satisfies Record<string, { any: Action; own: Action }>;
+export type AppointmentCapability = keyof typeof APPOINTMENT_CAPABILITIES;
 
 const ALL = new Set<Action>(ACTIONS);
 
@@ -107,4 +127,13 @@ export function canActOnAppointment(subject: Permissions | Role | string | null 
     return !!itemStaffUserId && itemStaffUserId === actorUserId;
   }
   return false;
+}
+
+/**
+ * Whether a person with this role works their own calendar (they take appointments and show up as bookable) rather than running the
+ * business: they see their own appointments but not everyone's. Decided by the role's permissions, never by its name, so it holds for
+ * roles a business makes up ("Stylist", "Assistant") as well as the built-in Provider.
+ */
+export function worksOwnCalendar(subject: Permissions | Role | string | null | undefined): boolean {
+  return can(subject, "appointments.read.own") && !can(subject, "appointments.read.any");
 }

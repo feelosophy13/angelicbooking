@@ -137,7 +137,12 @@ in the stylist's colour, with a colour legend above the grid and no text, no but
   *change the booking* (`change`: add, remove, move services, drag), *cancel* (`cancel`: cancel, no-show and late fees, end a series) and *book* a new one
   (`book`: on their own calendar only). A Provider gets see and update by default; the other three are off, and the owner switches each on under Roles & permissions
   (or on a custom role). `lib/appointment-access.ts` is the rule; pages and actions call `requireAppointmentAccess(slug, id, mode)` / `requireBookingAccess`
-  (server/appointment-access.ts), never "any" directly. When a new capability could reasonably be wanted for a Provider but not always, make it a permission like these.
+  (server/appointment-access.ts), never "any" directly. Blocking time (`block`: lunch, time off, "do not book") on their own calendar is one more of these. When a new capability could reasonably be wanted for a Provider but not always, make it a permission like these.
+- **Built for many businesses: never decide behaviour from a role's name.** Each business makes up its own roles ("Stylist", "Assistant"), and "Provider" is only the name of one default. Ask what the role
+  can do: `can(permissions, action)`, `worksOwnCalendar(permissions)` (can see their own calendar but not everyone's), `seesOwnOnly`. Built-in names appear only where the defaults are defined and
+  seeded; a test fails on `role === "provider"` and the like.
+- **Adding a capability:** add the `own` action to `ACTIONS` and `PERMISSION_GROUPS` (`packages/core/src/permissions.ts`), add a row to `APPOINTMENT_CAPABILITIES` (the "any" action covers Manager and Front desk),
+  leave it off in `DEFAULT_ROLE_PERMISSIONS`, then gate the page and action through the access helpers. The table-driven test covers every row. Stored roles are not rewritten, so existing businesses opt in under Roles.
 - **A Provider's calendar is their own:** their column and their appointments, in every view, with no staff picker. A role with neither calendar permission sees a note
   instead. A login not linked to a staff member sees a note saying so. Controls a Provider lacks the permission for are hidden, not shown disabled.
 - **Revenue is for people who can see reports.** The day strip's "Expected" figure shows only with the reports permission.

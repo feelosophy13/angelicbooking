@@ -2,7 +2,7 @@ import { can } from "@angelic/core";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { PermissionError, requireBusiness, type TenantContext } from "@/lib/tenant";
-import { appointmentAccess, bookingAccess, type AppointmentMode } from "@/lib/appointment-access";
+import { appointmentAccess, blockingAccess, bookingAccess, type AppointmentMode } from "@/lib/appointment-access";
 
 /**
  * Open an appointment for reading or changing. Front desk and managers get any appointment; a Provider gets the ones they are booked on
@@ -23,4 +23,21 @@ export async function requireBookingAccess(slug: string): Promise<TenantContext 
   const access = bookingAccess(ctx.permissions, ctx.staffId ?? null);
   if (!access) throw new PermissionError();
   return { ...ctx, access };
+}
+
+/** Open the Block time screen or save a block: the same shape as booking. */
+export async function requireBlockAccess(slug: string): Promise<TenantContext & { access: "any" | "own" }> {
+  const ctx = await requireBusiness(slug);
+  const access = blockingAccess(ctx.permissions, ctx.staffId ?? null);
+  if (!access) throw new PermissionError();
+  return { ...ctx, access };
+}
+
+/**
+ * Blocked time is its own capability. For an appointment that is a block, whatever is being done to it needs "block"; for a visit it needs
+ * `visitMode` (e.g. "cancel" when cancelling, "change" when moving, "write" for other updates).
+ */
+export async function modeForKind(businessId: string, appointmentId: string, visitMode: AppointmentMode): Promise<AppointmentMode> {
+  const appt = await withTenant(businessId, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId), columns: { kind: true } }));
+  return appt?.kind === "block" ? "block" : visitMode;
 }

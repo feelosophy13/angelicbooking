@@ -23,7 +23,7 @@ import { can } from "@angelic/core";
 import { asc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { buildTip, type CalTip, type TipItem } from "@/lib/calendar-tip";
-import { bookingAccess, seesNoCalendar, seesOwnOnly } from "@/lib/appointment-access";
+import { blockingAccess, bookingAccess, seesNoCalendar, seesOwnOnly } from "@/lib/appointment-access";
 
 function startOfWeek(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -45,6 +45,7 @@ export default async function CalendarPage({
   const ownOnly = seesOwnOnly(permissions);
   // New appointments: for anyone (front desk, manager), or on their own calendar if the role has that permission.
   const canBook = !!bookingAccess(permissions, staffId ?? null);
+  const canBlock = !!blockingAccess(permissions, staffId ?? null);
   const noCalendar = seesNoCalendar(permissions);
   const locations = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.name)));
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
@@ -193,7 +194,7 @@ export default async function CalendarPage({
         {locations.length > 1 ? (
           <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffParam ? `&staff=${staffParam}` : ""}`} />
         ) : null}
-        {can(permissions, "appointments.write.any") ? (
+        {canBlock ? (
           <LinkButton href={`/app/${slug}/appointments/block?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}`} variant="secondary" size="sm"><Ban className="h-4 w-4" /> <span className="hidden sm:inline">Block time</span></LinkButton>
         ) : null}
         {canBook ? (
@@ -274,6 +275,7 @@ export default async function CalendarPage({
           slotIntervalMin={business.slotIntervalMin}
           canEdit={can(permissions, "appointments.write.any") || (ownOnly && can(permissions, "appointments.write.own"))}
           canMove={can(permissions, "appointments.write.any") || (ownOnly && can(permissions, "appointments.change.own"))}
+          canMoveBlock={can(permissions, "appointments.write.any") || (ownOnly && can(permissions, "appointments.block.own"))}
           canBook={canBook}
           startHour={startHour}
           endHour={endHour}

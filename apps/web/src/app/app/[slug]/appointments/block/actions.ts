@@ -4,7 +4,7 @@ import { z } from "zod";
 import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { requireAction } from "@/lib/tenant";
+import { requireBlockAccess } from "@/server/appointment-access";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { tzFor } from "@/server/locations";
@@ -13,7 +13,8 @@ import { blockTime, BookingError } from "@/server/booking";
 export const createBlock = formAction(
   z.object({ slug: z.string(), staffId: f.id(), date: f.isoDate(), start: z.string().regex(/^\d{2}:\d{2}$/, "Pick a start time"), end: z.string().regex(/^\d{2}:\d{2}$/, "Pick an end time"), reason: f.optional(80), locationId: z.string().optional() }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "appointments.write.any");
+    const ctx = await requireBlockAccess(d.slug);
+    if (ctx.access === "own" && d.staffId !== ctx.staffId) throw new FormError("You can only block time on your own calendar.", "staffId");
     const location = d.locationId ? await withTenant(ctx.business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, d.locationId!) })) : null;
     const tz = tzFor(ctx.business, location ?? null);
     const startAt = zonedToInstant(d.date, d.start, tz);
