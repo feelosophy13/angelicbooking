@@ -256,6 +256,7 @@ Every uploaded picture is optimized before it is stored. This is a rule, not a p
 - **Reasons are words** (`MOVEMENT_REASONS`): received, sold, returned, used in services, adjusted, counted, damaged, stolen, expired, lost, sent back, transferred, opening. Add a reason there, not inline.
 - **Back-bar is a kind of product** (`kind = "backbar"`): counted, ordered, never sold (not in the register, not online). Services list what a visit uses; closing the sale takes it off.
 - **Options are the same name plus a label** ("Color Gel · 7N"), each with its own stock, price and barcode. Show `productLabel(p)` everywhere a product is named.
+- **Alerts are per location.** Each location is judged on its own count (`locationAlerts`): twelve at the main site doesn't hide none downtown. A location with none that hasn't sold or used the product in 90 days and has none coming is "not stocked here" and stays quiet. Reorders are per location too, so the order is delivered where it is needed.
 - **Alerts say what to do, once.** The sidebar badge counts products that are out, low or off. The daily email leaves out products already covered by an order on its way.
 - **Permission:** `inventory.manage` for everything under Inventory and for changing stock; the catalog itself (name, price, options) stays `services.manage`.
 

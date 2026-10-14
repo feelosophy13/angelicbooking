@@ -96,7 +96,7 @@ export function SavedCardForm({ action, slug, saleId, dueCents, cards }: { actio
  */
 export type ReasonOption = { id: string; name: string };
 
-export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[] }) {
+export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons, goods = [] }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[]; /** Products this sale took off the shelf that haven't come back, so a returned item can go back on it. */ goods?: { productId: string; name: string; left: number }[] }) {
   const [state, act, pending] = useActionState(action, undefined);
   const [to, setTo] = useState<"original" | "store_credit">("original");
   return (
@@ -114,6 +114,20 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
         {reasons.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
       </Select>
       <Input name="note" placeholder="Note (optional)" className="w-40" />
+      {goods.length ? (
+        <details className="basis-full text-sm">
+          <summary className="cursor-pointer select-none text-stone-600 hover:text-stone-900">Did the client bring goods back? Put them back on the shelf</summary>
+          <div className="mt-2 space-y-1.5 rounded-lg border border-stone-200 bg-stone-50 p-3">
+            <p className="text-xs text-stone-500">Leave blank when the product is gone (never arrived, goodwill): the stock stays as it is.</p>
+            {goods.map((g) => (
+              <div key={g.productId} className="grid grid-cols-[1fr_4rem] items-center gap-2">
+                <label htmlFor={`refund-back:${paymentId}:${g.productId}`} className="min-w-0 truncate">{g.name} <span className="text-xs text-stone-500">· up to {g.left}</span></label>
+                <Input id={`refund-back:${paymentId}:${g.productId}`} name={`back:${g.productId}`} type="number" min={0} max={g.left} placeholder="0" className="text-right" />
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
       <ConfirmSubmit
         title={to === "store_credit" ? "Refund as store credit?" : "Issue this refund?"}
         body={to === "store_credit" ? "The money stays with you and the client gets the amount as store credit to spend on a future visit." : "Card refunds go back to the original card through Stripe and can't be reversed."}

@@ -70,7 +70,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const wantedQty = new Map<string, number>();
   for (const l of lines) if (l.kind === "product" && l.productId) wantedQty.set(l.productId, (wantedQty.get(l.productId) ?? 0) + l.quantity);
   const canStock = can(permissions, "inventory.manage");
-  const stockState = !open && canStock && lines.some((l) => l.kind === "product") ? await saleStockState(business.id, sale.id) : new Map<string, { sold: number; returned: number }>();
+  const stockState = !open && (canStock || canRefund) && lines.some((l) => l.kind === "product") ? await saleStockState(business.id, sale.id) : new Map<string, { sold: number; returned: number }>();
   // Active reasons for new refunds; every reason (retired too) so old refunds still show their name.
   const allReasons = canRefund ? await listRefundReasons(business.id, { includeRetired: true }) : [];
   const reasonOptions = allReasons.filter((r) => r.active).map((r) => ({ id: r.id, name: r.name }));
@@ -311,7 +311,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         </div>
                       ))}
                       {p.status !== "pending" && p.status !== "failed" && refundable > 0 && canRefund ? (
-                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} reasons={reasonOptions} />
+                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} reasons={reasonOptions} goods={[...stockState.entries()].filter(([, v]) => v.sold - v.returned > 0).map(([productId, v]) => ({ productId, name: lines.find((l) => l.productId === productId)?.name ?? "Product", left: v.sold - v.returned }))} />
                       ) : null}
                     </li>
                   );
@@ -375,7 +375,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               {sale.closedAt ? <p className="text-sm text-stone-500">{fmt.format(sale.closedAt)}</p> : null}
             </Card>
           )}
-          {[...stockState.entries()].some(([, v]) => v.sold > 0) ? (
+          {canStock && [...stockState.entries()].some(([, v]) => v.sold > 0) ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-1 font-medium">Goods back on the shelf</h2>
               <p className="mb-2 text-xs text-stone-500">A refund gives money back; it doesn't change the stock, because the product may be gone (never arrived, goodwill). If a client really brought something back, put it back here.</p>

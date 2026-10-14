@@ -12,7 +12,8 @@ import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 import { RowLink, rowClass, rowControl } from "@/components/row";
 import { Thumb } from "@/components/thumb";
 import { toggleProductActive } from "./actions";
-import { productLabel, stockStatus } from "@/lib/inventory";
+import { productLabel } from "@/lib/inventory";
+import { listLocations, stockOverview } from "@/server/inventory";
 
 export default async function ProductsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -24,6 +25,8 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
       .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
       .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name), asc(schema.products.variantLabel)),
   );
+  const [{ items: tracked }, locs] = await Promise.all([stockOverview(business.id), listLocations(business.id)]);
+  const standing = new Map(tracked.map((i) => [i.id, i]));
   const manage = can(permissions, "services.manage");
   const canOpen = manage || can(permissions, "inventory.manage");
   const groups = new Map<string, typeof rows>();
@@ -56,8 +59,11 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
                       <p className={p.active ? "font-medium" : "font-medium text-stone-400 line-through"}>{productLabel(p)}</p>
                     )}
                     <p className="text-xs text-stone-500">{[p.kind === "backbar" ? "back-bar (not sold)" : null, p.sku, p.barcode, p.kind === "backbar" ? null : p.taxable ? "taxable" : "tax-free", p.sellOnline ? "online" : null].filter(Boolean).join(" · ")}{p.trackStock ? (() => {
-                      const st = stockStatus(p.stockQty, p.lowStockThreshold);
-                      return <span className={`ml-2 rounded px-1.5 py-0.5 text-[11px] font-medium ${st === "negative" || st === "out" ? "bg-red-50 text-red-700" : st === "low" ? "bg-amber-50 text-amber-800" : "bg-stone-100 text-stone-600"}`}>{st === "negative" ? `Count is off (${p.stockQty})` : st === "out" ? "Out of stock" : `${p.stockQty} in stock`}</span>;
+                      const it = standing.get(p.id);
+                      const worst = it?.alerts[0];
+                      const where = worst && locs.length > 1 ? ` at ${locs.find((l) => l.id === worst.locationId)?.name.replace(`${business.name} - `, "") ?? "a location"}` : "";
+                      const st = it?.status ?? "ok";
+                      return <span className={`ml-2 rounded px-1.5 py-0.5 text-[11px] font-medium ${st === "negative" || st === "out" ? "bg-red-50 text-red-700" : st === "low" ? "bg-amber-50 text-amber-800" : "bg-stone-100 text-stone-600"}`}>{st === "negative" ? `Count is off${where}` : st === "out" ? `Out of stock${where}` : st === "low" && where ? `Low${where} · ${p.stockQty} in all` : `${p.stockQty} in stock`}</span>;
                     })() : null}</p>
                   </div>
                   <span className="w-28 shrink-0 text-right font-medium tabular-nums">{p.kind === "backbar" ? <span className="text-stone-400">—</span> : formatMoney(p.priceCents, business.currency)}</span>

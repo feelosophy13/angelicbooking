@@ -234,6 +234,21 @@ export async function refund(_prev: SaleActionState, formData: FormData): Promis
   } catch (e) {
     return friendly(e);
   }
+  // Goods the client brought back go back on the shelf (only when asked for; a refund alone never touches the stock).
+  const back: { productId: string; qty: number }[] = [];
+  for (const [key, v] of formData.entries()) {
+    const qty = Number(String(v));
+    if (key.startsWith("back:") && Number.isInteger(qty) && qty > 0) back.push({ productId: key.slice(5), qty });
+  }
+  if (back.length) {
+    try {
+      await returnToShelf({ businessId: ctx.business.id, saleId: d.data.saleId, items: back, note: "Returned with refund", actorUserId: ctx.user.id });
+    } catch (e) {
+      revalidatePath(`/app/${d.data.slug}/sales/${d.data.saleId}`);
+      if (e instanceof InventoryError) return { error: `The refund was made, but the goods weren't put back on the shelf: ${e.message}` };
+      throw e;
+    }
+  }
   revalidatePath(`/app/${d.data.slug}/sales/${d.data.saleId}`);
   return { ok: true };
 }

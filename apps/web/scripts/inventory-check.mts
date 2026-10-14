@@ -7,7 +7,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { readProductRows, PRODUCT_CSV_HEADERS } from "../src/lib/inventory";
 import {
   applyCount, cancelOrder, createPurchaseOrder, decrementStockForSale, findProductByCode, getPurchaseOrder, listLocations, lowStock, markOrdered, onlineAvailability, receiveOrder,
-  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, setServiceUsage, inventoryReport, importProducts, exportProducts,
+  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, setServiceUsage, inventoryReport, importProducts, exportProducts, lowStockCount,
 } from "../src/server/inventory";
 
 const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, "demo-twosites") });
@@ -146,6 +146,47 @@ assert.equal(await sumLocs(sealant.id), q0 + 5);
 await assert.rejects(() => cancelOrder({ businessId: B, id: po.id, actorUserId: actor }), InventoryError);
 ok("an order is received in two parts, stock and cost follow, and a finished order can't be cancelled");
 assert.ok(Array.isArray(sugBefore));
+
+console.log("Per-location alerts");
+const closeSaleAt = async (loc: string, lines: (typeof schema.saleLines.$inferInsert)[]) =>
+  withTenant(B, async (tx) => {
+    const rows = await tx.execute<{ n: number }>(sql`select next_sale_number(${B}) as n`);
+    const [sl] = await tx.insert(schema.sales).values({ businessId: B, number: Number(rows[0]!.n), locationId: loc, status: "paid", subtotalCents: 100, totalCents: 100, paidCents: 100, closedAt: new Date() }).returning();
+    await tx.insert(schema.saleLines).values(lines.map((l) => ({ ...l, saleId: sl!.id })));
+    await decrementStockForSale(tx, B, sl!.id);
+  });
+const cleanser = await product("Gentle Cleanser");
+await applyCount({ businessId: B, locationId: main, counts: [{ productId: cleanser.id, counted: 12 }], note: null, actorUserId: actor });
+await applyCount({ businessId: B, locationId: second, counts: [{ productId: cleanser.id, counted: 2 }], note: null, actorUserId: actor });
+await closeSaleAt(second, [{ businessId: B, saleId: "", kind: "product", productId: cleanser.id, name: cleanser.name, quantity: 2, unitCents: 50, amountCents: 100 }]);
+const ov = async (id: string) => (await stockOverview(B)).items.find((i) => i.id === id)!;
+let item = await ov(cleanser.id);
+assert.equal(item.stockQty, 12);
+assert.deepEqual(item.alerts.map((a) => [a.locationId, a.status]), [[second, "out"]]);
+assert.equal(item.status, "out");
+ok("twelve at the main site doesn't hide none at the other: the alert is for that location");
+const groups = await reorderSuggestions(B);
+const forCleanser = groups.filter((g) => g.items.some((i) => i.productId === cleanser.id));
+assert.deepEqual(forCleanser.map((g) => g.locationId), [second]);
+assert.ok(forCleanser[0]!.items.find((i) => i.productId === cleanser.id)!.qty > 0);
+ok("the reorder suggestion is for that location, so the order is delivered there");
+const adhesiveP = await product("Lash Adhesive (pro)");
+await applyCount({ businessId: B, locationId: main, counts: [{ productId: adhesiveP.id, counted: 20 }], note: null, actorUserId: actor });
+await applyCount({ businessId: B, locationId: second, counts: [{ productId: adhesiveP.id, counted: 2 }], note: null, actorUserId: actor });
+const svc = (await withTenant(B, (tx) => tx.select().from(schema.services))).find((x) => /classic/i.test(x.name))!;
+await setServiceUsage({ businessId: B, serviceId: svc.id, productId: adhesiveP.id, quantity: 2 });
+await closeSaleAt(second, [{ businessId: B, saleId: "", kind: "service", serviceId: svc.id, name: svc.name, quantity: 1, unitCents: 0, amountCents: 0 }]);
+item = await ov(adhesiveP.id);
+assert.deepEqual(item.alerts.map((a) => [a.locationId, a.status]), [[second, "out"]]);
+ok("back-bar products used up by services alert at the location where the services were done");
+const pillow = await product("Silk Pillowcase");
+await applyCount({ businessId: B, locationId: second, counts: [{ productId: pillow.id, counted: 0 }], note: null, actorUserId: actor });
+await applyCount({ businessId: B, locationId: main, counts: [{ productId: pillow.id, counted: 5 }], note: null, actorUserId: actor });
+assert.equal((await ov(pillow.id)).alerts.length, 0);
+ok("a product with none at a site that never sold it there stays quiet");
+const attention = (await stockOverview(B)).items.filter((i) => i.status !== "ok").length;
+assert.equal(await lowStockCount(B), attention);
+ok("the sidebar count matches the overview");
 
 console.log("Spreadsheet import");
 const grid = [["Name", "Barcode", "Price", "On hand", "Supplier"], [toner.name, toner.barcode!, "41.25", "", ""], ["Check Product", "999000111222", "9.50", "7", "Check Supplier"], ["", "x", "", "", ""]];

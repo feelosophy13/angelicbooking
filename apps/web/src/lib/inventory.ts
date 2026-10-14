@@ -14,6 +14,27 @@ export function stockStatus(qty: number, threshold: number): StockStatus {
   if (qty === 0) return "out";
   return qty <= threshold ? "low" : "ok";
 }
+export type LocationAlert = { locationId: string; qty: number; onOrder: number; status: Exclude<StockStatus, "ok"> };
+const SEVERITY: Record<StockStatus, number> = { negative: 0, out: 1, low: 2, ok: 3 };
+export const worstStatus = (statuses: StockStatus[]): StockStatus => statuses.reduce<StockStatus>((w, s) => (SEVERITY[s] < SEVERITY[w] ? s : w), "ok");
+
+/**
+ * Where a product needs attention: each location is judged on its own count against the product's low-stock level, so twelve at the
+ * main site doesn't hide none at the other. A location with none that hasn't sold or used the product lately and has none coming is
+ * taken as "not stocked here" and stays quiet (a product kept at one site on purpose). A count that is off always speaks.
+ * With a single location there is nothing to infer: zero is out.
+ */
+export function locationAlerts(input: { threshold: number; multiLocation: boolean; rows: { locationId: string; qty: number; onOrder: number; recentlyMoved: boolean }[] }): LocationAlert[] {
+  const out: LocationAlert[] = [];
+  for (const r of input.rows) {
+    const status = stockStatus(r.qty, input.threshold);
+    if (status === "ok") continue;
+    if (input.multiLocation && r.qty === 0 && r.onOrder === 0 && !r.recentlyMoved) continue;
+    out.push({ locationId: r.locationId, qty: r.qty, onOrder: r.onOrder, status });
+  }
+  return out.sort((a, b) => SEVERITY[a.status] - SEVERITY[b.status]);
+}
+
 export const needsAttention = (qty: number, threshold: number) => stockStatus(qty, threshold) !== "ok";
 
 /**

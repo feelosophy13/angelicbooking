@@ -15,7 +15,7 @@ import { instantToISODate, isAction } from "@angelic/core";
 import { queueOneOff } from "@/lib/notify";
 import { lowStockEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
-import { isManualReason, manualDelta, productLabel, SHRINKAGE_REASONS, stockStatus, suggestedOrderQty, daysOfStock, type ManualReason, type ParsedProductRow } from "@/lib/inventory";
+import { isManualReason, locationAlerts, manualDelta, productLabel, SHRINKAGE_REASONS, stockStatus, suggestedOrderQty, daysOfStock, worstStatus, type LocationAlert, type ManualReason, type ParsedProductRow, type StockStatus } from "@/lib/inventory";
 import { ensureCategory } from "./categories";
 
 export class InventoryError extends Error {}
@@ -252,23 +252,47 @@ export async function onlineAvailability(tx: TenantDb, locationId: string | null
 
 // ---- Overview, low stock, reorder ----
 
-/** Units still on the way, per product (ordered and not yet received). */
-async function onOrderMap(tx: TenantDb): Promise<Map<string, number>> {
+/** Units still on the way: per product, and per product at the location the order is for (an order with no location is for the main one). */
+async function onOrderMap(tx: TenantDb, mainId: string): Promise<{ total: Map<string, number>; at: Map<string, number> }> {
   const rows = await tx
-    .select({ productId: schema.purchaseOrderLines.productId, qty: sql<number>`sum(greatest(0, ${schema.purchaseOrderLines.orderedQty} - ${schema.purchaseOrderLines.receivedQty}))` })
+    .select({ productId: schema.purchaseOrderLines.productId, locationId: schema.purchaseOrders.locationId, qty: sql<number>`sum(greatest(0, ${schema.purchaseOrderLines.orderedQty} - ${schema.purchaseOrderLines.receivedQty}))` })
     .from(schema.purchaseOrderLines)
     .innerJoin(schema.purchaseOrders, eq(schema.purchaseOrders.id, schema.purchaseOrderLines.purchaseOrderId))
     .where(inArray(schema.purchaseOrders.status, ["ordered", "partial"]))
-    .groupBy(schema.purchaseOrderLines.productId);
-  return new Map(rows.map((r) => [r.productId, Number(r.qty)]));
+    .groupBy(schema.purchaseOrderLines.productId, schema.purchaseOrders.locationId);
+  const total = new Map<string, number>();
+  const at = new Map<string, number>();
+  for (const r of rows) {
+    const q = Number(r.qty);
+    total.set(r.productId, (total.get(r.productId) ?? 0) + q);
+    const key = `${r.productId}|${r.locationId ?? mainId}`;
+    at.set(key, (at.get(key) ?? 0) + q);
+  }
+  return { total, at };
 }
 
-export type StockItem = Product & { category: string | null; supplierName: string | null; byLocation: Record<string, number>; onOrder: number; status: ReturnType<typeof stockStatus>; valueCents: number; retailCents: number };
+export type StockItem = Product & {
+  category: string | null;
+  supplierName: string | null;
+  byLocation: Record<string, number>;
+  onOrder: number;
+  /** The worst standing at any location (each location is judged on its own count). */
+  status: StockStatus;
+  /** Where it needs attention, worst first. */
+  alerts: LocationAlert[];
+  valueCents: number;
+  retailCents: number;
+};
 
-/** Every tracked, active product with its count (in total and per location), what is on order and how it stands. */
+/** How recently a location must have sold or used a product for an empty shelf to count as a problem there. */
+const RECENT_DAYS = 90;
+
+/** Every tracked, active product with its count (in total and per location), what is on order and where it needs attention. */
 export async function stockOverview(businessId: string): Promise<{ items: StockItem[]; untracked: number }> {
   return withTenant(businessId, async (tx) => {
-    const [rows, levels, onOrder, all] = await Promise.all([
+    const mainId = await mainLocationId(tx);
+    const since = new Date(Date.now() - RECENT_DAYS * 86_400_000);
+    const [rows, levels, onOrder, all, moved, locs] = await Promise.all([
       tx
         .select({ p: schema.products, category: schema.productCategories.name, supplierName: schema.suppliers.name })
         .from(schema.products)
@@ -277,55 +301,98 @@ export async function stockOverview(businessId: string): Promise<{ items: StockI
         .where(and(eq(schema.products.trackStock, true), eq(schema.products.active, true)))
         .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name), asc(schema.products.variantLabel)),
       tx.select().from(schema.productStock),
-      onOrderMap(tx),
+      onOrderMap(tx, mainId),
       tx.select({ n: sql<number>`count(*)` }).from(schema.products).where(and(eq(schema.products.trackStock, false), eq(schema.products.active, true))),
+      tx.selectDistinct({ productId: schema.stockMovements.productId, locationId: schema.stockMovements.locationId }).from(schema.stockMovements).where(and(inArray(schema.stockMovements.reason, ["sale", "used"]), gte(schema.stockMovements.createdAt, since))),
+      tx.select({ id: schema.locations.id }).from(schema.locations),
     ]);
+    const multiLocation = locs.length > 1;
+    const recent = new Set(moved.map((m) => `${m.productId}|${m.locationId}`));
     const by = new Map<string, Record<string, number>>();
     for (const l of levels) by.set(l.productId, { ...(by.get(l.productId) ?? {}), [l.locationId]: l.qty });
-    const items = rows.map(({ p, category, supplierName }) => ({
-      ...p,
-      category,
-      supplierName,
-      byLocation: by.get(p.id) ?? {},
-      onOrder: onOrder.get(p.id) ?? 0,
-      status: stockStatus(p.stockQty, p.lowStockThreshold),
-      valueCents: p.stockQty * p.costCents,
-      retailCents: p.kind === "retail" ? p.stockQty * p.priceCents : 0,
-    }));
+    const items = rows.map(({ p, category, supplierName }) => {
+      const byLocation = by.get(p.id) ?? {};
+      // A tracked product that has never been counted anywhere is judged at the main location.
+      const entries = Object.keys(byLocation).length ? Object.entries(byLocation) : [[mainId, p.stockQty] as [string, number]];
+      const alerts = locationAlerts({ threshold: p.lowStockThreshold, multiLocation, rows: entries.map(([locationId, qty]) => ({ locationId, qty, onOrder: onOrder.at.get(`${p.id}|${locationId}`) ?? 0, recentlyMoved: recent.has(`${p.id}|${locationId}`) })) });
+      return {
+        ...p,
+        category,
+        supplierName,
+        byLocation,
+        onOrder: onOrder.total.get(p.id) ?? 0,
+        status: worstStatus(alerts.map((a) => a.status)),
+        alerts,
+        valueCents: p.stockQty * p.costCents,
+        retailCents: p.kind === "retail" ? p.stockQty * p.priceCents : 0,
+      };
+    });
     return { items, untracked: Number(all[0]?.n ?? 0) };
   });
 }
 
-/** How many tracked products are out, low or off: one cheap query, for the badge on the sidebar entry. */
+/**
+ * How many tracked products need attention at some location: one cheap query for the sidebar badge. It repeats the rule in
+ * `locationAlerts` (the integration check compares the two).
+ */
 export async function lowStockCount(businessId: string): Promise<number> {
   return withTenant(businessId, async (tx) => {
-    const [r] = await tx.select({ n: sql<number>`count(*)` }).from(schema.products).where(and(eq(schema.products.trackStock, true), eq(schema.products.active, true), sql`${schema.products.stockQty} <= ${schema.products.lowStockThreshold}`));
+    const [r] = await tx.execute<{ n: number }>(sql`
+      select count(*)::int as n from products p
+      where p.track_stock and p.active and (
+        case when (select count(*) from locations) > 1 then
+          exists (
+            select 1 from product_stock ps where ps.product_id = p.id and (
+              ps.qty < 0
+              or (ps.qty > 0 and ps.qty <= p.low_stock_threshold)
+              or (ps.qty = 0 and (
+                exists (select 1 from stock_movements m where m.product_id = p.id and m.location_id = ps.location_id and m.reason in ('sale','used') and m.created_at >= now() - interval '${sql.raw(String(RECENT_DAYS))} days')
+                or exists (select 1 from purchase_order_lines l join purchase_orders o on o.id = l.purchase_order_id where l.product_id = p.id and o.status in ('ordered','partial') and l.ordered_qty > l.received_qty and coalesce(o.location_id, (select id from locations order by is_default desc, name limit 1)) = ps.location_id)
+              ))
+            )
+          )
+          or (not exists (select 1 from product_stock ps where ps.product_id = p.id) and p.stock_qty <= p.low_stock_threshold)
+        else p.stock_qty <= p.low_stock_threshold end
+      )`);
     return Number(r?.n ?? 0);
   });
 }
 
-/** Products that need someone to look at them: out, low, or with a count that is off. Worst first. */
+/** Products that need someone to look at them: out, low, or with a count that is off, at any location. Worst first. */
 export async function lowStock(businessId: string) {
   const { items } = await stockOverview(businessId);
-  const order = { negative: 0, out: 1, low: 2, ok: 3 } as const;
-  return items.filter((i) => i.status !== "ok").sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name));
+  return items.filter((i) => i.status !== "ok").sort((a, b) => SEVERITY_ORDER[a.status] - SEVERITY_ORDER[b.status] || a.name.localeCompare(b.name));
 }
+const SEVERITY_ORDER: Record<StockStatus, number> = { negative: 0, out: 1, low: 2, ok: 3 };
 
-export type ReorderGroup = { supplierId: string | null; supplierName: string; items: { productId: string; name: string; onHand: number; onOrder: number; threshold: number; qty: number; unitCostCents: number }[] };
+export type ReorderGroup = {
+  supplierId: string | null;
+  supplierName: string;
+  /** The location these are for: each location's shortfall is its own order (it is delivered there). */
+  locationId: string;
+  locationName: string;
+  items: { productId: string; name: string; onHand: number; onOrder: number; threshold: number; qty: number; unitCostCents: number }[];
+};
 
-/** What to order, grouped by the supplier each product usually comes from. Products already covered by an order are left out. */
+/**
+ * What to order: for each location, what has fallen to its low-stock level, brought back up to the product's "order up to" level,
+ * grouped by supplier. What is already on its way to that location counts as stock.
+ */
 export async function reorderSuggestions(businessId: string): Promise<ReorderGroup[]> {
-  const { items } = await stockOverview(businessId);
+  const [{ items }, locations] = await Promise.all([stockOverview(businessId), listLocations(businessId)]);
   const groups = new Map<string, ReorderGroup>();
   for (const i of items) {
-    const qty = suggestedOrderQty({ onHand: i.stockQty, onOrder: i.onOrder, threshold: i.lowStockThreshold, reorderUpTo: i.reorderUpTo });
-    if (qty <= 0) continue;
-    const key = i.supplierId ?? "none";
-    const g = groups.get(key) ?? { supplierId: i.supplierId, supplierName: i.supplierName ?? "No supplier set", items: [] };
-    g.items.push({ productId: i.id, name: productLabel(i), onHand: i.stockQty, onOrder: i.onOrder, threshold: i.lowStockThreshold, qty, unitCostCents: i.costCents });
-    groups.set(key, g);
+    for (const a of i.alerts) {
+      const qty = suggestedOrderQty({ onHand: a.qty, onOrder: a.onOrder, threshold: i.lowStockThreshold, reorderUpTo: i.reorderUpTo });
+      if (qty <= 0) continue;
+      const key = `${i.supplierId ?? "none"}|${a.locationId}`;
+      const g = groups.get(key) ?? { supplierId: i.supplierId, supplierName: i.supplierName ?? "No supplier set", locationId: a.locationId, locationName: locations.find((l) => l.id === a.locationId)?.name ?? "", items: [] };
+      g.items.push({ productId: i.id, name: productLabel(i), onHand: a.qty, onOrder: a.onOrder, threshold: i.lowStockThreshold, qty, unitCostCents: i.costCents });
+      groups.set(key, g);
+    }
   }
-  return [...groups.values()].sort((a, b) => (a.supplierId ? 0 : 1) - (b.supplierId ? 0 : 1) || a.supplierName.localeCompare(b.supplierName));
+  const rank = new Map(locations.map((l, n) => [l.id, n]));
+  return [...groups.values()].sort((a, b) => (a.supplierId ? 0 : 1) - (b.supplierId ? 0 : 1) || a.supplierName.localeCompare(b.supplierName) || (rank.get(a.locationId) ?? 0) - (rank.get(b.locationId) ?? 0));
 }
 
 // ---- Suppliers and purchase orders ----
@@ -707,7 +774,15 @@ export async function sendLowStockDigests(): Promise<{ checked: number; sent: nu
       const today = instantToISODate(new Date(), b.timezone);
       if (b.inventoryDigestOn === today || localHour(b.timezone) < DIGEST_HOUR) continue;
       // Only what still needs doing: a count that is off, or a product that is low and not already covered by an order on its way.
-      const low = (await lowStock(b.id)).filter((i) => i.status === "negative" || suggestedOrderQty({ onHand: i.stockQty, onOrder: i.onOrder, threshold: i.lowStockThreshold, reorderUpTo: i.reorderUpTo }) > 0);
+      const locs = await listLocations(b.id);
+      const multi = locs.length > 1;
+      const short = (id: string) => locs.find((l) => l.id === id)?.name.replace(`${b.name} - `, "") ?? "";
+      // One line per product per location that needs it, and only what still needs doing: a count that is off, or low and not already covered by an order on its way there.
+      const low = (await lowStock(b.id)).flatMap((i) =>
+        i.alerts
+          .filter((a) => a.status === "negative" || suggestedOrderQty({ onHand: a.qty, onOrder: a.onOrder, threshold: i.lowStockThreshold, reorderUpTo: i.reorderUpTo }) > 0)
+          .map((a) => ({ name: multi ? `${productLabel(i)} · ${short(a.locationId)}` : productLabel(i), onHand: a.qty, onOrder: a.onOrder, status: a.status })),
+      );
       if (!low.length) continue;
       const roles = await withTenant(b.id, (tx) => tx.select({ key: schema.roles.key, permissions: schema.roles.permissions }).from(schema.roles));
       const keys = new Set(roles.filter((r) => r.permissions.filter(isAction).includes("inventory.manage")).map((r) => r.key));
@@ -719,7 +794,7 @@ export async function sendLowStockDigests(): Promise<{ checked: number; sent: nu
       if (!claimed.length) continue;
       const t = lowStockEmail(
         { businessName: b.name, logoUrl: b.logoUrl, brandColor: b.brandColor, businessPhone: b.phone, address: b.addressLine },
-        { items: low.slice(0, 25).map((i) => ({ name: productLabel(i), onHand: i.stockQty, onOrder: i.onOrder, status: i.status })), more: Math.max(0, low.length - 25), link: appUrl(`/app/${b.slug}/inventory/reorder`) },
+        { items: low.slice(0, 25), more: Math.max(0, low.length - 25), link: appUrl(`/app/${b.slug}/inventory/reorder`) },
       );
       for (const email of to) await queueOneOff(b.id, { channel: "email", template: "low_stock", recipient: email, subject: t.subject, body: t.html });
       sent += to.length;

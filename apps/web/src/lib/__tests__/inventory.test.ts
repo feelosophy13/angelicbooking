@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysOfStock, manualDelta, movementReason, productLabel, readProductRows, stockStatus, suggestedOrderQty } from "../inventory";
+import { daysOfStock, locationAlerts, worstStatus, manualDelta, movementReason, productLabel, readProductRows, stockStatus, suggestedOrderQty } from "../inventory";
 
 describe("stock status", () => {
   it("tells a count that is off from out, low and fine", () => {
@@ -83,5 +83,31 @@ describe("reading a product spreadsheet", () => {
   it("reports a missing name column and rows without a name", () => {
     expect(readProductRows([["SKU"], ["1"]]).errors[0]).toMatch(/Name/);
     expect(readProductRows([["Name"], [""]]).errors[0]).toMatch(/Row 2/);
+  });
+});
+
+describe("per-location alerts", () => {
+  const row = (locationId: string, qty: number, extra: Partial<{ onOrder: number; recentlyMoved: boolean }> = {}) => ({ locationId, qty, onOrder: 0, recentlyMoved: true, ...extra });
+  it("judges each location on its own count", () => {
+    const a = locationAlerts({ threshold: 3, multiLocation: true, rows: [row("main", 12), row("down", 0)] });
+    expect(a).toEqual([{ locationId: "down", qty: 0, onOrder: 0, status: "out" }]);
+  });
+  it("puts the worst first and reports low as low", () => {
+    const a = locationAlerts({ threshold: 3, multiLocation: true, rows: [row("a", 2), row("b", -1), row("c", 0)] });
+    expect(a.map((x) => x.status)).toEqual(["negative", "out", "low"]);
+  });
+  it("stays quiet where the product isn't kept: none, nothing sold or used lately, nothing coming", () => {
+    expect(locationAlerts({ threshold: 3, multiLocation: true, rows: [row("main", 9), row("down", 0, { recentlyMoved: false })] })).toEqual([]);
+    expect(locationAlerts({ threshold: 3, multiLocation: true, rows: [row("down", 0, { recentlyMoved: false, onOrder: 4 })] })).toHaveLength(1);
+  });
+  it("still flags a count that is off, and a low count, wherever it is", () => {
+    expect(locationAlerts({ threshold: 3, multiLocation: true, rows: [row("down", -2, { recentlyMoved: false }), row("up", 1, { recentlyMoved: false })] })).toHaveLength(2);
+  });
+  it("with one location zero is simply out", () => {
+    expect(locationAlerts({ threshold: 3, multiLocation: false, rows: [row("main", 0, { recentlyMoved: false })] })).toHaveLength(1);
+  });
+  it("summarises as the worst status", () => {
+    expect(worstStatus([])).toBe("ok");
+    expect(worstStatus(["low", "out", "ok"])).toBe("out");
   });
 });

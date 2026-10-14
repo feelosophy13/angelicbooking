@@ -259,8 +259,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       lists what a visit uses and the sale takes it off), usual supplier, order-up-to; Edit all, Import (check first, matches by barcode/SKU/name) and Export spreadsheets. Write-off reasons: damaged,
       stolen, expired, lost, sent back; transfers between locations. Online store holds stock for unpaid carts (30 minutes) and locks while checking, so two buyers can't both take the last one.
       Daily low-stock email to owners and inventory managers (after 8am local, from the reminders job). Demo data has suppliers, four orders, back-bar and a history.
-      `pnpm --filter @angelic/web inventory:check` exercises the logic against the demo data. Not built: serial/lot tracking and expiry dates per batch, automatic supplier ordering (orders are written, not sent), counting
-      by scanning each unit, stock-per-location alerts (alerts use the business total), and reorder suggestions per location.
+      `pnpm --filter @angelic/web inventory:check` exercises the logic against the demo data. Refund form: "Did the client bring goods back?" puts chosen units back on the shelf in the same step (off by default). Alerts and reorder suggestions are per location (a location with none that never sold or used the product there stays quiet; back-bar products alert where the services were done); each location's shortfall is its own draft order, delivered there. Not built: serial/lot tracking and expiry dates per batch, automatic supplier ordering (orders are written, not sent), counting
+      by scanning each unit.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.

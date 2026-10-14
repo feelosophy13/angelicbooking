@@ -37,9 +37,11 @@ export default async function InventoryStockPage({ params, searchParams }: { par
   const needle = q.toLowerCase();
   const shown = items
     .filter((i) => !needle || [productLabel(i), i.sku, i.barcode, i.category, i.supplierName].some((v) => v?.toLowerCase().includes(needle)))
-    .filter((i) => (sp.show === "attention" ? i.status !== "ok" : true));
+    .filter((i) => (sp.show === "attention" ? standing(i) !== "ok" : true));
   const qtyOf = (i: (typeof items)[number]) => (loc ? (i.byLocation[loc] ?? 0) : i.stockQty);
-  const attention = items.filter((i) => i.status !== "ok").length;
+  // With a location chosen, standing is that location's; otherwise the worst anywhere.
+  const standing = (i: (typeof items)[number]) => (loc ? (i.alerts.find((a) => a.locationId === loc)?.status ?? "ok") : i.status);
+  const attention = items.filter((i) => standing(i) !== "ok").length;
   const totalValue = items.reduce((s, i) => s + i.valueCents, 0);
   const totalRetail = items.reduce((s, i) => s + i.retailCents, 0);
 
@@ -86,15 +88,22 @@ export default async function InventoryStockPage({ params, searchParams }: { par
           <ul className="divide-y divide-stone-100">
             {shown.map((i) => {
               const qty = qtyOf(i);
-              const [badgeText, badgeCls] = BADGE[i.status];
+              const [badgeText, badgeCls] = BADGE[standing(i)];
               return (
                 <li key={i.id} className={`${rowClass} flex items-center gap-3 px-4 py-2.5`}>
                   <div className="min-w-0 flex-1">
                     <RowLink href={`/app/${slug}/products/${i.id}`} className="font-medium">{productLabel(i)}</RowLink>
                     <p className="truncate text-xs text-stone-500">
                       {[i.category, i.kind === "backbar" ? "back-bar" : null, i.sku, i.supplierName].filter(Boolean).join(" · ")}
-                      {multi && !loc ? ` · ${locations.filter((l) => i.byLocation[l.id] != null).map((l) => `${short(l.name)} ${i.byLocation[l.id]}`).join(" · ")}` : ""}
                     </p>
+                    {multi && !loc ? (
+                      <p className="flex flex-wrap gap-x-3 text-xs">
+                        {locations.filter((l) => i.byLocation[l.id] != null).map((l) => {
+                          const a = i.alerts.find((x) => x.locationId === l.id);
+                          return <span key={l.id} className={a ? (a.status === "low" ? "font-medium text-amber-700" : "font-medium text-red-700") : "text-stone-500"}>{short(l.name)} {i.byLocation[l.id]}{a ? (a.status === "negative" ? " (count is off)" : a.status === "out" ? " (out)" : " (low)") : ""}</span>;
+                        })}
+                      </p>
+                    ) : null}
                   </div>
                   {badgeText ? <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${badgeCls}`}>{badgeText}</span> : null}
                   {i.onOrder ? <Link href={`${base}/orders`} className="relative z-10 text-xs text-brand-700 underline">{i.onOrder} on order</Link> : null}
