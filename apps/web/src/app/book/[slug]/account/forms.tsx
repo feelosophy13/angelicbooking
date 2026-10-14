@@ -42,7 +42,7 @@ export function ProfileForm({ slug, client }: { slug: string; client: { firstNam
         <Field label="First name"><Input name="firstName" defaultValue={client.firstName} required /></Field>
         <Field label="Last name"><Input name="lastName" defaultValue={client.lastName} /></Field>
       </div>
-      <Field label="Mobile number"><Input name="phone" type="tel" defaultValue={client.phone ?? ""} /></Field>
+      <Field label="Mobile number" required><Input name="phone" type="tel" required defaultValue={client.phone ?? ""} /></Field>
       <Field label="Email"><Input name="email" type="email" defaultValue={client.email ?? ""} /></Field>
       <Field label="Birthday"><Input name="birthday" type="date" defaultValue={client.birthday ?? ""} /></Field>
       <Checkbox name="smsOptIn" defaultChecked={client.smsOptIn} label="Text me confirmations and reminders" />

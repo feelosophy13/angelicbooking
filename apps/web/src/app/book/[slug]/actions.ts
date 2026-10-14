@@ -33,14 +33,9 @@ function parseBooking(raw: Record<string, unknown>): { d: BookingFields } | { er
   const parsed = bookingFields.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form" };
   const d = parsed.data;
-  if (!d.email && !d.phone) return { error: "Enter an email or a mobile number so we can confirm your booking." };
-  if (d.phone && !normalizePhone(d.phone)) return { error: "Enter a valid mobile number." };
+  if (!d.phone) return { error: "Enter your mobile number so we can confirm your booking." };
+  if (!normalizePhone(d.phone)) return { error: "Enter a valid mobile number." };
   return { d };
-}
-
-/** The business may insist on a mobile number rather than accepting either one. */
-function mobileError(business: { requireMobile: boolean }, d: { phone: string | null }): string | null {
-  return business.requireMobile && !d.phone ? "Enter your mobile number so we can confirm your booking." : null;
 }
 
 /** What this stylist charges for the service (classes are priced per seat). */
@@ -55,8 +50,6 @@ export async function bookOnline(_prev: PublicState, formData: FormData): Promis
   const d = p.d;
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
-  const needMobile = mobileError(business, d);
-  if (needMobile) return { error: needMobile };
   // Services that need a deposit or a card must go through the payment steps below.
   const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, d.serviceId), eq(schema.services.active, true)) }));
   if (!service) return { error: "That service is no longer available." };
@@ -87,8 +80,6 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
   if (!business) return { error: "Online booking is not available." };
   const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, d.serviceId), eq(schema.services.active, true)) }));
   if (!service) return { error: "That service is no longer available." };
-  const needMobile = mobileError(business, d);
-  if (needMobile) return { error: needMobile };
   try {
     await assertQuotedPrice(business, d);
   } catch (e) {
@@ -127,8 +118,6 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
   const d = p.d;
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
-  const needMobile = mobileError(business, d);
-  if (needMobile) return { error: needMobile };
   const existing = await appointmentForIntent(business.id, intent.id);
   if (existing) redirect(confirmedPath(d, existing.manageToken));
   let token: string;
@@ -173,7 +162,7 @@ export async function joinWaitlistAction(_prev: PublicState, formData: FormData)
     .safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form" };
   const d = parsed.data;
-  if (!d.email && !d.phone) return { error: "Enter an email or mobile number so we can reach you." };
+  if (!d.phone) return { error: "Enter your mobile number so we can reach you." };
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
   await joinWaitlist(business, { ...d, staffId: d.staffId && d.staffId !== "any" ? d.staffId : null });

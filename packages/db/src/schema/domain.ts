@@ -83,8 +83,6 @@ export const businesses = pgTable("businesses", {
   // When a deposit comes back (cancellation inside policy, staff refund): to the card, or as store credit.
   depositRefundAs: text("deposit_refund_as").notNull().default("original"), // original | store_credit
   requireCardOnline: boolean("require_card_online").notNull().default(false),
-  // Online bookings must include a mobile number (otherwise a mobile number or an email is enough).
-  requireMobile: boolean("require_mobile").notNull().default(false),
   noShowFeeCents: integer("no_show_fee_cents").notNull().default(0),
   bookingPolicy: text("booking_policy"),
   reminderHours: integer("reminder_hours").notNull().default(24),

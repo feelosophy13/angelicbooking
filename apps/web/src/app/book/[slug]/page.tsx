@@ -188,9 +188,9 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(sessionDate)} at ${formatTime(chosen.startAt, tz)}`, href: q({ session: undefined }) }, { label: "With", value: chosen.staffName }, { label: "Per person", value: formatMoney(service.priceCents, business.currency) }, { label: "Seats left", value: String(chosen.seatsLeft) }]} />
         {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">{req.full ? `Payment of ${formatMoney(req.amountCents, business.currency)} in full is due now.` : `A ${formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.`}</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
         {req.mode === "none" ? (
-          <BookingForm requireMobile={business.requireMobile} slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         ) : (
-          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} mode={req.mode} full={req.full} requireMobile={business.requireMobile} amountLabel={formatMoney(req.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} mode={req.mode} full={req.full} amountLabel={formatMoney(req.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         )}
       </>
     );
@@ -352,7 +352,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: slot.staffName, href: q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: spanOf(termsFor(slot.staffId).durationMin) }, { label: "Price", value: money(termsFor(slot.staffId).priceCents) }]} />
       {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">{req.full ? `Payment of ${formatMoney(req.amountCents, business.currency)} in full is due now.` : `A ${formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.`}</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
       {req.mode === "none" ? (
-        <BookingForm requireMobile={business.requireMobile} slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={termsFor(slot.staffId).priceCents} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={termsFor(slot.staffId).priceCents} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
       ) : (
         <PaidBookingForm
           slug={slug}
@@ -364,7 +364,6 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           cancelWindowHours={business.cancelWindowHours} lateFee={lateFee}
           mode={req.mode}
           full={req.full}
-          requireMobile={business.requireMobile}
           amountLabel={formatMoney(req.amountCents, business.currency)}
           publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!}
           brand={brandHex(business.brandColor)}

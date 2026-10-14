@@ -63,8 +63,7 @@ export async function saveClientProfile(_prev: AccountState, formData: FormData)
   const client = business ? await currentClient(business) : null;
   if (!business || !client) return { error: "Please sign in again." };
   const phone = d.data.phone ? normalizePhone(d.data.phone) : null;
-  if (d.data.phone && !phone) return { error: "Enter a valid mobile number." };
-  if (!d.data.email && !phone) return { error: "Keep at least an email or a mobile number so we can reach you." };
+  if (!phone) return { error: d.data.phone ? "Enter a valid mobile number." : "A mobile number is required so we can reach you." };
   await updateClientProfile(business, client.id, { ...d.data, phone });
   return { ok: true };
 }
