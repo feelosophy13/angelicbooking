@@ -21,16 +21,19 @@ describe("the online shop with products that have options", () => {
         publishableKey: "pk_test",
         brand: "#6d28d9",
         products: [
-          p("a", "Brow Tint · Black", 1800, { groupId: "g", groupName: "Brow Tint", optionLabel: "Black" }),
           p("b", "Brow Tint · Auburn", 1800, { groupId: "g", groupName: "Brow Tint", optionLabel: "Auburn", stockQty: 0 }),
+          p("a", "Brow Tint · Black", 1800, { groupId: "g", groupName: "Brow Tint", optionLabel: "Black", imageUrl: "/api/files/black" }),
           p("c", "Gentle Cleanser", 2600),
         ],
       }),
     );
-    expect(html.match(/>Brow Tint</g)?.length).toBe(1); // one heading for the product, not one per option
-    expect(html).toContain("Black");
-    expect(html).toContain("Auburn");
-    expect(html).toContain("Sold out"); // the sold-out option says so
-    expect(html).toContain("Gentle Cleanser");
+    const text = html.replace(/<!-- -->/g, "");
+    expect(text.match(/>Brow Tint</g)?.length).toBe(1); // one heading for the product, not one per option
+    expect(html).toContain('aria-label="Choose an option of Brow Tint"'); // a dropdown to choose the option
+    expect(html.match(/<option/g)?.length).toBe(2);
+    expect(text).toContain("Auburn · sold out"); // a sold-out option says so
+    expect(html).toMatch(/<option value="a" selected/); // opens on the first option that can be bought
+    expect(html).toContain("Gentle Cleanser"); // a product with no options stays a plain row
+    expect(html.match(/<select/g)?.length).toBe(1);
   });
 });

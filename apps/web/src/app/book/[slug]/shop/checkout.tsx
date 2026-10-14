@@ -66,6 +66,49 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
     );
   };
 
+  // A product with options: one card, a dropdown to choose the option, and its price, photo and quantity below it. Options already in the cart are listed so they can be changed.
+  const [pick, setPick] = useState<Record<string, string>>({});
+  const GroupCard = ({ entry }: { entry: { id: string; name: string; first: CartProduct; options: CartProduct[] } }) => {
+    const soldOut = (o: CartProduct) => o.trackStock && o.stockQty <= 0;
+    const chosen = entry.options.find((o) => o.id === pick[entry.id]) ?? entry.options.find((o) => !soldOut(o)) ?? entry.options[0]!;
+    const image = chosen.imageUrl ?? entry.first.imageUrl;
+    const inCart = entry.options.filter((o) => (qty[o.id] ?? 0) > 0);
+    return (
+      <li className="px-4 py-3">
+        <div className="flex items-start gap-3">
+          {image ? <img src={image} alt="" className="h-20 w-20 rounded-lg border border-stone-200 object-cover" /> : null}
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">{entry.name}</p>
+            {entry.first.description ? <p className="text-xs text-stone-500">{entry.first.description}</p> : null}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <select
+                aria-label={`Choose an option of ${entry.name}`}
+                value={chosen.id}
+                onChange={(e) => setPick({ ...pick, [entry.id]: e.target.value })}
+                className="h-9 max-w-full rounded-lg border border-stone-300 bg-white px-2 text-sm"
+              >
+                {entry.options.map((o) => (
+                  <option key={o.id} value={o.id} disabled={soldOut(o) && o.id !== chosen.id}>{o.optionLabel}{soldOut(o) ? " · sold out" : ""}</option>
+                ))}
+              </select>
+              <span className="text-sm font-medium">{money(chosen.priceCents, props.currency)}</span>
+              {stockNote(chosen)}
+              <Stepper p={chosen} />
+            </div>
+            {inCart.length ? (
+              <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-stone-600">
+                In your cart:
+                {inCart.map((o) => (
+                  <button key={o.id} type="button" onClick={() => setPick({ ...pick, [entry.id]: o.id })} className={`rounded-full border px-2 py-0.5 ${o.id === chosen.id ? "border-stone-500 bg-stone-100" : "border-stone-300 bg-white"}`}>{o.optionLabel} × {qty[o.id]}</button>
+                ))}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </li>
+    );
+  };
+
   if (started) {
     return (
       <div className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
@@ -119,27 +162,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
                 <Stepper p={entry.p} />
               </li>
             ) : (
-              <li key={entry.id} className="px-4 py-3">
-                <div className="flex items-start gap-3">
-                  {entry.first.imageUrl ? <img src={entry.first.imageUrl} alt="" className="h-14 w-14 rounded-lg border border-stone-200 object-cover" /> : null}
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium">{entry.name}</p>
-                    {entry.first.description ? <p className="text-xs text-stone-500">{entry.first.description}</p> : null}
-                  </div>
-                </div>
-                <ul className="mt-2 divide-y divide-stone-100 rounded-lg border border-stone-100">
-                  {entry.options.map((p) => (
-                    <li key={p.id} className="flex items-center gap-3 px-3 py-2">
-                      <div className="min-w-0 flex-1 text-sm">
-                        <span className="font-medium">{p.optionLabel}</span>
-                        <span className="ml-2">{money(p.priceCents, props.currency)}</span>
-                        {stockNote(p)}
-                      </div>
-                      <Stepper p={p} />
-                    </li>
-                  ))}
-                </ul>
-              </li>
+              <GroupCard key={entry.id} entry={entry} />
             ),
           )}
         </ul>

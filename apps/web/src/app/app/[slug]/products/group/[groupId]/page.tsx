@@ -14,6 +14,7 @@ import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { ImageField } from "@/components/image-field";
 import { CategoryPicker } from "@/components/categories";
 import { rowClass, RowLink } from "@/components/row";
+import { Thumb } from "@/components/thumb";
 import { addGroupOptions, saveGroup, toggleGroupActive } from "../../actions";
 
 export const metadata: Metadata = { title: "Product options" };
@@ -62,9 +63,10 @@ export default async function ProductGroupPage({ params }: { params: Promise<{ s
                 const st = stockStatus(o.stockQty, o.lowStockThreshold);
                 return (
                   <li key={o.id} className={`${rowClass} flex items-center gap-3 px-4 py-2.5`}>
+                    <Thumb src={o.imageUrl} />
                     <div className="min-w-0 flex-1">
                       <RowLink href={`/app/${slug}/products/${o.id}`} className={`font-medium ${o.active ? "" : "text-stone-400 line-through"}`}>{o.variantLabel}</RowLink>
-                      <p className="truncate text-xs text-stone-500">{[o.sku, o.barcode].filter(Boolean).join(" · ") || "No SKU or barcode yet"}</p>
+                      <p className="truncate text-xs text-stone-500">{[o.sku, o.barcode].filter(Boolean).join(" · ") || "No SKU or barcode yet"}{o.imageUrl && o.imageUrl !== group.imageUrl ? " · own photo" : ""}</p>
                     </div>
                     {o.trackStock ? <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${st === "negative" || st === "out" ? "bg-red-50 text-red-700" : st === "low" ? "bg-amber-50 text-amber-800" : "bg-stone-100 text-stone-600"}`}>{st === "negative" ? "Count is off" : st === "out" ? "Out" : `${o.stockQty} in stock`}</span> : null}
                     <span className="w-20 shrink-0 text-right font-medium tabular-nums">{group.kind === "backbar" ? <span className="text-stone-400">—</span> : money(o.priceCents)}</span>

@@ -104,7 +104,12 @@ export const updateProduct = formAction(fields, async (d, raw) => {
     if (!label) throw new FormError("Name this option (for example its size or shade).", "variantLabel");
     const dup = await withTenant(ctx.business.id, (tx) => tx.select({ id: schema.products.id }).from(schema.products).where(and(eq(schema.products.groupId, current.groupId!), ne(schema.products.id, d.productId ?? ""), sql`lower(${schema.products.variantLabel}) = ${label.toLowerCase()}`)).limit(1));
     if (dup.length) throw new FormError("This product already has an option with that name.", "variantLabel");
-    await withTenant(ctx.business.id, (tx) => tx.update(schema.products).set({ variantLabel: label, sku: d.sku, barcode: d.barcode, priceCents: d.kind === "backbar" ? 0 : d.price, costCents: d.cost, trackStock: x.trackStock, lowStockThreshold: d.lowStockThreshold, reorderUpTo: x.reorderUpTo }).where(eq(schema.products.id, d.productId ?? "")));
+    // An option's own photo: a new upload replaces it; removing it goes back to the product's photo.
+    const groupImage = (await withTenant(ctx.business.id, (tx) => tx.query.productGroups.findFirst({ where: eq(schema.productGroups.id, current.groupId!), columns: { imageUrl: true } })))?.imageUrl ?? null;
+    const nextImage = image ?? (removeImage ? groupImage : undefined);
+    await withTenant(ctx.business.id, (tx) => tx.update(schema.products).set({ variantLabel: label, sku: d.sku, barcode: d.barcode, priceCents: d.kind === "backbar" ? 0 : d.price, costCents: d.cost, trackStock: x.trackStock, lowStockThreshold: d.lowStockThreshold, reorderUpTo: x.reorderUpTo, ...(nextImage !== undefined ? { imageUrl: nextImage } : {}) }).where(eq(schema.products.id, d.productId ?? "")));
+    // Only a picture that was this option's own is deleted; the product's stays for the others.
+    if (nextImage !== undefined && current.imageUrl && current.imageUrl !== groupImage && current.imageUrl !== nextImage) await deleteFileByUrl(current.imageUrl);
     revalidatePath(`/app/${d.slug}/products`);
     revalidatePath(`/app/${d.slug}/products/${d.productId}`);
     return "Option saved";

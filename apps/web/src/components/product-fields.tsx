@@ -33,6 +33,7 @@ export function ProductFields({ product, categories, suppliers, currency, mode =
           <input type="hidden" name="name" value={product?.name ?? ""} />
           <input type="hidden" name="kind" value={product?.kind ?? "retail"} />
           <Field label="Option" name="variantLabel" required hint="What makes this one different: its size or shade. The rest is shared with the product's other options."><Input name="variantLabel" defaultValue={product?.variantLabel ?? ""} required placeholder="250 ml, 7N…" autoFocus /></Field>
+          <Field label="Photo of this option" name="image" hint="Optional. Without one, this option uses the product's photo (and follows it when it changes). Remove it to go back to the product's photo."><ImageField name="image" removeName="removeImage" current={product?.imageUrl ?? null} /></Field>
         </>
       ) : (
         <>

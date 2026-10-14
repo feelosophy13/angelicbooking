@@ -3,7 +3,7 @@
  * (its own price, cost, SKU, barcode, stock and levels) whose name and shared details are kept equal to the group's, so the register,
  * the online store, scanning, orders and reports all keep working on options exactly as on any product.
  */
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { newLabels } from "@/lib/variants";
 import { matchProduct } from "@/lib/scan";
@@ -15,12 +15,21 @@ type Group = typeof schema.productGroups.$inferSelect;
 type Shared = { name: string; description: string | null; imageUrl: string | null; categoryId: string | null; kind: "retail" | "backbar"; taxable: boolean; sellOnline: boolean; supplierId: string | null };
 export type OptionDefaults = { priceCents?: number | null; costCents?: number | null; lowStockThreshold?: number | null; reorderUpTo?: number | null; trackStock?: boolean | null };
 
-/** Copy what the options share onto every option of the group. */
-async function syncOptions(tx: TenantDb, g: Group) {
+/**
+ * Copy what the options share onto every option of the group. The photo is shared only by options that don't have a photo of their own:
+ * one with its own picture keeps it when the product's picture changes. (An option has its own picture when it differs from the product's.)
+ */
+async function syncOptions(tx: TenantDb, g: Group, previousImage: string | null) {
   await tx
     .update(schema.products)
-    .set({ name: g.name, description: g.description, imageUrl: g.imageUrl, categoryId: g.categoryId, kind: g.kind, taxable: g.taxable, sellOnline: g.kind === "retail" ? g.sellOnline : false, supplierId: g.supplierId })
+    .set({ name: g.name, description: g.description, categoryId: g.categoryId, kind: g.kind, taxable: g.taxable, sellOnline: g.kind === "retail" ? g.sellOnline : false, supplierId: g.supplierId })
     .where(eq(schema.products.groupId, g.id));
+  if (g.imageUrl !== previousImage) {
+    await tx
+      .update(schema.products)
+      .set({ imageUrl: g.imageUrl })
+      .where(and(eq(schema.products.groupId, g.id), previousImage ? or(isNull(schema.products.imageUrl), eq(schema.products.imageUrl, previousImage)) : isNull(schema.products.imageUrl)));
+  }
 }
 
 async function optionLabels(tx: TenantDb, groupId: string): Promise<string[]> {
@@ -104,7 +113,7 @@ export async function updateGroup(input: { businessId: string; groupId: string; 
       if (!patch.name) throw new GroupError("Give the product a name.");
     }
     const [g] = await tx.update(schema.productGroups).set({ ...patch, ...(patch.kind === "backbar" ? { sellOnline: false } : {}) }).where(eq(schema.productGroups.id, cur.id)).returning();
-    await syncOptions(tx, g!);
+    await syncOptions(tx, g!, cur.imageUrl);
     if (g!.kind === "backbar" && cur.kind !== "backbar") await tx.update(schema.products).set({ trackStock: true, priceCents: 0 }).where(eq(schema.products.groupId, g!.id));
     return g!;
   });
