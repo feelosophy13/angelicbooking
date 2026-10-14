@@ -11,7 +11,7 @@ import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { Disclosure } from "@/components/disclosure";
 import { ProductFields } from "@/components/product-fields";
 import { adjustStock, transferStockAction, updateProduct } from "../actions";
-import { listLocations, listSuppliers, productMovements, stockByLocation } from "@/server/inventory";
+import { listLocations, listSuppliers, productMovements, productUsage, stockByLocation } from "@/server/inventory";
 import { MANUAL_REASONS, movementReason, productLabel, stockStatus } from "@/lib/inventory";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; productId: string }> }): Promise<Metadata> {
@@ -46,6 +46,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
     listLocations(business.id),
   ]);
   if (!product) notFound();
+  const usedIn = await productUsage(business.id, product.id);
   const [movements, levels] = canStock ? await Promise.all([productMovements(business.id, product.id), stockByLocation(business.id, product.id)]) : [[], []];
   const multi = locations.length > 1;
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
@@ -101,6 +102,24 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
               ))}
             </ul>
           ) : null}
+        </Card>
+      ) : null}
+      {usedIn.length || product.kind === "backbar" ? (
+        <Card className="mb-5 p-4 text-sm">
+          <h2 className="mb-1 font-medium">{product.kind === "retail" && usedIn.length ? "Sold, and used in services" : product.kind === "backbar" ? "Used in services" : "Used in services"}</h2>
+          {usedIn.length ? (
+            <>
+              <p className="mb-2 text-xs text-stone-500">{product.kind === "retail" ? "It is sold at the register and used up in these services; both come off the same stock. " : ""}Set what each service uses on the service's page.</p>
+              <ul className="divide-y divide-stone-100">
+                {usedIn.map((u) => (
+                  <li key={u.serviceId} className="flex items-center justify-between gap-3 py-1.5">
+                    <Link href={`/app/${slug}/services/${u.serviceId}`} className="hover:underline">{u.name}</Link>
+                    <span className="text-xs text-stone-500">{u.quantity} per visit · {u.mode === "log" ? "staff log it" : "taken off at checkout"}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : <p className="text-xs text-stone-500">No service uses it yet. Add it under "Products used" on a service's page, or log what is used by hand.</p>}
         </Card>
       ) : null}
       {canEdit ? (

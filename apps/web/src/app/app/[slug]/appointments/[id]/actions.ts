@@ -13,6 +13,7 @@ import { schema as dbSchema, withTenant } from "@angelic/db";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { setFlash } from "@/lib/flash";
+import { InventoryError, logUsage, undoUsage } from "@/server/inventory";
 import { schema } from "@angelic/db";
 import { PermissionError, requireAction, requireBusiness } from "@/lib/tenant";
 import { modeForKind, requireAppointmentAccess } from "@/server/appointment-access";
@@ -242,4 +243,42 @@ export async function cancelSeries(formData: FormData) {
   await setFlash(`Cancelled ${ids.length} visit${ids.length === 1 ? "" : "s"}`);
   revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
   revalidatePath(`/app/${slug}`);
+}
+
+/** Staff record the supplies they used on this visit: the suggested products (quantities as edited) and, optionally, one more. */
+export async function logSupplies(formData: FormData) {
+  const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
+  if (!can(ctx.permissions, "inventory.log")) throw new PermissionError();
+  const items: { productId: string; qty: number }[] = [];
+  for (const [key, v] of formData.entries()) {
+    if (!key.startsWith("qty:")) continue;
+    const qty = Number(String(v));
+    if (Number.isInteger(qty) && qty > 0) items.push({ productId: key.slice(4), qty });
+  }
+  const extra = String(formData.get("extraProductId") ?? "");
+  const extraQty = Number(String(formData.get("extraQty") ?? ""));
+  if (extra && Number.isInteger(extraQty) && extraQty > 0) items.push({ productId: extra, qty: extraQty });
+  try {
+    const n = await logUsage({ businessId: ctx.business.id, appointmentId, items, note: null, actorUserId: ctx.user.id });
+    await setFlash(`Logged ${n} unit${n === 1 ? "" : "s"} used`, "success");
+  } catch (e) {
+    if (e instanceof InventoryError) await setFlash(e.message, "error");
+    else throw e;
+  }
+  revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
+}
+
+export async function undoSupplies(formData: FormData) {
+  const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
+  if (!can(ctx.permissions, "inventory.log")) throw new PermissionError();
+  try {
+    await undoUsage({ businessId: ctx.business.id, appointmentId, productId: String(formData.get("productId")), qty: Number(String(formData.get("qty") ?? "0")), actorUserId: ctx.user.id });
+    await setFlash("Taken back", "success");
+  } catch (e) {
+    if (e instanceof InventoryError) await setFlash(e.message, "error");
+    else throw e;
+  }
+  revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
 }

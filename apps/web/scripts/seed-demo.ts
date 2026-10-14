@@ -285,10 +285,11 @@ const PRODUCTS: SeedProduct[] = [
   { cat: "Back-bar", name: "Disposable applicators", price: 0, cost: 10, qty: 150, sold: 120, supplier: "Salon Essentials Wholesale", low: 50, upTo: 300, backbar: true },
 ];
 // What one visit of a kind of service uses up (matched on the service's name or group).
-const USAGE: { match: RegExp; uses: [product: string, qty: number][] }[] = [
-  { match: /classic.*(set|fill)|(set|fill).*classic/i, uses: [["Lash Adhesive (pro)", 1], ["Classic lash trays", 1], ["Eye gel patches (pair)", 2], ["Disposable applicators", 4]] },
-  { match: /volume|hybrid|mega/i, uses: [["Lash Adhesive (pro)", 1], ["Volume lash trays", 1], ["Eye gel patches (pair)", 2], ["Disposable applicators", 4]] },
-  { match: /facial/i, uses: [["Facial mask sheets", 1], ["Disposable applicators", 2]] },
+const USAGE: { match: RegExp; uses: [product: string, qty: number, mode: "auto" | "log"][] }[] = [
+  { match: /classic.*(set|fill)|(set|fill).*classic/i, uses: [["Lash Adhesive (pro)", 1, "log"], ["Classic lash trays", 1, "log"], ["Eye gel patches (pair)", 2, "auto"], ["Disposable applicators", 4, "auto"]] },
+  { match: /volume|hybrid|mega/i, uses: [["Lash Adhesive (pro)", 1, "log"], ["Volume lash trays", 1, "log"], ["Eye gel patches (pair)", 2, "auto"], ["Disposable applicators", 4, "auto"]] },
+  // A retail product that is also used in the treatment.
+  { match: /facial/i, uses: [["Facial mask sheets", 1, "auto"], ["Disposable applicators", 2, "auto"], ["Gentle Cleanser", 1, "log"]] },
 ];
 
 // ---------------------------------------------------------------------------
@@ -668,9 +669,9 @@ async function main() {
     // What services use up.
     for (const u of USAGE) {
       for (const sv of serviceIds.filter((x) => u.match.test(`${x.name} ${x.group}`))) {
-        for (const [pn, q] of u.uses) {
+        for (const [pn, q, mode] of u.uses) {
           const hit = pRows.find((r) => r.spec.name === pn || `${r.spec.name}${r.spec.label ? ` ${r.spec.label}` : ""}` === pn);
-          if (hit) await tx.insert(schema.serviceProducts).values({ businessId, serviceId: sv.id, productId: hit.id, quantity: q }).onConflictDoNothing();
+          if (hit) await tx.insert(schema.serviceProducts).values({ businessId, serviceId: sv.id, productId: hit.id, quantity: q, mode }).onConflictDoNothing();
         }
       }
     }

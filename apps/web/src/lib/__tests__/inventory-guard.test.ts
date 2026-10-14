@@ -38,7 +38,9 @@ describe("inventory rules", () => {
     const actions = files.find((f) => f.rel === "app/app/[slug]/inventory/actions.ts")!.text;
     const calls = actions.match(/requireAction\([^)]*\)/g) ?? [];
     expect(calls.length).toBeGreaterThan(5);
-    expect(calls.every((c) => c.includes('"inventory.manage"'))).toBe(true);
+    // Everything needs inventory.manage, except logging supplies used, which is for whoever did the work.
+    const others = calls.filter((c) => !c.includes('"inventory.manage"'));
+    expect(others).toEqual(['requireAction(d.slug, "inventory.log")']);
   });
 });
 

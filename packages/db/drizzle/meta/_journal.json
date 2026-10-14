@@ -484,6 +484,13 @@
       "when": 1791938896076,
       "tag": "0068_inventory",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1791943413316,
+      "tag": "0069_supplies_log",
+      "breakpoints": true
     }
   ]
 }

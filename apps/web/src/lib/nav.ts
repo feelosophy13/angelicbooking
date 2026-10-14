@@ -31,7 +31,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     { title: "Catalog", items: [
       it(`${base}/services`, "Services", "Scissors"),
       it(`${base}/products`, "Products", "ShoppingBag"),
-      ...(ok("inventory.manage") ? [it(`${base}/inventory`, "Inventory", "Boxes")] : []),
+      ...(ok("inventory.manage") ? [it(`${base}/inventory`, "Inventory", "Boxes")] : ok("inventory.log") ? [it(`${base}/inventory/use`, "Log supplies", "Boxes")] : []),
       it(`${base}/packages`, "Packages", "Package"),
       it(`${base}/memberships`, "Memberships", "BadgePercent"),
       it(`${base}/gift-cards`, "Gift cards", "Gift"),

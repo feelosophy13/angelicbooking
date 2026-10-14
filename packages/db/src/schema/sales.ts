@@ -116,6 +116,8 @@ export const serviceProducts = pgTable(
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
     quantity: integer("quantity").notNull().default(1),
+    // auto: taken off the stock when the service is rung up. log: staff record what they really used (this amount is the suggestion).
+    mode: text("mode").notNull().default("auto"),
   },
   (t) => [uniqueIndex("service_products_uq").on(t.serviceId, t.productId), index("service_products_product_idx").on(t.productId)],
 );
@@ -176,7 +178,11 @@ export const stockMovements = pgTable(
     reason: text("reason").notNull(),
     locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     saleId: text("sale_id"),
+    // Supplies a staff member logged against a visit.
+    appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
     purchaseOrderId: text("purchase_order_id"),
+    // What one unit cost when it moved, so cost of goods sold and supplies used don't shift when prices later change.
+    unitCostCents: integer("unit_cost_cents"),
     note: text("note"),
     createdByUserId: text("created_by_user_id"),
     createdAt: createdAt(),

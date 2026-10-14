@@ -21,6 +21,7 @@ export const ACTIONS = [
   "checkout.take",
   "reports.view",
   "payroll.view",
+  "inventory.log", // record the supplies used on a visit (Provider and Front desk by default)
   "inventory.manage", // receive, count, adjust and order stock; suppliers (the catalog itself is services.manage)
 ] as const;
 export type Action = (typeof ACTIONS)[number];
@@ -58,6 +59,7 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
   {
     title: "Inventory",
     items: [
+      { action: "inventory.log", label: "Log supplies used", description: "Record the products used up on a visit (color, adhesive, masks) from the appointment or the Log usage page." },
       { action: "inventory.manage", label: "Manage inventory", description: "Receive and count stock, write off or transfer it, and handle suppliers, purchase orders and reorders." },
     ],
   },
@@ -96,8 +98,8 @@ const ALL = new Set<Action>(ACTIONS);
 export const DEFAULT_ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {
   owner: ALL,
   manager: new Set<Action>(ACTIONS.filter((a) => a !== "business.manage")),
-  front_desk: new Set<Action>(["clients.read", "clients.write", "appointments.read.any", "appointments.read.own", "appointments.write.any", "appointments.write.own", "checkout.take"]),
-  provider: new Set<Action>(["clients.read", "appointments.read.own", "appointments.write.own", "checkout.take"]),
+  front_desk: new Set<Action>(["clients.read", "clients.write", "appointments.read.any", "appointments.read.own", "appointments.write.any", "appointments.write.own", "checkout.take", "inventory.log"]),
+  provider: new Set<Action>(["clients.read", "appointments.read.own", "appointments.write.own", "checkout.take", "inventory.log"]),
 };
 
 export const DEFAULT_ROLE_META: Record<Role, { name: string; description: string }> = {

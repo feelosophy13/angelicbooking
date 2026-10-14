@@ -27,6 +27,7 @@ import { serviceGroups } from "@/server/service-groups";
 import { NoShowFeeForm } from "./no-show-form";
 import { CancelForm } from "./cancel-form";
 import { VisitPhotosCard, type PhotoGroup } from "./visit-photos-card";
+import { SuppliesCard } from "./supplies-card";
 import { pairsForAppointment, photoTagsInUse } from "@/server/visit-photos";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForAppointment, tzFor } from "@/server/locations";
@@ -293,6 +294,7 @@ export default async function AppointmentPage({
             </form>
           </Card>
 
+          {appointment.kind === "visit" && canEdit && can(permissions, "inventory.log") ? <SuppliesCard slug={slug} businessId={business.id} appointmentId={id} /> : null}
           {appointment.kind === "visit" && canEdit ? <VisitPhotosCard slug={slug} appointmentId={id} groups={photoGroups} pairs={photoPairs} tagSuggestions={photoTags} /> : null}
         </div>
 

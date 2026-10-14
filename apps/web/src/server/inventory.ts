@@ -40,14 +40,15 @@ export async function listLocations(businessId: string) {
 /** Where a sale's stock comes from: the location it was rung up at. */
 export const saleStockLocation = async (tx: TenantDb, sale: { locationId: string | null }) => sale.locationId ?? (await mainLocationId(tx));
 
-type Move = { businessId: string; productId: string; locationId: string; delta: number; reason: string; note?: string | null; saleId?: string | null; purchaseOrderId?: string | null; actorUserId?: string | null };
+type Move = { businessId: string; productId: string; locationId: string; delta: number; reason: string; note?: string | null; saleId?: string | null; appointmentId?: string | null; purchaseOrderId?: string | null; actorUserId?: string | null };
 
 /** The only way stock changes. Returns false when a sale had already taken this product off (closing twice is harmless). */
 async function applyMove(tx: TenantDb, m: Move): Promise<boolean> {
   if (m.delta === 0) return false;
+  const [cost] = await tx.select({ c: schema.products.costCents }).from(schema.products).where(eq(schema.products.id, m.productId));
   const inserted = await tx
     .insert(schema.stockMovements)
-    .values({ businessId: m.businessId, productId: m.productId, locationId: m.locationId, delta: m.delta, reason: m.reason, note: m.note ?? null, saleId: m.saleId ?? null, purchaseOrderId: m.purchaseOrderId ?? null, createdByUserId: m.actorUserId ?? null })
+    .values({ businessId: m.businessId, productId: m.productId, locationId: m.locationId, delta: m.delta, reason: m.reason, note: m.note ?? null, saleId: m.saleId ?? null, appointmentId: m.appointmentId ?? null, purchaseOrderId: m.purchaseOrderId ?? null, unitCostCents: cost?.c ?? 0, createdByUserId: m.actorUserId ?? null })
     .onConflictDoNothing()
     .returning({ id: schema.stockMovements.id });
   if (!inserted.length) return false;
@@ -84,7 +85,7 @@ export async function decrementStockForSale(tx: TenantDb, businessId: string, sa
   for (const l of lines) if (l.kind === "service" && l.serviceId) services.set(l.serviceId, (services.get(l.serviceId) ?? 0) + Math.max(1, l.quantity));
   const used = new Map<string, number>();
   if (services.size) {
-    const usage = await tx.select().from(schema.serviceProducts).where(inArray(schema.serviceProducts.serviceId, [...services.keys()]));
+    const usage = await tx.select().from(schema.serviceProducts).where(and(inArray(schema.serviceProducts.serviceId, [...services.keys()]), eq(schema.serviceProducts.mode, "auto")));
     for (const u of usage) used.set(u.productId, (used.get(u.productId) ?? 0) + u.quantity * (services.get(u.serviceId) ?? 1));
   }
   const ids = [...new Set([...sold.keys(), ...used.keys()])];
@@ -549,7 +550,7 @@ export async function cancelOrder(input: { businessId: string; id: string; actor
 export async function serviceUsage(businessId: string, serviceId: string) {
   return withTenant(businessId, (tx) =>
     tx
-      .select({ id: schema.serviceProducts.id, productId: schema.serviceProducts.productId, quantity: schema.serviceProducts.quantity, name: schema.products.name, variantLabel: schema.products.variantLabel })
+      .select({ id: schema.serviceProducts.id, productId: schema.serviceProducts.productId, quantity: schema.serviceProducts.quantity, mode: schema.serviceProducts.mode, kind: schema.products.kind, name: schema.products.name, variantLabel: schema.products.variantLabel })
       .from(schema.serviceProducts)
       .innerJoin(schema.products, eq(schema.products.id, schema.serviceProducts.productId))
       .where(eq(schema.serviceProducts.serviceId, serviceId))
@@ -557,15 +558,130 @@ export async function serviceUsage(businessId: string, serviceId: string) {
   );
 }
 
-export async function setServiceUsage(input: { businessId: string; serviceId: string; productId: string; quantity: number }) {
+export async function setServiceUsage(input: { businessId: string; serviceId: string; productId: string; quantity: number; mode?: "auto" | "log" }) {
   await withTenant(input.businessId, async (tx) => {
     const qty = Math.floor(input.quantity);
     if (qty <= 0) {
       await tx.delete(schema.serviceProducts).where(and(eq(schema.serviceProducts.serviceId, input.serviceId), eq(schema.serviceProducts.productId, input.productId)));
       return;
     }
-    await tx.insert(schema.serviceProducts).values({ businessId: input.businessId, serviceId: input.serviceId, productId: input.productId, quantity: qty }).onConflictDoUpdate({ target: [schema.serviceProducts.serviceId, schema.serviceProducts.productId], set: { quantity: qty } });
+    const mode = input.mode ?? "auto";
+    await tx.insert(schema.serviceProducts).values({ businessId: input.businessId, serviceId: input.serviceId, productId: input.productId, quantity: qty, mode }).onConflictDoUpdate({ target: [schema.serviceProducts.serviceId, schema.serviceProducts.productId], set: input.mode ? { quantity: qty, mode } : { quantity: qty } });
     await tx.update(schema.products).set({ trackStock: true }).where(eq(schema.products.id, input.productId));
+  });
+}
+
+
+/** The services that use a product up, for the hint on the product's page. */
+export async function productUsage(businessId: string, productId: string) {
+  return withTenant(businessId, (tx) =>
+    tx
+      .select({ serviceId: schema.serviceProducts.serviceId, name: schema.services.name, quantity: schema.serviceProducts.quantity, mode: schema.serviceProducts.mode })
+      .from(schema.serviceProducts)
+      .innerJoin(schema.services, eq(schema.services.id, schema.serviceProducts.serviceId))
+      .where(eq(schema.serviceProducts.productId, productId))
+      .orderBy(asc(schema.services.name)),
+  );
+}
+
+// ---- Supplies used on a visit, logged by staff ----
+
+/**
+ * Staff say what they really used (a fraction of a tube is a whole unit once it is finished, not a guess per visit).
+ * Goes against the visit's location; may take the count below zero (never stop work mid-service), which then shows as "count is off".
+ */
+export async function logUsage(input: { businessId: string; appointmentId?: string | null; locationId?: string | null; items: { productId: string; qty: number }[]; note: string | null; actorUserId: string }) {
+  const items = input.items.map((i) => ({ productId: i.productId, qty: Math.floor(i.qty) })).filter((i) => i.qty > 0);
+  if (!items.length) throw new InventoryError("Enter how many units were used.");
+  return withTenant(input.businessId, async (tx) => {
+    let locationId = input.locationId ?? null;
+    if (input.appointmentId) {
+      const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, input.appointmentId), columns: { locationId: true } });
+      if (!appt) throw new InventoryError("Appointment not found.");
+      locationId = appt.locationId ?? locationId;
+    }
+    locationId = locationId ?? (await mainLocationId(tx));
+    const prods = await tx.select({ id: schema.products.id }).from(schema.products).where(inArray(schema.products.id, items.map((i) => i.productId)));
+    if (prods.length !== new Set(items.map((i) => i.productId)).size) throw new InventoryError("Product not found.");
+    for (const it of items) {
+      await applyMove(tx, { businessId: input.businessId, productId: it.productId, locationId, delta: -it.qty, reason: "used", appointmentId: input.appointmentId ?? null, note: input.note ?? "Logged by staff", actorUserId: input.actorUserId });
+      await tx.update(schema.products).set({ trackStock: true }).where(and(eq(schema.products.id, it.productId), eq(schema.products.trackStock, false)));
+    }
+    await audit(tx, input.businessId, input.actorUserId, "inventory.log_usage", input.appointmentId ?? locationId, { items });
+    return items.reduce((s, i) => s + i.qty, 0);
+  });
+}
+
+/** Take back supplies logged by mistake: puts units back (never more than were logged on that visit). */
+export async function undoUsage(input: { businessId: string; appointmentId: string; productId: string; qty: number; actorUserId: string }) {
+  await withTenant(input.businessId, async (tx) => {
+    const [row] = await tx
+      .select({ net: sql<number>`coalesce(sum(${schema.stockMovements.delta}), 0)`, loc: sql<string | null>`(array_agg(${schema.stockMovements.locationId} order by ${schema.stockMovements.createdAt} desc))[1]` })
+      .from(schema.stockMovements)
+      .where(and(eq(schema.stockMovements.appointmentId, input.appointmentId), eq(schema.stockMovements.productId, input.productId), eq(schema.stockMovements.reason, "used")));
+    const logged = -Number(row?.net ?? 0);
+    const qty = Math.floor(input.qty);
+    if (qty <= 0 || qty > logged) throw new InventoryError(logged <= 0 ? "Nothing is logged for this product on this visit." : `Only ${logged} logged.`);
+    await applyMove(tx, { businessId: input.businessId, productId: input.productId, locationId: row!.loc ?? (await mainLocationId(tx)), delta: qty, reason: "used", appointmentId: input.appointmentId, note: "Logged by mistake, taken back", actorUserId: input.actorUserId });
+  });
+}
+
+/** What staff have logged on a visit (net of anything taken back), and what the visit's services suggest. */
+export async function visitSupplies(businessId: string, appointmentId: string) {
+  return withTenant(businessId, async (tx) => {
+    const logged = await tx
+      .select({ productId: schema.stockMovements.productId, name: schema.products.name, variantLabel: schema.products.variantLabel, net: sql<number>`-sum(${schema.stockMovements.delta})` })
+      .from(schema.stockMovements)
+      .innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId))
+      .where(and(eq(schema.stockMovements.appointmentId, appointmentId), eq(schema.stockMovements.reason, "used")))
+      .groupBy(schema.stockMovements.productId, schema.products.name, schema.products.variantLabel);
+    const items = await tx.select({ serviceId: schema.appointmentItems.serviceId }).from(schema.appointmentItems).where(and(eq(schema.appointmentItems.appointmentId, appointmentId), sql`${schema.appointmentItems.status} <> 'cancelled'`));
+    const ids = [...new Set(items.map((i) => i.serviceId).filter((x): x is string => !!x))];
+    const uses = ids.length
+      ? await tx
+          .select({ productId: schema.serviceProducts.productId, quantity: schema.serviceProducts.quantity, mode: schema.serviceProducts.mode, name: schema.products.name, variantLabel: schema.products.variantLabel })
+          .from(schema.serviceProducts)
+          .innerJoin(schema.products, eq(schema.products.id, schema.serviceProducts.productId))
+          .where(inArray(schema.serviceProducts.serviceId, ids))
+      : [];
+    const suggest = new Map<string, { productId: string; label: string; qty: number }>();
+    for (const u of uses.filter((x) => x.mode === "log")) {
+      const cur = suggest.get(u.productId);
+      suggest.set(u.productId, { productId: u.productId, label: productLabel(u), qty: (cur?.qty ?? 0) + u.quantity });
+    }
+    const automatic = [...new Map(uses.filter((x) => x.mode === "auto").map((u) => [u.productId, productLabel(u)])).values()];
+    return {
+      logged: logged.filter((l) => Number(l.net) > 0).map((l) => ({ productId: l.productId, label: productLabel(l), qty: Number(l.net) })),
+      suggested: [...suggest.values()],
+      automatic,
+    };
+  });
+}
+
+/** Products a person may log use of: every active tracked product, back-bar first. */
+export async function loggableProducts(businessId: string) {
+  return withTenant(businessId, (tx) =>
+    tx
+      .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, kind: schema.products.kind })
+      .from(schema.products)
+      .where(eq(schema.products.active, true))
+      .orderBy(asc(schema.products.kind), asc(schema.products.name), asc(schema.products.variantLabel)),
+  );
+}
+
+/** Recent logged usage anywhere (for the Log usage page), newest first. */
+export async function recentUsage(businessId: string, limit = 25) {
+  return withTenant(businessId, async (tx) => {
+    const rows = await tx
+      .select({ m: schema.stockMovements, name: schema.products.name, variantLabel: schema.products.variantLabel, location: schema.locations.name, who: schema.user.name })
+      .from(schema.stockMovements)
+      .innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId))
+      .leftJoin(schema.locations, eq(schema.locations.id, schema.stockMovements.locationId))
+      .leftJoin(schema.user, eq(schema.user.id, schema.stockMovements.createdByUserId))
+      .where(and(eq(schema.stockMovements.reason, "used"), sql`${schema.stockMovements.createdByUserId} is not null`))
+      .orderBy(desc(schema.stockMovements.createdAt))
+      .limit(limit);
+    return rows.map((r) => ({ ...r.m, label: productLabel(r), location: r.location, who: r.who }));
   });
 }
 
@@ -608,6 +724,24 @@ export async function inventoryReport(businessId: string, days = 90) {
     const shrinkByProduct = [...shrink.reduce((acc, s) => acc.set(s.productId, { productId: s.productId, name: names.get(s.productId) ?? "Removed product", units: (acc.get(s.productId)?.units ?? 0) + s.units, valueCents: (acc.get(s.productId)?.valueCents ?? 0) + s.valueCents }), new Map<string, { productId: string; name: string; units: number; valueCents: number }>()).values()].sort((a, b) => b.valueCents - a.valueCents);
     const shrinkByReason = (SHRINKAGE_REASONS as readonly string[]).map((reason) => ({ reason, units: shrink.filter((s) => s.reason === reason).reduce((a, s) => a + s.units, 0), valueCents: shrink.filter((s) => s.reason === reason).reduce((a, s) => a + s.valueCents, 0) }));
 
+    // What left the shelf, at what it cost when it left: sold to clients, and used up in services. A product can be both.
+    const costRows = await tx
+      .select({
+        productId: schema.stockMovements.productId,
+        soldUnits: sql<number>`coalesce(-sum(${schema.stockMovements.delta}) filter (where ${schema.stockMovements.reason} in ('sale','return')), 0)`,
+        soldCost: sql<number>`coalesce(-sum(${schema.stockMovements.delta} * coalesce(${schema.stockMovements.unitCostCents}, ${schema.products.costCents})) filter (where ${schema.stockMovements.reason} in ('sale','return')), 0)`,
+        usedUnits: sql<number>`coalesce(-sum(${schema.stockMovements.delta}) filter (where ${schema.stockMovements.reason} = 'used'), 0)`,
+        usedCost: sql<number>`coalesce(-sum(${schema.stockMovements.delta} * coalesce(${schema.stockMovements.unitCostCents}, ${schema.products.costCents})) filter (where ${schema.stockMovements.reason} = 'used'), 0)`,
+      })
+      .from(schema.stockMovements)
+      .innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId))
+      .where(and(gte(schema.stockMovements.createdAt, since), inArray(schema.stockMovements.reason, ["sale", "return", "used"])))
+      .groupBy(schema.stockMovements.productId);
+    const costSplit = costRows
+      .map((r) => ({ productId: r.productId, name: names.get(r.productId) ?? "Removed product", soldUnits: Number(r.soldUnits), soldCostCents: Number(r.soldCost), usedUnits: Number(r.usedUnits), usedCostCents: Number(r.usedCost) }))
+      .filter((r) => r.soldUnits || r.usedUnits)
+      .sort((a, b) => b.soldCostCents + b.usedCostCents - (a.soldCostCents + a.usedCostCents));
+
     // Value on the shelf at the end of each of the last six months: today's value less everything that moved since (at today's costs).
     const nowValue = rows.reduce((s, r) => s + r.valueCents, 0);
     const history: { label: string; valueCents: number }[] = [];
@@ -636,6 +770,9 @@ export async function inventoryReport(businessId: string, days = 90) {
       shrinkByReason,
       shrinkTotalCents: shrinkByReason.reduce((s, r) => s + r.valueCents, 0),
       history,
+      costSplit,
+      soldCostCents: costSplit.reduce((a, r) => a + r.soldCostCents, 0),
+      usedCostCents: costSplit.reduce((a, r) => a + r.usedCostCents, 0),
     };
   });
 }

@@ -28,6 +28,25 @@ export default async function InventoryReportPage({ params, searchParams }: { pa
         </div>
       </div>
 
+      <Section title="Cost of what left the shelf" note={`Sold to clients ${money(r.soldCostCents)} · used in services ${money(r.usedCostCents)} at what each unit cost when it left, over the last ${days} days.`}>
+        {r.costSplit.length === 0 ? <None>Nothing sold or used in this period.</None> : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-1.5">Product</th><th className="px-2 py-1.5 text-right">Sold</th><th className="px-2 py-1.5 text-right">Cost of sold</th><th className="px-2 py-1.5 text-right">Used</th><th className="px-4 py-1.5 text-right">Cost of used</th></tr></thead>
+            <tbody className="divide-y divide-stone-100">
+              {r.costSplit.slice(0, 20).map((c) => (
+                <tr key={c.productId}>
+                  <td className="px-4 py-1.5"><Link href={`/app/${slug}/products/${c.productId}`} className="font-medium hover:underline">{c.name}</Link>{c.soldUnits && c.usedUnits ? <span className="ml-1.5 rounded bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-800">sold and used</span> : null}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{c.soldUnits || "—"}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{c.soldUnits ? money(c.soldCostCents) : "—"}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{c.usedUnits || "—"}</td>
+                  <td className="px-4 py-1.5 text-right tabular-nums">{c.usedUnits ? money(c.usedCostCents) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Section>
+
       <Section title="Running out" note="At the pace of the last period, these have 30 days or less left.">
         {r.runningOut.length === 0 ? <None>Nothing is about to run out.</None> : r.runningOut.map((p) => (
           <Row key={p.id} href={`/app/${slug}/products/${p.id}`} left={productLabel(p)} sub={`${p.stockQty} on hand · ${(p.perWeek).toFixed(1)} a week`} right={p.daysLeft === 0 ? "out" : `${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left`} tone={(p.daysLeft ?? 0) <= 7 ? "text-red-700" : "text-amber-700"} />

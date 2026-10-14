@@ -7,7 +7,7 @@ import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
-import { applyCount, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
+import { applyCount, logUsage, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
 
 const refresh = (slug: string) => {
   revalidatePath(`/app/${slug}/inventory`, "layout");
@@ -186,4 +186,13 @@ export const receiveOrderAction = formAction(z.object({ slug: z.string(), orderI
   const r = await wrap(undefined, () => receiveOrder({ businessId: ctx.business.id, id: d.orderId, lines, reference: d.reference, actorUserId: ctx.user.id }));
   refresh(d.slug);
   return r.done ? `Received ${r.units} unit${r.units === 1 ? "" : "s"}. The order is complete.` : `Received ${r.units} unit${r.units === 1 ? "" : "s"}. The rest is still on order.`;
+});
+
+// ---- Log supplies used (outside a particular visit) ----
+
+export const logUsageAction = formAction(z.object({ slug: z.string(), productId: f.id(), locationId: z.string().optional(), qty: f.int(1, 100000), note: f.optional(120) }), async (d) => {
+  const ctx = await requireAction(d.slug, "inventory.log");
+  await wrap("qty", () => logUsage({ businessId: ctx.business.id, locationId: d.locationId || null, items: [{ productId: d.productId, qty: d.qty }], note: d.note, actorUserId: ctx.user.id }));
+  refresh(d.slug);
+  return "Logged";
 });

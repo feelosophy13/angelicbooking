@@ -7,7 +7,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { readProductRows, PRODUCT_CSV_HEADERS } from "../src/lib/inventory";
 import {
   applyCount, cancelOrder, createPurchaseOrder, decrementStockForSale, findProductByCode, getPurchaseOrder, listLocations, lowStock, markOrdered, onlineAvailability, receiveOrder,
-  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, setServiceUsage, inventoryReport, importProducts, exportProducts, lowStockCount,
+  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, setServiceUsage, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, productUsage,
 } from "../src/server/inventory";
 
 const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, "demo-twosites") });
@@ -71,7 +71,7 @@ console.log("Sale: stock out, back-bar use, refund does not restock, put back on
 const serum = await product("Lash Growth Serum");
 const adhesive = await product("Lash Adhesive (pro)");
 const service = (await withTenant(B, (tx) => tx.select().from(schema.services))).find((s) => /classic/i.test(s.name))!;
-await setServiceUsage({ businessId: B, serviceId: service.id, productId: adhesive.id, quantity: 2 });
+await setServiceUsage({ businessId: B, serviceId: service.id, productId: adhesive.id, quantity: 2, mode: "auto" });
 const serumBefore = await at(serum.id, second);
 const adhesiveBefore = await at(adhesive.id, second);
 const sale = await withTenant(B, async (tx) => {
@@ -147,6 +147,48 @@ await assert.rejects(() => cancelOrder({ businessId: B, id: po.id, actorUserId: 
 ok("an order is received in two parts, stock and cost follow, and a finished order can't be cancelled");
 assert.ok(Array.isArray(sugBefore));
 
+console.log("Supplies: automatic vs logged by staff");
+const t1 = await product("Eye gel patches (pair)");
+const svcLog = (await withTenant(B, (tx) => tx.select().from(schema.services))).find((x) => /classic/i.test(x.name))!;
+await setServiceUsage({ businessId: B, serviceId: svcLog.id, productId: t1.id, quantity: 2, mode: "log" });
+const t1Before = await at(t1.id, second);
+await withTenant(B, async (tx) => {
+  const rows = await tx.execute<{ n: number }>(sql`select next_sale_number(${B}) as n`);
+  const [sl] = await tx.insert(schema.sales).values({ businessId: B, number: Number(rows[0]!.n), locationId: second, status: "paid", subtotalCents: 100, totalCents: 100, paidCents: 100, closedAt: new Date() }).returning();
+  await tx.insert(schema.saleLines).values({ businessId: B, saleId: sl!.id, kind: "service", serviceId: svcLog.id, name: svcLog.name, quantity: 1, unitCents: 0, amountCents: 0 });
+  await decrementStockForSale(tx, B, sl!.id);
+});
+assert.equal(await at(t1.id, second), t1Before);
+ok("a product set to 'staff log it' is not taken off when the service is rung up");
+const appt = (await withTenant(B, (tx) => tx.select().from(schema.appointments).where(eq(schema.appointments.kind, "visit")).limit(1)))[0]!;
+await withTenant(B, (tx) => tx.update(schema.appointments).set({ locationId: second }).where(eq(schema.appointments.id, appt.id)));
+await withTenant(B, (tx) => tx.delete(schema.stockMovements).where(eq(schema.stockMovements.appointmentId, appt.id)));
+await logUsage({ businessId: B, appointmentId: appt.id, items: [{ productId: t1.id, qty: 3 }], note: null, actorUserId: actor });
+assert.equal(await at(t1.id, second), t1Before - 3);
+let vs = await visitSupplies(B, appt.id);
+assert.deepEqual(vs.logged.map((l) => l.qty), [3]);
+ok("logging supplies on a visit takes them off the visit's location");
+await undoUsage({ businessId: B, appointmentId: appt.id, productId: t1.id, qty: 1, actorUserId: actor });
+assert.equal(await at(t1.id, second), t1Before - 2);
+await assert.rejects(() => undoUsage({ businessId: B, appointmentId: appt.id, productId: t1.id, qty: 5, actorUserId: actor }), InventoryError);
+vs = await visitSupplies(B, appt.id);
+assert.deepEqual(vs.logged.map((l) => l.qty), [2]);
+ok("taking some back puts it back, never more than was logged");
+const stamped = await withTenant(B, (tx) => tx.select().from(schema.stockMovements).where(eq(schema.stockMovements.appointmentId, appt.id)));
+assert.ok(stamped.every((m) => m.unitCostCents === t1.costCents));
+await withTenant(B, (tx) => tx.update(schema.products).set({ costCents: t1.costCents + 999 }).where(eq(schema.products.id, t1.id)));
+const rep0 = await inventoryReport(B, 90);
+const row = rep0.costSplit.find((c) => c.productId === t1.id)!;
+assert.ok(row.usedUnits >= 2);
+await withTenant(B, (tx) => tx.update(schema.products).set({ costCents: t1.costCents }).where(eq(schema.products.id, t1.id)));
+ok("each movement keeps the cost when it happened, so later price changes don't rewrite history");
+const toner2 = await product("Gentle Cleanser");
+await setServiceUsage({ businessId: B, serviceId: svcLog.id, productId: toner2.id, quantity: 1, mode: "log" });
+assert.ok((await productUsage(B, toner2.id)).some((u) => u.serviceId === svcLog.id && u.mode === "log"));
+const repSplit = await inventoryReport(B, 90);
+assert.equal(repSplit.soldCostCents + repSplit.usedCostCents, repSplit.costSplit.reduce((a, r) => a + r.soldCostCents + r.usedCostCents, 0));
+ok("a retail product can also be used in a service, and the report separates sold from used");
+
 console.log("Per-location alerts");
 const closeSaleAt = async (loc: string, lines: (typeof schema.saleLines.$inferInsert)[]) =>
   withTenant(B, async (tx) => {
@@ -174,7 +216,7 @@ const adhesiveP = await product("Lash Adhesive (pro)");
 await applyCount({ businessId: B, locationId: main, counts: [{ productId: adhesiveP.id, counted: 20 }], note: null, actorUserId: actor });
 await applyCount({ businessId: B, locationId: second, counts: [{ productId: adhesiveP.id, counted: 2 }], note: null, actorUserId: actor });
 const svc = (await withTenant(B, (tx) => tx.select().from(schema.services))).find((x) => /classic/i.test(x.name))!;
-await setServiceUsage({ businessId: B, serviceId: svc.id, productId: adhesiveP.id, quantity: 2 });
+await setServiceUsage({ businessId: B, serviceId: svc.id, productId: adhesiveP.id, quantity: 2, mode: "auto" });
 await closeSaleAt(second, [{ businessId: B, saleId: "", kind: "service", serviceId: svc.id, name: svc.name, quantity: 1, unitCents: 0, amountCents: 0 }]);
 item = await ov(adhesiveP.id);
 assert.deepEqual(item.alerts.map((a) => [a.locationId, a.status]), [[second, "out"]]);

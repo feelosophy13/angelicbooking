@@ -172,8 +172,8 @@ export async function saveServiceStylistTerms(formData: FormData) {
 
 /** Set how many units of a product one visit of this service uses (0, or "Remove", takes it off the list). */
 export async function setServiceProduct(formData: FormData) {
-  const d = z.object({ slug: z.string(), serviceId: z.string().min(1), productId: z.string().min(1), quantity: z.coerce.number().int().min(0).max(1000).default(1) }).parse(Object.fromEntries(formData));
+  const d = z.object({ slug: z.string(), serviceId: z.string().min(1), productId: z.string().min(1), quantity: z.coerce.number().int().min(0).max(1000).default(1), mode: z.enum(["auto", "log"]).optional() }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "services.manage");
-  await setServiceUsage({ businessId: ctx.business.id, serviceId: d.serviceId, productId: d.productId, quantity: formData.get("remove") ? 0 : d.quantity });
+  await setServiceUsage({ businessId: ctx.business.id, serviceId: d.serviceId, productId: d.productId, quantity: formData.get("remove") ? 0 : d.quantity, mode: d.mode });
   revalidatePath(`/app/${d.slug}/services/${d.serviceId}`);
 }

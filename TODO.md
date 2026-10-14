@@ -261,6 +261,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Daily low-stock email to owners and inventory managers (after 8am local, from the reminders job). Demo data has suppliers, four orders, back-bar and a history.
       `pnpm --filter @angelic/web inventory:check` exercises the logic against the demo data. Refund form: "Did the client bring goods back?" puts chosen units back on the shelf in the same step (off by default). Alerts and reorder suggestions are per location (a location with none that never sold or used the product there stays quiet; back-bar products alert where the services were done); each location's shortfall is its own draft order, delivered there. Not built: serial/lot tracking and expiry dates per batch, automatic supplier ordering (orders are written, not sent), counting
       by scanning each unit.
+- [x] 2026-10-13: Supplies used (migration 0069). Products can be both sold and used in services (one stock; sold and used shown separately). Each service's "Products used" row is either
+      "taken off at checkout" (whole units, like sheets) or "staff log it" (the amount is only a suggestion). Staff log what they really used on the appointment ("Supplies used" card, with
+      "Take back") or on Inventory → Log usage; new permission `inventory.log` (Provider, Front desk and Manager by default; stored roles updated by the migration). Logging may take a count negative
+      (never stop work mid-service). Every stock movement keeps what a unit cost when it moved, and Inventory → Report shows cost of goods sold vs supplies used per product. The product page lists the
+      services that use it; the service page tags products that are also sold. Not built: fractional units, usage taken off for services done without a sale or a log, and online stock reduced by service use.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.
