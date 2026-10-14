@@ -56,14 +56,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 ## 2. Before real customers
 
 ### Platform admin app (`apps/admin`, built 2026-10-14: tenant list with filters and CSV, usage metrics, price book and custom pricing, suspend / comp / extend trial, audit log, health page, TOTP login)
-- [ ] Deploy it as its own Render web service (build `pnpm --filter @angelic/admin build`, start `pnpm --filter @angelic/admin start`)
-      on `admin.angelicbooking.com`, and put Cloudflare Access (your email only) in front of it.
-- [ ] On the production DB run `packages/db/sql/admin-role.sql` as the owner, **change the `angelic_admin` password first**, then set
-      `ADMIN_DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` (`pnpm --filter @angelic/admin hash-password '…'`), `ADMIN_SESSION_SECRET`,
-      and `ADMIN_TOTP_SECRET` (`pnpm --filter @angelic/admin totp-secret`, add the key to an authenticator app) on that service only.
-      Never add `ADMIN_DATABASE_URL` to the web service. Optional: a restricted read-only `STRIPE_SECRET_KEY` shows "actually billed" next to the estimate.
-- [ ] After migrating production (0074, 0075), re-run `admin-role.sql` so `angelic_admin` gets its write grants (pricing tables, audit log, and the
-      suspend / comp / trial columns of `businesses`; nothing else).
+- [x] Deployed 2026-10-14 as Render service `angelic-admin` (srv-db7vr98n74is73d85io0, starter) at https://admin.angelicbooking.com
+      (Cloudflare `CNAME admin`, DNS only). Production web deploy 236c5ed ran migrations 0067-0075. Login secrets are in the local `.env`
+      (`PROD_ADMIN_*`, `# prod admin password:`); add `PROD_ADMIN_TOTP_SECRET` to an authenticator app as a setup key.
+- [x] `admin-role.sql` applied to production 2026-10-14 (role without BYPASSRLS, read policy on all 60 tenant tables, write only to pricing, audit log and the suspend/comp/trial columns). Re-run it after any migration that adds a tenant table.
+- [ ] Enable Cloudflare Zero Trust / Access (dashboard: "Enable Access", free plan), then proxy the `admin` DNS record and add an Access policy
+      for your email. The API says Access is not enabled on the account. The admin app already needs password + authenticator code meanwhile.
 - [ ] **Test the price-book billing against the Stripe sandbox** once keys exist (built 2026-10-14, only the planning logic is unit-tested):
       `server/billing.ts` now starts subscriptions from the price book (base + extra locations + extra staff, metered texts) and
       `reconcileSubscription` (daily, in the 07:00 UTC run of the reminders job) keeps quantities in line with locations and active staff.
