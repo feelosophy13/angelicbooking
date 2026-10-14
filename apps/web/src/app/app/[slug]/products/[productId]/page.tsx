@@ -10,6 +10,8 @@ import { Card, FormPage, Input, LinkButton, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { Disclosure } from "@/components/disclosure";
 import { ProductFields } from "@/components/product-fields";
+import { undoReceiptAction } from "../../inventory/actions";
+import { ConfirmSubmit } from "@/components/form";
 import { addProductBarcode, adjustStock, deleteProductBarcode, makeProductOptions, transferStockAction, updateProduct } from "../actions";
 import { listExtraBarcodes, listLocations, listSuppliers, productMovements, stockByLocation } from "@/server/inventory";
 import { MANUAL_REASONS, movementReason, productLabel, stockStatus } from "@/lib/inventory";
@@ -98,6 +100,14 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
                 <li key={m.id}>
                   {fmt.format(m.createdAt)} · <span className={m.delta >= 0 ? "text-emerald-700" : "text-red-700"}>{m.delta > 0 ? "+" : ""}{m.delta}</span> · {movementReason(m.reason)}
                   {multi && m.location ? ` · ${m.location.replace(`${business.name} - `, "")}` : ""}{m.note ? ` · ${m.note}` : ""}{m.who ? ` · ${m.who}` : ""}
+                  {m.undone ? " · undone" : null}
+                  {m.reason === "received" && m.delta > 0 && !m.reversesMovementId && !m.undone ? (
+                    <form action={undoReceiptAction} className="ml-2 inline">
+                      <input type="hidden" name="slug" value={slug} />
+                      <input type="hidden" name="movementId" value={m.id} />
+                      <ConfirmSubmit title={`Undo this delivery of ${m.delta}?`} body="The stock goes down by that many (and the order, if it was on one, shows them as not yet received)." confirmLabel="Undo delivery" variant="danger" size="sm" className="!h-auto !px-1 !py-0 text-xs underline">Undo</ConfirmSubmit>
+                    </form>
+                  ) : null}
                 </li>
               ))}
             </ul>

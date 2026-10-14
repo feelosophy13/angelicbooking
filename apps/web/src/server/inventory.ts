@@ -181,14 +181,14 @@ export async function applyCount(input: { businessId: string; locationId: string
 export async function productMovements(businessId: string, productId: string, limit = 50) {
   return withTenant(businessId, async (tx) => {
     const rows = await tx
-      .select({ m: schema.stockMovements, location: schema.locations.name, who: schema.user.name })
+      .select({ m: schema.stockMovements, location: schema.locations.name, who: schema.user.name, reversed: sql<boolean>`exists (select 1 from stock_movements r where r.reverses_movement_id = ${schema.stockMovements.id})` })
       .from(schema.stockMovements)
       .leftJoin(schema.locations, eq(schema.locations.id, schema.stockMovements.locationId))
       .leftJoin(schema.user, eq(schema.user.id, schema.stockMovements.createdByUserId))
       .where(eq(schema.stockMovements.productId, productId))
       .orderBy(desc(schema.stockMovements.createdAt))
       .limit(limit);
-    return rows.map((r) => ({ ...r.m, location: r.location, who: r.who }));
+    return rows.map((r) => ({ ...r.m, location: r.location, who: r.who, undone: !!r.reversed }));
   });
 }
 
@@ -621,6 +621,58 @@ export async function recentlyLoggedBy(businessId: string, userId: string, limit
       .orderBy(desc(sql`max(${schema.stockMovements.createdAt})`))
       .limit(limit);
     return rows.map((r) => r.productId);
+  });
+}
+
+/** Which product (if any) already uses this code as a barcode, another barcode or SKU. The same rule everywhere a code is typed or scanned. */
+export async function codeTaken(businessId: string, code: string, exceptProductId?: string | null): Promise<string | null> {
+  const c = code.trim();
+  if (!c) return null;
+  return withTenant(businessId, async (tx) => {
+    const all = (await allCodes(tx)).filter((p) => p.id !== exceptProductId);
+    return matchProduct(all, c)?.label ?? null;
+  });
+}
+
+/**
+ * Deliveries that were entered wrong: take a received movement back. The stock goes down by what was received, and if it was on an order the
+ * order's received count and status go back too. Refused when some of it has already gone (sold, used, moved), because taking it off would
+ * leave the count short: correct the count instead.
+ */
+export async function undoReceipt(input: { businessId: string; movementId: string; actorUserId: string }) {
+  await withTenant(input.businessId, async (tx) => {
+    const m = await tx.query.stockMovements.findFirst({ where: eq(schema.stockMovements.id, input.movementId) });
+    if (!m || m.reason !== "received" || m.delta <= 0 || m.reversesMovementId) throw new InventoryError("That entry can't be undone.");
+    const locationId = m.locationId ?? (await mainLocationId(tx));
+    const have = await qtyAt(tx, m.productId, locationId);
+    if (have < m.delta) throw new InventoryError(`Only ${have} is counted here now, so ${m.delta} can't be taken off. Some of it has already gone. Correct the count on the product instead.`);
+    const done = await applyMove(tx, { businessId: input.businessId, productId: m.productId, locationId, delta: -m.delta, reason: "received", purchaseOrderId: m.purchaseOrderId, reversesMovementId: m.id, note: "Delivery undone", actorUserId: input.actorUserId });
+    if (!done) throw new InventoryError("That was already undone.");
+    if (m.purchaseOrderId) {
+      await tx.update(schema.purchaseOrderLines).set({ receivedQty: sql`greatest(0, ${schema.purchaseOrderLines.receivedQty} - ${m.delta})` }).where(and(eq(schema.purchaseOrderLines.purchaseOrderId, m.purchaseOrderId), eq(schema.purchaseOrderLines.productId, m.productId)));
+      const lines = await tx.select().from(schema.purchaseOrderLines).where(eq(schema.purchaseOrderLines.purchaseOrderId, m.purchaseOrderId));
+      const po = await tx.query.purchaseOrders.findFirst({ where: eq(schema.purchaseOrders.id, m.purchaseOrderId) });
+      if (po && po.status !== "cancelled") {
+        const all = lines.every((l) => l.receivedQty >= l.orderedQty);
+        const any = lines.some((l) => l.receivedQty > 0);
+        await tx.update(schema.purchaseOrders).set({ status: all ? "received" : any ? "partial" : po.orderedAt ? "ordered" : "draft", receivedAt: all ? po.receivedAt : null }).where(eq(schema.purchaseOrders.id, po.id));
+      }
+    }
+    await audit(tx, input.businessId, input.actorUserId, "inventory.receipt_undone", m.id, { productId: m.productId, qty: m.delta, purchaseOrderId: m.purchaseOrderId });
+  });
+}
+
+/** What has been received on an order, line by line, newest first, with whether it has been undone. */
+export async function orderReceipts(businessId: string, purchaseOrderId: string) {
+  return withTenant(businessId, async (tx) => {
+    const rows = await tx
+      .select({ m: schema.stockMovements, name: schema.products.name, variantLabel: schema.products.variantLabel, who: schema.user.name, reversed: sql<boolean>`exists (select 1 from stock_movements r where r.reverses_movement_id = ${schema.stockMovements.id})` })
+      .from(schema.stockMovements)
+      .innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId))
+      .leftJoin(schema.user, eq(schema.user.id, schema.stockMovements.createdByUserId))
+      .where(and(eq(schema.stockMovements.purchaseOrderId, purchaseOrderId), eq(schema.stockMovements.reason, "received"), sql`${schema.stockMovements.delta} > 0`))
+      .orderBy(desc(schema.stockMovements.createdAt));
+    return rows.map((r) => ({ id: r.m.id, label: productLabel(r), qty: r.m.delta, at: r.m.createdAt, who: r.who, undone: !!r.reversed }));
   });
 }
 

@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { ChevronRight, Download, Pencil, Plus, Upload } from "lucide-react";
+import Link from "next/link";
+import { ChevronRight, Download, Pencil, Plus, Search, Upload } from "lucide-react";
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { formatMoney } from "@/lib/utils";
-import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
+import { Button, Card, Input, LinkButton, PageHeader, Empty, Select } from "@/components/ui";
+import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { RowLink, rowClass, rowControl } from "@/components/row";
 import { Thumb } from "@/components/thumb";
 import { toggleGroupActive, toggleProductActive } from "./actions";
@@ -17,18 +19,30 @@ export const metadata: Metadata = { title: "Products" };
 
 type Row = { p: typeof schema.products.$inferSelect; category: string | null };
 
-export default async function ProductsPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function ProductsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ q?: string; show?: string }> }) {
   const { slug } = await params;
+  const sp = await searchParams;
   const { business, permissions } = await requireBusiness(slug);
-  const rows: Row[] = await withTenant(business.id, (tx) =>
+  const [allRows, extraCodes] = await Promise.all([withTenant(business.id, (tx) =>
     tx
       .select({ p: schema.products, category: schema.productCategories.name })
       .from(schema.products)
       .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
       .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name), asc(schema.products.variantLabel)),
-  );
+  ), withTenant(business.id, (tx) => tx.select({ productId: schema.productBarcodes.productId, code: schema.productBarcodes.code }).from(schema.productBarcodes))]);
   const [{ items: tracked }, locs] = await Promise.all([stockOverview(business.id), listLocations(business.id)]);
   const standing = new Map(tracked.map((i) => [i.id, i]));
+  // Search (name, option, SKU, barcode, another barcode, category) and a simple filter. A product with options stays whole: if any option matches, all of them show.
+  const q = (sp.q ?? "").trim().toLowerCase();
+  const show = ["hidden", "backbar", "attention"].includes(sp.show ?? "") ? sp.show! : "";
+  const moreCodes = new Map<string, string[]>();
+  for (const e of extraCodes) moreCodes.set(e.productId, [...(moreCodes.get(e.productId) ?? []), e.code]);
+  const matchesRow = (r: Row) =>
+    (!q || [productLabel(r.p), r.p.name, r.p.sku, r.p.barcode, r.category, ...(moreCodes.get(r.p.id) ?? [])].some((v) => v?.toLowerCase().includes(q))) &&
+    (show === "" || (show === "hidden" ? !r.p.active : show === "backbar" ? r.p.kind === "backbar" : (standing.get(r.p.id)?.status ?? "ok") !== "ok"));
+  const hitGroups = new Set(allRows.filter((r) => r.p.groupId && matchesRow(r)).map((r) => r.p.groupId!));
+  const rows: Row[] = q || show ? allRows.filter((r) => matchesRow(r) || (r.p.groupId && hitGroups.has(r.p.groupId))) : allRows;
+  const filtering = !!(q || show);
   const manage = can(permissions, "services.manage");
   const canOpen = manage || can(permissions, "inventory.manage");
   const money = (c: number) => formatMoney(c, business.currency);
@@ -68,13 +82,30 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
     <>
       <PageHeader title="Products">
         {manage ? <LinkButton href={`/app/${slug}/products/categories`}>Categories</LinkButton> : null}
-        {manage && rows.length ? <LinkButton href={`/app/${slug}/products/bulk`}><Pencil className="h-4 w-4" /> Edit all</LinkButton> : null}
+        {manage && allRows.length ? <LinkButton href={`/app/${slug}/products/bulk`}><Pencil className="h-4 w-4" /> Edit all</LinkButton> : null}
         {manage ? <LinkButton href={`/app/${slug}/products/import`}><Upload className="h-4 w-4" /> Import</LinkButton> : null}
-        {rows.length ? <LinkButton href={`/app/${slug}/products/export`}><Download className="h-4 w-4" /> Export</LinkButton> : null}
+        {allRows.length ? <LinkButton href={`/app/${slug}/products/export`}><Download className="h-4 w-4" /> Export</LinkButton> : null}
         {manage ? <LinkButton href={`/app/${slug}/products/new`} variant="primary"><Plus className="h-4 w-4" /> New product</LinkButton> : null}
       </PageHeader>
+      {allRows.length ? (
+        <AutoSubmitForm className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[14rem] flex-1 sm:max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-stone-400" aria-hidden />
+            <Input name="q" defaultValue={sp.q ?? ""} placeholder="Search name, SKU, barcode or category" aria-label="Search products" autoComplete="off" className="pl-9" />
+          </div>
+          <Select name="show" defaultValue={show} aria-label="Show" className="h-10 w-auto">
+            <option value="">All products</option>
+            <option value="attention">Out, low or off</option>
+            <option value="backbar">Back-bar only</option>
+            <option value="hidden">Hidden only</option>
+          </Select>
+          {filtering ? <Link href={`/app/${slug}/products`} className="text-sm text-stone-600 underline">Clear</Link> : null}
+          {filtering ? <span className="text-sm text-stone-500">{rows.length} of {allRows.length} products</span> : null}
+        </AutoSubmitForm>
+      ) : null}
       <div className="space-y-4">
-        {rows.length === 0 ? <Empty title="No retail products yet" body="Shampoo, styling products, gift items…" action={{ href: `/app/${slug}/products/new`, label: "Add a product" }} /> : null}
+        {allRows.length === 0 ? <Empty title="No retail products yet" body="Shampoo, styling products, gift items…" action={{ href: `/app/${slug}/products/new`, label: "Add a product" }} /> : null}
+        {allRows.length > 0 && rows.length === 0 ? <Empty title="No product matches" body={q ? `Nothing matches “${sp.q}”${show ? " with that filter" : ""}. Try part of the name, or a barcode.` : "Nothing fits that filter."} /> : null}
         {[...byCategory.entries()].map(([cat, list]) => (
           <Card key={cat}>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">{cat}</h2>
@@ -107,7 +138,7 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
                 const groupActive = g.options.some(({ p }) => p.active);
                 return (
                   <li key={e.key}>
-                    <details className="group">
+                    <details className="group" open={filtering || undefined}>
                       <summary className={`flex cursor-pointer list-none items-center gap-3 px-4 py-3 marker:content-none [&::-webkit-details-marker]:hidden ${canOpen ? rowClass : ""}`}>
                         <span className="relative z-10 -m-2 shrink-0 cursor-pointer p-2" title="Show the options"><ChevronRight className="h-4 w-4 text-stone-400 transition-transform group-open:rotate-90" aria-hidden /></span>
                         <Thumb src={first.imageUrl} />

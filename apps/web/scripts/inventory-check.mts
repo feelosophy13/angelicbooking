@@ -9,7 +9,7 @@ import { addOptions, convertToGroup, createGroup, getGroup, GroupError, quickCre
 import { optionCombos, parseOptionList } from "../src/lib/variants";
 import {
   applyCount, cancelOrder, createPurchaseOrder, decrementStockForSale, findProductByCode, getPurchaseOrder, listLocations, lowStock, markOrdered, onlineAvailability, receiveOrder,
-  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy, undoMovement, togglePin, pinnedProductIds, supplyCosts, recentUsage, attachBarcode, scannableProducts, quickCreateProduct, findProductByCode, listExtraBarcodes, removeExtraBarcode,
+  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy, undoMovement, togglePin, pinnedProductIds, supplyCosts, recentUsage, attachBarcode, scannableProducts, codeTaken, undoReceipt, orderReceipts, quickCreateProduct, findProductByCode, listExtraBarcodes, removeExtraBarcode,
 } from "../src/server/inventory";
 
 const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, "demo-twosites") });
@@ -246,6 +246,8 @@ assert.equal((await fresh(back.id)).priceCents, 0);
 await withTenant(B, (tx) => tx.delete(schema.products).where(eq(schema.products.name, "Scanned Newcomer")));
 ok("a product made from a scan is tracked from the start with the scanned barcode; back-bar has no price; a taken code, no price on a retail item or no name is refused");
 
+// Take stock off by writing it off, to make a received delivery "partly gone".
+const closeShelf = async (productId: string, qty: number) => { const locs2 = await stockByLocation(B, productId); const here = locs2.find((l) => l.qty >= 0)!; const take = Math.min(here.qty, qty + 5); await recordMovement({ businessId: B, productId, locationId: here.locationId, entered: take, reason: "damage", note: "check", actorUserId: actor }); };
 console.log("Products with options");
 const clean = async () => withTenant(B, async (tx) => { await tx.delete(schema.products).where(sql`${schema.products.name} like 'Check Tint%'`); await tx.delete(schema.productGroups).where(sql`${schema.productGroups.name} like 'Check Tint%'`); });
 await clean();
@@ -312,6 +314,37 @@ const reimport = await importProducts({ businessId: B, rows: readProductRows([["
 assert.deepEqual([reimport.created, reimport.updated], [0, 1]);
 ok("importing rows with an Option joins (or makes) one group per name, and a repeat updates instead of duplicating");
 await withTenant(B, async (tx) => { await tx.delete(schema.products).where(sql`${schema.products.name} like 'Check Tint%'`); await tx.delete(schema.productGroups).where(sql`${schema.productGroups.name} like 'Check Tint%'`); });
+
+console.log("Undoing a delivery, and one rule for codes");
+const owner1 = await product("Gentle Cleanser");
+assert.equal(await codeTaken(B, String(owner1.barcode)), owner1.name);
+assert.equal(await codeTaken(B, String(owner1.barcode), owner1.id), null);
+assert.equal(await codeTaken(B, String(owner1.sku).toLowerCase()), owner1.name);
+assert.equal(await codeTaken(B, "0" + String(owner1.barcode)), owner1.name);
+assert.equal(await codeTaken(B, "999-nobody-has-this"), null);
+ok("one rule for typed codes: a barcode or SKU that another product uses is found, ignoring case and leading zeros");
+const wrong = await createPurchaseOrder({ businessId: B, supplierId: null, lines: [{ productId: owner1.id, qty: 12 }], actorUserId: actor });
+await markOrdered({ businessId: B, id: wrong.id, actorUserId: actor });
+const wrongLines = (await getPurchaseOrder(B, wrong.id))!.lines;
+const stockBefore = await sumLocs(owner1.id);
+await receiveOrder({ businessId: B, id: wrong.id, lines: [{ lineId: wrongLines[0]!.id, qty: 12 }], actorUserId: actor });
+assert.equal((await getPurchaseOrder(B, wrong.id))!.po.status, "received");
+const receipt = (await orderReceipts(B, wrong.id))[0]!;
+assert.deepEqual([receipt.qty, receipt.undone], [12, false]);
+await undoReceipt({ businessId: B, movementId: receipt.id, actorUserId: actor });
+assert.equal(await sumLocs(owner1.id), stockBefore);
+const afterUndo = (await getPurchaseOrder(B, wrong.id))!;
+assert.deepEqual([afterUndo.po.status, afterUndo.lines[0]!.receivedQty, afterUndo.po.receivedAt], ["ordered", 0, null]);
+assert.equal((await orderReceipts(B, wrong.id))[0]!.undone, true);
+await assert.rejects(() => undoReceipt({ businessId: B, movementId: receipt.id, actorUserId: actor }), InventoryError);
+await receiveOrder({ businessId: B, id: wrong.id, lines: [{ lineId: wrongLines[0]!.id, qty: 10 }], actorUserId: actor });
+assert.equal((await getPurchaseOrder(B, wrong.id))!.po.status, "partial");
+ok("a wrong delivery can be undone: the stock and the order go back, it can be entered again, and it can't be undone twice");
+const second10 = (await orderReceipts(B, wrong.id)).find((r) => !r.undone)!;
+await closeShelf(owner1.id, second10.qty);
+await assert.rejects(() => undoReceipt({ businessId: B, movementId: second10.id, actorUserId: actor }), InventoryError);
+ok("a delivery can't be undone once some of it has gone (the count would come up short)");
+await cancelOrder({ businessId: B, id: wrong.id, actorUserId: actor });
 
 console.log("Per-location alerts");
 const closeSaleAt = async (loc: string, lines: (typeof schema.saleLines.$inferInsert)[]) =>

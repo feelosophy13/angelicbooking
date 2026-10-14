@@ -10,7 +10,7 @@ import { f, formAction, FormError } from "@/lib/form";
 import { GroupError, quickCreateOption } from "@/server/product-groups";
 import { productLabel } from "@/lib/inventory";
 import { setFlash } from "@/lib/flash";
-import { applyCount, attachBarcode, quickCreateProduct, trackedProductIds, logUsage, togglePin, undoMovement, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
+import { applyCount, attachBarcode, quickCreateProduct, undoReceipt, trackedProductIds, logUsage, togglePin, undoMovement, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
 
 const refresh = (slug: string) => {
   revalidatePath(`/app/${slug}/inventory`, "layout");
@@ -343,4 +343,19 @@ export async function createOptionFromScanAction(input: { slug: string; code: st
     if (e instanceof GroupError) return { ok: false, error: e.message };
     throw e;
   }
+}
+
+/** Take back a delivery that was entered wrong (from the order, or from a product's history). */
+export async function undoReceiptAction(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const ctx = await requireAction(slug, "inventory.manage");
+  try {
+    await undoReceipt({ businessId: ctx.business.id, movementId: String(formData.get("movementId")), actorUserId: ctx.user.id });
+    await setFlash("Delivery undone", "success");
+  } catch (e) {
+    if (e instanceof InventoryError) await setFlash(e.message, "error");
+    else throw e;
+  }
+  refresh(slug);
+  revalidatePath(`/app/${slug}/products`, "layout");
 }

@@ -3,14 +3,14 @@ import { notFound } from "next/navigation";
 import { and, asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { getPurchaseOrder, listLocations, listSuppliers } from "@/server/inventory";
+import { getPurchaseOrder, listLocations, listSuppliers, orderReceipts } from "@/server/inventory";
 import { productLabel } from "@/lib/inventory";
 import { dateLong } from "@/lib/format";
 import { formatMoney } from "@/lib/utils";
 import { BackLink, Button, Card, Input, LinkButton, MoneyInput, PageHeader, Select, Textarea } from "@/components/ui";
 import { ScanBarcode } from "lucide-react";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
-import { addOrderLine, orderAction, receiveOrderAction, saveOrder } from "../../actions";
+import { addOrderLine, orderAction, receiveOrderAction, saveOrder, undoReceiptAction } from "../../actions";
 import { StatusPill } from "../status-pill";
 
 export const metadata: Metadata = { title: "Order · Inventory" };
@@ -22,6 +22,7 @@ export default async function OrderPage({ params }: { params: Promise<{ slug: st
   if (!data) notFound();
   const { po, supplier, lines } = data;
   const open = po.status === "draft" || po.status === "ordered" || po.status === "partial";
+  const receipts = await orderReceipts(business.id, po.id);
   const [suppliers, locations, products] = await Promise.all([
     listSuppliers(business.id),
     listLocations(business.id),
@@ -90,6 +91,30 @@ export default async function OrderPage({ params }: { params: Promise<{ slug: st
               </div>
             )}
           </Card>
+
+          {receipts.length ? (
+            <Card className="p-4">
+              <h2 className="mb-1 text-sm font-medium text-stone-700">Deliveries received</h2>
+              <p className="mb-2 text-xs text-stone-500">Entered a wrong number? Undo that delivery and enter it again. The stock and this order go back to how they were.</p>
+              <ul className="divide-y divide-stone-100 text-sm">
+                {receipts.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-1.5">
+                    <span className={r.undone ? "text-stone-400 line-through" : ""}>{r.label} <span className="text-stone-500">× {r.qty}</span></span>
+                    <span className="flex shrink-0 items-center gap-3 text-xs text-stone-500">
+                      {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone }).format(r.at)}{r.who ? ` · ${r.who}` : ""}
+                      {r.undone ? <span>undone</span> : (
+                        <form action={undoReceiptAction}>
+                          <input type="hidden" name="slug" value={slug} />
+                          <input type="hidden" name="movementId" value={r.id} />
+                          <ConfirmSubmit title={`Undo ${r.qty} × ${r.label}?`} body="The stock goes down by that many and the order shows them as not yet received." confirmLabel="Undo delivery" variant="danger" size="sm">Undo</ConfirmSubmit>
+                        </form>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
 
           {open ? (
             <Card className="p-4">

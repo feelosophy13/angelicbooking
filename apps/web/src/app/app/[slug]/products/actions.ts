@@ -9,7 +9,7 @@ import { ensureCategory } from "@/server/categories";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
-import { attachBarcode, InventoryError, recordMovement, removeExtraBarcode, transferStock } from "@/server/inventory";
+import { attachBarcode, codeTaken, InventoryError, recordMovement, removeExtraBarcode, transferStock } from "@/server/inventory";
 import { MANUAL_REASONS } from "@/lib/inventory";
 import { addOptions, convertToGroup, createGroup, GroupError, setGroupActive, updateGroup } from "@/server/product-groups";
 import { optionCombos, parseOptionList } from "@/lib/variants";
@@ -48,9 +48,13 @@ async function checked(businessId: string, d: z.infer<typeof fields>, raw: FormD
     reorderUpTo = Number(d.reorderUpTo);
     if (reorderUpTo < d.lowStockThreshold) throw new FormError("Order up to must be at least the low-stock level.", "reorderUpTo");
   }
-  if (d.barcode) {
-    const clash = await withTenant(businessId, (tx) => tx.select({ id: schema.products.id }).from(schema.products).where(and(eq(schema.products.barcode, d.barcode!), ne(schema.products.id, d.productId ?? ""))).limit(1));
-    if (clash.length) throw new FormError("Another product already has this barcode.", "barcode");
+  // A code (barcode or SKU) can belong to only one product: the same rule scanning uses, so a scan never lands on the wrong one.
+  // Only a code that is being set or changed is checked, so a product that already shares one (older data) can still be saved.
+  const before = d.productId ? await withTenant(businessId, (tx) => tx.query.products.findFirst({ where: eq(schema.products.id, d.productId!), columns: { sku: true, barcode: true } })) : null;
+  for (const [field, value, was] of [["barcode", d.barcode, before?.barcode], ["sku", d.sku, before?.sku]] as const) {
+    if (!value || value === was) continue;
+    const owner = await codeTaken(businessId, value, d.productId ?? null);
+    if (owner) throw new FormError(`${owner} already uses this ${field === "sku" ? "SKU" : "barcode"}.`, field);
   }
   return {
     reorderUpTo,
