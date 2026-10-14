@@ -8,6 +8,7 @@ import { ConfirmSubmit } from "@/components/form";
 import { notFound } from "next/navigation";
 import { instantToISODate, isInsideCancelWindow, lateCancelFee } from "@angelic/core";
 import { requireAppointmentAccess } from "@/server/appointment-access";
+import { bookingAccess } from "@/lib/appointment-access";
 import { getAppointmentDetail } from "@/server/appointments";
 import { getStaffAvailability } from "@/server/availability";
 import { timingForStaff } from "@/server/stylist-pricing";
@@ -63,12 +64,16 @@ export default async function AppointmentPage({
   const { slug, id } = await params;
   const sp = await searchParams;
   // Front desk and managers open any appointment; a Provider opens the ones they are booked on.
-  const { business, user, permissions, access } = await requireAppointmentAccess(slug, id, "read");
+  const { business, user, permissions, access, staffId } = await requireAppointmentAccess(slug, id, "read");
   const data = await getAppointmentDetail(business.id, id);
   if (!data) notFound();
   const canWriteAny = can(permissions, "appointments.write.any");
   // What a Provider may do to their own appointment: status, notes, photos and checkout. Changing the booking itself (services, moves, series, cancelling) stays with the desk.
   const canEdit = canWriteAny || (access === "own" && can(permissions, "appointments.write.own"));
+  // The owner decides whether a Provider may also change the booking itself, cancel it, or book more.
+  const canChange = canWriteAny || (access === "own" && can(permissions, "appointments.change.own"));
+  const canCancel = canWriteAny || (access === "own" && can(permissions, "appointments.cancel.own"));
+  const canBook = !!bookingAccess(permissions, staffId ?? null);
   const { appointment, items, client, services, staff } = data;
   const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, id), ne(schema.sales.status, "void")), orderBy: desc(schema.sales.createdAt) }));
   // The rating request for this visit, if one went out: submitted or still waiting.
@@ -171,7 +176,7 @@ export default async function AppointmentPage({
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}?date=${apptDate}`}>Calendar</BackLink></div>
       <PageHeader title={client ? `${client.firstName} ${client.lastName}`.trim() : "Walk-in"}>
-        {client && first && can(permissions, "appointments.write.any") ? (
+        {client && first && canBook ? (
           <Link
             href={`/app/${slug}/appointments/new?clientId=${client.id}${first.serviceId ? `&serviceId=${first.serviceId}` : ""}&staffId=${first.staffId}&date=${shiftISODate(apptDate, 28)}${multiLocation && pay.location ? `&location=${pay.location.id}` : ""}`}
             className="inline-flex h-8 items-center gap-1 rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-700 hover:bg-stone-50"
@@ -209,7 +214,7 @@ export default async function AppointmentPage({
                       </p>
                     </div>
                     <span className="text-sm">{formatMoney(segs.reduce((s, i) => s + i.priceCents, 0), business.currency)}</span>
-                    {!locked && !cancelled && canWriteAny ? (
+                    {!locked && !cancelled && canChange ? (
                       <div className="flex gap-1">
                         <LinkButton href={`${self}?moveItemId=${head.id}`} variant="ghost" size="sm">Move</LinkButton>
                         <form action={removeService}>
@@ -226,7 +231,7 @@ export default async function AppointmentPage({
             </ul>
           </Card>
 
-          {moveItem && canWriteAny ? (
+          {moveItem && canChange ? (
             <Card className="p-4 ring-2 ring-brand-200">
               <h2 className="mb-1 font-medium">Move {moveItem.serviceName.replace(" (finish)", "")}</h2>
               <form className="mb-3 grid grid-cols-[1fr_1fr_auto] items-end gap-2">
@@ -250,7 +255,7 @@ export default async function AppointmentPage({
             </Card>
           ) : null}
 
-          {!locked && canWriteAny ? (
+          {!locked && canChange ? (
             <Disclosure title="Add a service" hint="another service on this visit" open={!!addSvc}>
               <form className="mb-3 grid grid-cols-[2fr_1fr_1fr_auto] items-end gap-2">
                 <Field label="Service">
@@ -346,7 +351,7 @@ export default async function AppointmentPage({
               <p className="mt-3 text-sm text-stone-500">
                 Cancelled{appointment.cancellationReason ? `: ${appointment.cancellationReason}` : ""}.
               </p>
-            ) : canWriteAny ? (
+            ) : canCancel ? (
               <details className="group mt-3 border-t border-stone-200 pt-3">
                 <summary className="cursor-pointer select-none text-sm text-stone-500 hover:text-stone-800 marker:content-none [&::-webkit-details-marker]:hidden">Cancel this appointment…</summary>
                 <CancelForm slug={slug} appointmentId={id} late={lateCancel} cards={savedCards} />
@@ -383,7 +388,7 @@ export default async function AppointmentPage({
                   </li>
                 ))}
               </ul>
-              {!locked && canWriteAny && series.occurrences.some((o) => o.startAt >= (first?.startAt ?? new Date()) && (o.status === "booked" || o.status === "confirmed")) ? (
+              {!locked && canCancel && series.occurrences.some((o) => o.startAt >= (first?.startAt ?? new Date()) && (o.status === "booked" || o.status === "confirmed")) ? (
                 <form action={cancelSeries} className="mt-3 border-t border-stone-200 pt-3">
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="appointmentId" value={id} />
@@ -433,7 +438,7 @@ export default async function AppointmentPage({
             </Card>
           ) : null}
 
-          {!locked && !existingSale && savedCards.length > 0 && canWriteAny ? (
+          {!locked && !existingSale && savedCards.length > 0 && canCancel ? (
             <Card className="p-4">
               <h2 className="mb-1 font-medium">No-show fee</h2>
               <p className="mb-2 text-xs text-stone-500">Charges the client&apos;s saved card and marks the appointment as a no-show.</p>

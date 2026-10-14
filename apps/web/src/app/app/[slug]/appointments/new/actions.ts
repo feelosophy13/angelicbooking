@@ -4,7 +4,7 @@ import { z } from "zod";
 import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { and, eq, sql } from "drizzle-orm";
 import { schema as dbSchema, withTenant } from "@angelic/db";
-import { requireAction } from "@/lib/tenant";
+import { requireBookingAccess } from "@/server/appointment-access";
 import { tzFor } from "@/server/locations";
 import { addServiceToAppointment, bookAppointment, BookingError } from "@/server/booking";
 import { createSeries } from "@/server/series";
@@ -44,7 +44,8 @@ async function appendServices(businessId: string, appointmentId: string, service
 export async function book(_prev: BookState, formData: FormData): Promise<BookState> {
   const d = schema.parse(Object.fromEntries(formData));
   const extraServiceIds = formData.getAll("extraServiceIds").map(String).filter((id) => id && id !== d.serviceId);
-  const ctx = await requireAction(d.slug, "appointments.write.any");
+  const ctx = await requireBookingAccess(d.slug);
+  if (ctx.access === "own" && d.staffId !== ctx.staffId) return { error: "You can only book appointments on your own calendar." };
   let startAt: Date;
   if (d.customTime && d.date) {
     const location = d.locationId ? await withTenant(ctx.business.id, (tx) => tx.query.locations.findFirst({ where: eq(dbSchema.locations.id, d.locationId!) })) : null;

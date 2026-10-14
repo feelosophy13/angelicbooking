@@ -23,7 +23,7 @@ import { can } from "@angelic/core";
 import { asc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { buildTip, type CalTip, type TipItem } from "@/lib/calendar-tip";
-import { seesNoCalendar, seesOwnOnly } from "@/lib/appointment-access";
+import { bookingAccess, seesNoCalendar, seesOwnOnly } from "@/lib/appointment-access";
 
 function startOfWeek(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -43,6 +43,8 @@ export default async function CalendarPage({
   const { business, permissions, user, staffId } = await requireBusiness(slug);
   // A Provider's calendar is their own: their column and their appointments. A role with no calendar permission at all sees none.
   const ownOnly = seesOwnOnly(permissions);
+  // New appointments: for anyone (front desk, manager), or on their own calendar if the role has that permission.
+  const canBook = !!bookingAccess(permissions, staffId ?? null);
   const noCalendar = seesNoCalendar(permissions);
   const locations = await withTenant(business.id, (tx) => tx.select().from(schema.locations).orderBy(asc(schema.locations.name)));
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
@@ -192,10 +194,10 @@ export default async function CalendarPage({
           <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffParam ? `&staff=${staffParam}` : ""}`} />
         ) : null}
         {can(permissions, "appointments.write.any") ? (
-          <>
-            <LinkButton href={`/app/${slug}/appointments/block?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}`} variant="secondary" size="sm"><Ban className="h-4 w-4" /> <span className="hidden sm:inline">Block time</span></LinkButton>
+          <LinkButton href={`/app/${slug}/appointments/block?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}`} variant="secondary" size="sm"><Ban className="h-4 w-4" /> <span className="hidden sm:inline">Block time</span></LinkButton>
+        ) : null}
+        {canBook ? (
             <LinkButton href={`/app/${slug}/appointments/new?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}`} variant="primary" size="sm"><Plus className="h-4 w-4" /> <span className="hidden sm:inline">New appointment</span><span className="sm:hidden">New</span></LinkButton>
-          </>
         ) : null}
       </PageHeader>
 
@@ -271,6 +273,8 @@ export default async function CalendarPage({
           items={calItems}
           slotIntervalMin={business.slotIntervalMin}
           canEdit={can(permissions, "appointments.write.any") || (ownOnly && can(permissions, "appointments.write.own"))}
+          canMove={can(permissions, "appointments.write.any") || (ownOnly && can(permissions, "appointments.change.own"))}
+          canBook={canBook}
           startHour={startHour}
           endHour={endHour}
         />

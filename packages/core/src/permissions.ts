@@ -12,6 +12,11 @@ export const ACTIONS = [
   "appointments.read.own",
   "appointments.write.any",
   "appointments.write.own",
+  // Beyond updating their own appointments, what a Provider (or any custom role) may also do on their own calendar. Off for Provider by default;
+  // the owner switches them on under Roles & permissions. ("appointments.write.any" already covers all of it, for everyone.)
+  "appointments.book.own",
+  "appointments.change.own",
+  "appointments.cancel.own",
   "checkout.take",
   "reports.view",
   "payroll.view",
@@ -24,7 +29,10 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
     title: "Calendar & appointments",
     items: [
       { action: "appointments.read.own", label: "See their own calendar", description: "View appointments booked with them." },
-      { action: "appointments.write.own", label: "Manage their own appointments", description: "Book, move and change status on their own calendar." },
+      { action: "appointments.write.own", label: "Update their own appointments", description: "Check in, complete, mark no-show, add notes and photos, and check out their own clients." },
+      { action: "appointments.book.own", label: "Book appointments for themselves", description: "Create new appointments on their own calendar." },
+      { action: "appointments.change.own", label: "Change their own bookings", description: "Add, remove or move the services on their own appointments, and drag them to new times." },
+      { action: "appointments.cancel.own", label: "Cancel their own appointments", description: "Cancel their own appointments, charge no-show or late fees, and end standing appointments." },
       { action: "appointments.read.any", label: "See every calendar", description: "View all staff members' appointments." },
       { action: "appointments.write.any", label: "Manage any appointment", description: "Book, move, cancel and change status for anyone." },
     ],

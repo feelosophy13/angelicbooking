@@ -31,8 +31,9 @@ const base = z.object({ slug: z.string(), appointmentId: z.string().min(1) });
 
 export async function changeStatus(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
-  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
   const status = z.enum(schema.appointmentStatus.enumValues).parse(formData.get("status"));
+  // Cancelling is its own permission; every other status change is part of updating an appointment.
+  const ctx = await requireAppointmentAccess(slug, appointmentId, status === "cancelled" ? "cancel" : "write");
   const reason = String(formData.get("reason") ?? "").trim() || null;
   await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id, reason);
   if (status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");
@@ -53,7 +54,8 @@ export async function addService(_prev: ActionState, formData: FormData): Promis
   const d = base
     .extend({ serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime() })
     .parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "appointments.write.any");
+  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "change");
+  if (ctx.access === "own" && d.staffId !== ctx.staffId) return { error: "You can only add services on your own calendar." };
   try {
     await addServiceToAppointment({
       businessId: ctx.business.id,
@@ -76,7 +78,8 @@ export async function moveService(_prev: ActionState, formData: FormData): Promi
   const d = base
     .extend({ itemId: z.string().min(1), startAt: z.string().datetime(), staffId: z.string().min(1) })
     .parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "appointments.write.any");
+  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "change");
+  if (ctx.access === "own" && d.staffId !== ctx.staffId) return { error: "You can only move appointments within your own calendar." };
   try {
     await rescheduleService({
       businessId: ctx.business.id,
@@ -97,7 +100,7 @@ export async function moveService(_prev: ActionState, formData: FormData): Promi
 
 export async function removeService(formData: FormData) {
   const d = base.extend({ itemId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "appointments.write.any");
+  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "change");
   const r = await removeServiceFromAppointment({ businessId: ctx.business.id, itemId: d.itemId, actorUserId: ctx.user.id });
   // Removing the last service cancels the visit: tell the client and drop its reminders.
   if (r?.cancelled) await notifyAppointment(ctx.business, r.appointmentId, "cancellation");
@@ -134,7 +137,7 @@ export async function startCheckout(formData: FormData) {
  */
 export async function cancelAppointment(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const d = base.extend({ reason: z.string().trim().max(200).optional(), chargeFee: z.string().optional(), paymentMethodId: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "appointments.write.any");
+  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "cancel");
   const reason = d.reason || null;
   try {
     if (d.chargeFee === "on" && d.paymentMethodId) {
@@ -175,7 +178,9 @@ export async function cancelAppointment(_prev: ActionState, formData: FormData):
 /** Charge the business's no-show fee (or a custom amount) to one of the client's saved cards. */
 export async function chargeNoShowFee(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const d = base.extend({ paymentMethodId: z.string().min(1), amount: z.string() }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "checkout.take");
+  // Charging a no-show fee and marking it a no-show is cancelling: it needs that permission and checkout.
+  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "cancel");
+  if (!can(ctx.permissions, "checkout.take")) throw new PermissionError();
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
   const pay = await paymentContextForAppointment(ctx.business, d.appointmentId);
@@ -218,7 +223,7 @@ export async function refundDepositAction(formData: FormData) {
 /** Cancel this visit and all later visits in its standing series. */
 export async function cancelSeries(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
-  const ctx = await requireAction(slug, "appointments.write.any");
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "cancel");
   const reason = String(formData.get("reason") ?? "").trim() || null;
   let ids: string[] = [];
   try {

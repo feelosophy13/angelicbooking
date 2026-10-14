@@ -146,7 +146,12 @@ export function CalendarGrid(props: {
   columns: CalColumn[];
   items: CalItem[];
   slotIntervalMin: number;
+  /** Quick check-in and complete buttons on a card. */
   canEdit: boolean;
+  /** Dragging an appointment to a new time or column. */
+  canMove: boolean;
+  /** Clicking an empty slot starts a new appointment. */
+  canBook: boolean;
   todayISO: string;
   /** Grid range in hours; the page widens it to fit early/late hours and bookings. */
   startHour?: number;
@@ -324,10 +329,10 @@ export function CalendarGrid(props: {
             return (
               <div
                 key={c.key}
-                className={cn("relative border-l border-stone-200", c.isToday && "bg-brand-50/30", props.canEdit && "cursor-cell")}
+                className={cn("relative border-l border-stone-200", c.isToday && "bg-brand-50/30", props.canBook && "cursor-cell")}
                 style={{ height: totalMin * PX_PER_MIN }}
                 onClick={
-                  props.canEdit
+                  props.canBook
                     ? (e) => {
                         if ((e.target as HTMLElement).closest("[data-card]")) return;
                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -360,7 +365,7 @@ export function CalendarGrid(props: {
                   const lane = lanesByCol.get(c.key)?.get(card.key) ?? { lane: 0, lanes: 1 };
                   const dragging = drag?.key === card.key && drag.moved;
                   const dyMin = dragging ? snap(drag.dy) : 0;
-                  const draggable = props.canEdit && !LOCKED.has(card.first.status);
+                  const draggable = props.canMove && !LOCKED.has(card.first.status);
                   // The quick buttons (check in, complete) need about 6rem; in a narrow card (the week view packs every stylist into one day column) they
                   // would spill out and be clipped, so the card hides them until it has room (container query on the card).
                   const height = Math.max(22, (card.endMin - card.startMin) * PX_PER_MIN - 2);
@@ -448,7 +453,7 @@ export function CalendarGrid(props: {
           })}
         </div>
       </div>
-      {props.canEdit ? <p className="hidden text-xs text-stone-500 md:block">Drag an appointment to move it. Click to open it.</p> : null}
+      {props.canMove ? <p className="hidden text-xs text-stone-500 md:block">Drag an appointment to move it. Click to open it.</p> : null}
       {hover && !drag?.moved ? <CalendarTip tip={hover.tip} anchor={hover.anchor} fmt={fmt} /> : null}
     </div>
   );

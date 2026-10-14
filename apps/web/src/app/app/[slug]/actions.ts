@@ -16,8 +16,8 @@ const statusSchema = z.enum(schema.appointmentStatus.enumValues);
 export async function updateAppointmentStatus(formData: FormData) {
   const slug = String(formData.get("slug"));
   const appointmentId = String(formData.get("appointmentId"));
-  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
   const status = statusSchema.parse(formData.get("status"));
+  const ctx = await requireAppointmentAccess(slug, appointmentId, status === "cancelled" ? "cancel" : "write");
   await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id);
   if (status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");
   revalidatePath(`/app/${slug}`);
@@ -39,7 +39,7 @@ export async function moveAppointmentItem(input: {
   // A Provider may move their own appointments, but not to someone else's column.
   const itemRow = await withTenant((await requireBusiness(parsed.data.slug)).business.id, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId), columns: { appointmentId: true } }));
   if (!itemRow) return { ok: false, error: "That appointment no longer exists." };
-  const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, "write");
+  const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, "change");
   if (ctx.access === "own" && parsed.data.newStaffId && parsed.data.newStaffId !== ctx.staffId) return { ok: false, error: "You can only move your own appointments to your own column." };
   try {
     await rescheduleService({

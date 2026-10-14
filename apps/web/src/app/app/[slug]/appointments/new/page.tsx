@@ -4,7 +4,7 @@ import { and, asc, eq } from "drizzle-orm";
 export const metadata: Metadata = { title: "New appointment" };
 import { schema, withTenant } from "@angelic/db";
 import { instantToISODate, zonedToInstant } from "@angelic/core";
-import { requireAction } from "@/lib/tenant";
+import { requireBookingAccess } from "@/server/appointment-access";
 import { getStaffAvailability, staffForService, timingFor } from "@/server/availability";
 import { overridesForService, overridesForStaff, termsOf, type Override } from "@/server/stylist-pricing";
 import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
@@ -31,7 +31,7 @@ export default async function NewAppointmentPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions } = await requireAction(slug, "appointments.write.any");
+  const { business, permissions, access, staffId: myStaffId } = await requireBookingAccess(slug);
   const locations = await listLocations(business.id);
   const multi = locations.length > 1;
   // Multi-site businesses pick the location first; it filters services, providers, open times and the clock shown.
@@ -66,7 +66,8 @@ export default async function NewAppointmentPage({
   const extraIds = (Array.isArray(sp.extra) ? sp.extra : sp.extra ? [sp.extra] : []).filter((id) => id && id !== service?.id);
   const extras = extraIds.map((id) => services.find((s) => s.id === id)).filter((s): s is NonNullable<typeof s> => !!s);
   const preselectTime = /^\d{2}:\d{2}$/.test(sp.time ?? "") ? sp.time! : null;
-  const eligibleStaff = service ? await staffForService(business.id, service.id, location?.id) : [];
+  // Someone who may only book for themselves sees only their own calendar here.
+  const eligibleStaff = (service ? await staffForService(business.id, service.id, location?.id) : []).filter((s) => access === "any" || s.id === myStaffId);
   const staffId = eligibleStaff.some((s) => s.id === sp.staffId) ? sp.staffId! : eligibleStaff[0]?.id;
   // When nobody here can do it: who can, and where, so the desk knows what to do next.
   const performersAnywhere = service && !staffId ? await staffForService(business.id, service.id) : [];
