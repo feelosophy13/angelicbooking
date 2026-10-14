@@ -108,6 +108,7 @@ export function settingsGroups(base: string, status?: SettingsStatusSource): Set
       title: "Data",
       entries: [
         { href: `${sb}/import`, title: "Import", blurb: "Bring clients, services and appointments from Vagaro." },
+        { href: `${sb}/api`, title: "API access", blurb: "Keys to read and manage your business from your own software." },
         { href: `${sb}/audit`, title: "Activity log", blurb: "Who changed what, and when." },
       ],
     },

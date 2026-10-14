@@ -29,6 +29,7 @@ export function LegalFooter({ className = "" }: { className?: string }) {
     <footer className={`mx-auto flex max-w-3xl flex-wrap justify-center gap-x-4 gap-y-1 px-4 py-8 text-xs text-stone-400 ${className}`}>
       <span>© {new Date().getFullYear()} Angelic Booking</span>
       <Link href="/help" className="hover:text-stone-600">Help</Link>
+      <Link href="/developers" className="hover:text-stone-600">API</Link>
       <Link href="/privacy" className="hover:text-stone-600">Privacy</Link>
       <Link href="/terms" className="hover:text-stone-600">Terms</Link>
       {process.env.SUPPORT_EMAIL ? <a href={`mailto:${process.env.SUPPORT_EMAIL}`} className="hover:text-stone-600">Contact</a> : null}

@@ -91,6 +91,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Mon/Wed/Thu 10–6, Fri 10–7, Sat/Sun 10–5, Tue closed; Fairfax Mon–Fri 9–6, Sat 8:30–6, Sun 9–5).
 - [ ] Write a short privacy/terms review with a lawyer before accepting other businesses.
 
+### Public REST API (built 2026-10-14, migration 0076)
+- [x] Business-scoped API keys (Settings → API access; hashed, shown once, scopes, expiry, revoke, 120 req/min per key), `/api/v1`
+      for business, services, staff, products, availability, clients (read/create/update), appointments (read/book/update/cancel),
+      sales (read). Public docs at `/developers`. Cross-tenant isolation tests in `lib/__tests__/api-isolation.test.ts`.
+- [ ] Run migration 0076 on production (deploys do this) and try one key against production.
+- [ ] Later: webhooks to subscribers, rescheduling, payments/refunds, service and product writes, idempotency keys, a per-key usage log,
+      a shared (Redis) rate limiter once there is more than one web instance, per-plan gating of the API if wanted.
+
 ## 3. Product backlog
 
 ### App-wide evaluation (2026-10-10)

@@ -1008,6 +1008,29 @@ export const roles = pgTable(
   (t) => [uniqueIndex("roles_business_key_uq").on(t.businessId, t.key)],
 );
 
+// Keys for the public REST API (/api/v1). Only the SHA-256 of the key is stored; the key itself is shown once at creation.
+// RLS: rows are tenant-scoped like every other table, plus a SELECT-only lookup policy that matches one row by hash
+// (app.api_key_hash), because the business is not known until the key has been found.
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: id(),
+    businessId: businessId(),
+    name: text("name").notNull(),
+    // First characters of the key, so the list can tell keys apart ("ab_live_k3Fq"). Not secret.
+    prefix: text("prefix").notNull(),
+    keyHash: text("key_hash").notNull(),
+    // e.g. clients:read, appointments:write (see lib/api-scopes.ts). A write scope implies its read scope.
+    scopes: text("scopes").array().notNull().default(sql`'{}'::text[]`),
+    createdByUserId: text("created_by_user_id"),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("api_keys_hash_uq").on(t.keyHash), index("api_keys_business_idx").on(t.businessId)],
+);
+
 export const auditLog = pgTable(
   "audit_log",
   {
@@ -1337,4 +1360,5 @@ export const TENANT_TABLES = [
   "product_barcodes",
   "purchase_orders",
   "purchase_order_lines",
+  "api_keys",
 ] as const;
