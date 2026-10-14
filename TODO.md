@@ -55,6 +55,15 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ## 2. Before real customers
 
+### Platform admin app (`apps/admin`, built 2026-10-14: read-only tenant list + detail, env-based login)
+- [ ] Deploy it as its own Render web service (build `pnpm --filter @angelic/admin build`, start `pnpm --filter @angelic/admin start`)
+      on `admin.angelicbooking.com`, and put Cloudflare Access (your email only) in front of it.
+- [ ] On the production DB run `packages/db/sql/admin-role.sql` as the owner, **change the `angelic_admin` password first**, then set
+      `ADMIN_DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` (`pnpm --filter @angelic/admin hash-password '…'`), `ADMIN_SESSION_SECRET`
+      on that service only. Never add `ADMIN_DATABASE_URL` to the web service.
+- [ ] Admin actions (suspend/reactivate a tenant, extend a trial, view-as/impersonate) need a write path + an audit-log table; the role is SELECT-only today.
+- [ ] Platform billing overview (MRR, failed payments) once Stripe keys exist.
+
 - [ ] Upgrade the Render Postgres from the free `0.1c-256mb` tier to a paid plan with backups and
       point-in-time recovery; until then run `scripts/backup.sh` nightly somewhere and store the dumps off-box.
 - [ ] Set `ERROR_WEBHOOK_URL` (Slack/Discord incoming webhook) so unhandled errors are seen; consider Sentry.
