@@ -206,13 +206,13 @@ export async function stockLevels(tx: TenantDb, locationId: string, productIds: 
   return out;
 }
 
-/** The product a scanner or typed code points at: barcode first, then SKU. */
+/** The product a scanner or typed code points at: barcode, then another barcode, then SKU. */
 export async function findProductByCode(businessId: string, code: string) {
-  const c = code.trim().toLowerCase();
-  if (!c) return null;
+  if (!code.trim()) return null;
   return withTenant(businessId, async (tx) => {
-    const rows = await tx.select().from(schema.products).where(and(eq(schema.products.active, true), sql`(lower(${schema.products.barcode}) = ${c} or lower(${schema.products.sku}) = ${c})`));
-    return rows.find((p) => p.barcode?.toLowerCase() === c) ?? rows[0] ?? null;
+    const [rows, extras] = await Promise.all([tx.select().from(schema.products).where(eq(schema.products.active, true)), tx.select().from(schema.productBarcodes)]);
+    const hit = matchProduct(rows.map((p) => ({ id: p.id, label: productLabel(p), barcode: p.barcode, sku: p.sku, codes: extras.filter((e) => e.productId === p.id).map((e) => ({ code: e.code, units: e.unitsPerScan })) })), code);
+    return hit ? (rows.find((p) => p.id === hit.id) ?? null) : null;
   });
 }
 
@@ -595,14 +595,18 @@ export async function visitSupplies(businessId: string, appointmentId: string) {
 
 /** Products a person may log use of: every active product, with its category and what is on hand (a hint, never a limit). */
 export async function loggableProducts(businessId: string) {
-  return withTenant(businessId, (tx) =>
-    tx
-      .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, kind: schema.products.kind, category: schema.productCategories.name, onHand: schema.products.stockQty, tracked: schema.products.trackStock, barcode: schema.products.barcode, sku: schema.products.sku })
-      .from(schema.products)
-      .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
-      .where(eq(schema.products.active, true))
-      .orderBy(asc(schema.products.kind), asc(schema.products.name), asc(schema.products.variantLabel)),
-  );
+  return withTenant(businessId, async (tx) => {
+    const [rows, extras] = await Promise.all([
+      tx
+        .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, kind: schema.products.kind, category: schema.productCategories.name, onHand: schema.products.stockQty, tracked: schema.products.trackStock, barcode: schema.products.barcode, sku: schema.products.sku })
+        .from(schema.products)
+        .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
+        .where(eq(schema.products.active, true))
+        .orderBy(asc(schema.products.kind), asc(schema.products.name), asc(schema.products.variantLabel)),
+      tx.select().from(schema.productBarcodes),
+    ]);
+    return rows.map((r) => ({ ...r, codes: extras.filter((e) => e.productId === r.id).map((e) => ({ code: e.code, units: e.unitsPerScan })) }));
+  });
 }
 
 /** The products this person has logged most recently, newest first: what they will probably log again. */
@@ -619,33 +623,91 @@ export async function recentlyLoggedBy(businessId: string, userId: string, limit
   });
 }
 
-/** Everything a scanning screen needs to recognise a code: every active product with its barcode and SKU. */
+/** Everything a scanning screen needs to recognise a code: every active product with its barcode, other barcodes and SKU. */
 export async function scannableProducts(businessId: string) {
   return withTenant(businessId, async (tx) => {
-    const rows = await tx
-      .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, sku: schema.products.sku, category: schema.productCategories.name, onHand: schema.products.stockQty, tracked: schema.products.trackStock })
-      .from(schema.products)
-      .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
-      .where(eq(schema.products.active, true))
-      .orderBy(asc(schema.products.name), asc(schema.products.variantLabel));
-    return rows.map((r) => ({ id: r.id, label: productLabel(r), barcode: r.barcode, sku: r.sku, category: r.category, onHand: r.onHand, tracked: r.tracked }));
+    const [rows, extras] = await Promise.all([
+      tx
+        .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, sku: schema.products.sku, category: schema.productCategories.name, onHand: schema.products.stockQty, tracked: schema.products.trackStock })
+        .from(schema.products)
+        .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
+        .where(eq(schema.products.active, true))
+        .orderBy(asc(schema.products.name), asc(schema.products.variantLabel)),
+      tx.select().from(schema.productBarcodes),
+    ]);
+    const codes = new Map<string, { code: string; units: number }[]>();
+    for (const e of extras) codes.set(e.productId, [...(codes.get(e.productId) ?? []), { code: e.code, units: e.unitsPerScan }]);
+    return rows.map((r) => ({ id: r.id, label: productLabel(r), barcode: r.barcode, sku: r.sku, category: r.category, onHand: r.onHand, tracked: r.tracked, codes: codes.get(r.id) ?? [] }));
   });
 }
 
-/** Teach the app a barcode the first time it is scanned: save it on the product (never on one that is already using it). */
-export async function attachBarcode(input: { businessId: string; productId: string; code: string; replace: boolean; actorUserId: string }) {
+/** Every barcode and SKU in use, as scan products, so a new code can be checked against all of them. */
+async function allCodes(tx: TenantDb) {
+  const [rows, extras] = await Promise.all([
+    tx.select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, sku: schema.products.sku }).from(schema.products),
+    tx.select().from(schema.productBarcodes),
+  ]);
+  return rows.map((p) => ({ id: p.id, label: productLabel(p), barcode: p.barcode, sku: p.sku, codes: extras.filter((e) => e.productId === p.id).map((e) => ({ code: e.code, units: e.unitsPerScan })) }));
+}
+
+export type AttachMode = "set" | "replace" | "add";
+
+/**
+ * Teach the app a barcode the first time it is scanned. "set" gives a product its first barcode; "replace" swaps its main one for this;
+ * "add" keeps the main one and adds this as another (a case, a different pack) where one scan stands for `units` units.
+ * A code already used by any product (as a barcode, another barcode or SKU) is refused.
+ */
+export async function attachBarcode(input: { businessId: string; productId: string; code: string; mode: AttachMode; units?: number; actorUserId: string }) {
   const code = input.code.replace(/[\u0000-\u001f\u007f]/g, "").trim();
   if (!code || code.length > 60) throw new InventoryError("That barcode isn't usable.");
+  const units = Math.floor(input.units ?? 1);
+  if (input.mode === "add" && (units < 1 || units > 1000)) throw new InventoryError("A scan stands for 1 to 1000 units.");
   return withTenant(input.businessId, async (tx) => {
-    const all = await tx.select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, sku: schema.products.sku }).from(schema.products);
+    const all = await allCodes(tx);
     const target = all.find((p) => p.id === input.productId);
     if (!target) throw new InventoryError("Product not found.");
-    const owner = matchProduct(all.filter((p) => p.id !== target.id).map((p) => ({ id: p.id, label: productLabel(p), barcode: p.barcode, sku: p.sku })), code);
+    const owner = matchProduct(all, code);
+    if (owner) throw new InventoryError(owner.id === target.id ? "That barcode is already on this product." : `That code already belongs to ${owner.label}.`);
+    if (input.mode === "set") {
+      if (target.barcode) throw new InventoryError(`${target.label} already has the barcode ${target.barcode}.`);
+      await tx.update(schema.products).set({ barcode: code }).where(eq(schema.products.id, target.id));
+    } else if (input.mode === "replace") {
+      await tx.update(schema.products).set({ barcode: code }).where(eq(schema.products.id, target.id));
+    } else {
+      await tx.insert(schema.productBarcodes).values({ businessId: input.businessId, productId: target.id, code, unitsPerScan: units });
+    }
+    await audit(tx, input.businessId, input.actorUserId, "inventory.barcode", target.id, { code, mode: input.mode, units: input.mode === "add" ? units : undefined });
+    return target.label;
+  });
+}
+
+export async function listExtraBarcodes(businessId: string, productId: string) {
+  return withTenant(businessId, (tx) => tx.select().from(schema.productBarcodes).where(eq(schema.productBarcodes.productId, productId)).orderBy(asc(schema.productBarcodes.createdAt)));
+}
+
+export async function removeExtraBarcode(input: { businessId: string; id: string }) {
+  await withTenant(input.businessId, (tx) => tx.delete(schema.productBarcodes).where(eq(schema.productBarcodes.id, input.id)));
+}
+
+/**
+ * Make a product from a scan that matched nothing: name, what it is, price and cost if known; tracked from the start, with the scanned code
+ * as its barcode. Quick on purpose: the rest (photo, description, online store) is filled in on the product's page later.
+ */
+export async function quickCreateProduct(input: { businessId: string; name: string; kind: "retail" | "backbar"; priceCents: number; costCents: number; categoryId: string | null; code: string; actorUserId: string }) {
+  const name = input.name.trim().slice(0, 80);
+  if (!name) throw new InventoryError("Give the product a name.");
+  const code = input.code.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  if (!code || code.length > 60) throw new InventoryError("That barcode isn't usable.");
+  if (input.kind === "retail" && input.priceCents <= 0) throw new InventoryError("Enter the price it sells for.");
+  return withTenant(input.businessId, async (tx) => {
+    const owner = matchProduct(await allCodes(tx), code);
     if (owner) throw new InventoryError(`That code already belongs to ${owner.label}.`);
-    if (target.barcode && cleanCode(target.barcode) !== cleanCode(code) && !input.replace) throw new InventoryError(`${productLabel(target)} already has the barcode ${target.barcode}.`);
-    await tx.update(schema.products).set({ barcode: code }).where(eq(schema.products.id, target.id));
-    await audit(tx, input.businessId, input.actorUserId, "inventory.barcode", target.id, { code });
-    return productLabel(target);
+    const [p] = await tx
+      .insert(schema.products)
+      .values({ businessId: input.businessId, name, kind: input.kind, priceCents: input.kind === "backbar" ? 0 : input.priceCents, costCents: Math.max(0, input.costCents), categoryId: input.categoryId, barcode: code, trackStock: true, taxable: true })
+      .returning();
+    await audit(tx, input.businessId, input.actorUserId, "inventory.product_from_scan", p!.id, { name, code });
+    return { id: p!.id, label: productLabel(p!), barcode: code, sku: null, category: null as string | null, onHand: 0, tracked: true, codes: [] as { code: string; units: number }[] };
   });
 }
 

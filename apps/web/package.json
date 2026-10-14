@@ -20,6 +20,8 @@
     "@date-fns/tz": "^1.4.1",
     "@stripe/react-stripe-js": "^7.0.0",
     "@stripe/stripe-js": "^10.0.0",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "better-auth": "^1.7.7",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",

@@ -9,7 +9,7 @@ import { ensureCategory } from "@/server/categories";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
-import { InventoryError, recordMovement, transferStock } from "@/server/inventory";
+import { attachBarcode, InventoryError, recordMovement, removeExtraBarcode, transferStock } from "@/server/inventory";
 import { MANUAL_REASONS } from "@/lib/inventory";
 
 const fields = z.object({
@@ -144,3 +144,25 @@ export const transferStockAction = formAction(
     return "Stock moved";
   },
 );
+
+/** Another barcode for a product (a case, a different pack size): one scan of it stands for `units` units. */
+export const addProductBarcode = formAction(z.object({ slug: z.string(), productId: f.id(), code: f.text(1, 60), units: f.int(1, 1000) }), async (d) => {
+  const ctx = await requireAction(d.slug, "inventory.manage");
+  try {
+    await attachBarcode({ businessId: ctx.business.id, productId: d.productId, code: d.code, mode: "add", units: d.units, actorUserId: ctx.user.id });
+  } catch (e) {
+    if (e instanceof InventoryError) throw new FormError(e.message, "code");
+    throw e;
+  }
+  revalidatePath(`/app/${d.slug}/products/${d.productId}`);
+  return "Barcode added";
+});
+
+export async function deleteProductBarcode(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const productId = String(formData.get("productId"));
+  const ctx = await requireAction(slug, "inventory.manage");
+  await removeExtraBarcode({ businessId: ctx.business.id, id: String(formData.get("id")) });
+  await setFlash("Barcode removed");
+  revalidatePath(`/app/${slug}/products/${productId}`);
+}

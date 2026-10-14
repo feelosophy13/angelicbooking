@@ -7,7 +7,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { readProductRows, PRODUCT_CSV_HEADERS } from "../src/lib/inventory";
 import {
   applyCount, cancelOrder, createPurchaseOrder, decrementStockForSale, findProductByCode, getPurchaseOrder, listLocations, lowStock, markOrdered, onlineAvailability, receiveOrder,
-  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy, undoMovement, togglePin, pinnedProductIds, supplyCosts, recentUsage, attachBarcode, scannableProducts,
+  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy, undoMovement, togglePin, pinnedProductIds, supplyCosts, recentUsage, attachBarcode, scannableProducts, quickCreateProduct, findProductByCode, listExtraBarcodes, removeExtraBarcode,
 } from "../src/server/inventory";
 
 const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, "demo-twosites") });
@@ -205,20 +205,44 @@ const onVisit = (await recentUsage(B, 30)).find((m) => m.appointmentId === doneA
 await assert.rejects(() => undoMovement({ businessId: B, movementId: onVisit.id, actorUserId: actor, canManage: true }), InventoryError);
 ok("something logged on a visit is taken back on that visit, not from the general list");
 
-console.log("Scanning: teaching a barcode");
-const prods = await scannableProducts(B);
+console.log("Scanning: barcodes, pack sizes, new products");
 const spare = await product("Silk Pillowcase");
 const other = await product("Silk Sleep Mask");
+await withTenant(B, (tx) => tx.delete(schema.productBarcodes).where(eq(schema.productBarcodes.productId, spare.id)));
 await withTenant(B, (tx) => tx.update(schema.products).set({ barcode: null }).where(eq(schema.products.id, spare.id)));
-assert.equal(prods.length > 10, true);
-await attachBarcode({ businessId: B, productId: spare.id, code: "  555000999111\r\n", replace: false, actorUserId: actor });
+await withTenant(B, (tx) => tx.delete(schema.products).where(eq(schema.products.name, "Scanned Newcomer")));
+const give = (productId: string, code: string, mode: "set" | "replace" | "add", units?: number) => attachBarcode({ businessId: B, productId, code, mode, units, actorUserId: actor });
+await give(spare.id, "  555000999111\r\n", "set");
 assert.equal((await fresh(spare.id)).barcode, "555000999111");
-await assert.rejects(() => attachBarcode({ businessId: B, productId: other.id, code: "555000999111", replace: false, actorUserId: actor }), InventoryError);
-await assert.rejects(() => attachBarcode({ businessId: B, productId: other.id, code: String(other.barcode).replace(/^/, "0"), replace: false, actorUserId: actor }).then(() => attachBarcode({ businessId: B, productId: spare.id, code: String(other.barcode), replace: false, actorUserId: actor })), InventoryError);
-await assert.rejects(() => attachBarcode({ businessId: B, productId: spare.id, code: "555000999222", replace: false, actorUserId: actor }), InventoryError);
-await attachBarcode({ businessId: B, productId: spare.id, code: "555000999222", replace: true, actorUserId: actor });
+await assert.rejects(() => give(spare.id, "555000999222", "set"), InventoryError);
+await assert.rejects(() => give(other.id, "555000999111", "add", 1), InventoryError);
+await assert.rejects(() => give(other.id, "0555000999111", "replace"), InventoryError);
+await assert.rejects(() => give(other.id, String(spare.sku), "add", 1), InventoryError);
+ok("a scanned barcode is saved as a product's first barcode, never one already used by another product or SKU");
+await give(spare.id, "555000999333", "add", 12);
+const found = await findProductByCode(B, "555000999333");
+assert.equal(found?.id, spare.id);
+const sc = (await scannableProducts(B)).find((p) => p.id === spare.id)!;
+assert.deepEqual(sc.codes, [{ code: "555000999333", units: 12 }]);
+await assert.rejects(() => give(spare.id, "555000999333", "add", 12), InventoryError);
+await assert.rejects(() => give(spare.id, "555000999444", "add", 0), InventoryError);
+ok("another barcode (a case of 12) is saved with how many units one scan stands for, and found like any other");
+const extras = await listExtraBarcodes(B, spare.id);
+await removeExtraBarcode({ businessId: B, id: extras[0]!.id });
+assert.equal((await listExtraBarcodes(B, spare.id)).length, 0);
+await give(spare.id, "555000999222", "replace");
 assert.equal((await fresh(spare.id)).barcode, "555000999222");
-ok("a scanned barcode is saved on the product, never one already used by another, and only replaces an old one on purpose");
+ok("another barcode can be removed, and the main one replaced on purpose");
+const newcomer = await quickCreateProduct({ businessId: B, name: "  Scanned Newcomer ", kind: "retail", priceCents: 1850, costCents: 700, categoryId: null, code: "555000999777", actorUserId: actor });
+const newRow = await fresh(newcomer.id);
+assert.deepEqual([newRow.name, newRow.priceCents, newRow.costCents, newRow.barcode, newRow.trackStock, newRow.stockQty, newRow.kind], ["Scanned Newcomer", 1850, 700, "555000999777", true, 0, "retail"]);
+await assert.rejects(() => quickCreateProduct({ businessId: B, name: "Dup", kind: "backbar", priceCents: 0, costCents: 0, categoryId: null, code: "555000999777", actorUserId: actor }), InventoryError);
+await assert.rejects(() => quickCreateProduct({ businessId: B, name: "No price", kind: "retail", priceCents: 0, costCents: 0, categoryId: null, code: "555000999888", actorUserId: actor }), InventoryError);
+await assert.rejects(() => quickCreateProduct({ businessId: B, name: "  ", kind: "backbar", priceCents: 0, costCents: 0, categoryId: null, code: "555000999889", actorUserId: actor }), InventoryError);
+const back = await quickCreateProduct({ businessId: B, name: "Scanned Newcomer", kind: "backbar", priceCents: 999, costCents: 0, categoryId: null, code: "555000999890", actorUserId: actor });
+assert.equal((await fresh(back.id)).priceCents, 0);
+await withTenant(B, (tx) => tx.delete(schema.products).where(eq(schema.products.name, "Scanned Newcomer")));
+ok("a product made from a scan is tracked from the start with the scanned barcode; back-bar has no price; a taken code, no price on a retail item or no name is refused");
 
 console.log("Per-location alerts");
 const closeSaleAt = async (loc: string, lines: (typeof schema.saleLines.$inferInsert)[]) =>

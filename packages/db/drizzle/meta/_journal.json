@@ -505,6 +505,13 @@
       "when": 1792004364159,
       "tag": "0071_inventory_pins_and_reversals",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792011853130,
+      "tag": "0072_product_barcodes",
+      "breakpoints": true
     }
   ]
 }

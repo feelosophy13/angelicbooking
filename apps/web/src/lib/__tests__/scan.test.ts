@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addScan, cleanCode, countDifference, matchProduct, orderProgress, setQty, totalUnits } from "../scan";
+import { addScan, cleanCode, countDifference, matchProduct, matchScan, orderProgress, setQty, totalUnits } from "../scan";
 
 const products = [
   { id: "a", label: "Lash Adhesive", barcode: "8801234010518", sku: "BB-114" },
@@ -29,6 +29,21 @@ describe("finding the product a scan belongs to", () => {
   });
   it("cleans control characters", () => {
     expect(cleanCode("AB\u0003 12\n")).toBe("ab12");
+  });
+});
+
+describe("more than one barcode per product", () => {
+  const withCases = [{ id: "a", label: "Adhesive", barcode: "111", sku: "A-1", codes: [{ code: "999000", units: 12 }, { code: "0042", units: 1 }] }, { id: "b", label: "Gel", barcode: null, sku: null }];
+  it("a case barcode stands for its whole pack", () => {
+    expect(matchScan(withCases, "999000")).toMatchObject({ product: { id: "a" }, units: 12 });
+    expect(matchScan(withCases, "111")).toMatchObject({ product: { id: "a" }, units: 1 });
+  });
+  it("compares the extra codes the same forgiving way", () => {
+    expect(matchScan(withCases, "42\r\n")?.product.id).toBe("a");
+    expect(matchProduct(withCases, "  999000 ")?.id).toBe("a");
+  });
+  it("a product with no extra codes still matches normally", () => {
+    expect(matchScan([{ id: "x", label: "X", barcode: "5", sku: null }], "5")?.units).toBe(1);
   });
 });
 

@@ -9,7 +9,7 @@ import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { productLabel } from "@/lib/inventory";
 import { setFlash } from "@/lib/flash";
-import { applyCount, attachBarcode, trackedProductIds, logUsage, togglePin, undoMovement, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
+import { applyCount, attachBarcode, quickCreateProduct, trackedProductIds, logUsage, togglePin, undoMovement, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
 
 const refresh = (slug: string) => {
   revalidatePath(`/app/${slug}/inventory`, "layout");
@@ -292,8 +292,34 @@ export async function countScannedAction(input: { slug: string; locationId: stri
   });
 }
 
-/** Save a scanned barcode on the product it belongs to. */
-export async function attachBarcodeAction(input: { slug: string; productId: string; code: string; replace: boolean }): Promise<ScanResult> {
+/** Save a scanned barcode on the product it belongs to: as its first barcode, in place of its barcode, or as another one (a pack size). */
+export async function attachBarcodeAction(input: { slug: string; productId: string; code: string; mode: "set" | "replace" | "add"; units?: number }): Promise<ScanResult> {
   const ctx = await requireAction(input.slug, "inventory.manage");
-  return asResult(async () => `Saved on ${await attachBarcode({ businessId: ctx.business.id, productId: input.productId, code: input.code, replace: input.replace, actorUserId: ctx.user.id })}`);
+  return asResult(async () => {
+    const label = await attachBarcode({ businessId: ctx.business.id, productId: input.productId, code: input.code, mode: input.mode, units: input.units, actorUserId: ctx.user.id });
+    refresh(input.slug);
+    return input.mode === "add" ? `Added as another barcode of ${label}${input.units && input.units > 1 ? ` (${input.units} units a scan)` : ""}` : `Saved on ${label}`;
+  });
+}
+
+export type CreatedProduct = { id: string; label: string; barcode: string; sku: null; category: string | null; onHand: number; tracked: boolean; codes: { code: string; units: number }[] };
+
+/** A scan that matched nothing and no existing product fits: make the product on the spot, with the scanned code as its barcode. */
+export async function createProductFromScanAction(input: { slug: string; code: string; name: string; kind: "retail" | "backbar"; price: string; cost: string; categoryId: string }): Promise<{ ok: true; product: CreatedProduct } | { ok: false; error: string }> {
+  const ctx = await requireAction(input.slug, "inventory.manage");
+  const cents = (v: string) => {
+    const t = v.trim().replace("$", "");
+    return /^\d{1,7}(\.\d{1,2})?$/.test(t) ? Math.round(Number(t) * 100) : t === "" ? 0 : NaN;
+  };
+  const price = cents(input.price);
+  const cost = cents(input.cost);
+  if (Number.isNaN(price) || Number.isNaN(cost)) return { ok: false, error: "Enter amounts like 24 or 24.50." };
+  try {
+    const product = await quickCreateProduct({ businessId: ctx.business.id, name: input.name, kind: input.kind === "backbar" ? "backbar" : "retail", priceCents: price, costCents: cost, categoryId: input.categoryId || null, code: input.code, actorUserId: ctx.user.id });
+    refresh(input.slug);
+    return { ok: true, product };
+  } catch (e) {
+    if (e instanceof InventoryError) return { ok: false, error: e.message };
+    throw e;
+  }
 }

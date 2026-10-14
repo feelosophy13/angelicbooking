@@ -86,6 +86,22 @@ export const products = pgTable(
   (t) => [index("products_business_idx").on(t.businessId, t.name), index("products_barcode_idx").on(t.businessId, t.barcode)],
 );
 
+/** More barcodes for one product (a case, a different pack size, a re-labelled item). A scan of one adds `unitsPerScan` units. products.barcode stays the main one. */
+export const productBarcodes = pgTable(
+  "product_barcodes",
+  {
+    id: id(),
+    businessId: businessId(),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    unitsPerScan: integer("units_per_scan").notNull().default(1),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("product_barcodes_code_uq").on(t.businessId, t.code), index("product_barcodes_product_idx").on(t.productId)],
+);
+
 /** On-hand quantity of a product at one location. products.stock_qty is always the sum across locations. */
 export const productStock = pgTable(
   "product_stock",

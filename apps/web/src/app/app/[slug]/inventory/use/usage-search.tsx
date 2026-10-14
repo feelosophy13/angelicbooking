@@ -1,10 +1,13 @@
 "use client";
 import { useMemo, useRef, useState, useTransition } from "react";
-import { Search, Star } from "lucide-react";
+import { Camera, Search, Star, Volume2, VolumeX } from "lucide-react";
+import { CameraScanner } from "@/components/camera-scanner";
+import { useBeeps } from "@/components/use-beeps";
+import { matchScan } from "@/lib/scan";
 import { logUsageQuick, togglePinAction } from "../actions";
 import { cn } from "@/lib/utils";
 
-export type UsageProduct = { id: string; label: string; category: string | null; kind: string; onHand: number; tracked: boolean; barcode: string | null; sku: string | null };
+export type UsageProduct = { id: string; label: string; category: string | null; kind: string; onHand: number; tracked: boolean; barcode: string | null; sku: string | null; codes: { code: string; units: number }[] };
 
 /**
  * Find a product and log using one with a single press. The search matches name, category, barcode and SKU; a scanned code (or a search
@@ -17,6 +20,9 @@ export function UsageSearch({ slug, products, pinnedIds, recentIds, locations, d
   const [cat, setCat] = useState("");
   const [pins, setPins] = useState(() => new Set(pinnedIds));
   const [busy, start] = useTransition();
+  const [camera, setCamera] = useState(false);
+  const [miss, setMiss] = useState<string | null>(null);
+  const beeps = useBeeps();
   const search = useRef<HTMLInputElement>(null);
   const needle = q.trim().toLowerCase();
   const categories = useMemo(() => [...new Set(products.map((p) => p.category ?? "Other"))], [products]);
@@ -24,7 +30,7 @@ export function UsageSearch({ slug, products, pinnedIds, recentIds, locations, d
 
   const filtering = !!(needle || cat);
   const matches = useMemo(
-    () => (filtering ? products.filter((p) => (!cat || (p.category ?? "Other") === cat) && (!needle || [p.label, p.category, p.barcode, p.sku].some((v) => v?.toLowerCase().includes(needle)))).slice(0, 50) : []),
+    () => (filtering ? products.filter((p) => (!cat || (p.category ?? "Other") === cat) && (!needle || [p.label, p.category, p.barcode, p.sku, ...p.codes.map((c) => c.code)].some((v) => v?.toLowerCase().includes(needle)))).slice(0, 50) : []),
     [filtering, needle, cat, products],
   );
   const pinned = useMemo(() => pinnedIds.concat([...pins].filter((id) => !pinnedIds.includes(id))).filter((id) => pins.has(id)).map((id) => byId.get(id)).filter((p): p is UsageProduct => !!p), [pins, pinnedIds, byId]);
@@ -39,6 +45,7 @@ export function UsageSearch({ slug, products, pinnedIds, recentIds, locations, d
     fd.set("qty", qty);
     start(async () => {
       await logUsageQuick(fd);
+      beeps.play(true);
       setQ("");
       search.current?.focus();
     });
@@ -57,11 +64,18 @@ export function UsageSearch({ slug, products, pinnedIds, recentIds, locations, d
       await togglePinAction(fd);
     });
   };
-  const onEnter = () => {
-    if (!needle) return;
-    const exact = products.find((p) => p.barcode?.toLowerCase() === needle || p.sku?.toLowerCase() === needle);
-    const target = exact ?? (matches.length === 1 ? matches[0] : null);
-    if (target) log(target.id, "1");
+  // Enter (a scanner's last key): an exact barcode or SKU logs that product; so does a search with a single result. A code that looks like a barcode but matches nothing buzzes.
+  const onEnter = (typed?: string) => {
+    const text = (typed ?? q).trim();
+    if (!text) return;
+    setMiss(null);
+    const exact = matchScan(products, text);
+    const target = exact?.product ?? (typed === undefined && matches.length === 1 ? matches[0] : null);
+    if (target) return log(target.id, "1");
+    if (/^[0-9A-Za-z-]{6,}$/.test(text) && (typed !== undefined || !matches.length)) {
+      beeps.play(false);
+      setMiss(text);
+    }
   };
 
   const Row = ({ p }: { p: UsageProduct }) => {
@@ -116,6 +130,8 @@ export function UsageSearch({ slug, products, pinnedIds, recentIds, locations, d
             className="h-11 w-full rounded-lg border border-stone-300 bg-white pl-9 pr-3 text-sm focus:outline-2 focus:outline-brand-500"
           />
         </div>
+        <button type="button" onClick={() => setCamera((v) => !v)} aria-pressed={camera} aria-label={camera ? "Close the camera" : "Scan with the camera"} className={`h-11 rounded-lg border px-3 ${camera ? "border-brand-600 bg-brand-50 text-brand-700" : "border-stone-300 bg-white text-stone-600"}`}><Camera className="h-5 w-5" /></button>
+        <button type="button" onClick={beeps.toggle} aria-pressed={beeps.on} aria-label={beeps.on ? "Mute scan sounds" : "Turn scan sounds on"} className="h-11 rounded-lg border border-stone-300 bg-white px-3 text-stone-600">{beeps.on ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}</button>
         {categories.length > 1 ? (
           <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Category" className="h-11 rounded-lg border border-stone-300 bg-white px-3 text-sm">
             <option value="">All categories</option>
@@ -128,6 +144,8 @@ export function UsageSearch({ slug, products, pinnedIds, recentIds, locations, d
           </select>
         ) : null}
       </div>
+      {camera ? <CameraScanner onScan={(code) => onEnter(code)} onClose={() => { setCamera(false); search.current?.focus(); }} /> : null}
+      {miss ? <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">The barcode <span className="font-mono">{miss}</span> isn't in the system. Ask whoever manages inventory to add it (Receive stock can teach the app a new barcode).</p> : null}
 
       {filtering ? (
         matches.length === 0 ? (

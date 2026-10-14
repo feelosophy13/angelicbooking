@@ -275,7 +275,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       registered, the box keeps the focus, nothing is saved until "Add to stock". An unknown barcode asks which product it is and remembers it (a product keeps one barcode; replacing it is deliberate). Orders have
       "Scan the delivery": each line shows how many came and how many are still to come, extras and items not on the order are flagged, and what came earlier is counted. **Count → Scan to count**: each scan is one
       unit, with the book's number and the difference shown as you go; products you didn't scan are left alone unless "anything I didn't scan is none" is ticked. UPC-A and EAN-13 forms of a code match each other.
-      Works with USB and Bluetooth scanners that type like a keyboard; no camera scanning. Not built: scanning on the Log usage page's own beep, camera scanning, a second barcode per product (pack sizes).
+      Works with USB and Bluetooth scanners that type like a keyboard.
+- [x] 2026-10-14: Scanning, round two (migration 0072). **Camera scanning** on every scan screen and on Log usage: the phone's camera reads barcodes (the browser's own reader where it has one, otherwise a reading library loaded only
+      when the camera is opened), the same code is ignored for 2 seconds, it vibrates, and a blocked or missing camera says so. **More than one barcode per product** (a case, another pack size): a scan of it adds that many
+      units; teach it when an unknown code is scanned ("Add as another barcode", with the pack size) or on the product's page ("Other barcodes"); a code can belong to only one product (barcode, other barcode or SKU).
+      **A scan that matches nothing can make a new product**: name, sold or back-bar, category, price and cost, created tracked with the scanned barcode, counted into the delivery. Log usage now beeps (and buzzes on a code
+      it doesn't know, with a message), reads other barcodes, and has the camera. Camera reading was not tried with a real camera here (the preview blocks it); the reader's setup is tested against drawn EAN-13 and UPC-A
+      barcodes. Not built: torch/zoom controls, scanning on the register's own add-product box beyond the existing barcode field.
 - [x] 2026-10-14: Service form timing in plain words: Hands-on time, Waiting (client waits, you're free), Then finish, Clean-up, with a live line saying what the numbers do to the calendar and a warning when a wait has no finish
       time (the booking rules only free the stylist during a wait when a finishing block follows it).
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos

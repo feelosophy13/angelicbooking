@@ -10,8 +10,8 @@ import { Card, FormPage, Input, LinkButton, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { Disclosure } from "@/components/disclosure";
 import { ProductFields } from "@/components/product-fields";
-import { adjustStock, transferStockAction, updateProduct } from "../actions";
-import { listLocations, listSuppliers, productMovements, stockByLocation } from "@/server/inventory";
+import { addProductBarcode, adjustStock, deleteProductBarcode, transferStockAction, updateProduct } from "../actions";
+import { listExtraBarcodes, listLocations, listSuppliers, productMovements, stockByLocation } from "@/server/inventory";
 import { MANUAL_REASONS, movementReason, productLabel, stockStatus } from "@/lib/inventory";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; productId: string }> }): Promise<Metadata> {
@@ -46,6 +46,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
     listLocations(business.id),
   ]);
   if (!product) notFound();
+  const extraCodes = canStock ? await listExtraBarcodes(business.id, product.id) : [];
   const [movements, levels] = canStock ? await Promise.all([productMovements(business.id, product.id), stockByLocation(business.id, product.id)]) : [[], []];
   const multi = locations.length > 1;
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
@@ -102,6 +103,35 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
             </ul>
           ) : null}
         </Card>
+      ) : null}
+      {canStock ? (
+        <Disclosure title="Other barcodes" hint={extraCodes.length ? `${extraCodes.length} added` : "cases, other pack sizes"} className="mb-5">
+          <p className="mb-2 text-xs text-stone-500">The barcode above is its main one. Add another for a case or a different pack: scanning it adds that many units.</p>
+          {extraCodes.length ? (
+            <ul className="mb-3 divide-y divide-stone-100 text-sm">
+              {extraCodes.map((c) => (
+                <li key={c.id} className="flex items-center justify-between gap-3 py-1.5">
+                  <span><span className="font-mono">{c.code}</span> <span className="text-stone-500">· {c.unitsPerScan} unit{c.unitsPerScan === 1 ? "" : "s"} a scan</span></span>
+                  <form action={deleteProductBarcode}>
+                    <input type="hidden" name="slug" value={slug} />
+                    <input type="hidden" name="productId" value={product.id} />
+                    <input type="hidden" name="id" value={c.id} />
+                    <button className="text-xs text-stone-500 underline hover:text-red-600">Remove</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <ActionForm action={addProductBarcode}>
+            <input type="hidden" name="slug" value={slug} />
+            <input type="hidden" name="productId" value={product.id} />
+            <div className="grid grid-cols-[1fr_6rem] gap-2">
+              <Field label="Barcode" name="code"><Input name="code" inputMode="numeric" placeholder="Scan or type it" /></Field>
+              <Field label="Units a scan" name="units"><Input name="units" inputMode="numeric" defaultValue="1" /></Field>
+            </div>
+            <SubmitButton size="sm" variant="secondary" pendingText="Adding…">Add barcode</SubmitButton>
+          </ActionForm>
+        </Disclosure>
       ) : null}
       {canEdit ? (
         <>

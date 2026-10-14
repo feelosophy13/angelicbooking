@@ -3,7 +3,8 @@
  * delivery against an order. Scanners act like a keyboard: they type the code and press Enter.
  */
 
-export type ScanProduct = { id: string; label: string; barcode: string | null; sku: string | null };
+/** `codes` are the product's other barcodes (a case, another pack size); a scan of one adds `units` units. */
+export type ScanProduct = { id: string; label: string; barcode: string | null; sku: string | null; codes?: { code: string; units: number }[] };
 
 /** Codes as the scanner reads them: no spaces or control characters, case ignored. */
 export const cleanCode = (raw: string) => raw.replace(/[\u0000-\u001f\u007f\s]/g, "").toLowerCase();
@@ -13,13 +14,22 @@ export const cleanCode = (raw: string) => raw.replace(/[\u0000-\u001f\u007f\s]/g
  */
 const canon = (c: string) => (/^\d+$/.test(c) ? c.replace(/^0+/, "") || "0" : c);
 
-/** The product a scanned code belongs to: barcode first, then SKU. Null when nothing matches. */
-export function matchProduct<P extends ScanProduct>(products: P[], raw: string): P | null {
+/** The product a scanned code belongs to, and how many units that scan stands for: main barcode (1), then another barcode (its pack size), then SKU (1). */
+export function matchScan<P extends ScanProduct>(products: P[], raw: string): { product: P; units: number } | null {
   const code = cleanCode(raw);
   if (!code) return null;
   const c = canon(code);
-  return products.find((p) => p.barcode && canon(cleanCode(p.barcode)) === c) ?? products.find((p) => p.sku && canon(cleanCode(p.sku)) === c) ?? null;
+  for (const p of products) if (p.barcode && canon(cleanCode(p.barcode)) === c) return { product: p, units: 1 };
+  for (const p of products) {
+    const hit = p.codes?.find((x) => canon(cleanCode(x.code)) === c);
+    if (hit) return { product: p, units: Math.max(1, hit.units) };
+  }
+  for (const p of products) if (p.sku && canon(cleanCode(p.sku)) === c) return { product: p, units: 1 };
+  return null;
 }
+
+/** The product a scanned code belongs to. Null when nothing matches. */
+export const matchProduct = <P extends ScanProduct>(products: P[], raw: string): P | null => matchScan(products, raw)?.product ?? null;
 
 export type ScanLine = { productId: string; qty: number };
 

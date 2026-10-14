@@ -27,7 +27,7 @@ export default async function LogUsagePage({ params }: { params: Promise<{ slug:
       <p className="text-sm text-stone-600">Log a product each time you use up a unit (open a new tube, finish a pack). Whole units only. It comes off the stock at the location you pick.</p>
       <UsageSearch
         slug={slug}
-        products={products.map((p) => ({ id: p.id, label: productLabel(p), category: p.category, kind: p.kind, onHand: p.onHand, tracked: p.tracked, barcode: p.barcode, sku: p.sku }))}
+        products={products.map((p) => ({ id: p.id, label: productLabel(p), category: p.category, kind: p.kind, onHand: p.onHand, tracked: p.tracked, barcode: p.barcode, sku: p.sku, codes: p.codes }))}
         pinnedIds={pins}
         recentIds={mine}
         locations={locations.map((l) => ({ id: l.id, name: short(l.name) }))}

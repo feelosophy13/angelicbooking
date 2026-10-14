@@ -1,55 +1,20 @@
 "use client";
-import { useEffect, useMemo, useReducer, useRef, useState, useTransition } from "react";
-import { Minus, Plus, ScanBarcode, Volume2, VolumeX, X } from "lucide-react";
-import { addScan, countDifference, matchProduct, orderProgress, setQty, totalUnits, type OrderLineInfo, type ScanLine } from "@/lib/scan";
-import { attachBarcodeAction, countScannedAction, receiveOrderScannedAction, receiveScannedAction, type ScanResult } from "./actions";
+import { useMemo, useReducer, useRef, useState, useTransition } from "react";
+import { Camera, Minus, Plus, ScanBarcode, Volume2, VolumeX, X } from "lucide-react";
+import { addScan, countDifference, matchScan, orderProgress, setQty, totalUnits, type OrderLineInfo, type ScanLine } from "@/lib/scan";
+import { attachBarcodeAction, countScannedAction, createProductFromScanAction, receiveOrderScannedAction, receiveScannedAction, type CreatedProduct, type ScanResult } from "./actions";
+import { CameraScanner } from "@/components/camera-scanner";
+import { useBeeps } from "@/components/use-beeps";
 import { cn } from "@/lib/utils";
 
-export type ScanItem = { id: string; label: string; barcode: string | null; sku: string | null; category: string | null; onHand: number; tracked: boolean };
+export type ScanItem = { id: string; label: string; barcode: string | null; sku: string | null; category: string | null; onHand: number; tracked: boolean; codes: { code: string; units: number }[] };
 type Mode = "receive" | "count" | "order";
 type Order = { id: string; number: number; supplier: string | null; reference: string; lines: OrderLineInfo[] };
 
-/** Short sounds so you can tell a scan registered without looking at the screen (a scanner usually points away from it). */
-function useBeeps() {
-  const ctx = useRef<AudioContext | null>(null);
-  const [on, setOn] = useState(true);
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("scan-sound") === "off") setOn(false);
-    } catch {}
-  }, []);
-  const toggle = () => {
-    setOn((v) => {
-      try {
-        localStorage.setItem("scan-sound", v ? "off" : "on");
-      } catch {}
-      return !v;
-    });
-  };
-  const play = (ok: boolean) => {
-    if (!on) return;
-    try {
-      const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!Ctx) return;
-      ctx.current ??= new Ctx();
-      const c = ctx.current;
-      const o = c.createOscillator();
-      const g = c.createGain();
-      o.frequency.value = ok ? 880 : 220;
-      o.type = ok ? "sine" : "square";
-      g.gain.value = 0.08;
-      o.connect(g).connect(c.destination);
-      o.start();
-      o.stop(c.currentTime + (ok ? 0.08 : 0.25));
-    } catch {}
-  };
-  return { on, toggle, play };
-}
-
 type State = { lines: ScanLine[]; last: string | null };
-type Act = { t: "scan"; id: string } | { t: "qty"; id: string; qty: number } | { t: "remove"; id: string } | { t: "clear" };
+type Act = { t: "scan"; id: string; by?: number } | { t: "qty"; id: string; qty: number } | { t: "remove"; id: string } | { t: "clear" };
 const reduce = (s: State, a: Act): State => {
-  if (a.t === "scan") return { lines: addScan(s.lines, a.id), last: a.id };
+  if (a.t === "scan") return { lines: addScan(s.lines, a.id, a.by ?? 1), last: a.id };
   if (a.t === "qty") return { lines: setQty(s.lines, a.id, a.qty), last: s.last };
   if (a.t === "remove") return { lines: setQty(s.lines, a.id, 0), last: s.last };
   return { lines: [], last: null };
@@ -57,22 +22,31 @@ const reduce = (s: State, a: Act): State => {
 
 /**
  * One scanning screen for three jobs: a delivery with no order ("receive"), a delivery checked against an order ("order"), and a count ("count").
- * The box at the top keeps the focus, so you only point the scanner and pull the trigger. A code the app doesn't know asks which product it is
- * and remembers it. Nothing is saved until you press the button at the bottom.
+ * A hand scanner types into the box at the top (it keeps the focus), or open the camera on a phone. A code the app doesn't know asks whether it is
+ * an existing product (and remembers it, as the main barcode or another one for a case) or a new product (and creates it). Nothing is saved
+ * until you press the button at the bottom.
  */
-export function ScanSession({ slug, mode, products: initial, locations, defaultLocationId, order, book, trackedCount }: { slug: string; mode: Mode; products: ScanItem[]; locations: { id: string; name: string }[]; defaultLocationId: string; order?: Order; book?: Record<string, Record<string, number>>; trackedCount?: number }) {
-  // Barcodes taught during this session count straight away (the list from the server is from when the page opened).
-  const [learned, setLearned] = useState<Record<string, string>>({});
-  const products = useMemo(() => initial.map((p) => (learned[p.id] ? { ...p, barcode: learned[p.id]! } : p)), [initial, learned]);
+export function ScanSession({ slug, mode, products: initial, categories = [], locations, defaultLocationId, order, book, trackedCount }: { slug: string; mode: Mode; products: ScanItem[]; categories?: { id: string; name: string }[]; locations: { id: string; name: string }[]; defaultLocationId: string; order?: Order; book?: Record<string, Record<string, number>>; trackedCount?: number }) {
+  // Things taught or created during this session count straight away (the list from the server is from when the page opened).
+  const [learned, setLearned] = useState<Record<string, { barcode?: string; codes?: { code: string; units: number }[] }>>({});
+  const [created, setCreated] = useState<ScanItem[]>([]);
+  const products = useMemo<ScanItem[]>(
+    () => [...initial.map((p) => (learned[p.id] ? { ...p, barcode: learned[p.id]!.barcode ?? p.barcode, codes: learned[p.id]!.codes ?? p.codes } : p)), ...created],
+    [initial, learned, created],
+  );
   const [s, dispatch] = useReducer(reduce, { lines: [], last: null });
   const [loc, setLoc] = useState(defaultLocationId);
   const [note, setNote] = useState(order?.reference ?? "");
   const [zeroRest, setZeroRest] = useState(false);
-  const [unknown, setUnknown] = useState<string | null>(null);
-  const [pick, setPick] = useState("");
-  const [attachErr, setAttachErr] = useState<string | null>(null);
-  const [tried, setTried] = useState<string | null>(null);
+  const [camera, setCamera] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [unknown, setUnknown] = useState<string | null>(null);
+  const [tab, setTab] = useState<"existing" | "new">("existing");
+  const [pick, setPick] = useState("");
+  const [chosen, setChosen] = useState<ScanItem | null>(null);
+  const [packUnits, setPackUnits] = useState("1");
+  const [problem, setProblem] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", kind: "retail" as "retail" | "backbar", price: "", cost: "", categoryId: "" });
   const [busy, start] = useTransition();
   const box = useRef<HTMLInputElement>(null);
   const beeps = useBeeps();
@@ -84,16 +58,25 @@ export function ScanSession({ slug, mode, products: initial, locations, defaultL
     const code = raw.trim();
     if (!code) return;
     setStatus(null);
-    const p = matchProduct(products, code);
-    if (!p) {
+    const hit = matchScan(products, code);
+    if (!hit) {
       beeps.play(false);
       setUnknown(code);
+      setTab("existing");
       setPick("");
-      setAttachErr(null);
+      setChosen(null);
+      setProblem(null);
+      setPackUnits("1");
+      setForm({ name: "", kind: "retail", price: "", cost: "", categoryId: "" });
       return;
     }
     beeps.play(true);
-    dispatch({ t: "scan", id: p.id });
+    dispatch({ t: "scan", id: hit.product.id, by: hit.units });
+  };
+  const closeUnknown = () => {
+    setUnknown(null);
+    setChosen(null);
+    focusBox();
   };
 
   const done = (r: ScanResult) => {
@@ -116,18 +99,37 @@ export function ScanSession({ slug, mode, products: initial, locations, defaultL
       }
     });
   };
-  const attach = (productId: string, replace = false) => {
+
+  // Teach the app the scanned code: as the product's main barcode, in place of it, or as another one standing for a pack.
+  const attach = (p: ScanItem, how: "set" | "replace" | "add") => {
     if (!unknown) return;
-    setTried(productId);
+    const units = how === "add" ? Math.max(1, Math.floor(Number(packUnits) || 1)) : 1;
     start(async () => {
-      const r = await attachBarcodeAction({ slug, productId, code: unknown, replace });
-      if (!r.ok) return setAttachErr(r.error);
+      const r = await attachBarcodeAction({ slug, productId: p.id, code: unknown, mode: how, units });
+      if (!r.ok) return setProblem(r.error);
       beeps.play(true);
-      setLearned((cur) => ({ ...cur, [productId]: unknown }));
-      dispatch({ t: "scan", id: productId });
+      setLearned((cur) => ({ ...cur, [p.id]: how === "add" ? { codes: [...(cur[p.id]?.codes ?? p.codes), { code: unknown, units }] } : { barcode: unknown } }));
+      dispatch({ t: "scan", id: p.id, by: units });
       setStatus({ ok: true, text: r.message });
-      setUnknown(null);
-      focusBox();
+      closeUnknown();
+    });
+  };
+  const choose = (p: ScanItem) => {
+    setProblem(null);
+    if (!p.barcode) return attach(p, "set");
+    setChosen(p);
+  };
+  const createIt = () => {
+    if (!unknown) return;
+    start(async () => {
+      const r = await createProductFromScanAction({ slug, code: unknown, ...form });
+      if (!r.ok) return setProblem(r.error);
+      const p: CreatedProduct = r.product;
+      beeps.play(true);
+      setCreated((cur) => [...cur, p]);
+      dispatch({ t: "scan", id: p.id });
+      setStatus({ ok: true, text: `${p.label} created and added` });
+      closeUnknown();
     });
   };
 
@@ -138,6 +140,7 @@ export function ScanSession({ slug, mode, products: initial, locations, defaultL
   const units = totalUnits(order && progress ? s.lines.filter((l) => order.lines.some((o) => o.productId === l.productId)) : s.lines);
   const bookQty = (id: string) => book?.[loc]?.[id] ?? 0;
   const verb = mode === "count" ? "Apply count" : mode === "order" ? "Receive these" : "Add to stock";
+  const field = "h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm";
 
   return (
     <div className="space-y-4">
@@ -162,10 +165,14 @@ export function ScanSession({ slug, mode, products: initial, locations, defaultL
               className="h-12 w-full rounded-xl border-2 border-brand-300 bg-white pl-10 pr-3 text-base focus:border-brand-600 focus:outline-none"
             />
           </div>
+          <button type="button" onClick={() => setCamera((v) => !v)} aria-pressed={camera} aria-label={camera ? "Close the camera" : "Scan with the camera"} className={cn("rounded-lg border p-3", camera ? "border-brand-600 bg-brand-50 text-brand-700" : "border-stone-300 bg-white text-stone-600")}>
+            <Camera className="h-5 w-5" />
+          </button>
           <button type="button" onClick={beeps.toggle} aria-pressed={beeps.on} aria-label={beeps.on ? "Mute scan sounds" : "Turn scan sounds on"} className="rounded-lg border border-stone-300 bg-white p-3 text-stone-600">
             {beeps.on ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
           </button>
         </div>
+        {camera ? <CameraScanner onScan={scan} onClose={() => { setCamera(false); focusBox(); }} /> : null}
         {mode !== "order" && locations.length > 1 ? (
           <select value={loc} onChange={(e) => { setLoc(e.target.value); focusBox(); }} aria-label="Where" className="h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm sm:w-auto">
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -176,29 +183,71 @@ export function ScanSession({ slug, mode, products: initial, locations, defaultL
       <p role="status" aria-live="polite" className={cn("rounded-lg px-3 py-2 text-sm", status ? (status.ok ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-800") : "sr-only")}>{status?.text}</p>
 
       {unknown ? (
-        <div role="alertdialog" aria-label="Unknown barcode" className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3">
+        <div role="alertdialog" aria-label="Unknown barcode" className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
           <div className="flex items-start justify-between gap-2">
-            <p className="text-sm text-amber-950">The app doesn't know <b className="font-mono">{unknown}</b> yet. Which product is it? It will be remembered.</p>
-            <button type="button" onClick={() => { setUnknown(null); focusBox(); }} aria-label="Skip this scan" className="rounded p-1 text-amber-900 hover:bg-amber-100"><X className="h-4 w-4" /></button>
+            <p className="text-sm text-amber-950">The app doesn't know <b className="font-mono">{unknown}</b> yet.</p>
+            <button type="button" onClick={closeUnknown} aria-label="Skip this scan" className="rounded p-1 text-amber-900 hover:bg-amber-100"><X className="h-4 w-4" /></button>
           </div>
-          <input autoFocus value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Find the product" aria-label="Find the product this barcode belongs to" className="h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm" />
-          <ul className="divide-y divide-amber-100 overflow-hidden rounded-lg border border-amber-200 bg-white">
-            {candidates.map((p) => (
-              <li key={p.id}>
-                <button type="button" disabled={busy} onClick={() => attach(p.id)} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-stone-50">
-                  <span className="min-w-0 truncate">{p.label}</span>
-                  <span className="shrink-0 text-xs text-stone-500">{p.barcode ? `has ${p.barcode}` : p.category ?? ""}</span>
-                </button>
-              </li>
+          <div className="flex gap-1 rounded-lg bg-amber-100 p-0.5 text-sm" role="tablist">
+            {([["existing", "It's a product I have"], ["new", "It's a new product"]] as const).map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => { setTab(k); setProblem(null); }} className={cn("flex-1 rounded-md px-3 py-1.5", tab === k ? "bg-white font-medium shadow-sm" : "text-amber-900")}>{label}</button>
             ))}
-            {candidates.length === 0 ? <li className="px-3 py-2.5 text-sm text-stone-500">No product matches.</li> : null}
-          </ul>
-          {attachErr ? (
-            <p className="text-sm text-red-700">
-              {attachErr}
-              {/already has the barcode/.test(attachErr) ? <> <button type="button" className="underline" onClick={() => { if (tried) attach(tried, true); }}>Replace it</button></> : null}
-            </p>
+          </div>
+
+          {tab === "existing" && !chosen ? (
+            <>
+              <input autoFocus value={pick} onChange={(e) => setPick(e.target.value)} placeholder="Find the product" aria-label="Find the product this barcode belongs to" className={field} />
+              <ul className="divide-y divide-amber-100 overflow-hidden rounded-lg border border-amber-200 bg-white">
+                {candidates.map((p) => (
+                  <li key={p.id}>
+                    <button type="button" disabled={busy} onClick={() => choose(p)} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-sm hover:bg-stone-50">
+                      <span className="min-w-0 truncate">{p.label}</span>
+                      <span className="shrink-0 text-xs text-stone-500">{p.barcode ? "has a barcode" : p.category ?? ""}</span>
+                    </button>
+                  </li>
+                ))}
+                {candidates.length === 0 ? <li className="px-3 py-2.5 text-sm text-stone-500">No product matches. Try “It's a new product”.</li> : null}
+              </ul>
+            </>
           ) : null}
+
+          {tab === "existing" && chosen ? (
+            <div className="space-y-2 rounded-lg border border-amber-200 bg-white p-3 text-sm">
+              <p><b>{chosen.label}</b> already has the barcode <span className="font-mono">{chosen.barcode}</span>. What is this one?</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-stone-600">A case or pack of
+                  <input value={packUnits} onChange={(e) => setPackUnits(e.target.value.replace(/\D/g, ""))} inputMode="numeric" aria-label="Units one scan stands for" className="h-9 w-16 rounded-lg border border-stone-300 px-2 text-right text-sm" />
+                </label>
+                <button type="button" disabled={busy} onClick={() => attach(chosen, "add")} className="h-9 rounded-lg bg-brand-600 px-3 text-sm font-medium text-white disabled:opacity-60">Add as another barcode</button>
+              </div>
+              <div className="flex flex-wrap gap-3 text-xs">
+                <button type="button" disabled={busy} onClick={() => attach(chosen, "replace")} className="underline">Replace the old barcode instead</button>
+                <button type="button" onClick={() => { setChosen(null); setProblem(null); }} className="underline">Pick a different product</button>
+              </div>
+            </div>
+          ) : null}
+
+          {tab === "new" ? (
+            <div className="space-y-2">
+              <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Product name" aria-label="New product name" className={field} />
+              <div className="grid grid-cols-2 gap-2">
+                <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as "retail" | "backbar" })} aria-label="What it is" className={field}>
+                  <option value="retail">Sold to clients</option>
+                  <option value="backbar">Used in services (back-bar)</option>
+                </select>
+                <select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} aria-label="Category" className={field}>
+                  <option value="">No category</option>
+                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                {form.kind === "retail" ? <input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} inputMode="decimal" placeholder="Price" aria-label="Price" className={field} /> : null}
+                <input value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} inputMode="decimal" placeholder="Cost (optional)" aria-label="Cost per unit" className={field} />
+              </div>
+              <button type="button" disabled={busy || !form.name.trim()} onClick={createIt} className="h-10 rounded-lg bg-brand-600 px-4 text-sm font-medium text-white disabled:opacity-60">Create and add this one</button>
+              <p className="text-xs text-amber-900">You can add a photo, description and the rest on the product's page later. It starts with no stock until you press the button below.</p>
+            </div>
+          ) : null}
+
+          {problem ? <p role="alert" className="text-sm text-red-700">{problem}</p> : null}
         </div>
       ) : null}
 
@@ -290,4 +339,3 @@ function Stepper({ value, onChange, label }: { value: number; onChange: (q: numb
     </div>
   );
 }
-

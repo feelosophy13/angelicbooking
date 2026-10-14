@@ -1328,6 +1328,7 @@ export const TENANT_TABLES = [
   "product_stock",
   "suppliers",
   "inventory_pins",
+  "product_barcodes",
   "purchase_orders",
   "purchase_order_lines",
 ] as const;
