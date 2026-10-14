@@ -8,7 +8,8 @@
     "./availability": "./src/availability.ts",
     "./permissions": "./src/permissions.ts",
     "./time": "./src/time.ts",
-    "./pricing": "./src/pricing.ts"
+    "./pricing": "./src/pricing.ts",
+    "./platform-pricing": "./src/platform-pricing.ts"
   },
   "scripts": {
     "test": "vitest run",

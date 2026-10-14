@@ -6,3 +6,4 @@ export * from "./booking-policy";
 export * from "./payroll";
 export * from "./membership";
 export * from "./cancellation";
+export * from "./platform-pricing";

@@ -4,7 +4,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
       <header className="mb-6 flex items-center justify-between">
-        <a href="/" className="text-lg font-semibold">Platform admin</a>
+        <nav className="flex items-baseline gap-5">
+          <a href="/" className="text-lg font-semibold">Platform admin</a>
+          <a href="/" className="text-sm text-stone-600 hover:text-stone-900">Tenants</a>
+          <a href="/pricing" className="text-sm text-stone-600 hover:text-stone-900">Pricing</a>
+        </nav>
         <form action={logout}>
           <button className="text-sm text-stone-600 hover:text-stone-900">Sign out</button>
         </form>

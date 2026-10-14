@@ -55,14 +55,19 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ## 2. Before real customers
 
-### Platform admin app (`apps/admin`, built 2026-10-14: read-only tenant list + detail, env-based login)
+### Platform admin app (`apps/admin`, built 2026-10-14: tenant list + detail, per-business usage metrics, price book and per-business pricing, env-based login)
 - [ ] Deploy it as its own Render web service (build `pnpm --filter @angelic/admin build`, start `pnpm --filter @angelic/admin start`)
       on `admin.angelicbooking.com`, and put Cloudflare Access (your email only) in front of it.
 - [ ] On the production DB run `packages/db/sql/admin-role.sql` as the owner, **change the `angelic_admin` password first**, then set
       `ADMIN_DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` (`pnpm --filter @angelic/admin hash-password '…'`), `ADMIN_SESSION_SECRET`
       on that service only. Never add `ADMIN_DATABASE_URL` to the web service.
-- [ ] Admin actions (suspend/reactivate a tenant, extend a trial, view-as/impersonate) need a write path + an audit-log table; the role is SELECT-only today.
-- [ ] Platform billing overview (MRR, failed payments) once Stripe keys exist.
+- [ ] After migrating production (0074), re-run `admin-role.sql` so `angelic_admin` gets write access to `platform_pricing`, `business_pricing` and `admin_audit_log` (its only writable tables).
+- [ ] **Charge from the price book.** The admin app stores the price book (base, per extra location, per extra active staff, text number, texts) and
+      per-business overrides, and estimates each bill, but `apps/web/src/server/billing.ts` still bills from the `BILLING_*` / `SMS_*` env vars. Wire it:
+      read `platform_pricing` + `business_pricing` through `effectivePriceBook` (`@angelic/core/platform-pricing`), add licensed Stripe items for
+      locations and staff, and keep their quantities in sync when a location or staff member is added, deactivated or removed. Needs the Stripe keys to test.
+- [ ] Admin actions: suspend/reactivate a tenant, extend a trial, view-as/impersonate (writes go through `admin_audit_log`).
+- [ ] Platform billing overview (real MRR, failed payments) once Stripe keys exist.
 
 - [ ] Upgrade the Render Postgres from the free `0.1c-256mb` tier to a paid plan with backups and
       point-in-time recovery; until then run `scripts/backup.sh` nightly somewhere and store the dumps off-box.

@@ -519,6 +519,13 @@
       "when": 1792012965314,
       "tag": "0073_product_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1792013511019,
+      "tag": "0074_platform_pricing",
+      "breakpoints": true
     }
   ]
 }

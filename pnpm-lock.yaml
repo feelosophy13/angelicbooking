@@ -172,6 +172,9 @@ importers:
 
   apps/admin:
     dependencies:
+      '@angelic/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@angelic/db':
         specifier: workspace:*
         version: link:../../packages/db

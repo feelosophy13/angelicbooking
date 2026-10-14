@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@angelic/db"],
+  transpilePackages: ["@angelic/core", "@angelic/db"],
   serverExternalPackages: ["postgres"],
   poweredByHeader: false,
   async headers() {
