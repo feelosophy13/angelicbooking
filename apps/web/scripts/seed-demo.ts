@@ -610,6 +610,13 @@ async function main() {
     const supplierId = (n: string) => supplierRows.find((r) => r.name === n)!.id;
     const siteQty = (q: number) => (multi ? [Math.ceil(q * 0.6), q - Math.ceil(q * 0.6)] : [q]);
     const pRows: { id: string; spec: SeedProduct }[] = [];
+    // Completed visits, so some of the supplies used can be logged against a visit (as staff do from the appointment page).
+    const doneVisits = await tx
+      .select({ id: schema.appointments.id, locationId: schema.appointments.locationId, startAt: schema.appointmentItems.startAt, service: schema.appointmentItems.serviceName })
+      .from(schema.appointments)
+      .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id))
+      .where(and(eq(schema.appointments.status, "completed"), eq(schema.appointments.kind, "visit")));
+    const visitsFor = (backbarName: string) => doneVisits.filter((v) => (/mask/i.test(backbarName) ? /facial/i : /(classic|volume|hybrid|mega)/i).test(v.service) && (/mask/i.test(backbarName) || /(set|fill)/i.test(v.service)) && v.startAt.getTime() < Date.now() - 3_600_000);
     const daysBack = (n: number) => new Date(Date.now() - n * 86_400_000);
     for (const [i, p] of PRODUCTS.entries()) {
       const finals = siteQty(p.qty);
@@ -631,19 +638,22 @@ async function main() {
       pRows.push({ id: row!.id, spec: p });
       for (const [li, q] of finals.entries()) if (q !== 0) await tx.insert(schema.productStock).values({ businessId, productId: row!.id, locationId: locIds[li]!, qty: q });
       // History: sold/used in small amounts over the last 85 days, write-offs, a delivery, and an opening count sized so today's number comes out right.
-      type Mv = { delta: number; reason: string; daysAgo: number; li: number; note?: string; po?: 1 | 3 };
+      type Mv = { delta: number; reason: string; daysAgo: number; li: number; note?: string; po?: 1 | 3; appt?: string; at?: Date };
       const mvs: Mv[] = [];
       let left = p.sold;
       while (left > 0) {
         const n = Math.min(left, between(1, p.backbar ? 6 : 3));
-        mvs.push({ delta: -n, reason: p.backbar ? "used" : "sale", daysAgo: between(1, 85), li: multi && chance(0.4) ? 1 : 0, note: p.backbar ? "Used in services" : undefined });
+        const pool = p.backbar && chance(0.65) ? visitsFor(p.name) : [];
+        const v = pool.length ? pick(pool) : null;
+        const li = v ? Math.max(0, locIds.indexOf(v.locationId ?? locationId)) : multi && chance(0.4) ? 1 : 0;
+        mvs.push({ delta: -n, reason: p.backbar ? "used" : "sale", daysAgo: v ? Math.max(1, Math.round((Date.now() - v.startAt.getTime()) / 86_400_000)) : between(1, 85), li: Math.min(li, finals.length - 1), note: p.backbar ? "Logged by staff" : undefined, appt: v?.id, at: v ? new Date(v.startAt.getTime() + 45 * 60_000) : undefined });
         left -= n;
       }
       if (p.written) mvs.push({ delta: -p.written[1], reason: p.written[0], daysAgo: between(8, 40), li: 0, note: p.written[0] === "expired" ? "Past its date" : p.written[0] === "damage" ? "Dropped, leaked" : "Missing after a busy Saturday" });
       if (p.recv) mvs.push({ delta: p.recv.qty, reason: "received", daysAgo: p.recv.daysAgo, li: 0, note: "Order", po: p.recv.po });
       const perLoc = finals.map((fin, li) => ({ li, opening: fin - mvs.filter((m) => m.li === li).reduce((a, m) => a + m.delta, 0) }));
       for (const { li, opening } of perLoc) if (opening !== 0) mvs.push({ delta: opening, reason: "opening", daysAgo: 90, li, note: "Opening stock" });
-      await tx.insert(schema.stockMovements).values(mvs.map((m) => ({ businessId, productId: row!.id, locationId: locIds[m.li]!, delta: m.delta, reason: m.reason, note: m.note ?? null, createdByUserId: user!.id, createdAt: daysBack(m.daysAgo) })));
+      await tx.insert(schema.stockMovements).values(mvs.map((m) => ({ businessId, productId: row!.id, locationId: locIds[m.li]!, delta: m.delta, reason: m.reason, note: m.note ?? null, createdByUserId: user!.id, appointmentId: m.appt ?? null, createdAt: m.at ?? daysBack(m.daysAgo) })));
     }
     // Orders to suppliers: one received a month ago, one partly received, one on its way, one drafted from the reorder list.
     const prod = (n: string, label?: string) => pRows.find((r) => r.spec.name === n && (r.spec.label ?? null) === (label ?? null))!;

@@ -7,7 +7,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { readProductRows, PRODUCT_CSV_HEADERS } from "../src/lib/inventory";
 import {
   applyCount, cancelOrder, createPurchaseOrder, decrementStockForSale, findProductByCode, getPurchaseOrder, listLocations, lowStock, markOrdered, onlineAvailability, receiveOrder,
-  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy,
+  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy, undoMovement, togglePin, pinnedProductIds, supplyCosts, recentUsage,
 } from "../src/server/inventory";
 
 const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, "demo-twosites") });
@@ -171,6 +171,39 @@ ok("the report separates what was sold from what was used up");
 const mineList = await recentlyLoggedBy(B, actor);
 assert.equal(mineList[0], t1.id);
 ok("a person's most recently logged product comes first");
+
+console.log("Log usage page: pins, taking back, supply costs");
+const pinTarget = await product("Disposable applicators");
+assert.equal(await togglePin({ businessId: B, userId: actor, productId: pinTarget.id }), true);
+assert.ok((await pinnedProductIds(B, actor)).includes(pinTarget.id));
+assert.equal(await togglePin({ businessId: B, userId: actor, productId: pinTarget.id }), false);
+assert.ok(!(await pinnedProductIds(B, actor)).includes(pinTarget.id));
+ok("a product can be pinned and unpinned, per person");
+const applicBefore = await at(pinTarget.id, second);
+await logUsage({ businessId: B, locationId: second, items: [{ productId: pinTarget.id, qty: 3 }], note: null, actorUserId: actor });
+const mv = (await recentUsage(B, 5)).find((m) => m.productId === pinTarget.id && m.delta === -3 && !m.takenBack)!;
+assert.ok(mv);
+await assert.rejects(() => undoMovement({ businessId: B, movementId: mv.id, actorUserId: "someone-else", canManage: false }), InventoryError);
+await undoMovement({ businessId: B, movementId: mv.id, actorUserId: actor, canManage: false });
+assert.equal(await at(pinTarget.id, second), applicBefore);
+await assert.rejects(() => undoMovement({ businessId: B, movementId: mv.id, actorUserId: actor, canManage: true }), InventoryError);
+assert.ok((await recentUsage(B, 10)).find((m) => m.id === mv.id)!.takenBack);
+ok("your own entry can be taken back once; someone else's can't (unless they manage inventory)");
+const doneAppt = (await withTenant(B, (tx) => tx.select({ id: schema.appointments.id }).from(schema.appointments).innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id)).where(sql`${schema.appointments.kind} = 'visit' and ${schema.appointmentItems.status} = 'completed' and ${schema.appointmentItems.startAt} > now() - interval '60 days'`).limit(1)))[0]!;
+const sumCosts = (r: Awaited<ReturnType<typeof supplyCosts>>) => r.services.reduce((a, x) => a + x.costCents, 0);
+const sc0 = await supplyCosts(B, 90);
+await logUsage({ businessId: B, appointmentId: doneAppt.id, items: [{ productId: pinTarget.id, qty: 4 }], note: null, actorUserId: actor });
+const sc1 = await supplyCosts(B, 90);
+const added = sumCosts(sc1) - sumCosts(sc0);
+assert.ok(Math.abs(added - 4 * pinTarget.costCents) <= 3, `expected about ${4 * pinTarget.costCents}, got ${added}`);
+assert.ok(sc1.visitsWithSupplies >= sc0.visitsWithSupplies);
+const rows = sc1.services.filter((x) => x.logged);
+assert.ok(rows.length > 0 && rows.every((x) => x.avgPerLoggedCents === Math.round(x.costCents / x.logged)));
+ok("supplies logged on a visit are attributed to its services at what they cost, with averages per logged visit");
+await undoUsage({ businessId: B, appointmentId: doneAppt.id, productId: pinTarget.id, qty: 4, actorUserId: actor });
+const onVisit = (await recentUsage(B, 30)).find((m) => m.appointmentId === doneAppt.id && m.delta < 0)!;
+await assert.rejects(() => undoMovement({ businessId: B, movementId: onVisit.id, actorUserId: actor, canManage: true }), InventoryError);
+ok("something logged on a visit is taken back on that visit, not from the general list");
 
 console.log("Per-location alerts");
 const closeSaleAt = async (loc: string, lines: (typeof schema.saleLines.$inferInsert)[]) =>

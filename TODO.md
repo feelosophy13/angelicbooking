@@ -266,6 +266,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `inventory.log` (Provider, Front desk, Manager by default). Logging may take a count negative (never stop work mid-service). The per-service "Products used" list (automatic or suggested amounts) was removed: nothing is
       taken off by itself when a service is rung up, and `service_products` is dropped. A product can be both sold and used; one stock, and the report separates them. Every movement keeps its unit cost, and Inventory → Report
       splits cost of goods sold from supplies used. Not built: fractional units, an "open box" area.
+- [x] 2026-10-14: Log usage, faster (migration 0071): the search matches name, category, barcode and SKU, and Enter logs a scanned code (or a single match) then clears the box and keeps the focus; a category dropdown; star
+      products to pin them per person (above "recent"); "Take back" on your own entries in the team list (once; anyone's if you manage inventory; entries logged on a visit are taken back on that visit); bigger tap
+      targets, a sticky search bar and Units + Log side by side on a phone. Inventory → Report gains "Supplies by service" (cost per logged visit, share of the price, how many visits were logged) and
+      "Supplies by stylist" (average per logged visit against the team, shown as too few under 3 visits); a visit's supplies are shared evenly across its services. Demo data has supplies logged on visits.
+      Not built: profit per service in the main sales reports, in-transit transfers, supplier pack sizes and lead times, expiry and lots.
 - [x] 2026-10-14: Service form timing in plain words: Hands-on time, Waiting (client waits, you're free), Then finish, Clean-up, with a live line saying what the numbers do to the calendar and a warning when a wait has no finish
       time (the booking rules only free the stylist during a wait when a finishing block follows it).
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos

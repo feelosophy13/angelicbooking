@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { requireAction } from "@/lib/tenant";
-import { inventoryReport } from "@/server/inventory";
+import { inventoryReport, supplyCosts } from "@/server/inventory";
 import { MOVEMENT_REASONS, productLabel } from "@/lib/inventory";
 import { dateLong } from "@/lib/format";
 import { formatMoney } from "@/lib/utils";
@@ -16,7 +16,7 @@ export default async function InventoryReportPage({ params, searchParams }: { pa
   const sp = await searchParams;
   const { business } = await requireAction(slug, "inventory.manage");
   const days = WINDOWS.includes(Number(sp.days)) ? Number(sp.days) : 90;
-  const r = await inventoryReport(business.id, days);
+  const [r, sc] = await Promise.all([inventoryReport(business.id, days), supplyCosts(business.id, days)]);
   const money = (c: number) => formatMoney(c, business.currency);
   const maxValue = Math.max(1, ...r.history.map((h) => h.valueCents));
   return (
@@ -42,6 +42,48 @@ export default async function InventoryReportPage({ params, searchParams }: { pa
                   <td className="px-4 py-1.5 text-right tabular-nums">{c.usedUnits ? money(c.usedCostCents) : "—"}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        )}
+      </Section>
+
+      <Section title="Supplies by service" note={sc.visits ? `Supplies were logged on ${sc.visitsWithSupplies} of ${sc.visits} visits in the last ${days} days. Averages use only visits where supplies were logged, so log them on the visit to make this complete.${sc.untiedCents ? ` ${money(sc.untiedCents)} more was logged without a visit.` : ""}` : undefined}>
+        {sc.services.filter((x) => x.logged).length === 0 ? <None>No supplies have been logged on a visit in this period. Log them on the appointment (the "Supplies used" card) to see what each service costs.</None> : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-1.5">Service</th><th className="px-2 py-1.5 text-right">Visits logged</th><th className="px-2 py-1.5 text-right">Supplies</th><th className="px-2 py-1.5 text-right">Per visit</th><th className="px-2 py-1.5 text-right">Price</th><th className="px-4 py-1.5 text-right">% of price</th></tr></thead>
+            <tbody className="divide-y divide-stone-100">
+              {sc.services.filter((x) => x.logged).slice(0, 20).map((x) => (
+                <tr key={x.id}>
+                  <td className="px-4 py-1.5 font-medium">{x.name}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-stone-600">{x.logged}{x.completed ? <span className="text-stone-400"> / {x.completed}</span> : null}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{money(x.costCents)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{money(x.avgPerLoggedCents)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-stone-600">{x.avgPriceCents ? money(x.avgPriceCents) : "—"}</td>
+                  <td className="px-4 py-1.5 text-right tabular-nums">{x.avgPriceCents ? `${Math.round((x.avgPerLoggedCents / x.avgPriceCents) * 100)}%` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Section>
+
+      <Section title="Supplies by stylist" note="Average supplies on a visit where they logged any, against the team's average. A stylist well above it may be using more, or logging more.">
+        {sc.staff.filter((x) => x.logged).length === 0 ? <None>Nothing logged against visits yet.</None> : (
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-1.5">Stylist</th><th className="px-2 py-1.5 text-right">Visits logged</th><th className="px-2 py-1.5 text-right">Supplies</th><th className="px-2 py-1.5 text-right">Per visit</th><th className="px-4 py-1.5 text-right">vs team</th></tr></thead>
+            <tbody className="divide-y divide-stone-100">
+              {sc.staff.filter((x) => x.logged).map((x) => {
+                const ratio = sc.teamAvgPerLoggedVisitCents ? x.avgPerLoggedCents / sc.teamAvgPerLoggedVisitCents : 1;
+                return (
+                  <tr key={x.id}>
+                    <td className="px-4 py-1.5 font-medium">{x.name}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-stone-600">{x.logged}{x.completed ? <span className="text-stone-400"> / {x.completed}</span> : null}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{money(x.costCents)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{money(x.avgPerLoggedCents)}</td>
+                    <td className={`px-4 py-1.5 text-right tabular-nums ${ratio >= 1.5 ? "font-medium text-amber-700" : "text-stone-600"}`}>{x.logged < 3 ? "too few" : `${ratio >= 1 ? "+" : "−"}${Math.abs(Math.round((ratio - 1) * 100))}%`}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}

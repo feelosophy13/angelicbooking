@@ -4,11 +4,12 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
+import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { productLabel } from "@/lib/inventory";
 import { setFlash } from "@/lib/flash";
-import { applyCount, logUsage, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
+import { applyCount, logUsage, togglePin, undoMovement, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
 
 const refresh = (slug: string) => {
   revalidatePath(`/app/${slug}/inventory`, "layout");
@@ -208,4 +209,26 @@ export async function logUsageQuick(formData: FormData) {
     else throw e;
   }
   refresh(d.data.slug);
+}
+
+/** Keep a product at the top of Log usage for this person (press again to unpin). */
+export async function togglePinAction(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const ctx = await requireAction(slug, "inventory.log");
+  await togglePin({ businessId: ctx.business.id, userId: ctx.user.id, productId: String(formData.get("productId")) });
+  revalidatePath(`/app/${slug}/inventory/use`);
+}
+
+/** Take back something logged by mistake (your own entry, or anyone's if you manage inventory). */
+export async function undoLoggedAction(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const ctx = await requireAction(slug, "inventory.log");
+  try {
+    await undoMovement({ businessId: ctx.business.id, movementId: String(formData.get("movementId")), actorUserId: ctx.user.id, canManage: can(ctx.permissions, "inventory.manage") });
+    await setFlash("Taken back", "success");
+  } catch (e) {
+    if (e instanceof InventoryError) await setFlash(e.message, "error");
+    else throw e;
+  }
+  refresh(slug);
 }

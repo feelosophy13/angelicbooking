@@ -9,7 +9,7 @@
  *    By hand (a write-off, a transfer) stock can never go below zero.
  *  - A refund gives money back; it does not put goods back on the shelf. Returns are recorded on purpose (`returnToShelf`).
  */
-import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
 import { instantToISODate, isAction } from "@angelic/core";
 import { queueOneOff } from "@/lib/notify";
@@ -40,7 +40,7 @@ export async function listLocations(businessId: string) {
 /** Where a sale's stock comes from: the location it was rung up at. */
 export const saleStockLocation = async (tx: TenantDb, sale: { locationId: string | null }) => sale.locationId ?? (await mainLocationId(tx));
 
-type Move = { businessId: string; productId: string; locationId: string; delta: number; reason: string; note?: string | null; saleId?: string | null; appointmentId?: string | null; purchaseOrderId?: string | null; actorUserId?: string | null };
+type Move = { businessId: string; productId: string; locationId: string; delta: number; reason: string; note?: string | null; saleId?: string | null; appointmentId?: string | null; purchaseOrderId?: string | null; reversesMovementId?: string | null; actorUserId?: string | null };
 
 /** The only way stock changes. Returns false when a sale had already taken this product off (closing twice is harmless). */
 async function applyMove(tx: TenantDb, m: Move): Promise<boolean> {
@@ -48,7 +48,7 @@ async function applyMove(tx: TenantDb, m: Move): Promise<boolean> {
   const [cost] = await tx.select({ c: schema.products.costCents }).from(schema.products).where(eq(schema.products.id, m.productId));
   const inserted = await tx
     .insert(schema.stockMovements)
-    .values({ businessId: m.businessId, productId: m.productId, locationId: m.locationId, delta: m.delta, reason: m.reason, note: m.note ?? null, saleId: m.saleId ?? null, appointmentId: m.appointmentId ?? null, purchaseOrderId: m.purchaseOrderId ?? null, unitCostCents: cost?.c ?? 0, createdByUserId: m.actorUserId ?? null })
+    .values({ businessId: m.businessId, productId: m.productId, locationId: m.locationId, delta: m.delta, reason: m.reason, note: m.note ?? null, saleId: m.saleId ?? null, appointmentId: m.appointmentId ?? null, purchaseOrderId: m.purchaseOrderId ?? null, reversesMovementId: m.reversesMovementId ?? null, unitCostCents: cost?.c ?? 0, createdByUserId: m.actorUserId ?? null })
     .onConflictDoNothing()
     .returning({ id: schema.stockMovements.id });
   if (!inserted.length) return false;
@@ -596,7 +596,7 @@ export async function visitSupplies(businessId: string, appointmentId: string) {
 export async function loggableProducts(businessId: string) {
   return withTenant(businessId, (tx) =>
     tx
-      .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, kind: schema.products.kind, category: schema.productCategories.name, onHand: schema.products.stockQty, tracked: schema.products.trackStock })
+      .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, kind: schema.products.kind, category: schema.productCategories.name, onHand: schema.products.stockQty, tracked: schema.products.trackStock, barcode: schema.products.barcode, sku: schema.products.sku })
       .from(schema.products)
       .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
       .where(eq(schema.products.active, true))
@@ -622,7 +622,7 @@ export async function recentlyLoggedBy(businessId: string, userId: string, limit
 export async function recentUsage(businessId: string, limit = 25) {
   return withTenant(businessId, async (tx) => {
     const rows = await tx
-      .select({ m: schema.stockMovements, name: schema.products.name, variantLabel: schema.products.variantLabel, location: schema.locations.name, who: schema.user.name })
+      .select({ m: schema.stockMovements, name: schema.products.name, variantLabel: schema.products.variantLabel, location: schema.locations.name, who: schema.user.name, reversed: sql<boolean>`exists (select 1 from stock_movements r where r.reverses_movement_id = ${schema.stockMovements.id})` })
       .from(schema.stockMovements)
       .innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId))
       .leftJoin(schema.locations, eq(schema.locations.id, schema.stockMovements.locationId))
@@ -630,7 +630,33 @@ export async function recentUsage(businessId: string, limit = 25) {
       .where(and(eq(schema.stockMovements.reason, "used"), sql`${schema.stockMovements.createdByUserId} is not null`))
       .orderBy(desc(schema.stockMovements.createdAt))
       .limit(limit);
-    return rows.map((r) => ({ ...r.m, label: productLabel(r), location: r.location, who: r.who }));
+    return rows.map((r) => ({ ...r.m, label: productLabel(r), location: r.location, who: r.who, takenBack: !!r.reversed }));
+  });
+}
+
+/** Take back a use logged by mistake, from the list on the Log usage page: your own, or anyone's if you manage inventory. Once only. */
+export async function undoMovement(input: { businessId: string; movementId: string; actorUserId: string; canManage: boolean }) {
+  await withTenant(input.businessId, async (tx) => {
+    const m = await tx.query.stockMovements.findFirst({ where: eq(schema.stockMovements.id, input.movementId) });
+    if (!m || m.reason !== "used" || m.delta >= 0 || m.reversesMovementId) throw new InventoryError("That entry can't be taken back.");
+    if (m.appointmentId) throw new InventoryError("Take that back on the visit it was logged for.");
+    if (m.createdByUserId !== input.actorUserId && !input.canManage) throw new InventoryError("You can only take back your own entries.");
+    const done = await applyMove(tx, { businessId: input.businessId, productId: m.productId, locationId: m.locationId ?? (await mainLocationId(tx)), delta: -m.delta, reason: "used", appointmentId: m.appointmentId, reversesMovementId: m.id, note: "Logged by mistake, taken back", actorUserId: input.actorUserId });
+    if (!done) throw new InventoryError("That was already taken back.");
+  });
+}
+
+/** The products a person pinned to the top of Log usage. */
+export async function pinnedProductIds(businessId: string, userId: string): Promise<string[]> {
+  return withTenant(businessId, async (tx) => (await tx.select({ id: schema.inventoryPins.productId }).from(schema.inventoryPins).where(eq(schema.inventoryPins.userId, userId)).orderBy(asc(schema.inventoryPins.createdAt))).map((r) => r.id));
+}
+
+export async function togglePin(input: { businessId: string; userId: string; productId: string }): Promise<boolean> {
+  return withTenant(input.businessId, async (tx) => {
+    const gone = await tx.delete(schema.inventoryPins).where(and(eq(schema.inventoryPins.userId, input.userId), eq(schema.inventoryPins.productId, input.productId))).returning({ id: schema.inventoryPins.id });
+    if (gone.length) return false;
+    await tx.insert(schema.inventoryPins).values({ businessId: input.businessId, userId: input.userId, productId: input.productId }).onConflictDoNothing();
+    return true;
   });
 }
 
@@ -722,6 +748,78 @@ export async function inventoryReport(businessId: string, days = 90) {
       costSplit,
       soldCostCents: costSplit.reduce((a, r) => a + r.soldCostCents, 0),
       usedCostCents: costSplit.reduce((a, r) => a + r.usedCostCents, 0),
+    };
+  });
+}
+
+export type SupplyCostRow = { id: string; name: string; completed: number; logged: number; costCents: number; avgPerLoggedCents: number; avgPriceCents: number };
+
+/**
+ * What supplies cost, by service and by stylist, from what staff logged against visits (cost when each unit left the shelf).
+ * A visit's supplies are shared evenly across its services. Only visits where someone logged supplies count toward the average, so
+ * the figure is "when supplies are logged", with how many of the completed visits that covers shown beside it.
+ */
+export async function supplyCosts(businessId: string, days = 90) {
+  return withTenant(businessId, async (tx) => {
+    const since = new Date(Date.now() - days * 86_400_000);
+    const items = await tx
+      .select({ appointmentId: schema.appointmentItems.appointmentId, serviceId: schema.appointmentItems.serviceId, serviceName: schema.appointmentItems.serviceName, staffId: schema.appointmentItems.staffId, staffName: schema.staff.displayName, priceCents: schema.appointmentItems.priceCents, status: schema.appointmentItems.status })
+      .from(schema.appointmentItems)
+      .innerJoin(schema.staff, eq(schema.staff.id, schema.appointmentItems.staffId))
+      .innerJoin(schema.appointments, eq(schema.appointments.id, schema.appointmentItems.appointmentId))
+      .where(and(gte(schema.appointmentItems.startAt, since), sql`${schema.appointmentItems.startAt} <= now()`, ne(schema.appointmentItems.status, "cancelled"), ne(schema.appointmentItems.status, "no_show"), eq(schema.appointments.kind, "visit")));
+    const ids = [...new Set(items.map((i) => i.appointmentId))];
+    const costRows = ids.length
+      ? await tx
+          .select({ appointmentId: schema.stockMovements.appointmentId, cost: sql<number>`sum(-${schema.stockMovements.delta} * coalesce(${schema.stockMovements.unitCostCents}, ${schema.products.costCents}))` })
+          .from(schema.stockMovements)
+          .innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId))
+          .where(and(eq(schema.stockMovements.reason, "used"), inArray(schema.stockMovements.appointmentId, ids)))
+          .groupBy(schema.stockMovements.appointmentId)
+      : [];
+    const cost = new Map(costRows.filter((r) => Number(r.cost) > 0).map((r) => [r.appointmentId!, Number(r.cost)]));
+    const [untied] = await tx
+      .select({ cost: sql<number>`coalesce(sum(-${schema.stockMovements.delta} * coalesce(${schema.stockMovements.unitCostCents}, ${schema.products.costCents})), 0)` })
+      .from(schema.stockMovements)
+      .innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId))
+      .where(and(eq(schema.stockMovements.reason, "used"), sql`${schema.stockMovements.appointmentId} is null`, gte(schema.stockMovements.createdAt, since)));
+
+    const perAppt = new Map<string, typeof items>();
+    for (const i of items) perAppt.set(i.appointmentId, [...(perAppt.get(i.appointmentId) ?? []), i]);
+    const make = (key: (i: (typeof items)[number]) => { id: string; name: string } | null) => {
+      const rows = new Map<string, SupplyCostRow & { priceSum: number }>();
+      for (const [apptId, its] of perAppt) {
+        const share = (cost.get(apptId) ?? 0) / its.length;
+        for (const i of its) {
+          const k = key(i);
+          if (!k) continue;
+          const r = rows.get(k.id) ?? { id: k.id, name: k.name, completed: 0, logged: 0, costCents: 0, avgPerLoggedCents: 0, avgPriceCents: 0, priceSum: 0 };
+          if (i.status === "completed") {
+            r.completed++;
+            r.priceSum += i.priceCents;
+          }
+          if (share > 0) {
+            r.logged++;
+            r.costCents += share;
+          }
+          rows.set(k.id, r);
+        }
+      }
+      return [...rows.values()].map((r) => ({ id: r.id, name: r.name, completed: r.completed, logged: r.logged, costCents: Math.round(r.costCents), avgPerLoggedCents: r.logged ? Math.round(r.costCents / r.logged) : 0, avgPriceCents: r.completed ? Math.round(r.priceSum / r.completed) : 0 })).filter((r) => r.completed || r.logged);
+    };
+    const services = make((i) => (i.serviceId ? { id: i.serviceId, name: i.serviceName } : null)).sort((a, b) => b.costCents - a.costCents || b.completed - a.completed);
+    const staffRows = make((i) => ({ id: i.staffId, name: i.staffName })).sort((a, b) => b.costCents - a.costCents || b.completed - a.completed);
+    const loggedAppts = [...perAppt.keys()].filter((a) => cost.has(a)).length;
+    const totalCost = [...cost.values()].reduce((a, c) => a + c, 0);
+    return {
+      days,
+      services,
+      staff: staffRows,
+      /** Average supplies cost of a visit that has any logged: the figure each stylist is compared with. */
+      teamAvgPerLoggedVisitCents: loggedAppts ? Math.round(totalCost / loggedAppts) : 0,
+      visits: perAppt.size,
+      visitsWithSupplies: loggedAppts,
+      untiedCents: Math.round(Number(untied?.cost ?? 0)),
     };
   });
 }

@@ -1327,6 +1327,7 @@ export const TENANT_TABLES = [
   "stock_movements",
   "product_stock",
   "suppliers",
+  "inventory_pins",
   "purchase_orders",
   "purchase_order_lines",
 ] as const;

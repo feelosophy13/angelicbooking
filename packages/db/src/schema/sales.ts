@@ -103,6 +103,21 @@ export const productStock = pgTable(
   (t) => [uniqueIndex("product_stock_uq").on(t.productId, t.locationId), index("product_stock_business_idx").on(t.businessId, t.locationId)],
 );
 
+/** The products a person keeps at the top of Log usage. Per person, so a shared tablet shows each stylist their own. */
+export const inventoryPins = pgTable(
+  "inventory_pins",
+  {
+    id: id(),
+    businessId: businessId(),
+    userId: text("user_id").notNull(),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("inventory_pins_uq").on(t.userId, t.productId)],
+);
+
 export const purchaseOrderStatus = pgEnum("purchase_order_status", ["draft", "ordered", "partial", "received", "cancelled"]);
 
 /** An order to a supplier. Receiving it (all or part at a time) adds the stock and updates the unit cost. */
@@ -162,6 +177,8 @@ export const stockMovements = pgTable(
     // Supplies a staff member logged against a visit.
     appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
     purchaseOrderId: text("purchase_order_id"),
+    // A movement that undoes another one (a logged use taken back); an original can be taken back only once.
+    reversesMovementId: text("reverses_movement_id"),
     // What one unit cost when it moved, so cost of goods sold and supplies used don't shift when prices later change.
     unitCostCents: integer("unit_cost_cents"),
     note: text("note"),
@@ -173,6 +190,7 @@ export const stockMovements = pgTable(
     index("stock_movements_business_created_idx").on(t.businessId, t.createdAt),
     // A sale takes stock once per product (and back-bar use once), however often it is closed again.
     uniqueIndex("stock_movements_sale_product_uq").on(t.saleId, t.productId, t.reason).where(sql`${t.reason} in ('sale', 'used')`),
+    uniqueIndex("stock_movements_reverses_uq").on(t.reversesMovementId).where(sql`${t.reversesMovementId} is not null`),
   ],
 );
 
