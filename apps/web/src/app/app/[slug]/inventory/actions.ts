@@ -9,7 +9,7 @@ import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { productLabel } from "@/lib/inventory";
 import { setFlash } from "@/lib/flash";
-import { applyCount, logUsage, togglePin, undoMovement, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
+import { applyCount, attachBarcode, trackedProductIds, logUsage, togglePin, undoMovement, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
 
 const refresh = (slug: string) => {
   revalidatePath(`/app/${slug}/inventory`, "layout");
@@ -231,4 +231,69 @@ export async function undoLoggedAction(formData: FormData) {
     else throw e;
   }
   refresh(slug);
+}
+
+// ---- Scanning ----
+
+export type ScanResult = { ok: true; message: string } | { ok: false; error: string };
+const asResult = async (fn: () => Promise<string>): Promise<ScanResult> => {
+  try {
+    return { ok: true, message: await fn() };
+  } catch (e) {
+    if (e instanceof InventoryError) return { ok: false, error: e.message };
+    throw e;
+  }
+};
+const scanLines = z.array(z.object({ productId: z.string().min(1), qty: z.number().int().min(1).max(100000) })).min(1, "Scan something first.").max(500);
+
+/** A delivery with no order, from a scanning session: each product with how many were scanned. */
+export async function receiveScannedAction(input: { slug: string; locationId: string | null; note: string; lines: { productId: string; qty: number }[] }): Promise<ScanResult> {
+  const ctx = await requireAction(input.slug, "inventory.manage");
+  const lines = scanLines.safeParse(input.lines);
+  if (!lines.success) return { ok: false, error: lines.error.issues[0]?.message ?? "Check the quantities." };
+  return asResult(async () => {
+    let units = 0;
+    for (const l of lines.data) {
+      await recordMovement({ businessId: ctx.business.id, productId: l.productId, locationId: input.locationId || null, entered: l.qty, reason: "received", note: input.note.trim().slice(0, 200) || "Scanned delivery", actorUserId: ctx.user.id });
+      units += l.qty;
+    }
+    refresh(input.slug);
+    return `Received ${units} unit${units === 1 ? "" : "s"} of ${lines.data.length} product${lines.data.length === 1 ? "" : "s"}`;
+  });
+}
+
+/** A delivery against an order: scanned quantities per order line. */
+export async function receiveOrderScannedAction(input: { slug: string; orderId: string; reference: string; lines: { lineId: string; qty: number }[] }): Promise<ScanResult> {
+  const ctx = await requireAction(input.slug, "inventory.manage");
+  const lines = z.array(z.object({ lineId: z.string().min(1), qty: z.number().int().min(1).max(100000) })).min(1, "Scan something first.").safeParse(input.lines);
+  if (!lines.success) return { ok: false, error: lines.error.issues[0]?.message ?? "Check the quantities." };
+  return asResult(async () => {
+    const r = await receiveOrder({ businessId: ctx.business.id, id: input.orderId, lines: lines.data, reference: input.reference.trim().slice(0, 80) || null, actorUserId: ctx.user.id });
+    refresh(input.slug);
+    return r.done ? `Received ${r.units} unit${r.units === 1 ? "" : "s"}. The order is complete.` : `Received ${r.units} unit${r.units === 1 ? "" : "s"}. The rest is still on order.`;
+  });
+}
+
+/** A count from scanning each item on the shelf. With `zeroRest`, tracked products that weren't scanned are counted as none. */
+export async function countScannedAction(input: { slug: string; locationId: string; note: string; zeroRest: boolean; counts: { productId: string; counted: number }[] }): Promise<ScanResult> {
+  const ctx = await requireAction(input.slug, "inventory.manage");
+  const counts = z.array(z.object({ productId: z.string().min(1), counted: z.number().int().min(0).max(100000) })).max(1000).safeParse(input.counts);
+  if (!counts.success) return { ok: false, error: "Check the counts." };
+  if (!counts.data.length && !input.zeroRest) return { ok: false, error: "Scan something first." };
+  return asResult(async () => {
+    const list = [...counts.data];
+    if (input.zeroRest) {
+      const seen = new Set(list.map((c) => c.productId));
+      for (const id of await trackedProductIds(ctx.business.id)) if (!seen.has(id)) list.push({ productId: id, counted: 0 });
+    }
+    const r = await applyCount({ businessId: ctx.business.id, locationId: input.locationId, counts: list, note: input.note.trim().slice(0, 120) || "Scanned count", actorUserId: ctx.user.id });
+    refresh(input.slug);
+    return r.changed ? `${r.counted} counted, ${r.changed} corrected (${r.unitsOff} unit${r.unitsOff === 1 ? "" : "s"} off)` : `${r.counted} counted: all correct`;
+  });
+}
+
+/** Save a scanned barcode on the product it belongs to. */
+export async function attachBarcodeAction(input: { slug: string; productId: string; code: string; replace: boolean }): Promise<ScanResult> {
+  const ctx = await requireAction(input.slug, "inventory.manage");
+  return asResult(async () => `Saved on ${await attachBarcode({ businessId: ctx.business.id, productId: input.productId, code: input.code, replace: input.replace, actorUserId: ctx.user.id })}`);
 }

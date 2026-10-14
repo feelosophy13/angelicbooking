@@ -7,7 +7,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { readProductRows, PRODUCT_CSV_HEADERS } from "../src/lib/inventory";
 import {
   applyCount, cancelOrder, createPurchaseOrder, decrementStockForSale, findProductByCode, getPurchaseOrder, listLocations, lowStock, markOrdered, onlineAvailability, receiveOrder,
-  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy, undoMovement, togglePin, pinnedProductIds, supplyCosts, recentUsage,
+  recordMovement, reorderSuggestions, returnToShelf, saleStockState, stockByLocation, stockOverview, transferStock, InventoryError, inventoryReport, importProducts, exportProducts, lowStockCount, logUsage, undoUsage, visitSupplies, recentlyLoggedBy, undoMovement, togglePin, pinnedProductIds, supplyCosts, recentUsage, attachBarcode, scannableProducts,
 } from "../src/server/inventory";
 
 const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, "demo-twosites") });
@@ -204,6 +204,21 @@ await undoUsage({ businessId: B, appointmentId: doneAppt.id, productId: pinTarge
 const onVisit = (await recentUsage(B, 30)).find((m) => m.appointmentId === doneAppt.id && m.delta < 0)!;
 await assert.rejects(() => undoMovement({ businessId: B, movementId: onVisit.id, actorUserId: actor, canManage: true }), InventoryError);
 ok("something logged on a visit is taken back on that visit, not from the general list");
+
+console.log("Scanning: teaching a barcode");
+const prods = await scannableProducts(B);
+const spare = await product("Silk Pillowcase");
+const other = await product("Silk Sleep Mask");
+await withTenant(B, (tx) => tx.update(schema.products).set({ barcode: null }).where(eq(schema.products.id, spare.id)));
+assert.equal(prods.length > 10, true);
+await attachBarcode({ businessId: B, productId: spare.id, code: "  555000999111\r\n", replace: false, actorUserId: actor });
+assert.equal((await fresh(spare.id)).barcode, "555000999111");
+await assert.rejects(() => attachBarcode({ businessId: B, productId: other.id, code: "555000999111", replace: false, actorUserId: actor }), InventoryError);
+await assert.rejects(() => attachBarcode({ businessId: B, productId: other.id, code: String(other.barcode).replace(/^/, "0"), replace: false, actorUserId: actor }).then(() => attachBarcode({ businessId: B, productId: spare.id, code: String(other.barcode), replace: false, actorUserId: actor })), InventoryError);
+await assert.rejects(() => attachBarcode({ businessId: B, productId: spare.id, code: "555000999222", replace: false, actorUserId: actor }), InventoryError);
+await attachBarcode({ businessId: B, productId: spare.id, code: "555000999222", replace: true, actorUserId: actor });
+assert.equal((await fresh(spare.id)).barcode, "555000999222");
+ok("a scanned barcode is saved on the product, never one already used by another, and only replaces an old one on purpose");
 
 console.log("Per-location alerts");
 const closeSaleAt = async (loc: string, lines: (typeof schema.saleLines.$inferInsert)[]) =>

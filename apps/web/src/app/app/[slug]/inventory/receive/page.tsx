@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
-import { listLocations, stockOverview } from "@/server/inventory";
+import { listLocations, scannableProducts, stockOverview } from "@/server/inventory";
+import { Disclosure } from "@/components/disclosure";
+import { ScanSession } from "../scan-session";
 import { productLabel } from "@/lib/inventory";
 import { BackLink, Card, Input, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
@@ -14,13 +16,18 @@ export default async function ReceivePage({ params, searchParams }: { params: Pr
   const { slug } = await params;
   const sp = await searchParams;
   const { business } = await requireAction(slug, "inventory.manage");
-  const [{ items }, locations] = await Promise.all([stockOverview(business.id), listLocations(business.id)]);
+  const [{ items }, locations, scannable] = await Promise.all([stockOverview(business.id), listLocations(business.id), scannableProducts(business.id)]);
+  const short = (n: string) => n.replace(`${business.name} - `, "");
   const suppliers = [...new Map(items.filter((i) => i.supplierId).map((i) => [i.supplierId!, i.supplierName!])).entries()];
   const needle = (sp.q ?? "").toLowerCase();
   const shown = items.filter((i) => (!sp.supplier || i.supplierId === sp.supplier) && (!needle || [productLabel(i), i.sku, i.barcode].some((v) => v?.toLowerCase().includes(needle))));
   return (
     <div className="space-y-3">
       <BackLink href={`/app/${slug}/inventory`}>Stock</BackLink>
+      <p className="text-sm text-stone-600">Point the scanner at each item as it comes out of the box. Scan the same product again for each unit. Nothing is added until you press the button at the bottom.</p>
+      <ScanSession slug={slug} mode="receive" products={scannable} locations={locations.map((l) => ({ id: l.id, name: short(l.name) }))} defaultLocationId={locations.find((l) => l.isDefault)?.id ?? locations[0]!.id} />
+      <Disclosure title="Type quantities instead" hint="no scanner, or a long delivery of a few products" className="mt-2">
+      <div className="space-y-3">
       <AutoSubmitForm className="flex flex-wrap items-center gap-2">
         <Input name="q" defaultValue={sp.q ?? ""} placeholder="Find a product, or scan" aria-label="Find a product" className="w-64" autoComplete="off" />
         {suppliers.length ? (
@@ -52,6 +59,8 @@ export default async function ReceivePage({ params, searchParams }: { params: Pr
           <SubmitButton pendingText="Saving…">Add to stock</SubmitButton>
         </ActionForm>
       </Card>
+      </div>
+      </Disclosure>
     </div>
   );
 }

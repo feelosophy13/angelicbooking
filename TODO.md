@@ -271,6 +271,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       targets, a sticky search bar and Units + Log side by side on a phone. Inventory → Report gains "Supplies by service" (cost per logged visit, share of the price, how many visits were logged) and
       "Supplies by stylist" (average per logged visit against the team, shown as too few under 3 visits); a visit's supplies are shared evenly across its services. Demo data has supplies logged on visits.
       Not built: profit per service in the main sales reports, in-transit transfers, supplier pack sizes and lead times, expiry and lots.
+- [x] 2026-10-14: Scan to receive and scan to count. **Receive stock** is now a scan screen (the typed-quantities form is under "Type quantities instead"): point the scanner, each scan adds 1 (or type the number), a beep says it
+      registered, the box keeps the focus, nothing is saved until "Add to stock". An unknown barcode asks which product it is and remembers it (a product keeps one barcode; replacing it is deliberate). Orders have
+      "Scan the delivery": each line shows how many came and how many are still to come, extras and items not on the order are flagged, and what came earlier is counted. **Count → Scan to count**: each scan is one
+      unit, with the book's number and the difference shown as you go; products you didn't scan are left alone unless "anything I didn't scan is none" is ticked. UPC-A and EAN-13 forms of a code match each other.
+      Works with USB and Bluetooth scanners that type like a keyboard; no camera scanning. Not built: scanning on the Log usage page's own beep, camera scanning, a second barcode per product (pack sizes).
 - [x] 2026-10-14: Service form timing in plain words: Hands-on time, Waiting (client waits, you're free), Then finish, Clean-up, with a live line saying what the numbers do to the calendar and a warning when a wait has no finish
       time (the booking rules only free the stylist during a wait when a finishing block follows it).
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos

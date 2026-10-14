@@ -6,6 +6,8 @@ import { Card, Empty, Input, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { submitCount } from "../actions";
+import { LinkButton } from "@/components/ui";
+import { ScanBarcode } from "lucide-react";
 
 export const metadata: Metadata = { title: "Count · Inventory" };
 
@@ -26,6 +28,7 @@ export default async function CountPage({ params, searchParams }: { params: Prom
   if (!items.length) return <Empty title="Nothing to count yet" body="Track stock on a product, or import a spreadsheet, first." action={{ href: `/app/${slug}/products`, label: "Products" }} />;
   return (
     <div className="space-y-3">
+      <div className="flex justify-end"><LinkButton href={`/app/${slug}/inventory/count/scan`} variant="primary" size="sm"><ScanBarcode className="h-4 w-4" /> Scan to count</LinkButton></div>
       <p className="text-sm text-stone-600">Count the shelf and type what is really there. Leave a product blank to skip it. Anything that differs is corrected and kept in the history.</p>
       <AutoSubmitForm className="flex flex-wrap items-center gap-2">
         {multi ? (

@@ -17,6 +17,7 @@ import { lowStockEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
 import { isManualReason, locationAlerts, manualDelta, productLabel, SHRINKAGE_REASONS, stockStatus, suggestedOrderQty, daysOfStock, worstStatus, type LocationAlert, type ManualReason, type ParsedProductRow, type StockStatus } from "@/lib/inventory";
 import { ensureCategory } from "./categories";
+import { cleanCode, matchProduct } from "@/lib/scan";
 
 export class InventoryError extends Error {}
 
@@ -616,6 +617,50 @@ export async function recentlyLoggedBy(businessId: string, userId: string, limit
       .limit(limit);
     return rows.map((r) => r.productId);
   });
+}
+
+/** Everything a scanning screen needs to recognise a code: every active product with its barcode and SKU. */
+export async function scannableProducts(businessId: string) {
+  return withTenant(businessId, async (tx) => {
+    const rows = await tx
+      .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, sku: schema.products.sku, category: schema.productCategories.name, onHand: schema.products.stockQty, tracked: schema.products.trackStock })
+      .from(schema.products)
+      .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
+      .where(eq(schema.products.active, true))
+      .orderBy(asc(schema.products.name), asc(schema.products.variantLabel));
+    return rows.map((r) => ({ id: r.id, label: productLabel(r), barcode: r.barcode, sku: r.sku, category: r.category, onHand: r.onHand, tracked: r.tracked }));
+  });
+}
+
+/** Teach the app a barcode the first time it is scanned: save it on the product (never on one that is already using it). */
+export async function attachBarcode(input: { businessId: string; productId: string; code: string; replace: boolean; actorUserId: string }) {
+  const code = input.code.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  if (!code || code.length > 60) throw new InventoryError("That barcode isn't usable.");
+  return withTenant(input.businessId, async (tx) => {
+    const all = await tx.select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, sku: schema.products.sku }).from(schema.products);
+    const target = all.find((p) => p.id === input.productId);
+    if (!target) throw new InventoryError("Product not found.");
+    const owner = matchProduct(all.filter((p) => p.id !== target.id).map((p) => ({ id: p.id, label: productLabel(p), barcode: p.barcode, sku: p.sku })), code);
+    if (owner) throw new InventoryError(`That code already belongs to ${owner.label}.`);
+    if (target.barcode && cleanCode(target.barcode) !== cleanCode(code) && !input.replace) throw new InventoryError(`${productLabel(target)} already has the barcode ${target.barcode}.`);
+    await tx.update(schema.products).set({ barcode: code }).where(eq(schema.products.id, target.id));
+    await audit(tx, input.businessId, input.actorUserId, "inventory.barcode", target.id, { code });
+    return productLabel(target);
+  });
+}
+
+/** What the book says is at each location: location id -> product id -> count (for showing the difference while counting). */
+export async function bookByLocation(businessId: string): Promise<Record<string, Record<string, number>>> {
+  return withTenant(businessId, async (tx) => {
+    const out: Record<string, Record<string, number>> = {};
+    for (const r of await tx.select().from(schema.productStock)) (out[r.locationId] ??= {})[r.productId] = r.qty;
+    return out;
+  });
+}
+
+/** Ids of the tracked, active products (what a full count covers). */
+export async function trackedProductIds(businessId: string): Promise<string[]> {
+  return withTenant(businessId, async (tx) => (await tx.select({ id: schema.products.id }).from(schema.products).where(and(eq(schema.products.trackStock, true), eq(schema.products.active, true)))).map((r) => r.id));
 }
 
 /** Recent logged usage anywhere (for the Log usage page), newest first. */

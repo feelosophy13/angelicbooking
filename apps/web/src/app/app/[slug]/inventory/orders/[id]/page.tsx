@@ -7,7 +7,8 @@ import { getPurchaseOrder, listLocations, listSuppliers } from "@/server/invento
 import { productLabel } from "@/lib/inventory";
 import { dateLong } from "@/lib/format";
 import { formatMoney } from "@/lib/utils";
-import { BackLink, Button, Card, Input, MoneyInput, PageHeader, Select, Textarea } from "@/components/ui";
+import { BackLink, Button, Card, Input, LinkButton, MoneyInput, PageHeader, Select, Textarea } from "@/components/ui";
+import { ScanBarcode } from "lucide-react";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
 import { addOrderLine, orderAction, receiveOrderAction, saveOrder } from "../../actions";
 import { StatusPill } from "../status-pill";
@@ -126,6 +127,7 @@ export default async function OrderPage({ params }: { params: Promise<{ slug: st
             ) : null}
             <Card className="p-4">
               <h2 className="mb-2 text-sm font-medium text-stone-700">Receive a delivery</h2>
+              <LinkButton href={`/app/${slug}/inventory/orders/${po.id}/scan`} variant="primary" size="sm" className="mb-3"><ScanBarcode className="h-4 w-4" /> Scan the delivery</LinkButton>
               {remaining.length === 0 ? <p className="text-sm text-stone-500">Everything on this order has arrived.</p> : (
                 <ActionForm action={receiveOrderAction}>
                   <input type="hidden" name="slug" value={slug} />
