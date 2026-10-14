@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { previousPath } from "./nav-history";
 import { cn } from "@/lib/utils";
-import { ArrowLeft, Inbox } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Inbox } from "lucide-react";
 import { useFieldId } from "./form";
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -65,17 +65,39 @@ export function LinkButton({
   );
 }
 
+/** Every password field is an <Input type="password">, which gets a show / hide button (DESIGN.md, "Forms"). */
 export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   const fieldId = useFieldId();
-  return (
+  const [shown, setShown] = React.useState(false);
+  const isPassword = props.type === "password";
+  const input = (
     <input
       id={props.id ?? fieldId}
       className={cn(
         "h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-2 focus:outline-offset-0 focus:outline-brand-500",
+        isPassword && "pr-10",
         className,
       )}
       {...props}
+      type={isPassword && shown ? "text" : props.type}
     />
+  );
+  if (!isPassword) return input;
+  const Icon = shown ? EyeOff : Eye;
+  return (
+    <div className="relative">
+      {input}
+      <button
+        type="button"
+        onClick={() => setShown((v) => !v)}
+        aria-label={shown ? "Hide password" : "Show password"}
+        aria-pressed={shown}
+        title={shown ? "Hide password" : "Show password"}
+        className="absolute inset-y-0 right-0 flex w-10 items-center justify-center rounded-r-lg text-stone-400 hover:text-stone-700 focus-visible:outline-2 focus-visible:outline-brand-500"
+      >
+        <Icon className="h-4 w-4" aria-hidden />
+      </button>
+    </div>
   );
 }
 

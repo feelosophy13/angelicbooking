@@ -58,10 +58,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 ### Platform admin app (`apps/admin`, built 2026-10-14: tenant list with filters and CSV, usage metrics, price book and custom pricing, suspend / comp / extend trial, audit log, health page, TOTP login)
 - [x] Deployed 2026-10-14 as Render service `angelic-admin` (srv-db7vr98n74is73d85io0, starter) at https://admin.angelicbooking.com
       (Cloudflare `CNAME admin`, DNS only). Production web deploy 236c5ed ran migrations 0067-0075. Login secrets are in the local `.env`
-      (`PROD_ADMIN_*`, `# prod admin password:`); add `PROD_ADMIN_TOTP_SECRET` to an authenticator app as a setup key.
+      (`PROD_ADMIN_*`, `# prod admin password:`). The authenticator-code step is supported but turned off in production (removed 2026-10-14: Cloudflare Access is the second factor); set `ADMIN_TOTP_SECRET` on the service to turn it back on.
 - [x] `admin-role.sql` applied to production 2026-10-14 (role without BYPASSRLS, read policy on all 60 tenant tables, write only to pricing, audit log and the suspend/comp/trial columns). Re-run it after any migration that adds a tenant table.
-- [ ] Enable Cloudflare Zero Trust / Access (dashboard: "Enable Access", free plan), then proxy the `admin` DNS record and add an Access policy
-      for your email. The API says Access is not enabled on the account. The admin app already needs password + authenticator code meanwhile.
+- [x] Cloudflare Access in front of the admin app (2026-10-14): Zero Trust team `plain-tooth-40f9`, app "Angelic platform admin", policy "Owner only" (your email, one-time code), 8h sessions, `admin` DNS record proxied. Add a second email there if someone else ever needs access.
 - [ ] **Test the price-book billing against the Stripe sandbox** once keys exist (built 2026-10-14, only the planning logic is unit-tested):
       `server/billing.ts` now starts subscriptions from the price book (base + extra locations + extra staff, metered texts) and
       `reconcileSubscription` (daily, in the 07:00 UTC run of the reminders job) keeps quantities in line with locations and active staff.

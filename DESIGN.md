@@ -61,6 +61,11 @@ wrong: fix the page.
 - Pictures: the picture is the control. Click it to pick or change the file, and a small round (x) on the
   picture's top-right corner removes it (with Undo in the helper line). Never a "Remove" text link or button
   beside the picture. `ImageField` does this; use it for every photo, logo and image.
+- Passwords: every password field has a show / hide button (an eye inside the right edge of the box, labelled
+  "Show password" / "Hide password"). `<Input type="password">` adds it for you, so never hand-write a password
+  input; a guard test (`password-field-guard.test.ts`) fails if you do. The platform admin app (`apps/admin`) has its
+  own login form and gives it a "Show" / "Hide" text button instead. Sign-in forms keep the right `autoComplete`
+  (`current-password`, `new-password`) so password managers still work.
 - Group related fields in a two-column grid on wide screens; one column on phones.
 - Show only the fields that apply. When a choice changes what matters (pay model, trigger type), the other fields
   hide, and rarely-used ones sit under "More options".
@@ -274,4 +279,5 @@ Every uploaded picture is optimized before it is stored. This is a rule, not a p
 - [ ] Checked at 375px and at 1280px; nothing wraps around a control or overflows.
 - [ ] Empty, loading and error states exist.
 - [ ] Any upload goes through `lib/files.ts` so it is optimized (see Images and uploads).
+- [ ] Every password field is `<Input type="password">` (it has the show / hide button).
 - [ ] Service choices use `ServicePicker`, never a long `<select>` (see Choosing a service).

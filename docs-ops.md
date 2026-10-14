@@ -292,8 +292,8 @@ except `platform_pricing`, `business_pricing`, `admin_audit_log` and the columns
 and change the password before using it in production. `ADMIN_DATABASE_URL` goes on the admin service only.
 
 **Env (admin service).** `ADMIN_DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` (`pnpm --filter @angelic/admin hash-password '…'`),
-`ADMIN_SESSION_SECRET` (32+ random chars), `ADMIN_TOTP_SECRET` (`pnpm --filter @angelic/admin totp-secret`, then add the key to an
-authenticator app; login then needs the 6-digit code), optional `STRIPE_SECRET_KEY` (restricted, read-only: shows what Stripe actually bills).
+`ADMIN_SESSION_SECRET` (32+ random chars), optional `ADMIN_TOTP_SECRET` (`pnpm --filter @angelic/admin totp-secret`, then add the key to an
+authenticator app; login then needs the 6-digit code; off in production, where Cloudflare Access is the second factor), optional `STRIPE_SECRET_KEY` (restricted, read-only: shows what Stripe actually bills).
 
 **Deploy.** A second Render web service from the same repo: build `pnpm install && pnpm --filter @angelic/admin build`, start
 `pnpm --filter @angelic/admin start`, domain `admin.angelicbooking.com`, with a Cloudflare Access policy (your email only) in front.
