@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, editLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, payWithStoreCreditAction, refund, changeRefundReason, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, addProductByCode, putBackOnShelf, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, editLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, payWithStoreCreditAction, refund, changeRefundReason, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
 import { ClientPicker } from "@/components/client-picker";
 import { Disclosure } from "@/components/disclosure";
 import { ActivityTrail } from "@/components/activity-trail";
@@ -36,6 +36,8 @@ import { pointsBalance } from "@/server/loyalty";
 import { storeCreditBalance } from "@/server/store-credit";
 import { listRefundReasons } from "@/server/refund-reasons";
 import { CardPayment } from "./card-payment";
+import { saleStockLocation, saleStockState, stockLevels } from "@/server/inventory";
+import { productLabel } from "@/lib/inventory";
 
 export default async function SalePage({ params }: { params: Promise<{ slug: string; saleId: string }> }) {
   const { slug, saleId } = await params;
@@ -62,6 +64,13 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
   const storeCredit = open && client ? await withTenant(business.id, (tx) => storeCreditBalance(tx, client.id)) : 0;
   const canRefund = can(permissions, "reports.view");
+  // Stock at this sale's location, for the "only N in stock" notes on an open ticket; what was taken off and what has come back, for a closed one.
+  const trackedIds = new Set(products.filter((p) => p.trackStock).map((p) => p.id));
+  const stockHere = open && trackedIds.size ? await withTenant(business.id, async (tx) => stockLevels(tx, await saleStockLocation(tx, sale), [...trackedIds])) : new Map<string, number>();
+  const wantedQty = new Map<string, number>();
+  for (const l of lines) if (l.kind === "product" && l.productId) wantedQty.set(l.productId, (wantedQty.get(l.productId) ?? 0) + l.quantity);
+  const canStock = can(permissions, "inventory.manage");
+  const stockState = !open && canStock && lines.some((l) => l.kind === "product") ? await saleStockState(business.id, sale.id) : new Map<string, { sold: number; returned: number }>();
   // Active reasons for new refunds; every reason (retired too) so old refunds still show their name.
   const allReasons = canRefund ? await listRefundReasons(business.id, { includeRetired: true }) : [];
   const reasonOptions = allReasons.filter((r) => r.active).map((r) => ({ id: r.id, name: r.name }));
@@ -118,6 +127,9 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                     <td className="py-2">
                       <p>{l.name}{l.quantity > 1 ? ` × ${l.quantity}` : ""}</p>
                       <p className="text-xs text-stone-500">{[l.kind, staff.find((s) => s.id === l.staffId)?.displayName, l.taxable ? "taxable" : null].filter(Boolean).join(" · ")}</p>
+                      {open && l.kind === "product" && l.productId && trackedIds.has(l.productId) && (stockHere.get(l.productId) ?? 0) < (wantedQty.get(l.productId) ?? 0) ? (
+                        <p className="text-xs text-amber-700">{Math.max(0, stockHere.get(l.productId) ?? 0) === 0 ? "None in stock" : `Only ${stockHere.get(l.productId)} in stock`}{multiLocation ? " here" : ""}. You can still sell it; the count may be off.</p>
+                      ) : null}
                     </td>
                     <td className="py-2 text-right">
                       {money(l.amountCents)}
@@ -188,7 +200,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         <Select name="productId">
                           {[...new Set(products.map((p) => p.category ?? "Other"))].map((cat) => (
                             <optgroup key={cat} label={cat}>
-                              {products.filter((p) => (p.category ?? "Other") === cat).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)}</option>)}
+                              {products.filter((p) => (p.category ?? "Other") === cat).map((p) => <option key={p.id} value={p.id}>{productLabel(p)} · {money(p.priceCents)}{p.trackStock ? ((stockHere.get(p.id) ?? 0) <= 0 ? " · none in stock" : ` · ${stockHere.get(p.id)} in stock`) : ""}</option>)}
                             </optgroup>
                           ))}
                         </Select>
@@ -202,6 +214,14 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         <Button type="submit" size="sm" variant="secondary">Add product</Button>
                       </form>
                     )}
+                    {products.length > 0 ? (
+                      <form action={addProductByCode} className="mt-3 flex gap-2">
+                        <input type="hidden" name="slug" value={slug} />
+                        <input type="hidden" name="saleId" value={sale.id} />
+                        <Input name="code" placeholder="Scan a barcode or type a SKU" aria-label="Barcode or SKU" autoComplete="off" className="min-w-0 flex-1" />
+                        <Button type="submit" size="sm" variant="secondary">Add</Button>
+                      </form>
+                    ) : null}
                   </div>
                   <div>
                     <h3 className="mb-2 text-sm font-medium text-stone-700">Service</h3>
@@ -355,6 +375,28 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               {sale.closedAt ? <p className="text-sm text-stone-500">{fmt.format(sale.closedAt)}</p> : null}
             </Card>
           )}
+          {[...stockState.entries()].some(([, v]) => v.sold > 0) ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Goods back on the shelf</h2>
+              <p className="mb-2 text-xs text-stone-500">A refund gives money back; it doesn't change the stock, because the product may be gone (never arrived, goodwill). If a client really brought something back, put it back here.</p>
+              <form action={putBackOnShelf} className="space-y-2">
+                <input type="hidden" name="slug" value={slug} />
+                <input type="hidden" name="saleId" value={sale.id} />
+                {[...stockState.entries()].filter(([, v]) => v.sold > 0).map(([productId, v]) => {
+                  const line = lines.find((l) => l.productId === productId);
+                  const left = v.sold - v.returned;
+                  return (
+                    <div key={productId} className="grid grid-cols-[1fr_4rem] items-center gap-2">
+                      <label htmlFor={`back:${productId}`} className="min-w-0 truncate">{line?.name ?? "Product"} <span className="text-xs text-stone-500">· sold {v.sold}{v.returned ? ` · ${v.returned} already back` : ""}</span></label>
+                      {left > 0 ? <Input id={`back:${productId}`} name={`back:${productId}`} type="number" min={0} max={left} placeholder="0" className="text-right" /> : <span className="text-right text-xs text-stone-500">all back</span>}
+                    </div>
+                  );
+                })}
+                <Input name="note" placeholder="Why (optional), e.g. unopened, returned" aria-label="Note" />
+                <Button type="submit" size="sm" variant="secondary">Put back on the shelf</Button>
+              </form>
+            </Card>
+          ) : null}
           {sale.fulfillment ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-1 font-medium">Online order · {sale.fulfillment.method === "ship" ? "shipping" : "pickup"}</h2>

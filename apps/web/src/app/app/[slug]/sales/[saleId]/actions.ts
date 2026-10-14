@@ -33,6 +33,8 @@ import { setFlash } from "@/lib/flash";
 import { formatMoney } from "@/lib/utils";
 import { getSale } from "@/server/sales";
 import { paymentContextForSale } from "@/server/locations";
+import { findProductByCode, InventoryError, returnToShelf } from "@/server/inventory";
+import { productLabel } from "@/lib/inventory";
 
 export type SaleActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -51,6 +53,44 @@ export async function addProduct(formData: FormData) {
   const d = base.extend({ productId: z.string().min(1), quantity: z.coerce.number().int().min(1).max(99).default(1), staffId: z.string().optional() }).parse(Object.fromEntries(formData));
   const ctx = await ctxFor(d.slug);
   await addProductLine({ businessId: ctx.business.id, saleId: d.saleId, productId: d.productId, quantity: d.quantity, staffId: d.staffId || null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+/** A scanner (or a typed SKU) adds one of that product to the ticket. */
+export async function addProductByCode(formData: FormData) {
+  const d = base.extend({ code: z.string().trim().min(1).max(60) }).parse(Object.fromEntries(formData));
+  const ctx = await ctxFor(d.slug);
+  const product = await findProductByCode(ctx.business.id, d.code);
+  if (!product || product.kind !== "retail") await setFlash(`No product with the barcode or SKU "${d.code}".`, "error");
+  else {
+    try {
+      await addProductLine({ businessId: ctx.business.id, saleId: d.saleId, productId: product.id, quantity: 1, staffId: null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+      await setFlash(`${productLabel(product)} added`, "success");
+    } catch (e) {
+      if (e instanceof SaleError) await setFlash(e.message, "error");
+      else throw e;
+    }
+  }
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+/** A client brought goods back: put them on the shelf. Refunding does not do this by itself. */
+export async function putBackOnShelf(formData: FormData) {
+  const d = base.extend({ note: z.string().trim().max(120).optional() }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "inventory.manage");
+  const items: { productId: string; qty: number }[] = [];
+  for (const [key, v] of formData.entries()) {
+    if (!key.startsWith("back:")) continue;
+    const qty = Number(String(v));
+    if (Number.isInteger(qty) && qty > 0) items.push({ productId: key.slice(5), qty });
+  }
+  try {
+    await returnToShelf({ businessId: ctx.business.id, saleId: d.saleId, items, note: d.note || null, actorUserId: ctx.user.id });
+    await setFlash("Back on the shelf", "success");
+  } catch (e) {
+    if (e instanceof InventoryError) await setFlash(e.message, "error");
+    else throw e;
+  }
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
 

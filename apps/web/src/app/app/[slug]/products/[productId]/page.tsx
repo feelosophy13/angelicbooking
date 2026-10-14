@@ -1,60 +1,121 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { requireAction } from "@/lib/tenant";
+import { can } from "@angelic/core";
+import { requireAction, requireBusiness } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
-import { Card, FormPage, Input, Select } from "@/components/ui";
+import { Card, FormPage, Input, LinkButton, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
+import { Disclosure } from "@/components/disclosure";
 import { ProductFields } from "@/components/product-fields";
-import { adjustStock, updateProduct } from "../actions";
-import { productMovements } from "@/server/inventory";
+import { adjustStock, transferStockAction, updateProduct } from "../actions";
+import { listLocations, listSuppliers, productMovements, stockByLocation } from "@/server/inventory";
+import { MANUAL_REASONS, movementReason, productLabel, stockStatus } from "@/lib/inventory";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; productId: string }> }): Promise<Metadata> {
   const { slug, productId } = await params;
-  const { business } = await requireAction(slug, "services.manage");
+  const { business } = await requireBusiness(slug);
   const p = await withTenant(business.id, (tx) => tx.query.products.findFirst({ where: eq(schema.products.id, productId) }));
-  return { title: p ? `${p.name} · Products` : "Product" };
+  return { title: p ? `${productLabel(p)} · Products` : "Product" };
 }
+
+const REASON_CHOICES: Record<(typeof MANUAL_REASONS)[number], string> = {
+  received: "Received (adds)",
+  adjust: "Correct the count (+ or −)",
+  damage: "Damaged (removes)",
+  theft: "Stolen (removes)",
+  expired: "Expired (removes)",
+  lost: "Lost (removes)",
+  supplier_return: "Sent back to supplier (removes)",
+  used: "Used in a service (removes)",
+};
 
 export default async function EditProductPage({ params }: { params: Promise<{ slug: string; productId: string }> }) {
   const { slug, productId } = await params;
-  const { business } = await requireAction(slug, "services.manage");
-  const [product, categories] = await Promise.all([
+  const ctx = await requireBusiness(slug);
+  const { business, permissions } = ctx;
+  const canEdit = can(permissions, "services.manage");
+  const canStock = can(permissions, "inventory.manage");
+  if (!canEdit && !canStock) await requireAction(slug, "services.manage");
+  const [product, categories, suppliers, locations] = await Promise.all([
     withTenant(business.id, (tx) => tx.query.products.findFirst({ where: eq(schema.products.id, productId) })),
     listCategories(business.id, "product"),
+    listSuppliers(business.id),
+    listLocations(business.id),
   ]);
   if (!product) notFound();
-  const movements = product.trackStock ? await productMovements(business.id, product.id) : [];
-  const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
+  const [movements, levels] = canStock ? await Promise.all([productMovements(business.id, product.id), stockByLocation(business.id, product.id)]) : [[], []];
+  const multi = locations.length > 1;
+  const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
+  const status = stockStatus(product.stockQty, product.lowStockThreshold);
+  const tone = status === "ok" ? "" : status === "low" ? "text-amber-700" : "text-red-700";
   return (
-    <FormPage title={product.name} backHref={`/app/${slug}/products`} backLabel="Products">
-      {product.trackStock ? (
+    <FormPage title={productLabel(product)} backHref={`/app/${slug}/products`} backLabel="Products">
+      {canStock ? (
         <Card className="mb-5 p-4">
-          <div className="mb-2 flex items-baseline justify-between"><h2 className="font-medium">Stock on hand</h2><span className={`text-xl font-semibold ${product.stockQty <= product.lowStockThreshold ? "text-amber-700" : ""}`}>{product.stockQty}</span></div>
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <h2 className="font-medium">Stock on hand</h2>
+            {product.trackStock ? <span className={`text-xl font-semibold ${tone}`}>{product.stockQty}</span> : <span className="text-sm text-stone-500">Not tracked yet</span>}
+          </div>
+          {status === "negative" ? <p className="mb-2 rounded-md bg-red-50 px-2 py-1 text-xs text-red-700">More has gone out than the count said. Count the shelf and correct it below.</p> : null}
+          {!product.trackStock ? <p className="mb-2 text-xs text-stone-500">Receiving or counting stock turns tracking on.</p> : null}
+          {multi && levels.length ? (
+            <ul className="mb-3 grid gap-1 text-sm sm:grid-cols-2">
+              {levels.map((l) => <li key={l.locationId} className="flex justify-between rounded-md bg-stone-50 px-2 py-1"><span className="text-stone-600">{l.name.replace(`${business.name} - `, "")}</span><span className={l.qty < 0 ? "font-medium text-red-700" : "font-medium"}>{l.qty}</span></li>)}
+            </ul>
+          ) : null}
           <ActionForm action={adjustStock}>
             <input type="hidden" name="slug" value={slug} />
             <input type="hidden" name="productId" value={product.id} />
-            <div className="grid grid-cols-[8rem_6rem_1fr] gap-2">
-              <Select name="reason" defaultValue="received"><option value="received">Received</option><option value="adjust">Adjust (±)</option></Select>
-              <Input name="delta" inputMode="numeric" placeholder="12" />
-              <Input name="note" placeholder="PO #, count correction…" />
+            <div className={`grid gap-2 ${multi ? "grid-cols-[1fr_5rem] sm:grid-cols-[14rem_10rem_5rem_1fr]" : "grid-cols-[1fr_5rem] sm:grid-cols-[14rem_5rem_1fr]"}`}>
+              <Select name="reason" defaultValue="received" aria-label="What happened">{MANUAL_REASONS.map((r) => <option key={r} value={r}>{REASON_CHOICES[r]}</option>)}</Select>
+              {multi ? <Select name="locationId" defaultValue={locations.find((l) => l.isDefault)?.id} aria-label="Where">{locations.map((l) => <option key={l.id} value={l.id}>{l.name.replace(`${business.name} - `, "")}</option>)}</Select> : null}
+              <Field label="" name="delta"><Input name="delta" inputMode="numeric" placeholder="12" aria-label="How many" /></Field>
+              <Input name="note" placeholder="Invoice #, what happened…" aria-label="Note" className={multi ? "col-span-2 sm:col-span-1" : "col-span-2 sm:col-span-1"} />
             </div>
-            <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Update stock</SubmitButton>
+            <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Record</SubmitButton>
           </ActionForm>
+          {multi && levels.length ? (
+            <Disclosure title="Move to another location" className="mt-3">
+              <ActionForm action={transferStockAction}>
+                <input type="hidden" name="slug" value={slug} />
+                <input type="hidden" name="productId" value={product.id} />
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_5rem]">
+                  <Field label="From" name="fromLocationId"><Select name="fromLocationId" defaultValue={levels.find((l) => l.qty > 0)?.locationId}>{locations.map((l) => <option key={l.id} value={l.id}>{l.name.replace(`${business.name} - `, "")}</option>)}</Select></Field>
+                  <Field label="To" name="toLocationId"><Select name="toLocationId" defaultValue={locations.find((l) => l.id !== levels.find((x) => x.qty > 0)?.locationId)?.id}>{locations.map((l) => <option key={l.id} value={l.id}>{l.name.replace(`${business.name} - `, "")}</option>)}</Select></Field>
+                  <Field label="How many" name="qty"><Input name="qty" inputMode="numeric" /></Field>
+                </div>
+                <SubmitButton size="sm" variant="secondary" pendingText="Moving…">Move stock</SubmitButton>
+              </ActionForm>
+            </Disclosure>
+          ) : null}
           {movements.length ? (
-            <ul className="mt-3 max-h-40 space-y-0.5 overflow-y-auto border-t border-stone-200 pt-2 text-xs text-stone-600">
-              {movements.map((m) => <li key={m.id}>{fmt.format(m.createdAt)} · <span className={m.delta >= 0 ? "text-emerald-700" : "text-red-700"}>{m.delta > 0 ? "+" : ""}{m.delta}</span> · {m.reason}{m.note ? ` · ${m.note}` : ""}</li>)}
+            <ul className="mt-3 max-h-48 space-y-0.5 overflow-y-auto border-t border-stone-200 pt-2 text-xs text-stone-600">
+              {movements.map((m) => (
+                <li key={m.id}>
+                  {fmt.format(m.createdAt)} · <span className={m.delta >= 0 ? "text-emerald-700" : "text-red-700"}>{m.delta > 0 ? "+" : ""}{m.delta}</span> · {movementReason(m.reason)}
+                  {multi && m.location ? ` · ${m.location.replace(`${business.name} - `, "")}` : ""}{m.note ? ` · ${m.note}` : ""}{m.who ? ` · ${m.who}` : ""}
+                </li>
+              ))}
             </ul>
           ) : null}
         </Card>
       ) : null}
-      <ActionForm action={updateProduct}>
-        <input type="hidden" name="slug" value={slug} />
-        <input type="hidden" name="productId" value={product.id} />
-        <ProductFields product={product} categories={categories} currency={business.currency} />
-        <SubmitButton pendingText="Saving…">Save product</SubmitButton>
-      </ActionForm>
+      {canEdit ? (
+        <>
+          <p className="-mt-2 mb-3 text-sm"><Link href={`/app/${slug}/products/new?from=${product.id}`} className="text-brand-700 underline">Add another option of this product</Link> <span className="text-stone-500">(another size or shade, with its own stock)</span></p>
+          <ActionForm action={updateProduct}>
+            <input type="hidden" name="slug" value={slug} />
+            <input type="hidden" name="productId" value={product.id} />
+            <ProductFields product={product} categories={categories} suppliers={suppliers} currency={business.currency} />
+            <SubmitButton pendingText="Saving…">Save product</SubmitButton>
+          </ActionForm>
+        </>
+      ) : (
+        <LinkButton href={`/app/${slug}/inventory`}>Back to inventory</LinkButton>
+      )}
     </FormPage>
   );
 }

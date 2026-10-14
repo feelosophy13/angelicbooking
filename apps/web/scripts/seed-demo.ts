@@ -260,19 +260,35 @@ function baseWindow(hours: Hours, siteIdx: number, weekday: number): { start: nu
 const FIRST = ["Emma", "Olivia", "Sophia", "Isabella", "Mia", "Charlotte", "Amelia", "Harper", "Evelyn", "Abigail", "Ella", "Scarlett", "Grace", "Chloe", "Victoria", "Riley", "Aria", "Lily", "Zoe", "Nora", "Hannah", "Layla", "Ellie", "Natalie", "Leah", "Liam", "Noah", "Ethan", "Lucas", "Mason", "Daniel", "James", "Aiden", "Henry", "Owen", "Maya", "Jasmine", "Naomi", "Camila", "Ruby"];
 const LAST = ["Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson", "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson", "White", "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson", "Walker", "Young", "Allen", "King", "Wright", "Scott", "Torres", "Nguyen", "Hill", "Flores", "Green"];
 const COMMENTS = ["My hybrid set looks so natural. Ava is meticulous and quick.", "Clean, calm and on time. Will be back.", "Three weeks in and my volume lashes are still perfect.", "Jordan explained every style and picked the right one for my eye shape.", "The lash lift and tint is my new favourite thing. No mascara needed.", "Mina's colour analysis changed how I shop. Worth every penny.", "Lovely studio, easy online booking, friendly front desk.", "A little pricey but the Korean facial left my skin glowing for a week.", "Priya is thorough and gentle. Best Brazilian I've had.", "Sofia's brow lamination gave me the fluffy brows I wanted.", "Ran about 10 minutes late but the service was great.", "The LDM facial calmed my skin right down after travel."];
-const PRODUCTS = [
-  { cat: "Lash care", name: "Lash Cleanser Foam", price: 2200, cost: 900, qty: 14 },
-  { cat: "Lash care", name: "Lash Cleansing Brush", price: 800, cost: 300, qty: 25 },
-  { cat: "Lash care", name: "Lash Sealant", price: 2400, cost: 1000, qty: 6 },
-  { cat: "Lash care", name: "Lash Growth Serum", price: 6500, cost: 3000, qty: 4 },
-  { cat: "Skin care", name: "Vitamin C Serum", price: 5800, cost: 2400, qty: 8 },
-  { cat: "Skin care", name: "Daily SPF 50", price: 3200, cost: 1300, qty: 9 },
-  { cat: "Skin care", name: "Gentle Cleanser", price: 2600, cost: 1000, qty: 12 },
-  { cat: "Skin care", name: "LAVIEN Centella Toner", price: 3800, cost: 1700, qty: 9 },
-  { cat: "Skin care", name: "LAVIEN Collagen Essence", price: 5200, cost: 2400, qty: 7 },
-  { cat: "Tools & Gifts", name: "Silk Sleep Mask", price: 2800, cost: 1200, qty: 6 },
-  { cat: "Tools & Gifts", name: "Silk Pillowcase", price: 4500, cost: 2000, qty: 5 },
-  { cat: "Tools & Gifts", name: "Luxe Gift Box", price: 7500, cost: 3500, qty: 3 },
+type SeedProduct = { cat: string; name: string; label?: string; price: number; cost: number; qty: number; sold: number; supplier: string; low: number; upTo?: number; backbar?: boolean; written?: [reason: "damage" | "theft" | "expired" | "lost", units: number]; recv?: { qty: number; po: 1 | 3; daysAgo: number } };
+// Retail first, then the back-bar products services use up. `sold` is units sold (or used) over the last 85 days; `qty` is what is on the shelf now.
+const PRODUCTS: SeedProduct[] = [
+  { cat: "Lash care", name: "Lash Cleanser Foam", label: "50 ml", price: 2200, cost: 900, qty: 14, sold: 42, supplier: "Luxe Lash Supply", low: 5, upTo: 24, recv: { qty: 24, po: 1, daysAgo: 30 }, written: ["damage", 1] },
+  { cat: "Lash care", name: "Lash Cleanser Foam", label: "100 ml", price: 3600, cost: 1500, qty: 4, sold: 14, supplier: "Luxe Lash Supply", low: 5, upTo: 12 },
+  { cat: "Lash care", name: "Lash Cleansing Brush", price: 800, cost: 300, qty: 25, sold: 20, supplier: "Salon Essentials Wholesale", low: 8, upTo: 40 },
+  { cat: "Lash care", name: "Lash Sealant", price: 2400, cost: 1000, qty: 0, sold: 30, supplier: "Luxe Lash Supply", low: 3, upTo: 18 },
+  { cat: "Lash care", name: "Lash Growth Serum", price: 6500, cost: 3000, qty: 2, sold: 12, supplier: "Luxe Lash Supply", low: 3, upTo: 10 },
+  { cat: "Skin care", name: "Vitamin C Serum", price: 5800, cost: 2400, qty: 8, sold: 16, supplier: "Pure Skin Distributors", low: 3, upTo: 16, written: ["expired", 2] },
+  { cat: "Skin care", name: "Daily SPF 50", label: "50 ml", price: 3200, cost: 1300, qty: 9, sold: 24, supplier: "Pure Skin Distributors", low: 4, upTo: 18 },
+  { cat: "Skin care", name: "Daily SPF 50", label: "100 ml", price: 5400, cost: 2300, qty: 3, sold: 9, supplier: "Pure Skin Distributors", low: 3, upTo: 12, recv: { qty: 6, po: 3, daysAgo: 5 } },
+  { cat: "Skin care", name: "Gentle Cleanser", price: 2600, cost: 1000, qty: 12, sold: 15, supplier: "Pure Skin Distributors", low: 4, upTo: 20 },
+  { cat: "Skin care", name: "LAVIEN Centella Toner", price: 3800, cost: 1700, qty: 9, sold: 11, supplier: "Pure Skin Distributors", low: 3, upTo: 15 },
+  { cat: "Skin care", name: "LAVIEN Collagen Essence", price: 5200, cost: 2400, qty: 7, sold: 8, supplier: "Pure Skin Distributors", low: 3, upTo: 12 },
+  { cat: "Tools & Gifts", name: "Silk Sleep Mask", price: 2800, cost: 1200, qty: 6, sold: 3, supplier: "Salon Essentials Wholesale", low: 2, upTo: 8, written: ["theft", 1] },
+  { cat: "Tools & Gifts", name: "Silk Pillowcase", price: 4500, cost: 2000, qty: 5, sold: 0, supplier: "Salon Essentials Wholesale", low: 2, upTo: 6 },
+  { cat: "Tools & Gifts", name: "Luxe Gift Box", price: 7500, cost: 3500, qty: 3, sold: 0, supplier: "Salon Essentials Wholesale", low: 2, upTo: 6 },
+  { cat: "Back-bar", name: "Lash Adhesive (pro)", price: 0, cost: 2800, qty: 3, sold: 18, supplier: "Luxe Lash Supply", low: 2, upTo: 8, backbar: true },
+  { cat: "Back-bar", name: "Classic lash trays", label: "0.15", price: 0, cost: 1500, qty: 10, sold: 30, supplier: "Luxe Lash Supply", low: 4, upTo: 16, backbar: true, recv: { qty: 20, po: 1, daysAgo: 30 } },
+  { cat: "Back-bar", name: "Volume lash trays", label: "0.07", price: 0, cost: 1800, qty: 4, sold: 26, supplier: "Luxe Lash Supply", low: 4, upTo: 16, backbar: true },
+  { cat: "Back-bar", name: "Eye gel patches (pair)", price: 0, cost: 40, qty: 90, sold: 170, supplier: "Salon Essentials Wholesale", low: 60, upTo: 400, backbar: true },
+  { cat: "Back-bar", name: "Facial mask sheets", price: 0, cost: 150, qty: 36, sold: 40, supplier: "Pure Skin Distributors", low: 15, upTo: 80, backbar: true },
+  { cat: "Back-bar", name: "Disposable applicators", price: 0, cost: 10, qty: 150, sold: 120, supplier: "Salon Essentials Wholesale", low: 50, upTo: 300, backbar: true },
+];
+// What one visit of a kind of service uses up (matched on the service's name or group).
+const USAGE: { match: RegExp; uses: [product: string, qty: number][] }[] = [
+  { match: /classic.*(set|fill)|(set|fill).*classic/i, uses: [["Lash Adhesive (pro)", 1], ["Classic lash trays", 1], ["Eye gel patches (pair)", 2], ["Disposable applicators", 4]] },
+  { match: /volume|hybrid|mega/i, uses: [["Lash Adhesive (pro)", 1], ["Volume lash trays", 1], ["Eye gel patches (pair)", 2], ["Disposable applicators", 4]] },
+  { match: /facial/i, uses: [["Facial mask sheets", 1], ["Disposable applicators", 2]] },
 ];
 
 // ---------------------------------------------------------------------------
@@ -591,12 +607,74 @@ async function main() {
       const [row] = await tx.insert(schema.productCategories).values({ businessId, name, sortOrder: pc++ }).returning({ id: schema.productCategories.id });
       prodCats.set(name, row!.id);
     }
+    // --- Inventory: suppliers, products (some sold in options, some back-bar) with a believable history, orders, and what services use up
+    const supplierRows = await tx.insert(schema.suppliers).values([
+      { businessId, name: "Luxe Lash Supply", contactName: "Marta Alvarez", email: "orders@luxelashsupply.example", phone: "(555) 010-2211", accountNumber: "LLS-20418", notes: "Free shipping over $250. Orders by Thursday ship Friday." },
+      { businessId, name: "Pure Skin Distributors", contactName: "Dan Whitfield", email: "sales@pureskin.example", phone: "(555) 010-3377", accountNumber: "PSD-9921" },
+      { businessId, name: "Salon Essentials Wholesale", contactName: "Front desk", email: "hello@salonessentials.example", phone: "(555) 010-4488" },
+    ]).returning();
+    const supplierId = (n: string) => supplierRows.find((r) => r.name === n)!.id;
+    const siteQty = (q: number) => (multi ? [Math.ceil(q * 0.6), q - Math.ceil(q * 0.6)] : [q]);
+    const pRows: { id: string; spec: SeedProduct }[] = [];
+    const daysBack = (n: number) => new Date(Date.now() - n * 86_400_000);
     for (const [i, p] of PRODUCTS.entries()) {
-      const art = Buffer.from(productArt(p.name, i), "utf8");
-      const [file] = await db.insert(schema.files).values({ businessId, kind: "product", contentType: "image/svg+xml", size: art.length, data: art }).returning({ id: schema.files.id });
-      const [row] = await tx.insert(schema.products).values({ businessId, categoryId: prodCats.get(p.cat)!, name: p.name, sku: `LX-${String(100 + i)}`, priceCents: p.price, costCents: p.cost, taxable: true, sellOnline: true, trackStock: true, stockQty: p.qty, lowStockThreshold: 3, description: "Salon-grade, recommended by our team.", imageUrl: appUrl(`/api/files/${file!.id}`) }).returning({ id: schema.products.id });
-      await tx.insert(schema.stockMovements).values({ businessId, productId: row!.id, delta: p.qty, reason: "received", note: "Opening stock" });
+      const finals = siteQty(p.qty);
+      let imageUrl: string | null = null;
+      if (!p.backbar) {
+        const art = Buffer.from(productArt(p.name, i), "utf8");
+        const [file] = await db.insert(schema.files).values({ businessId, kind: "product", contentType: "image/svg+xml", size: art.length, data: art }).returning({ id: schema.files.id });
+        imageUrl = appUrl(`/api/files/${file!.id}`);
+      }
+      if (!prodCats.has(p.cat)) {
+        const [row] = await tx.insert(schema.productCategories).values({ businessId, name: p.cat, sortOrder: prodCats.size }).returning({ id: schema.productCategories.id });
+        prodCats.set(p.cat, row!.id);
+      }
+      const [row] = await tx.insert(schema.products).values({
+        businessId, categoryId: prodCats.get(p.cat)!, name: p.name, variantLabel: p.label ?? null, kind: p.backbar ? "backbar" : "retail",
+        sku: `${p.backbar ? "BB" : "LX"}-${String(100 + i)}`, barcode: `8801234${String(10000 + i * 37).padStart(6, "0")}`.slice(0, 13), priceCents: p.price, costCents: p.cost, taxable: true, sellOnline: !p.backbar, trackStock: true, stockQty: p.qty,
+        lowStockThreshold: p.low, reorderUpTo: p.upTo ?? null, supplierId: supplierId(p.supplier), description: p.backbar ? null : "Salon-grade, recommended by our team.", imageUrl,
+      }).returning({ id: schema.products.id });
+      pRows.push({ id: row!.id, spec: p });
+      for (const [li, q] of finals.entries()) if (q !== 0) await tx.insert(schema.productStock).values({ businessId, productId: row!.id, locationId: locIds[li]!, qty: q });
+      // History: sold/used in small amounts over the last 85 days, write-offs, a delivery, and an opening count sized so today's number comes out right.
+      type Mv = { delta: number; reason: string; daysAgo: number; li: number; note?: string; po?: 1 | 3 };
+      const mvs: Mv[] = [];
+      let left = p.sold;
+      while (left > 0) {
+        const n = Math.min(left, between(1, p.backbar ? 6 : 3));
+        mvs.push({ delta: -n, reason: p.backbar ? "used" : "sale", daysAgo: between(1, 85), li: multi && chance(0.4) ? 1 : 0, note: p.backbar ? "Used in services" : undefined });
+        left -= n;
+      }
+      if (p.written) mvs.push({ delta: -p.written[1], reason: p.written[0], daysAgo: between(8, 40), li: 0, note: p.written[0] === "expired" ? "Past its date" : p.written[0] === "damage" ? "Dropped, leaked" : "Missing after a busy Saturday" });
+      if (p.recv) mvs.push({ delta: p.recv.qty, reason: "received", daysAgo: p.recv.daysAgo, li: 0, note: "Order", po: p.recv.po });
+      const perLoc = finals.map((fin, li) => ({ li, opening: fin - mvs.filter((m) => m.li === li).reduce((a, m) => a + m.delta, 0) }));
+      for (const { li, opening } of perLoc) if (opening !== 0) mvs.push({ delta: opening, reason: "opening", daysAgo: 90, li, note: "Opening stock" });
+      await tx.insert(schema.stockMovements).values(mvs.map((m) => ({ businessId, productId: row!.id, locationId: locIds[m.li]!, delta: m.delta, reason: m.reason, note: m.note ?? null, createdByUserId: user!.id, createdAt: daysBack(m.daysAgo) })));
     }
+    // Orders to suppliers: one received a month ago, one partly received, one on its way, one drafted from the reorder list.
+    const prod = (n: string, label?: string) => pRows.find((r) => r.spec.name === n && (r.spec.label ?? null) === (label ?? null))!;
+    const orderPlan: { number: number; supplier: string; status: "received" | "partial" | "ordered" | "draft"; orderedAgo: number | null; receivedAgo?: number; expectedIn?: number; reference?: string; lines: [ReturnType<typeof prod>, number, number][] }[] = [
+      { number: 1, supplier: "Luxe Lash Supply", status: "received", orderedAgo: 34, receivedAgo: 30, reference: "INV-55102", lines: [[prod("Lash Cleanser Foam", "50 ml"), 24, 24], [prod("Classic lash trays", "0.15"), 20, 20]] },
+      { number: 2, supplier: "Pure Skin Distributors", status: "partial", orderedAgo: 12, expectedIn: 2, reference: "SO-77881", lines: [[prod("Daily SPF 50", "100 ml"), 12, 6], [prod("Vitamin C Serum"), 10, 0]] },
+      { number: 3, supplier: "Luxe Lash Supply", status: "ordered", orderedAgo: 2, expectedIn: 3, lines: [[prod("Lash Sealant"), 18, 0], [prod("Lash Growth Serum"), 8, 0], [prod("Volume lash trays", "0.07"), 12, 0], [prod("Lash Adhesive (pro)"), 6, 0]] },
+      { number: 4, supplier: "Salon Essentials Wholesale", status: "draft", orderedAgo: null, lines: [[prod("Eye gel patches (pair)"), 300, 0], [prod("Disposable applicators"), 150, 0]] },
+    ];
+    for (const o of orderPlan) {
+      const [po] = await tx.insert(schema.purchaseOrders).values({ businessId, number: o.number, supplierId: supplierId(o.supplier), locationId, status: o.status, orderedAt: o.orderedAgo != null ? daysBack(o.orderedAgo) : null, receivedAt: o.receivedAgo != null ? daysBack(o.receivedAgo) : null, expectedOn: o.expectedIn != null ? addDays(today, o.expectedIn) : null, reference: o.reference ?? null, createdByUserId: user!.id, createdAt: daysBack(o.orderedAgo ?? 1) }).returning({ id: schema.purchaseOrders.id });
+      await tx.insert(schema.purchaseOrderLines).values(o.lines.map(([p, ordered, received]) => ({ businessId, purchaseOrderId: po!.id, productId: p.id, orderedQty: ordered, receivedQty: received, unitCostCents: p.spec.cost })));
+      // Link the history rows for deliveries to their order.
+      if (o.status === "received" || o.status === "partial") for (const [p] of o.lines) await tx.update(schema.stockMovements).set({ purchaseOrderId: po!.id, note: `Order #${o.number}` }).where(and(eq(schema.stockMovements.productId, p.id), eq(schema.stockMovements.reason, "received")));
+    }
+    // What services use up.
+    for (const u of USAGE) {
+      for (const sv of serviceIds.filter((x) => u.match.test(`${x.name} ${x.group}`))) {
+        for (const [pn, q] of u.uses) {
+          const hit = pRows.find((r) => r.spec.name === pn || `${r.spec.name}${r.spec.label ? ` ${r.spec.label}` : ""}` === pn);
+          if (hit) await tx.insert(schema.serviceProducts).values({ businessId, serviceId: sv.id, productId: hit.id, quantity: q }).onConflictDoNothing();
+        }
+      }
+    }
+    console.log(`Inventory: ${PRODUCTS.length} products, ${supplierRows.length} suppliers, ${orderPlan.length} orders`);
 
     // --- Forms
     const colour = colourIds;

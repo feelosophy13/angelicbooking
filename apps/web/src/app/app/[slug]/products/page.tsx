@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Plus } from "lucide-react";
+import { Download, Pencil, Plus, Upload } from "lucide-react";
 
 export const metadata: Metadata = { title: "Products" };
 import { asc, eq } from "drizzle-orm";
@@ -12,6 +12,7 @@ import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 import { RowLink, rowClass, rowControl } from "@/components/row";
 import { Thumb } from "@/components/thumb";
 import { toggleProductActive } from "./actions";
+import { productLabel, stockStatus } from "@/lib/inventory";
 
 export default async function ProductsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -21,9 +22,10 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
       .select({ p: schema.products, category: schema.productCategories.name })
       .from(schema.products)
       .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
-      .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name)),
+      .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name), asc(schema.products.variantLabel)),
   );
   const manage = can(permissions, "services.manage");
+  const canOpen = manage || can(permissions, "inventory.manage");
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
     const k = r.category ?? "Uncategorised";
@@ -33,6 +35,9 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
     <>
       <PageHeader title="Products">
         {manage ? <LinkButton href={`/app/${slug}/products/categories`}>Categories</LinkButton> : null}
+        {manage && rows.length ? <LinkButton href={`/app/${slug}/products/bulk`}><Pencil className="h-4 w-4" /> Edit all</LinkButton> : null}
+        {manage ? <LinkButton href={`/app/${slug}/products/import`}><Upload className="h-4 w-4" /> Import</LinkButton> : null}
+        {rows.length ? <LinkButton href={`/app/${slug}/products/export`}><Download className="h-4 w-4" /> Export</LinkButton> : null}
         {manage ? <LinkButton href={`/app/${slug}/products/new`} variant="primary"><Plus className="h-4 w-4" /> New product</LinkButton> : null}
       </PageHeader>
       <div className="space-y-4">
@@ -42,17 +47,20 @@ export default async function ProductsPage({ params }: { params: Promise<{ slug:
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">{cat}</h2>
             <ul className="divide-y divide-stone-200">
               {list.map(({ p }) => (
-                <li key={p.id} className={`flex items-center gap-3 px-4 py-3 ${manage ? rowClass : ""}`}>
+                <li key={p.id} className={`flex items-center gap-3 px-4 py-3 ${canOpen ? rowClass : ""}`}>
                   <Thumb src={p.imageUrl} />
                   <div className="min-w-0 flex-1">
-                    {manage ? (
-                      <RowLink href={`/app/${slug}/products/${p.id}`} className={`font-medium ${p.active ? "" : "text-stone-400 line-through"}`}>{p.name}</RowLink>
+                    {canOpen ? (
+                      <RowLink href={`/app/${slug}/products/${p.id}`} className={`font-medium ${p.active ? "" : "text-stone-400 line-through"}`}>{productLabel(p)}</RowLink>
                     ) : (
-                      <p className={p.active ? "font-medium" : "font-medium text-stone-400 line-through"}>{p.name}</p>
+                      <p className={p.active ? "font-medium" : "font-medium text-stone-400 line-through"}>{productLabel(p)}</p>
                     )}
-                    <p className="text-xs text-stone-500">{[p.sku, p.taxable ? "taxable" : "tax-free", p.sellOnline ? "online" : null].filter(Boolean).join(" · ")}{p.trackStock ? <span className={`ml-2 rounded px-1.5 py-0.5 text-[11px] font-medium ${p.stockQty <= 0 ? "bg-red-50 text-red-700" : p.stockQty <= p.lowStockThreshold ? "bg-amber-50 text-amber-800" : "bg-stone-100 text-stone-600"}`}>{p.stockQty <= 0 ? "Out of stock" : `${p.stockQty} in stock`}</span> : null}</p>
+                    <p className="text-xs text-stone-500">{[p.kind === "backbar" ? "back-bar (not sold)" : null, p.sku, p.barcode, p.kind === "backbar" ? null : p.taxable ? "taxable" : "tax-free", p.sellOnline ? "online" : null].filter(Boolean).join(" · ")}{p.trackStock ? (() => {
+                      const st = stockStatus(p.stockQty, p.lowStockThreshold);
+                      return <span className={`ml-2 rounded px-1.5 py-0.5 text-[11px] font-medium ${st === "negative" || st === "out" ? "bg-red-50 text-red-700" : st === "low" ? "bg-amber-50 text-amber-800" : "bg-stone-100 text-stone-600"}`}>{st === "negative" ? `Count is off (${p.stockQty})` : st === "out" ? "Out of stock" : `${p.stockQty} in stock`}</span>;
+                    })() : null}</p>
                   </div>
-                  <span className="w-28 shrink-0 text-right font-medium tabular-nums">{formatMoney(p.priceCents, business.currency)}</span>
+                  <span className="w-28 shrink-0 text-right font-medium tabular-nums">{p.kind === "backbar" ? <span className="text-stone-400">—</span> : formatMoney(p.priceCents, business.currency)}</span>
                   {manage ? (
                     <form action={toggleProductActive} className={rowControl}>
                       <input type="hidden" name="slug" value={slug} />

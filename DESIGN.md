@@ -247,6 +247,18 @@ Every uploaded picture is optimized before it is stored. This is a rule, not a p
   linked, and the client page links to the Gallery with `?client=`.
 - **Elsewhere** show pairs with `PairCard` and `pairViews`; do not draw your own photo grid.
 
+## Inventory
+
+- **One place changes stock.** Every change goes through `applyMove` in `server/inventory.ts`: it writes the history row, the location's count and the product's total together. Nothing else may write
+  `stock_movements` or `product_stock` or touch `stock_qty` (a test enforces it). The total always equals the sum of the locations.
+- **Refunds don't restock.** Money back is not goods back (never arrived, goodwill). A client's return is recorded on purpose, on the sale ("Goods back on the shelf"), capped at what the sale took off.
+- **A sale is never stopped by a wrong count.** The register says "only N in stock" and carries on; the count may go negative and is called "Count is off" (never "-2 in stock"). By hand (write-off, transfer) stock can't go below zero.
+- **Reasons are words** (`MOVEMENT_REASONS`): received, sold, returned, used in services, adjusted, counted, damaged, stolen, expired, lost, sent back, transferred, opening. Add a reason there, not inline.
+- **Back-bar is a kind of product** (`kind = "backbar"`): counted, ordered, never sold (not in the register, not online). Services list what a visit uses; closing the sale takes it off.
+- **Options are the same name plus a label** ("Color Gel · 7N"), each with its own stock, price and barcode. Show `productLabel(p)` everywhere a product is named.
+- **Alerts say what to do, once.** The sidebar badge counts products that are out, low or off. The daily email leaves out products already covered by an order on its way.
+- **Permission:** `inventory.manage` for everything under Inventory and for changing stock; the catalog itself (name, price, options) stays `services.manage`.
+
 ## Checklist before calling a page done
 
 - [ ] One primary action, in the header.

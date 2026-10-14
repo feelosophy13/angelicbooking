@@ -10,6 +10,7 @@ import { changeStoreCredit, creditedAgainstPayment } from "./store-credit";
 import { awardPointsForSale } from "./loyalty";
 import { triggerAppointmentWorkflows } from "./workflows";
 import { decrementStockForSale } from "./inventory";
+import { productLabel } from "@/lib/inventory";
 import { countPromoUse, promoDiscount, validatePromo, PromoError } from "./promos";
 import { locationOrDefault } from "./locations";
 
@@ -237,11 +238,11 @@ export async function getSale(businessId: string, saleId: string) {
       sale.clientId ? tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) }) : Promise.resolve(null),
       tx.select().from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)),
       tx
-        .select({ id: schema.products.id, name: schema.products.name, priceCents: schema.products.priceCents, taxable: schema.products.taxable, category: schema.productCategories.name })
+        .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, trackStock: schema.products.trackStock, priceCents: schema.products.priceCents, taxable: schema.products.taxable, category: schema.productCategories.name })
         .from(schema.products)
         .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
-        .where(eq(schema.products.active, true))
-        .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name)),
+        .where(and(eq(schema.products.active, true), eq(schema.products.kind, "retail")))
+        .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name), asc(schema.products.variantLabel)),
     ]);
     const refunds = pays.length
       ? await tx.select().from(schema.refunds).where(sql`${schema.refunds.paymentId} in ${pays.map((p) => p.id)}`)
@@ -261,7 +262,7 @@ export async function addProductLine(input: { businessId: string; saleId: string
     if (!sale) throw new SaleError("Sale not found.");
     assertOpen(sale);
     const product = await tx.query.products.findFirst({ where: eq(schema.products.id, input.productId) });
-    if (!product || !product.active) throw new SaleError("Product not available.");
+    if (!product || !product.active || product.kind !== "retail") throw new SaleError("Product not available.");
     const qty = Math.max(1, Math.min(99, Math.round(input.quantity)));
     await tx.insert(schema.saleLines).values({
       businessId: input.businessId,
@@ -269,7 +270,7 @@ export async function addProductLine(input: { businessId: string; saleId: string
       kind: "product",
       staffId: input.staffId,
       productId: product.id,
-      name: product.name,
+      name: productLabel(product),
       quantity: qty,
       unitCents: product.priceCents,
       amountCents: product.priceCents * qty,
@@ -752,19 +753,13 @@ export async function refundPayment(input: {
 
 /**
  * Everything closeIfPaid did for a sale, undone once it is fully refunded:
- * stock back on the shelf, earned points taken back, the promo use released,
+ * earned points taken back, the promo use released,
  * unused gift cards deactivated and untouched packages removed. Idempotent.
  * A partly used gift card or package is left alone (the owner decides).
+ * Goods are NOT put back on the shelf: a refund can be for "never arrived" or goodwill, and the product is gone either way.
+ * When a client really brings something back, record it with returnToShelf (inventory).
  */
 async function unwindPaidSale(tx: TenantDb, businessId: string, sale: Sale, actorUserId: string) {
-  const sold = await tx.select().from(schema.stockMovements).where(and(eq(schema.stockMovements.saleId, sale.id), eq(schema.stockMovements.reason, "sale")));
-  const returned = await tx.select({ id: schema.stockMovements.id }).from(schema.stockMovements).where(and(eq(schema.stockMovements.saleId, sale.id), eq(schema.stockMovements.reason, "refund")));
-  if (sold.length && !returned.length) {
-    for (const m of sold) {
-      await tx.insert(schema.stockMovements).values({ businessId, productId: m.productId, delta: -m.delta, reason: "refund", saleId: sale.id, note: `Refund of sale #${sale.number}`, createdByUserId: actorUserId });
-      await tx.update(schema.products).set({ stockQty: sql`${schema.products.stockQty} - ${m.delta}` }).where(eq(schema.products.id, m.productId));
-    }
-  }
   if (sale.clientId) {
     const earned = await tx.query.loyaltyLedger.findFirst({ where: and(eq(schema.loyaltyLedger.saleId, sale.id), eq(schema.loyaltyLedger.reason, "earn")) });
     if (earned && earned.delta > 0) {

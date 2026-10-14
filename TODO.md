@@ -108,7 +108,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       removing a credited line or voiding the sale gives the package session / membership credit back; expired
       packages and lapsed memberships can't be redeemed; gift-card balance updates are atomic; two same-amount gift
       cards (or packages) on one ticket both issue; refunds put money back on gift cards, trim the payment's tip, and a
-      full refund restocks products, takes back earned points, releases the promo use, deactivates unused gift cards
+      full refund takes back earned points (it no longer restocks products; see the 2026-10-13 inventory entry), releases the promo use, deactivates unused gift cards
       and removes untouched packages; "Sell a gift card…" errors show as a toast instead of an error page.
 - [x] Landed 2026-10-10 (batch 4; migration 0047): form questions that depend on an unticked box show from the start;
       an untouched signature pad never posts a blank image; an open time-clock entry older than 14 h is auto-closed at
@@ -248,6 +248,19 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (`APPOINTMENT_CAPABILITIES`) and decided by permissions, never by role names (test fails on a role-name check); the invite form and invitation acceptance follow what a role
       can do. Existing businesses' stored roles do not gain new permissions automatically: the owner opts in under Roles. Still to do: a linked login for each stylist (invite from Staff).
 - [x] 2026-10-13: Staff hours: People view drops the colored coverage strips (they stay in Coverage view with their legend), and an "Edit hours" menu in the header lists each provider and opens their Weekly hours.
+- [x] 2026-10-13: Inventory, built out (migration 0068). Stock is per location (`product_stock`; `products.stock_qty` stays the total) and changes only through
+      `server/inventory.ts` (a test fails otherwise). Refunds no longer restock: the product may be gone (never arrived, goodwill), so a client's return is recorded on purpose
+      ("Goods back on the shelf" on the sale, capped at what the sale took). A sale never stops at the desk for a wrong count: the register warns ("only N in stock"), the count may
+      go negative and shows as "Count is off", and a correction is allowed; by hand, stock can't go below zero. New permission `inventory.manage` (Manager by default, stored Manager roles
+      updated by the migration; owners grant it to others). New Inventory section (sidebar, with a count of what needs attention): Stock (search or scan a barcode, per-location,
+      value at cost/retail), Reorder (suggestions to each product's "order up to" level, counting what is on order, grouped by supplier, drafts an order), Orders (draft → ordered →
+      partly/fully received with cost updates, email the supplier), Suppliers, Count (blind or not; only differences are corrected), Report (running out, best movers, not moving,
+      damage/theft/expiry losses, value by month), Receive stock (no order). Products gain barcode, size/shade options (same name + an option label), back-bar kind (counted, never sold; each service
+      lists what a visit uses and the sale takes it off), usual supplier, order-up-to; Edit all, Import (check first, matches by barcode/SKU/name) and Export spreadsheets. Write-off reasons: damaged,
+      stolen, expired, lost, sent back; transfers between locations. Online store holds stock for unpaid carts (30 minutes) and locks while checking, so two buyers can't both take the last one.
+      Daily low-stock email to owners and inventory managers (after 8am local, from the reminders job). Demo data has suppliers, four orders, back-bar and a history.
+      `pnpm --filter @angelic/web inventory:check` exercises the logic against the demo data. Not built: serial/lot tracking and expiry dates per batch, automatic supplier ordering (orders are written, not sent), counting
+      by scanning each unit, stock-per-location alerts (alerts use the business total), and reorder suggestions per location.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.

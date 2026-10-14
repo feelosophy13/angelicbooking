@@ -172,6 +172,15 @@ export function orderEmail(ctx: BrandCtx, input: { number: number; lines: { name
   return { subject: `Thanks for your order from ${ctx.businessName} (#${input.number})`, html: shell(ctx, "Order received", body) };
 }
 
+/** Daily note to whoever manages inventory: what is out, low, or has a count that is off. */
+export function lowStockEmail(ctx: BrandCtx, input: { items: { name: string; onHand: number; onOrder: number; status: "negative" | "out" | "low" | "ok" }[]; more: number; link: string }) {
+  const word = (i: (typeof input.items)[number]) => (i.status === "negative" ? `count is off (${i.onHand})` : i.status === "out" ? "out of stock" : `${i.onHand} left`) + (i.onOrder ? ` · ${i.onOrder} on order` : "");
+  const rows = input.items.map((i) => `<tr><td style="padding:3px 0">${esc(i.name)}</td><td style="padding:3px 0;text-align:right;color:${i.status === "low" ? "#92400e" : "#b91c1c"}">${esc(word(i))}</td></tr>`).join("");
+  const body = `<p style="margin:0 0 12px;font-size:15px">These products need a look:</p><table style="width:100%;font-size:15px;border-collapse:collapse">${rows}</table>${input.more ? `<p style="font-size:13px;color:#78716c">…and ${input.more} more.</p>` : ""}
+<p style="margin-top:16px"><a href="${esc(input.link)}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:15px">See what to reorder</a></p>`;
+  return { subject: `${input.items.length + input.more} product${input.items.length + input.more === 1 ? "" : "s"} to reorder · ${ctx.businessName}`, html: shell(ctx, "Low stock", body) };
+}
+
 export interface ReceiptCtx extends BrandCtx {
   number: number;
   when: string;

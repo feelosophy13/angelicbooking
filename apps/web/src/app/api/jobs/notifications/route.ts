@@ -3,6 +3,7 @@ import { deliverDue } from "@/lib/notify";
 import { refreshPendingVerifications } from "@/server/messaging";
 import { processWorkflowRuns, runScheduledTriggers } from "@/server/workflows";
 import { queueFormsNudges } from "@/server/forms";
+import { sendLowStockDigests } from "@/server/inventory";
 
 /**
  * Deliver due reminders. Called every 5 minutes by the Render cron job
@@ -21,11 +22,13 @@ export async function POST(req: Request) {
   const a = await runScheduledTriggers().catch((e) => ({ businesses: 0, started: 0, error: (e as Error).message }));
   const w = await processWorkflowRuns().catch((e) => ({ businesses: 0, resumed: 0, queued: 0, error: (e as Error).message }));
   const f = await queueFormsNudges().catch((e) => ({ businesses: 0, queued: 0, error: (e as Error).message }));
+  // Once a day (after 8am local), tell whoever manages inventory what is low; queued here so it goes out in this run.
+  const inv = await sendLowStockDigests().catch((e) => ({ checked: 0, sent: 0, error: (e as Error).message }));
   const r = await deliverDue();
   const v = await refreshPendingVerifications().catch((e) => ({ checked: 0, changed: 0, error: (e as Error).message }));
   const ms = Date.now() - started;
-  console.log(`[jobs/notifications] processed=${r.processed} sent=${r.sent} failed=${r.failed} skipped=${r.skipped} workflowsStarted=${a.started} workflowsResumed=${w.resumed} formsNudges=${f.queued} verifications=${v.checked}/${v.changed} in ${ms}ms`);
-  return NextResponse.json({ ...r, workflows: { ...a, ...w }, formsNudges: f, verifications: v, ms });
+  console.log(`[jobs/notifications] processed=${r.processed} sent=${r.sent} failed=${r.failed} skipped=${r.skipped} workflowsStarted=${a.started} workflowsResumed=${w.resumed} formsNudges=${f.queued} lowStockEmails=${inv.sent} verifications=${v.checked}/${v.changed} in ${ms}ms`);
+  return NextResponse.json({ ...r, workflows: { ...a, ...w }, formsNudges: f, lowStock: inv, verifications: v, ms });
 }
 
 export const GET = POST;

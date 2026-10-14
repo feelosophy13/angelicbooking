@@ -18,7 +18,7 @@
 import fs from "node:fs";
 import { resolveAppointmentLocation } from "../src/server/booking";
 import path from "node:path";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db, getSql, schema, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone, zonedToInstant } from "@angelic/core";
 import { parseCsv } from "../src/lib/import/parse";
@@ -378,9 +378,14 @@ async function importProducts(tx: TenantDb, businessId: string) {
     const backbar = bool(r.business_use);
     const [p] = await tx
       .insert(schema.products)
-      .values({ businessId, categoryId, name: name.slice(0, 120), sku: r.barcode.trim() && r.barcode.trim() !== name ? r.barcode.trim().slice(0, 60) : null, priceCents: cents(r.price), taxable: true, active: !backbar, sellOnline: bool(r.online) && !backbar, description: [r.brand ? `Brand: ${r.brand}` : null, backbar ? "Back-bar / business use" : null].filter(Boolean).join(" · ") || null, trackStock: bool(r.track_inventory), stockQty: Math.max(0, int(r.quantity)), costCents: cents(r.avg_cost) || cents(r.last_cost) })
+      .values({ businessId, categoryId, name: name.slice(0, 120), sku: r.barcode.trim() && r.barcode.trim() !== name ? r.barcode.trim().slice(0, 60) : null, kind: backbar ? "backbar" : "retail", priceCents: cents(r.price), taxable: true, active: true, sellOnline: bool(r.online) && !backbar, description: [r.brand ? `Brand: ${r.brand}` : null, backbar ? "Back-bar / business use" : null].filter(Boolean).join(" · ") || null, trackStock: bool(r.track_inventory) || backbar, stockQty: Math.max(0, int(r.quantity)), barcode: r.barcode.trim() && r.barcode.trim() !== name ? r.barcode.trim().slice(0, 60) : null, costCents: cents(r.avg_cost) || cents(r.last_cost) })
       .returning();
-    if (p!.trackStock && p!.stockQty > 0) await tx.insert(schema.stockMovements).values({ businessId, productId: p!.id, delta: p!.stockQty, reason: "received", note: "Opening stock from Vagaro" });
+    if (p!.trackStock && p!.stockQty > 0) {
+      // Opening stock lives at the main location.
+      const [main] = await tx.select({ id: schema.locations.id }).from(schema.locations).orderBy(desc(schema.locations.isDefault)).limit(1);
+      await tx.insert(schema.stockMovements).values({ businessId, productId: p!.id, locationId: main!.id, delta: p!.stockQty, reason: "opening", note: "Opening stock from Vagaro" });
+      await tx.insert(schema.productStock).values({ businessId, productId: p!.id, locationId: main!.id, qty: p!.stockQty });
+    }
     existing.set(norm(name), p!.id);
     R("products").created++;
   }

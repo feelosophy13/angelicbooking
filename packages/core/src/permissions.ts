@@ -21,6 +21,7 @@ export const ACTIONS = [
   "checkout.take",
   "reports.view",
   "payroll.view",
+  "inventory.manage", // receive, count, adjust and order stock; suppliers (the catalog itself is services.manage)
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
@@ -52,6 +53,12 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
       { action: "checkout.take", label: "Take payments", description: "Open checkout, record payments, sell packages and gift cards." },
       { action: "reports.view", label: "View sales reports", description: "Sales, tips and refunds across the business. Also allows refunds." },
       { action: "payroll.view", label: "Run payroll", description: "See pay rules and generate pay sheets for everyone." },
+    ],
+  },
+  {
+    title: "Inventory",
+    items: [
+      { action: "inventory.manage", label: "Manage inventory", description: "Receive and count stock, write off or transfer it, and handle suppliers, purchase orders and reorders." },
     ],
   },
   {

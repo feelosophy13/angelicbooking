@@ -9,6 +9,7 @@ import { ensureCategory } from "@/server/categories";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { setServiceLocations } from "@/server/locations";
+import { setServiceUsage } from "@/server/inventory";
 import { deleteFileByUrl, FileError, uploadedImageFrom } from "@/lib/files";
 import { applyServiceTerms, parseMinutesField, parsePriceField, TermError } from "@/server/stylist-pricing";
 
@@ -167,4 +168,12 @@ export async function saveServiceStylistTerms(formData: FormData) {
   }
   await setFlash("Prices by stylist saved");
   revalidatePath(`/app/${slug}/services/${serviceId}`);
+}
+
+/** Set how many units of a product one visit of this service uses (0, or "Remove", takes it off the list). */
+export async function setServiceProduct(formData: FormData) {
+  const d = z.object({ slug: z.string(), serviceId: z.string().min(1), productId: z.string().min(1), quantity: z.coerce.number().int().min(0).max(1000).default(1) }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "services.manage");
+  await setServiceUsage({ businessId: ctx.business.id, serviceId: d.serviceId, productId: d.productId, quantity: formData.get("remove") ? 0 : d.quantity });
+  revalidatePath(`/app/${d.slug}/services/${d.serviceId}`);
 }

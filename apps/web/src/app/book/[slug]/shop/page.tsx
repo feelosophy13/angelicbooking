@@ -6,6 +6,7 @@ import { storeProducts, storeReady } from "@/server/store";
 import { currentClient } from "@/server/client-auth";
 import { brandHex } from "@/lib/brand";
 import { StoreCheckout } from "./checkout";
+import { productLabel } from "@/lib/inventory";
 
 export default async function ShopPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ location?: string }> }) {
   const { slug } = await params;
@@ -15,8 +16,8 @@ export default async function ShopPage({ params, searchParams }: { params: Promi
   const locations = await getPublicLocations(business.id);
   const location = locations.length > 1 ? (locations.find((l) => l.id === locParam) ?? locations.find((l) => l.isDefault) ?? locations[0] ?? null) : null;
   const ready = await storeReady(business, location?.id);
-  const [rows, me] = await Promise.all([storeProducts(business.id), business.clientAccountsEnabled ? currentClient(business) : Promise.resolve(null)]);
-  const products = rows.map(({ p, category }) => ({ id: p.id, name: p.name, priceCents: p.priceCents, description: p.description, imageUrl: p.imageUrl, category, stockQty: p.stockQty, trackStock: p.trackStock }));
+  const [rows, me] = await Promise.all([storeProducts(business.id, location?.id), business.clientAccountsEnabled ? currentClient(business) : Promise.resolve(null)]);
+  const products = rows.map(({ p, category, available }) => ({ id: p.id, name: productLabel(p), priceCents: p.priceCents, description: p.description, imageUrl: p.imageUrl, category, stockQty: available ?? 0, trackStock: available != null }));
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">

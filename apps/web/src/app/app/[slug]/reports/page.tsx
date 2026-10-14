@@ -8,6 +8,7 @@ import { can, instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { salesReport } from "@/server/sales";
 import { stockReport } from "@/server/inventory";
+import { productLabel } from "@/lib/inventory";
 import { withTenant } from "@angelic/db";
 import { payrollByLocation, runPayroll } from "@/server/payroll";
 import { storeCreditSummary } from "@/server/store-credit";
@@ -489,7 +490,7 @@ export default async function ReportsPage({
             <tbody className="divide-y divide-stone-100">
               {stock.items.map((i) => (
                 <tr key={i.id} className={i.low ? "bg-amber-50/60" : ""}>
-                  <td className="px-4 py-2"><Link href={`/app/${slug}/products/${i.id}`} className="hover:underline">{i.name}</Link>{i.category ? <span className="ml-1 text-xs text-stone-500">· {i.category}</span> : null}{i.low ? <span className="ml-2 text-xs font-medium text-amber-700">Low</span> : null}</td>
+                  <td className="px-4 py-2"><Link href={`/app/${slug}/products/${i.id}`} className="hover:underline">{productLabel(i)}</Link>{i.category ? <span className="ml-1 text-xs text-stone-500">· {i.category}</span> : null}{i.status === "negative" ? <span className="ml-2 text-xs font-medium text-red-700">Count is off</span> : i.status === "out" ? <span className="ml-2 text-xs font-medium text-red-700">Out</span> : i.low ? <span className="ml-2 text-xs font-medium text-amber-700">Low</span> : null}</td>
                   <td className="px-4 py-2 text-right">{i.stockQty}</td>
                   <td className="px-4 py-2 text-right">{money(i.valueCents)}</td>
                   <td className="px-4 py-2 text-right">{money(i.retailCents)}</td>

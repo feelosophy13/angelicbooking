@@ -67,6 +67,7 @@ Production runs on Render (workspace "My Workspace", region Virginia):
   Moving hosts: add the domain on Render, add DNS, wait for "verified", change the two env vars, deploy, update the cron
   job's URL, and add the new origin + redirect URI to the Google OAuth client.
 - Changing an env var through the API does not trigger a deploy; POST `/v1/services/<id>/deploys` afterwards.
+- Low-stock email: the same job (`/api/jobs/notifications`) emails owners and inventory managers once a day after 8am business-local time, listing what is out, low or off and not already on order. Nothing to set up.
 - Reminder delivery: the Render Cron Job `angelic-booking-reminders` (crn-db3hnf6i0phs73a81qcg, same repo, build
   command `echo no build needed`) runs every 5 minutes:
   `curl -fsS -X POST -H "Authorization: Bearer $JOBS_SECRET" https://app.angelicbooking.com/api/jobs/notifications`.

@@ -2,7 +2,7 @@
 import { sql } from "drizzle-orm";
 import { pgTable, pgEnum, text, integer, boolean, timestamp, index, uniqueIndex, check, jsonb } from "drizzle-orm/pg-core";
 import { user } from "./auth";
-import { appointments, businesses, clients, locations, staff } from "./domain";
+import { appointments, businesses, clients, locations, services, staff } from "./domain";
 
 const id = () =>
   text("id")
@@ -33,6 +33,24 @@ export const productCategories = pgTable(
   (t) => [index("product_categories_business_idx").on(t.businessId)],
 );
 
+/** Who a business buys retail and back-bar products from. */
+export const suppliers = pgTable(
+  "suppliers",
+  {
+    id: id(),
+    businessId: businessId(),
+    name: text("name").notNull(),
+    contactName: text("contact_name"),
+    email: text("email"),
+    phone: text("phone"),
+    accountNumber: text("account_number"),
+    notes: text("notes"),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("suppliers_business_idx").on(t.businessId, t.name)],
+);
+
 export const products = pgTable(
   "products",
   {
@@ -41,6 +59,12 @@ export const products = pgTable(
     categoryId: text("category_id").references(() => productCategories.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     sku: text("sku"),
+    // What a scanner reads (EAN/UPC); the register and receiving find a product by it.
+    barcode: text("barcode"),
+    // Sold in options (a size, a shade): products with the same name and a label here are shown together.
+    variantLabel: text("variant_label"),
+    // retail: sold to clients. backbar: used up in services (stock is tracked, never sold).
+    kind: text("kind").notNull().default("retail"),
     priceCents: integer("price_cents").notNull(),
     taxable: boolean("taxable").notNull().default(true),
     active: boolean("active").notNull().default(true),
@@ -52,14 +76,93 @@ export const products = pgTable(
     trackStock: boolean("track_stock").notNull().default(false),
     stockQty: integer("stock_qty").notNull().default(0),
     lowStockThreshold: integer("low_stock_threshold").notNull().default(3),
+    // Reorder suggestions bring the count back up to this (blank: twice the low-stock level).
+    reorderUpTo: integer("reorder_up_to"),
+    supplierId: text("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
     costCents: integer("cost_cents").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("products_business_idx").on(t.businessId, t.name)],
+  (t) => [index("products_business_idx").on(t.businessId, t.name), index("products_barcode_idx").on(t.businessId, t.barcode)],
 );
 
-// Every change to on-hand stock: received, sold, adjusted, returned.
+/** On-hand quantity of a product at one location. products.stock_qty is always the sum across locations. */
+export const productStock = pgTable(
+  "product_stock",
+  {
+    id: id(),
+    businessId: businessId(),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    locationId: text("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    qty: integer("qty").notNull().default(0),
+  },
+  (t) => [uniqueIndex("product_stock_uq").on(t.productId, t.locationId), index("product_stock_business_idx").on(t.businessId, t.locationId)],
+);
+
+/** What a service uses up (back-bar), taken off the shelf each time the service is rung up. */
+export const serviceProducts = pgTable(
+  "service_products",
+  {
+    id: id(),
+    businessId: businessId(),
+    serviceId: text("service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "cascade" }),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    quantity: integer("quantity").notNull().default(1),
+  },
+  (t) => [uniqueIndex("service_products_uq").on(t.serviceId, t.productId), index("service_products_product_idx").on(t.productId)],
+);
+
+export const purchaseOrderStatus = pgEnum("purchase_order_status", ["draft", "ordered", "partial", "received", "cancelled"]);
+
+/** An order to a supplier. Receiving it (all or part at a time) adds the stock and updates the unit cost. */
+export const purchaseOrders = pgTable(
+  "purchase_orders",
+  {
+    id: id(),
+    businessId: businessId(),
+    number: integer("number").notNull(),
+    supplierId: text("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+    // Where the delivery goes (and so where the received stock is counted).
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
+    status: purchaseOrderStatus("status").notNull().default("draft"),
+    expectedOn: text("expected_on"), // YYYY-MM-DD
+    orderedAt: timestamp("ordered_at", { withTimezone: true }),
+    receivedAt: timestamp("received_at", { withTimezone: true }),
+    reference: text("reference"), // the supplier's invoice / confirmation number
+    notes: text("notes"),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("purchase_orders_number_uq").on(t.businessId, t.number), index("purchase_orders_status_idx").on(t.businessId, t.status)],
+);
+
+export const purchaseOrderLines = pgTable(
+  "purchase_order_lines",
+  {
+    id: id(),
+    businessId: businessId(),
+    purchaseOrderId: text("purchase_order_id")
+      .notNull()
+      .references(() => purchaseOrders.id, { onDelete: "cascade" }),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    orderedQty: integer("ordered_qty").notNull(),
+    receivedQty: integer("received_qty").notNull().default(0),
+    unitCostCents: integer("unit_cost_cents").notNull().default(0),
+  },
+  (t) => [uniqueIndex("purchase_order_lines_uq").on(t.purchaseOrderId, t.productId)],
+);
+
+// Every change to on-hand stock: received, sold, used, adjusted, counted, returned, written off, transferred.
 export const stockMovements = pgTable(
   "stock_movements",
   {
@@ -69,13 +172,21 @@ export const stockMovements = pgTable(
       .notNull()
       .references(() => products.id, { onDelete: "cascade" }),
     delta: integer("delta").notNull(),
-    reason: text("reason").notNull(), // received | sale | adjust | refund
+    // received | sale | return | used | adjust | count | damage | theft | expired | lost | supplier_return | transfer_in | transfer_out | opening
+    reason: text("reason").notNull(),
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     saleId: text("sale_id"),
+    purchaseOrderId: text("purchase_order_id"),
     note: text("note"),
     createdByUserId: text("created_by_user_id"),
     createdAt: createdAt(),
   },
-  (t) => [index("stock_movements_product_idx").on(t.businessId, t.productId, t.createdAt), uniqueIndex("stock_movements_sale_product_uq").on(t.saleId, t.productId, t.reason)],
+  (t) => [
+    index("stock_movements_product_idx").on(t.businessId, t.productId, t.createdAt),
+    index("stock_movements_business_created_idx").on(t.businessId, t.createdAt),
+    // A sale takes stock once per product (and back-bar use once), however often it is closed again.
+    uniqueIndex("stock_movements_sale_product_uq").on(t.saleId, t.productId, t.reason).where(sql`${t.reason} in ('sale', 'used')`),
+  ],
 );
 
 export const sales = pgTable(

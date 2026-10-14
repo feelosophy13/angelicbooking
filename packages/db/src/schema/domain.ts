@@ -59,6 +59,8 @@ export const businesses = pgTable("businesses", {
   slug: text("slug").notNull().unique(),
   timezone: text("timezone").notNull().default("America/New_York"),
   currency: text("currency").notNull().default("usd"),
+  // Last day (business-local, YYYY-MM-DD) the low-stock email went out, so it goes once a day.
+  inventoryDigestOn: text("inventory_digest_on"),
   slotIntervalMin: smallint("slot_interval_min").notNull().default(15),
   phone: text("phone"),
   email: text("email"),
@@ -1323,4 +1325,9 @@ export const TENANT_TABLES = [
   "promo_codes",
   "inbound_messages",
   "stock_movements",
+  "product_stock",
+  "service_products",
+  "suppliers",
+  "purchase_orders",
+  "purchase_order_lines",
 ] as const;

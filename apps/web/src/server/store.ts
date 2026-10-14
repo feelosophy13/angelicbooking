@@ -14,6 +14,8 @@ import { paymentContextFor, paymentContextForSale } from "./locations";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { findOrCreateClient, type PublicBusiness } from "./public-booking";
 import { markCardPaymentSucceeded } from "./sales";
+import { onlineAvailability } from "./inventory";
+import { productLabel } from "@/lib/inventory";
 import { queueOneOff } from "@/lib/notify";
 import { giftCardEmail, orderEmail } from "@/lib/notify/templates";
 import { formatMoney } from "@/lib/utils";
@@ -28,15 +30,18 @@ export async function storeReady(business: PublicBusiness, locationId?: string |
   return pay.ready && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 }
 
-export async function storeProducts(businessId: string) {
-  return withTenant(businessId, (tx) =>
-    tx
+/** What the shop lists, with how many can still be sold at the location (null: stock isn't tracked). */
+export async function storeProducts(businessId: string, locationId?: string | null) {
+  return withTenant(businessId, async (tx) => {
+    const rows = await tx
       .select({ p: schema.products, category: schema.productCategories.name })
       .from(schema.products)
       .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
-      .where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true)))
-      .orderBy(asc(schema.productCategories.sortOrder), asc(schema.products.name)),
-  );
+      .where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true), eq(schema.products.kind, "retail")))
+      .orderBy(asc(schema.productCategories.sortOrder), asc(schema.products.name), asc(schema.products.variantLabel));
+    const avail = await onlineAvailability(tx, locationId ?? null, rows.map((r) => r.p.id));
+    return rows.map((r) => ({ ...r, available: avail.get(r.p.id) ?? null }));
+  });
 }
 
 export interface OrderInput {
@@ -56,7 +61,9 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
   const clientId = await findOrCreateClient(business.id, { ...input.buyer, phone: input.buyer.phone, notes: null, serviceId: "", staffId: "", startAt: new Date(), email: input.buyer.email });
   const accountId = pay.accountId!;
   return withTenant(business.id, async (tx) => {
-    const products = input.items.length ? await tx.select().from(schema.products).where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true), sql`${schema.products.id} in ${input.items.map((i) => i.productId)}`)) : [];
+    const products = input.items.length ? await tx.select().from(schema.products).where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true), eq(schema.products.kind, "retail"), sql`${schema.products.id} in ${input.items.map((i) => i.productId)}`)) : [];
+    // What can still be sold here: on hand at this location, less other buyers' unpaid orders (the products are locked while we check).
+    const available = await onlineAvailability(tx, pay.location?.id ?? null, products.map((p) => p.id), { lock: true });
     const lines: (typeof schema.saleLines.$inferInsert)[] = [];
     let subtotal = 0;
     let taxable = 0;
@@ -64,11 +71,12 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
       const p = products.find((x) => x.id === it.productId);
       if (!p) throw new StoreError("One of the products is no longer available.");
       const qty = Math.max(1, Math.min(20, Math.floor(it.quantity)));
-      if (p.trackStock && p.stockQty < qty) throw new StoreError(`Only ${p.stockQty} of ${p.name} left.`);
+      const left = available.get(p.id);
+      if (left != null && left < qty) throw new StoreError(left <= 0 ? `${productLabel(p)} just sold out.` : `Only ${left} of ${productLabel(p)} left.`);
       const amount = p.priceCents * qty;
       subtotal += amount;
       if (p.taxable) taxable += amount;
-      lines.push({ businessId: business.id, kind: "product", productId: p.id, name: p.name, quantity: qty, unitCents: p.priceCents, amountCents: amount, taxable: p.taxable, sortOrder: lines.length, saleId: "" });
+      lines.push({ businessId: business.id, kind: "product", productId: p.id, name: productLabel(p), quantity: qty, unitCents: p.priceCents, amountCents: amount, taxable: p.taxable, sortOrder: lines.length, saleId: "" });
     }
     if (input.giftCard) {
       const g = input.giftCard;

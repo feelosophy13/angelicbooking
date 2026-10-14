@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow, FileText, Heart, Images, ShieldCheck } from "lucide-react";
+import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes } from "lucide-react";
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
@@ -15,15 +15,17 @@ import { CommandPalette } from "@/components/command-palette";
 import { NavHistory } from "@/components/nav-history";
 import { navSections } from "@/lib/nav";
 import { NavLink } from "./nav-link";
+import { lowStockCount } from "@/server/inventory";
 import { MobileNav, type NavSection } from "./mobile-nav";
 
-const ICON: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, Receipt, Workflow, FileText, Heart, Images, ShieldCheck };
+const ICON: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes };
 
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, user, role, permissions, viewingAs, realRole, staffId } = await requireBusiness(slug);
   const [mine, roles, locations] = await Promise.all([listMyBusinesses(user.id), listRoles(business.id), withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations).orderBy(desc(schema.locations.isDefault), asc(schema.locations.name)))]);
   void permissionsForRole;
+  const lowCount = can(permissions, "inventory.manage") ? await lowStockCount(business.id) : 0;
   // Development only: the staff a Provider can be viewed as.
   const viewAsStaff = viewAsEnabled() ? await withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName))) : [];
   const roleName = roles.find((r) => r.key === role)?.name ?? role.replace("_", " ");
@@ -69,7 +71,7 @@ export default async function AppLayout({ children, params }: { children: React.
                   const I = ICON[n.iconName] ?? CalendarDays;
                   return (
                     <NavLink key={n.href} href={n.href} exact={n.exact} exclude={n.exclude}>
-                      <span className="flex items-center gap-2.5"><I className="h-4 w-4 text-stone-400" />{n.label}</span>
+                      <span className="flex items-center gap-2.5"><I className="h-4 w-4 text-stone-400" />{n.label}{n.href === `${base}/inventory` && lowCount ? <span className="ml-auto rounded-full bg-amber-100 px-1.5 text-[11px] font-medium text-amber-800" title={`${lowCount} product${lowCount === 1 ? "" : "s"} low, out or off`}>{lowCount}</span> : null}</span>
                     </NavLink>
                   );
                 })}
