@@ -247,6 +247,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       calendar, change their own bookings (services, moving, dragging), cancel their own (with fees and series), and block time on their own calendar. All of it is table-driven
       (`APPOINTMENT_CAPABILITIES`) and decided by permissions, never by role names (test fails on a role-name check); the invite form and invitation acceptance follow what a role
       can do. Existing businesses' stored roles do not gain new permissions automatically: the owner opts in under Roles. Still to do: a linked login for each stylist (invite from Staff).
+- [x] 2026-10-13: Staff hours: People view drops the colored coverage strips (they stay in Coverage view with their legend), and an "Edit hours" menu in the header lists each provider and opens their Weekly hours.
 - [x] 2026-10-13: every upload is optimized, enforced in one place (`optimizeUpload`) and guarded by a test; form photos
       resized, GIFs become WebP, signatures recompressed, SVG capped at 512 KB; rule added to DESIGN.md. Limits: HEIC form
       photos stay as sent (the image library cannot read HEIC); SVG is not minified.

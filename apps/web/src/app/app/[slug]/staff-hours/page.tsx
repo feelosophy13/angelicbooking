@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Ban, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Ban, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus } from "lucide-react";
 import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can, instantToISODate, mondayOf } from "@angelic/core";
@@ -89,6 +89,18 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   return (
     <>
       <PageHeader title="Staff hours">
+        {manage && people.length ? (
+          <details className="group relative">
+            <summary className="inline-flex h-9 cursor-pointer select-none items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium text-stone-800 hover:bg-stone-50 marker:content-none [&::-webkit-details-marker]:hidden">
+              <Pencil className="h-4 w-4" /> Edit hours <ChevronDown className="h-4 w-4 text-stone-400 transition-transform group-open:rotate-180" aria-hidden />
+            </summary>
+            <ul className="absolute right-0 z-20 mt-1 w-56 rounded-lg border border-stone-200 bg-white py-1 text-sm shadow-lg">
+              {people.map((p) => (
+                <li key={p.id}><Link href={`${base}/staff/${p.id}/hours`} className="block px-3 py-1.5 text-stone-800 hover:bg-stone-50">{p.name}</Link></li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
         {can(permissions, "appointments.write.any") ? <LinkButton href={`${base}/appointments/block?date=${today}`} size="sm"><Ban className="h-4 w-4" /> Block time</LinkButton> : null}
       </PageHeader>
 
@@ -122,8 +134,8 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
             ))}
           </div>
           <p className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
-            <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-emerald-400 align-middle" />{coverage.scope.label === "All services" ? "every service covered" : `${coverage.scope.label} covered`}</span>
-            <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-amber-400 align-middle" />some services uncovered</span>
+            {view === "coverage" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-emerald-400 align-middle" />{coverage.scope.label === "All services" ? "every service covered" : `${coverage.scope.label} covered`}</span> : null}
+            {view === "coverage" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-amber-400 align-middle" />some services uncovered</span> : null}
             <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-red-400 align-middle" />open, nobody in</span>
             <span><span className="hatched mr-1 inline-block h-2.5 w-2.5 rounded-sm border border-stone-200 align-middle" />closed</span>
           </p>

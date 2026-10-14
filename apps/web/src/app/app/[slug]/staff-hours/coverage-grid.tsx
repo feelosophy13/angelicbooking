@@ -66,15 +66,15 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref, mode }: { day: C
       {day.uncovered.map((u, i) => <div key={`u${i}`} className="pointer-events-none absolute inset-x-0 bg-red-50" style={{ top: y(u.start), height: y(u.end) - y(u.start) }} />)}
       {/* Hour lines */}
       {hours.map((t) => <div key={t} className="pointer-events-none absolute inset-x-0 border-t border-stone-100" style={{ top: y(t) }} />)}
-      {/* Coverage strip on the left edge */}
-      {day.strip.map((s, i) => (
+      {/* Coverage strip on the left edge: coverage view only. With people drawn, the lanes say it and the strip is clutter. */}
+      {mode === "coverage" ? day.strip.map((s, i) => (
         <div
           key={i}
           className={cn("absolute left-0 w-1.5", STRIP[s.state])}
           style={{ top: y(s.start), height: Math.max(2, y(s.end) - y(s.start)) }}
           title={`${fmt(s.start)}–${fmt(s.end)}: ${s.state === "none" ? "nobody in" : s.state === "full" ? "all covered" : `not covered: ${describeMissing(s)}`}`}
         />
-      ))}
+      )) : null}
       {/* Coverage view: tint each stretch and say what is missing */}
       {mode === "coverage"
         ? day.strip.filter((s) => s.state !== "closed").map((s, i) => {
