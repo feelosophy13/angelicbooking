@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { DocPage } from "@/components/doc-page";
+import { DocsShell } from "./docs-shell";
 import { API_SCOPES } from "@/lib/api-scopes";
-import { Code, Endpoint } from "./doc-kit";
+import { Code, Endpoint, Group } from "./doc-kit";
 import { CatalogDocs } from "./sections/catalog";
 import { InventoryDocs } from "./sections/inventory";
 import { ClientsDocs } from "./sections/clients";
@@ -18,10 +18,12 @@ const BASE = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://app.angelicbooking.c
 
 export default function DevelopersPage() {
   return (
-    <DocPage title="API documentation" updated="October 14, 2026">
+    <DocsShell updated="October 14, 2026">
       <p>The REST API lets you read and manage your own business from your own software: a website, a spreadsheet, Zapier, a point-of-sale or an internal tool. It speaks JSON over HTTPS. Every key belongs to exactly one business and can never see another.</p>
       <p>Base URL: <code>{BASE}</code></p>
 
+
+      <Group title="Getting started" />
       <h2>Quick start</h2>
       <ol className="list-decimal space-y-1 pl-5">
         <li>Sign in, open <strong>Settings → API access</strong> and create a key. Only owners (and anyone allowed to change business settings) can.</li>
@@ -74,11 +76,13 @@ export default function DevelopersPage() {
           ].map(([a, b, c]) => <tr key={a} className="border-b border-stone-100"><td className="py-1 pr-4">{a}</td><td className="py-1 pr-4"><code>{b}</code></td><td className="py-1">{c}</td></tr>)}
         </tbody>
       </table>
+      <p>The endpoints below let a key do what an admin can do in the app. Each section names the scope it needs. Scopes marked powerful in the key form can change who may do what, pay settings or reach many clients at once: give them only to software you trust, and prefer a separate key for each.</p>
 
+      <Group title="Catalog and inventory" />
       <h2>Business</h2>
       <Endpoint method="GET" path="/business" scope="catalog:read"><p>Your business&apos;s name, timezone, contact details and slot length.</p></Endpoint>
 
-      <h2>Services, staff and products</h2>
+      <h2>Reading the catalog</h2>
       <Endpoint method="GET" path="/services" scope="catalog:read"><p>Active services. Add <code>?include_inactive=1</code> for all of them. Prices and durations are the base values; a stylist may have their own.</p></Endpoint>
       <Endpoint method="GET" path="/services/{id}" scope="catalog:read" />
       <Endpoint method="GET" path="/staff" scope="catalog:read"><p>Active team members: name, position, bio and photo. Pay, contact details and logins are never included.</p></Endpoint>
@@ -106,12 +110,40 @@ export default function DevelopersPage() {
       <Endpoint method="POST" path="/products" scope="catalog:write"><p>Required: <code>name</code>, <code>price_cents</code>. Optional: <code>description</code>, <code>kind</code> (<code>retail</code> or <code>backbar</code>), <code>category_id</code>, <code>sku</code>, <code>barcode</code>, <code>cost_cents</code>, <code>taxable</code>, <code>sell_online</code>, <code>track_stock</code>, <code>low_stock_threshold</code>, <code>active</code>. A barcode or SKU can belong to one product only (409).</p></Endpoint>
       <Endpoint method="PATCH" path="/products/{id}" scope="catalog:write"><p>Send only what changes. Stock counts change through stock adjustments, never here.</p></Endpoint>
 
+      <CatalogDocs />
       <h2>Inventory</h2>
       <Endpoint method="GET" path="/inventory" scope="inventory:read"><p>Products with tracked stock: <code>on_hand</code>, <code>low_stock_threshold</code> and <code>is_low</code>.</p></Endpoint>
       <Endpoint method="GET" path="/products/{id}/stock-movements" scope="inventory:read"><p>Every change to the product&apos;s stock, newest first.</p></Endpoint>
       <Endpoint method="POST" path="/products/{id}/stock-adjustments" scope="inventory:write">
         <p>Body: <code>reason</code> (<code>received</code>, <code>adjust</code>, <code>damage</code>, <code>theft</code>, <code>expired</code>, <code>lost</code>, <code>supplier_return</code>, <code>used</code>), <code>quantity</code>, optional <code>location_id</code> and <code>note</code>. <code>received</code> adds and the loss reasons take away (send a positive number for both); <code>adjust</code> is signed. Stock never goes below zero (409). Returns the new <code>on_hand</code>.</p>
       </Endpoint>
+
+      <InventoryDocs />
+
+      <Group title="Appointments and clients" />
+      <h2>Appointments</h2>
+      <Endpoint method="GET" path="/appointments" scope="appointments:read"><p>Client visits (not blocked time), earliest first. Query: <code>from</code>, <code>to</code> (ISO times, matched on the start), <code>status</code>, <code>client_id</code>, <code>staff_id</code>. Includes <code>total</code>.</p></Endpoint>
+      <Endpoint method="GET" path="/appointments/{id}" scope="appointments:read" />
+      <Endpoint method="POST" path="/appointments" scope="appointments:write">
+        <p>Books one service with one staff member. Body: <code>client_id</code>, <code>service_id</code>, <code>staff_id</code>, <code>start_at</code> (ISO 8601 <em>with</em> an offset or <code>Z</code>), optional <code>notes</code>, optional <code>notify</code> (default <code>true</code>: texts or emails the client a confirmation if they have opted in).</p>
+        <p>Use <code>/availability</code> first to pick a time. If someone else holds the time you get <code>409 booking_conflict</code>.</p>
+      </Endpoint>
+      <Endpoint method="PATCH" path="/appointments/{id}" scope="appointments:write"><p>Change <code>status</code> (<code>booked</code>, <code>confirmed</code>, <code>checked_in</code>, <code>in_progress</code>, <code>completed</code>, <code>no_show</code>) and/or <code>notes</code>.</p></Endpoint>
+      <Endpoint method="POST" path="/appointments/{id}/reschedule" scope="appointments:write"><p>Body: <code>start_at</code>, optional <code>staff_id</code>, <code>notify</code> (default <code>true</code>). Moves the visit&apos;s service. 409 when the time is taken or outside the provider&apos;s hours.</p></Endpoint>
+      <Endpoint method="POST" path="/appointments/{id}/cancel" scope="appointments:write"><p>Body: optional <code>reason</code>, <code>notify</code> (default <code>true</code>). No fee is charged and nothing is refunded; do those in the app.</p></Endpoint>
+      <Code>{`curl -X POST ${BASE}/appointments \\
+  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\
+  -d '{ "client_id": "…", "service_id": "…", "staff_id": "…", "start_at": "2026-11-02T14:00:00-05:00" }'`}</Code>
+
+      <AppointmentsDocs />
+      <h2>Blocked time</h2>
+      <Endpoint method="POST" path="/blocks" scope="appointments:write"><p>Take time off a provider&apos;s calendar. Body: <code>staff_id</code>, <code>start_at</code>, <code>end_at</code> (up to 24 hours), optional <code>reason</code>, <code>location_id</code>. 409 if it collides with a booking.</p></Endpoint>
+      <Endpoint method="DELETE" path="/blocks/{id}" scope="appointments:write"><p>Remove blocked time. Only blocks: a client&apos;s appointment is cancelled, never deleted.</p></Endpoint>
+
+      <h2>Waitlist</h2>
+      <Endpoint method="GET" path="/waitlist" scope="appointments:read"><p>Optional <code>status</code> (<code>open</code>, <code>booked</code>, <code>closed</code>).</p></Endpoint>
+      <Endpoint method="POST" path="/waitlist" scope="appointments:write"><p>Body: <code>client_id</code>, <code>service_id</code>, <code>date</code>, optional <code>staff_id</code>, <code>location_id</code>, <code>notes</code>.</p></Endpoint>
+      <Endpoint method="PATCH" path="/waitlist/{id}" scope="appointments:write"><p>Body: <code>status</code>.</p></Endpoint>
 
       <h2>Clients</h2>
       <Endpoint method="GET" path="/clients" scope="clients:read"><p>Query: <code>q</code> (name, email or phone search), <code>email</code>, <code>phone</code>, <code>updated_since</code> (ISO time, for syncing). Includes <code>total</code>.</p></Endpoint>
@@ -129,48 +161,27 @@ export default function DevelopersPage() {
   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\
   -d '{ "first_name": "Maya", "last_name": "Lopez", "email": "maya@example.com", "phone": "(212) 555-0142" }'`}</Code>
 
-      <h2>Appointments</h2>
-      <Endpoint method="GET" path="/appointments" scope="appointments:read"><p>Client visits (not blocked time), earliest first. Query: <code>from</code>, <code>to</code> (ISO times, matched on the start), <code>status</code>, <code>client_id</code>, <code>staff_id</code>. Includes <code>total</code>.</p></Endpoint>
-      <Endpoint method="GET" path="/appointments/{id}" scope="appointments:read" />
-      <Endpoint method="POST" path="/appointments" scope="appointments:write">
-        <p>Books one service with one staff member. Body: <code>client_id</code>, <code>service_id</code>, <code>staff_id</code>, <code>start_at</code> (ISO 8601 <em>with</em> an offset or <code>Z</code>), optional <code>notes</code>, optional <code>notify</code> (default <code>true</code>: texts or emails the client a confirmation if they have opted in).</p>
-        <p>Use <code>/availability</code> first to pick a time. If someone else holds the time you get <code>409 booking_conflict</code>.</p>
-      </Endpoint>
-      <Endpoint method="PATCH" path="/appointments/{id}" scope="appointments:write"><p>Change <code>status</code> (<code>booked</code>, <code>confirmed</code>, <code>checked_in</code>, <code>in_progress</code>, <code>completed</code>, <code>no_show</code>) and/or <code>notes</code>.</p></Endpoint>
-      <Endpoint method="POST" path="/appointments/{id}/reschedule" scope="appointments:write"><p>Body: <code>start_at</code>, optional <code>staff_id</code>, <code>notify</code> (default <code>true</code>). Moves the visit&apos;s service. 409 when the time is taken or outside the provider&apos;s hours.</p></Endpoint>
-      <Endpoint method="POST" path="/appointments/{id}/cancel" scope="appointments:write"><p>Body: optional <code>reason</code>, <code>notify</code> (default <code>true</code>). No fee is charged and nothing is refunded; do those in the app.</p></Endpoint>
-      <Code>{`curl -X POST ${BASE}/appointments \\
-  -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\
-  -d '{ "client_id": "…", "service_id": "…", "staff_id": "…", "start_at": "2026-11-02T14:00:00-05:00" }'`}</Code>
-
-      <h2>Blocked time</h2>
-      <Endpoint method="POST" path="/blocks" scope="appointments:write"><p>Take time off a provider&apos;s calendar. Body: <code>staff_id</code>, <code>start_at</code>, <code>end_at</code> (up to 24 hours), optional <code>reason</code>, <code>location_id</code>. 409 if it collides with a booking.</p></Endpoint>
-      <Endpoint method="DELETE" path="/blocks/{id}" scope="appointments:write"><p>Remove blocked time. Only blocks: a client&apos;s appointment is cancelled, never deleted.</p></Endpoint>
-
-      <h2>Waitlist</h2>
-      <Endpoint method="GET" path="/waitlist" scope="appointments:read"><p>Optional <code>status</code> (<code>open</code>, <code>booked</code>, <code>closed</code>).</p></Endpoint>
-      <Endpoint method="POST" path="/waitlist" scope="appointments:write"><p>Body: <code>client_id</code>, <code>service_id</code>, <code>date</code>, optional <code>staff_id</code>, <code>location_id</code>, <code>notes</code>.</p></Endpoint>
-      <Endpoint method="PATCH" path="/waitlist/{id}" scope="appointments:write"><p>Body: <code>status</code>.</p></Endpoint>
-
+      <ClientsDocs />
+      <FormsDocs />
       <h2>Reviews</h2>
       <Endpoint method="GET" path="/reviews" scope="reviews:read"><p>Submitted reviews, newest first. Optional <code>rating</code> (1 to 5) and <code>staff_id</code>.</p></Endpoint>
 
+
+      <Group title="Team and settings" />
+      <TeamDocs />
+      <SettingsDocs />
+
+      <Group title="Marketing and messages" />
+      <MarketingDocs />
+      <MessagesDocs />
+
+      <Group title="Sales" />
       <h2>Sales</h2>
       <Endpoint method="GET" path="/sales" scope="sales:read"><p>Sales, newest first. Query: <code>from</code>, <code>to</code>, <code>status</code> (<code>open</code>, <code>paid</code>, <code>refunded</code>, <code>void</code>), <code>client_id</code>. Includes <code>total</code>.</p></Endpoint>
       <Endpoint method="GET" path="/sales/{id}" scope="sales:read"><p>One sale with its lines and payments. Card details beyond the amount are not included.</p></Endpoint>
 
-      <h1 className="!mt-12 text-2xl font-semibold tracking-tight">Managing your business</h1>
-      <p>The endpoints below let a key do what an admin can do in the app. Each section names the scope it needs. Scopes marked powerful in the key form can change who may do what, pay settings or reach many clients at once: give them only to software you trust, and prefer a separate key for each.</p>
-      <CatalogDocs />
-      <InventoryDocs />
-      <AppointmentsDocs />
-      <ClientsDocs />
-      <FormsDocs />
-      <TeamDocs />
-      <SettingsDocs />
-      <MarketingDocs />
-      <MessagesDocs />
 
+      <Group title="Security and limits" />
       <h2>Security</h2>
       <ul>
         <li><strong>Your business only.</strong> The business is taken from the key and nothing else. An id from another business answers <code>404</code>, exactly as if it did not exist, and the database itself refuses to return other businesses&apos; rows.</li>
@@ -183,6 +194,6 @@ export default function DevelopersPage() {
 
       <h2>Not in the API yet</h2>
       <p>Anything that moves money (payments, refunds, deposits and fees, gift cards, store credit and loyalty points, selling packages or memberships, payroll runs, Stripe and billing), logins and invitations, clock PINs, file and photo uploads, spreadsheet imports, and webhooks. If you need one, tell us.</p>
-    </DocPage>
+    </DocsShell>
   );
 }
