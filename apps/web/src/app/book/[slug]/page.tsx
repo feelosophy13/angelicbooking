@@ -76,9 +76,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   // Only providers who perform this service (and are bookable online here) are offered.
   const providerIds = service ? new Set((await publicProvidersFor(business, service.id, locId)).map((s) => s.id)) : null;
   const providers = providerIds ? staff.filter((s) => providerIds.has(s.id)) : staff;
-  // One provider: nothing to choose, so the step is skipped.
-  const onlyProvider = service && providers.length === 1 ? providers[0]!.id : null;
-  const staffChoice = sp.staff === "any" || providers.some((s) => s.id === sp.staff) ? sp.staff! : onlyProvider;
+  const staffChoice = sp.staff === "any" || providers.some((s) => s.id === sp.staff) ? sp.staff! : null;
   const withTitle = (id: string, name: string) => { const t = staff.find((s) => s.id === id)?.position; return t ? `${name} · ${t}` : name; };
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : null;
   const extraIds = [...new Set((sp.extra ?? "").split(",").filter(Boolean))].slice(0, 4);
@@ -92,7 +90,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const locBar = locations.length > 1 && location ? (
     <p className="mb-3 flex items-center gap-1.5 text-sm text-stone-600"><MapPin className="h-4 w-4 text-stone-400" aria-hidden />{location.name}<Link href="?" className="text-xs underline" style={{ color: "var(--brand-dark)" }}>Change</Link></p>
   ) : null;
-  const stepHrefs = (upTo: number) => [q({ service: undefined, staff: undefined, date: undefined, time: undefined, session: undefined }), onlyProvider ? null : q({ staff: undefined, date: undefined, time: undefined }), q({ time: undefined }), null].map((h, i) => (i < upTo ? h : null));
+  const stepHrefs = (upTo: number) => [q({ service: undefined, staff: undefined, date: undefined, time: undefined, session: undefined }), q({ staff: undefined, date: undefined, time: undefined }), q({ time: undefined }), null].map((h, i) => (i < upTo ? h : null));
   const callUs = business.phone ? <> or call <a href={`tel:${business.phone}`} className="font-medium underline">{business.phone}</a></> : null;
   const money = (c: number) => formatMoney(c, business.currency);
   const depositRow = service && depositLabel(service, money) ? [{ label: "Pay now", value: depositLabel(service, money)!.replace(/ deposit$/, " deposit") }] : [];
@@ -189,7 +187,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const providerName = staffChoice === "any" ? "Any available provider" : staffChoice ? withTitle(staffChoice, staff.find((s) => s.id === staffChoice)?.displayName ?? "") : undefined;
   const summaryRows = (extra: { label: string; value: string; href?: string }[] = []) => [
     { label: "Duration", value: durationText },
-    ...(staffChoice ? [{ label: "With", value: providerName ?? "", href: onlyProvider ? undefined : q({ staff: undefined, date: undefined, time: undefined }) }] : []),
+    ...(staffChoice ? [{ label: "With", value: providerName ?? "", href: q({ staff: undefined, date: undefined, time: undefined }) }] : []),
     ...extra,
   ];
 
@@ -466,7 +464,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         title={service.name}
         rows={[
           { label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) },
-          { label: "With", value: withTitle(slot.staffId, slot.staffName), href: onlyProvider ? undefined : q({ staff: undefined, date: undefined, time: undefined }) },
+          { label: "With", value: withTitle(slot.staffId, slot.staffName), href: q({ staff: undefined, date: undefined, time: undefined }) },
           ...extras.map((x) => ({ label: "Plus", value: `${x.name} · ${money(x.priceCents)}`, href: q({ time: sp.time, extra: extrasParam.filter((id) => id !== x.serviceId).join(",") || undefined }) })),
           { label: "Duration", value: visitMinutes ? duration(visitMinutes) : spanOf(termsFor(slot.staffId).durationMin) },
           { label: extras.length ? "Total" : "Price", value: money(visitPrice) },
