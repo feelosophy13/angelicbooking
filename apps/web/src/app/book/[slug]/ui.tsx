@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Check, ChevronRight, Clock, Star } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Clock, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /** Progress bar across the booking steps. `done` steps link back; the current one is highlighted. */
@@ -133,5 +133,15 @@ export function Stars({ value, size = "h-3.5 w-3.5" }: { value: number; size?: s
     <span className="inline-flex items-center gap-0.5" aria-hidden>
       {[1, 2, 3, 4, 5].map((n) => <Star key={n} className={cn(size, n <= Math.round(value) ? "fill-amber-400 text-amber-400" : "fill-stone-200 text-stone-200")} />)}
     </span>
+  );
+}
+
+/** One step back in the booking flow. Goes to a fixed earlier step, so it behaves the same however the client arrived. */
+export function StepBack({ href }: { href: string | null }) {
+  if (!href) return null;
+  return (
+    <Link href={href} className="mb-3 flex w-fit items-center gap-1.5 rounded-full border border-stone-300 bg-white px-3 py-1 text-sm font-medium text-stone-700 shadow-sm transition hover:bg-stone-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)]">
+      <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Back
+    </Link>
   );
 }

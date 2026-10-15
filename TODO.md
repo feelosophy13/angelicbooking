@@ -350,6 +350,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (public, series, add/move service). New appointment lists each stylist's price/length when they differ.
       `server/stylist-pricing.ts`. Not changed: deposits stay per service; packages and memberships still cover a
       line whatever its price; classes use the service's price per seat.
+- [x] 2026-10-15: booking flow navigation and provider order. A "Back" button on every booking step (goes to the fixed
+      previous step, keeps the chosen day). Staff page has up/down arrows: that order is the provider order on the
+      booking page (`moveStaffAction`, numbers active staff 0,10,20…); the staff list now shows active people first.
+      Provider step has Sort: Recommended (salon order) / Soonest / Lowest price (when prices differ), shown above 2
+      providers. Not walked live: the staff arrows (needs a signed-in session) and the sort pills.
 - [x] 2026-10-15: booking page, client-trust pass (migration 0087). Provider cards show rating + review count, next opening,
       title and up to three work photos (tap to enlarge; edited on the staff profile, `staff.work_photo_urls`); signed-in
       clients get "Book with <last stylist> again"; the deposit reason and the free-cancel window / late fee show before

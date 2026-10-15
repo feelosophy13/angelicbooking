@@ -3,19 +3,20 @@ import type { Metadata } from "next";
 import { ChevronRight, Mail, Plus } from "lucide-react";
 
 export const metadata: Metadata = { title: "Staff" };
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { staffLocationIndex } from "@/server/locations";
 import { listRoles } from "@/server/roles";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
+import { moveStaffAction } from "./actions";
 
 export default async function StaffPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, permissions } = await requireBusiness(slug);
   const [rows, locations, members, locIndex] = await Promise.all([
-    withTenant(business.id, (tx) => tx.select().from(schema.staff).orderBy(asc(schema.staff.active), asc(schema.staff.sortOrder), asc(schema.staff.displayName))),
+    withTenant(business.id, (tx) => tx.select().from(schema.staff).orderBy(desc(schema.staff.active), asc(schema.staff.sortOrder), asc(schema.staff.displayName))),
     withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations)),
     db.select({ userId: schema.member.userId, role: schema.member.role }).from(schema.member).where(eq(schema.member.organizationId, business.id)),
     withTenant(business.id, (tx) => staffLocationIndex(tx)),
@@ -25,6 +26,10 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
   const roleByUser = new Map(members.map((m) => [m.userId, m.role]));
   const locationName = (id: string | null) => (id ? locations.find((l) => l.id === id)?.name ?? null : null);
   const multiLocation = locations.length > 1;
+  const canReorder = can(permissions, "staff.manage");
+  const activeIds = rows.filter((r) => r.active).map((r) => r.id);
+  const firstActive = activeIds[0];
+  const lastActive = activeIds[activeIds.length - 1];
   const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   /** "Sterling Mon–Wed · Fairfax Thu–Sat" from the weekly hours; falls back to the primary location. */
   const whereWorks = (staffId: string, primary: string | null) => {
@@ -50,13 +55,14 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
         {can(permissions, "members.manage") ? <LinkButton href={`/app/${slug}/staff/invitations`}><Mail className="h-4 w-4" /> Invitations</LinkButton> : null}
         {can(permissions, "staff.manage") ? <LinkButton href={`/app/${slug}/staff/new`} variant="primary"><Plus className="h-4 w-4" /> New staff member</LinkButton> : null}
       </PageHeader>
+      {canReorder ? <p className="mb-3 text-sm text-stone-600">The order here is the order clients see providers on the booking page. Use the arrows to move someone up.</p> : null}
       <Card>
         <ul className="divide-y divide-stone-200">
           {rows.map((s) => {
             const memberRole = s.userId ? roleByUser.get(s.userId) : null;
             return (
-              <li key={s.id}>
-                <Link href={`/app/${slug}/staff/${s.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50">
+              <li key={s.id} className="flex items-center hover:bg-stone-50">
+                <Link href={`/app/${slug}/staff/${s.id}`} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3">
                   {s.photoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={s.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-full border border-stone-200 object-cover" />
@@ -71,6 +77,14 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
                   </div>
                   <ChevronRight className="h-4 w-4 text-stone-300" />
                 </Link>
+                {canReorder && s.active ? (
+                  <form action={moveStaffAction} className="flex gap-0.5 pr-3">
+                    <input type="hidden" name="slug" value={slug} />
+                    <input type="hidden" name="staffId" value={s.id} />
+                    <button name="dir" value="up" disabled={s.id === firstActive} aria-label={`Move ${s.displayName} up`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↑</button>
+                    <button name="dir" value="down" disabled={s.id === lastActive} aria-label={`Move ${s.displayName} down`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↓</button>
+                  </form>
+                ) : null}
               </li>
             );
           })}

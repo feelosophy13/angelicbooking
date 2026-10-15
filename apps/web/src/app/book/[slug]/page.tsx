@@ -18,12 +18,12 @@ import { hoursToday } from "@/lib/hours";
 import { currentClient } from "@/server/client-auth";
 import { schema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
-import { CategoryTile, Crumbs, ServiceCard, Stars, Steps, StepTitle, Summary } from "./ui";
+import { CategoryTile, Crumbs, ServiceCard, Stars, StepBack, Steps, StepTitle, Summary } from "./ui";
 import { WorkPhotos } from "./work-photos";
 import { ServiceSearch } from "./service-search";
 import { MonthCalendar } from "./calendar";
 
-type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string; extra?: string; add?: string };
+type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string; extra?: string; add?: string; sort?: string };
 
 export default async function PublicBookingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
@@ -117,6 +117,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     if (term) {
       return (
         <>
+          <StepBack href={q({ category: undefined })} />
           {locBar}
           <Steps labels={stepLabels} current={1} hrefs={stepHrefs(0)} />
           <StepTitle title="What would you like to book?" />
@@ -129,6 +130,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     }
     return (
       <>
+        <StepBack href={current ? q({ category: trail.length > 1 ? trail[trail.length - 2]!.id : undefined }) : locations.length > 1 ? "?" : null} />
         {locBar}
         <Steps labels={stepLabels} current={1} hrefs={stepHrefs(0)} />
         <StepTitle title={current ? current.name : "What would you like to book?"} subtitle={current?.description ?? (current ? undefined : "Search, or pick a category to see services, prices and times.")} />
@@ -204,6 +206,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       }
       return (
         <>
+          <StepBack href={q({ service: undefined })} />
           {locBar}
           <Steps labels={classLabels} current={2} hrefs={[q({ service: undefined }), null, null]} />
           <StepTitle title="Pick a class" />
@@ -236,6 +239,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const sessionDate = instantToISODate(chosen.startAt, tz);
     return (
       <>
+        <StepBack href={q({ session: undefined })} />
         {locBar}
         <Steps labels={classLabels} current={3} hrefs={[q({ service: undefined, session: undefined }), q({ session: undefined }), null]} />
         <StepTitle title="Your details" />
@@ -263,9 +267,16 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       return `Next opening: ${day} at ${formatTime(d, tz)}`;
     };
     const earliest = [...openings.values()].filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
+    // The salon's own order by default; the client can put the soonest opening or the lowest price first.
+    const sortKey = sp.sort === "soonest" || (sp.sort === "price" && priceVaries) ? sp.sort : "recommended";
+    const ordered = [...providers];
+    if (sortKey === "soonest") ordered.sort((a, b) => (openings.get(a.id)?.getTime() ?? Infinity) - (openings.get(b.id)?.getTime() ?? Infinity));
+    if (sortKey === "price") ordered.sort((a, b) => termsFor(a.id).priceCents - termsFor(b.id).priceCents);
+    const sortOptions = [{ key: "recommended", label: "Recommended" }, { key: "soonest", label: "Soonest" }, ...(priceVaries ? [{ key: "price", label: "Lowest price" }] : [])];
     const lastPerson = last ? providers.find((s) => s.id === last.staffId) ?? null : null;
     return (
       <>
+        <StepBack href={q({ service: undefined })} />
         {locBar}
         <Steps labels={stepLabels} current={2} hrefs={stepHrefs(1)} />
         <StepTitle title="Choose a provider" />
@@ -286,6 +297,14 @@ export default async function PublicBookingPage({ params, searchParams }: { para
             {priceVaries ? <span className="shrink-0 font-semibold text-stone-900">{money(termsFor(lastPerson.id).priceCents)}</span> : null}
           </Link>
         ) : null}
+        {providers.length > 2 ? (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Sort providers">
+            <span className="text-stone-500">Sort:</span>
+            {sortOptions.map((o) => (
+              <Link key={o.key} href={q({ sort: o.key === "recommended" ? undefined : o.key })} scroll={false} aria-current={o.key === sortKey ? "true" : undefined} className={cn("rounded-full border px-3 py-1", o.key === sortKey ? "border-stone-800 bg-stone-800 text-white" : "border-stone-300 bg-white hover:bg-stone-50")}>{o.label}</Link>
+            ))}
+          </div>
+        ) : null}
         <ul className="grid gap-3 sm:grid-cols-2">
           <li>
             <Link href={q({ staff: "any" })} className="flex h-full items-center gap-3 rounded-2xl border-2 border-dashed border-stone-300 bg-white p-4 transition hover:border-[var(--brand)] hover:shadow-md">
@@ -293,7 +312,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
               <span><span className="block font-semibold text-stone-900">Any available provider</span><span className="block text-xs text-stone-500">Shows the most openings{priceVaries ? ` · ${priceText}` : ""}</span>{earliest ? <span className="mt-0.5 block text-xs text-stone-500">{openText(earliest)}</span> : null}</span>
             </Link>
           </li>
-          {providers.map((s) => {
+          {ordered.map((s) => {
             const rating = ratings.get(s.id);
             return (
               <li key={s.id} className="rounded-2xl border border-stone-200 bg-white shadow-sm transition hover:border-[var(--brand-ring)] hover:shadow-md">
@@ -350,6 +369,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     };
     return (
       <>
+        <StepBack href={q({ staff: undefined, date: undefined, time: undefined })} />
         {locBar}
         <Steps labels={stepLabels} current={3} hrefs={stepHrefs(2)} />
         <StepTitle title="Pick a time" />
@@ -406,6 +426,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   if (!slot) {
     return (
       <>
+        <StepBack href={q({ time: sp.time })} />
         {locBar}
         <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
         <StepTitle title="Your details" />
@@ -423,6 +444,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const who = staff.find((s) => s.id === slot.staffId)?.displayName ?? slot.staffName;
     return (
       <>
+        <StepBack href={q({ time: undefined })} />
         {locBar}
         <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
         <StepTitle title="Add another service" subtitle={`With ${who}, right after ${service.name}. Pick one and we'll check ${who.split(" ")[0]} is free then.`} />
@@ -456,6 +478,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const extrasParam = extras.map((x) => x.serviceId);
   return (
     <>
+      <StepBack href={q({ time: undefined })} />
       {locBar}
       <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
       <StepTitle title="Your details" subtitle="Almost done. Tell us who you are and we'll hold this time." />

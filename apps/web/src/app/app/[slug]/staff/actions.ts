@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { headers } from "next/headers";
 import { schema, withTenant } from "@angelic/db";
@@ -419,4 +419,22 @@ export async function resetCalendarToken(formData: FormData) {
   await withTenant(ctx.business.id, (tx) => tx.update(schema.staff).set({ calendarToken: Buffer.from(bytes).toString("hex") }).where(eq(schema.staff.id, d.staffId)));
   await setFlash("Calendar link reset. Subscribe again with the new link.");
   revalidatePath(`/app/${d.slug}/staff/${d.staffId}`);
+}
+
+/** Move a team member up or down the list clients see on the booking page (active people only; the rest keep their place). */
+export async function moveStaffAction(formData: FormData) {
+  const d = z.object({ slug: z.string(), staffId: z.string().min(1), dir: z.enum(["up", "down"]) }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "staff.manage");
+  await withTenant(ctx.business.id, async (tx) => {
+    const people = await tx.select({ id: schema.staff.id }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName), asc(schema.staff.id));
+    const ids = people.map((p) => p.id);
+    const at = ids.indexOf(d.staffId);
+    const to = d.dir === "up" ? at - 1 : at + 1;
+    if (at < 0 || to < 0 || to >= ids.length) return;
+    [ids[at], ids[to]] = [ids[to]!, ids[at]!];
+    // Number everyone, so people who all had the same value get a real order.
+    for (const [i, id] of ids.entries()) await tx.update(schema.staff).set({ sortOrder: i * 10 }).where(eq(schema.staff.id, id));
+  });
+  revalidatePath(`/app/${d.slug}/staff`);
+  revalidatePath(`/book/${d.slug}`);
 }
