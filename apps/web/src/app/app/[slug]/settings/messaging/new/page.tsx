@@ -19,8 +19,8 @@ export default async function NewNumberPage({ params, searchParams }: { params: 
   const location = locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) })) : null;
   const existing = await withTenant(business.id, listNumbers);
   if (existing.some((n) => (n.locationId ?? null) === (location?.id ?? null))) redirect(`/app/${slug}/settings/messaging`);
-  if (!billingState(business).canBuyNumber) redirect(`/app/${slug}/settings/billing`);
-  const fee = numberMonthlyFeeCents();
+  if (!(await billingState(business)).canBuyNumber) redirect(`/app/${slug}/settings/billing`);
+  const fee = await numberMonthlyFeeCents(business.id);
   let numbers: { phoneNumber: string; friendlyName: string }[] = [];
   let error: string | null = null;
   if (twilioConfigured()) {

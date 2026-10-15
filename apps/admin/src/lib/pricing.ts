@@ -23,6 +23,13 @@ export async function getDefaultPriceBook(): Promise<PriceBook> {
   return effectivePriceBook(DEFAULT_PRICE_BOOK, pick(row));
 }
 
+/** Whether anyone has saved a price book yet. Until then every price is $0 (web and admin agree on that). */
+export async function priceBookIsSet(): Promise<boolean> {
+  await requireAdmin();
+  const [row] = await adminDb().select({ id: schema.platformPricing.id }).from(schema.platformPricing).where(eq(schema.platformPricing.id, "default"));
+  return !!row;
+}
+
 export async function getOverrides(businessId: string): Promise<{ overrides: Overrides; note: string | null }> {
   await requireAdmin();
   const [row] = await adminDb().select().from(schema.businessPricing).where(eq(schema.businessPricing.businessId, businessId));

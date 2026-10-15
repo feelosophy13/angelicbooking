@@ -26,7 +26,7 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
     business = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, business.id) })) ?? business;
     justSubscribed = true;
   }
-  const state = billingState(business);
+  const state = await billingState(business);
   const book = await priceBookFor(business.id);
   const numbers = await withTenant(business.id, listNumbers);
   const number = numbers.find((n) => !n.locationId) ?? numbers[0] ?? null;

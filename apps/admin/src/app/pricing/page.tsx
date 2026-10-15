@@ -4,14 +4,14 @@ import { Shell } from "@/components";
 import { listTenantsWithBills } from "@/lib/tenants";
 import { money } from "@/lib/price-form";
 import { DefaultsForm } from "@/price-forms";
-import { getDefaultPriceBook } from "@/lib/pricing";
+import { getDefaultPriceBook, priceBookIsSet } from "@/lib/pricing";
 import { Card, PageHeader, Stat } from "@/ui/kit";
 
 export const metadata: Metadata = { title: "Pricing" };
 export const dynamic = "force-dynamic";
 
 export default async function PricingPage() {
-  const [book, { tenants }] = await Promise.all([getDefaultPriceBook(), listTenantsWithBills()]);
+  const [book, { tenants }, isSet] = await Promise.all([getDefaultPriceBook(), listTenantsWithBills(), priceBookIsSet()]);
   const custom = tenants.filter((t) => t.hasOverrides).length;
   const comped = tenants.filter((t) => t.comped).length;
   const total = tenants.reduce((s, t) => s + t.bill.totalCents, 0);
@@ -20,6 +20,11 @@ export default async function PricingPage() {
   return (
     <Shell>
       <PageHeader title="Pricing" subtitle="What every business pays unless it has its own deal. Give one business a different price on its Billing tab." />
+      {!isSet && (
+        <div role="status" className="mb-6 rounded-xl border border-warn/50 bg-warn-soft px-4 py-3 text-sm text-warn">
+          <strong>No price book saved yet.</strong> Every business is priced at $0 and nothing is charged until you save the prices below. The figures here are the built-in zeros, not what any business pays today.
+        </div>
+      )}
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Estimated monthly" value={money(total)} hint="If everyone paid" />
         <Stat label="Own deal" value={custom} hint="Businesses with a custom price" />

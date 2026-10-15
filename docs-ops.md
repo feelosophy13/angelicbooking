@@ -54,9 +54,9 @@ Production runs on Render (workspace "My Workspace", region Virginia):
   (created by hand from `packages/db/sql/roles.sql` with a generated password); migrations use the database owner.
   External connections from a laptop need `?sslmode=require` on the URL; the internal URL used by the service does not.
 - Environment variables live in the Render dashboard: `DATABASE_URL`, `DATABASE_ADMIN_URL`, `BETTER_AUTH_SECRET`,
-  `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, `JOBS_SECRET`, `GOOGLE_CLIENT_ID/SECRET`, `PLATFORM_FEE_BPS`,
-  `RESEND_API_KEY`, `EMAIL_FROM`, `TWILIO_ACCOUNT_SID/AUTH_TOKEN`, `SMS_NUMBER_MONTHLY_FEE_CENTS`, `SMS_USAGE_CENTS`,
-  `SMS_INCLUDED_PER_MONTH`, `BILLING_BASE_CENTS`, `BILLING_TRIAL_DAYS`. Every variable set on Render must also exist in the local `.env`.
+  `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, `JOBS_SECRET`, `GOOGLE_CLIENT_ID/SECRET`,
+  `RESEND_API_KEY`, `EMAIL_FROM`, `TWILIO_ACCOUNT_SID/AUTH_TOKEN`. Every variable set on Render must also exist in the local `.env`.
+  Prices are not environment variables any more (see "What the Pricing page does").
   Stripe, Resend and Twilio keys are not set yet; add them there when ready.
 - The app lives at **`app.angelicbooking.com`** (`BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL`); it is the only custom
   domain on the Render service. Cloudflare DNS: `CNAME app angelic-booking.onrender.com` (DNS only, not proxied).
@@ -85,7 +85,7 @@ Environment). Saving in the dashboard offers "Save, rebuild, and deploy"; take i
 2. Settings → Connect → Get started and fill in the platform profile. The app creates connected accounts with the
    **Accounts v2** API in the SaaS configuration (`dashboard: full`, Stripe collects fees and carries losses, merchant
    `card_payments`); that is the v2 equivalent of a Standard account, and Stripe rejects v1 `type: standard` creation
-   for new integrations. Direct charges with an optional platform (application) fee are unchanged; set the fee in the admin Pricing page (per business on its Billing tab), `PLATFORM_FEE_BPS` is only the starting value.
+   for new integrations. Direct charges with an optional platform (application) fee are unchanged; set the fee in the admin Pricing page (per business on its Billing tab).
 3. Developers → API keys (live mode): copy the secret key and the publishable key.
 4. Developers → Webhooks → Add endpoint. Tick **"Listen to events on Connected accounts"** (not
    "your account"). URL `https://app.angelicbooking.com/api/stripe/webhook`. Events:
@@ -124,8 +124,8 @@ verified. Until then SMS rows are skipped with "No verified text number yet" and
 Platform setup:
 1. twilio.com → upgrade the account (trial accounts can only text verified numbers and cannot buy numbers
    for customers). The API returns `account … with status 4 is not active` until the account is activated.
-2. Render env + local `.env`: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `SMS_NUMBER_MONTHLY_FEE_CENTS`
-   (price shown to businesses; stored on each number for billing once Stripe billing exists).
+2. Render env + local `.env`: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`. The text-number price comes
+   from the price book (admin Pricing page); it is shown to businesses and stored on each number when bought.
    Optional `TWILIO_FROM` or `TWILIO_MESSAGING_SERVICE_SID`: a platform-wide fallback sender for businesses
    without a verified number (needs its own verification).
 3. The opt-in screenshot attached to every verification is `apps/web/public/tollfree/opt-in.png`, rendered
@@ -161,22 +161,22 @@ How delivery works (`apps/web/src/lib/notify/index.ts`):
 ### 4b. Platform billing (how businesses pay you)
 Stripe Billing on the platform account (`apps/web/src/server/billing.ts`). Each business becomes a Stripe
 Customer with one subscription:
-- **Base plan** `BILLING_BASE_CENTS` per month (currently 0: the platform is free, a card is only collected
-  for add-ons). `BILLING_TRIAL_DAYS` adds a trial when the base is paid.
-- **Dedicated text number** `SMS_NUMBER_MONTHLY_FEE_CENTS` (1500): a licensed subscription item added when a
+- **Base plan** (price book `baseCents`, currently 0: the platform is free, a card is only collected
+  for add-ons). The price book's trial days add a trial when the base is paid.
+- **Dedicated text number** (price book `numberCents`, 1500): a licensed subscription item added when a
   number is bought and removed (prorated credit) when released. Buying requires an `active`/`trialing`
   subscription whenever the number or usage costs money.
-- **Text usage** `SMS_USAGE_CENTS` per message (2) after `SMS_INCLUDED_PER_MONTH` (0): a metered price on
+- **Text usage** (price book `smsUsageCents` per message, 2, after `smsIncluded`, 0): a metered price on
   Stripe Billing Meter `sms_sent`. Every SMS marked sent produces one meter event, idempotent on the
   notification id, from the delivery job.
 - Products (`angelic_platform`, `angelic_sms_number`, `angelic_sms_usage`), prices (lookup keys encode the
-  amounts) and the meter are created on first use. To change a price, change the env value and redeploy;
+  amounts) and the meter are created on first use. To change a price, change it on the admin Pricing page;
   existing subscriptions keep their old price until migrated.
 - Owner flow: Settings → Billing → "Add a card" (Stripe Checkout, `payment_method_collection: always`)
   → back to the page, which syncs the subscription from the Checkout session; "Manage card & invoices"
   opens the Customer Portal. `past_due`/`unpaid` shows a red banner across the app.
-- Card payments salons take from clients still go to their own Connect account; a `PLATFORM_FEE_BPS`
-  application fee can be charged on those independently of the subscription.
+- Card payments salons take from clients still go to their own Connect account; a platform
+  (application) fee, set on the admin Pricing page, can be charged on those independently of the subscription.
 - Local testing without the webhook: the Checkout return URL syncs state; "Refresh" re-reads the
   subscription. For webhooks locally use `stripe listen --forward-to localhost:3001/api/stripe/billing`.
 
@@ -317,7 +317,7 @@ authenticator code on top). Cloudflare Access still sits in front of everything.
 feeds, the clock-in kiosk and the mobile API, and skips outgoing texts and emails. Data is kept. The daily billing sweep also pauses
 invoice collection on the business's Stripe subscription (invoices are voided) and resumes it after reactivation.
 
-**What the Pricing page does.** (Code still calls it the "price book".) Defaults to the old `BILLING_*` / `SMS_*` env amounts until an admin saves one. New subscriptions are
+**What the Pricing page does.** (Code still calls it the "price book".) Lives only in the database (`platform_pricing`, `business_pricing`): the old `BILLING_*` / `SMS_*` / `PLATFORM_FEE_BPS` environment variables are gone. Until a price book is saved everything is $0 and the Pricing page and Dashboard say so; `pnpm --filter @angelic/db seed:price-book` copies old env values in once. New subscriptions are
 built from it (base + extra locations + extra staff + metered texts); the 07:00 UTC run of the reminders job keeps quantities in
 line with each business's locations and active staff. Platform-wide price changes do not re-price existing subscribers; a business
 with its own pricing deal is re-priced. Comped businesses are never charged.

@@ -293,7 +293,7 @@ custom domains, marketing (campaigns, review requests), data import from Vagaro 
   zero. Paying in full marks the appointment completed.
 - Payment methods: cash / other; new card via Stripe Payment Element scoped to the
   connected account (optionally saved to the client's Stripe Customer on that account);
-  saved card charged off-session. Optional platform fee via `PLATFORM_FEE_BPS`.
+  saved card charged off-session. Optional platform fee, set in the admin Pricing page.
 - Refunds (full or partial, Stripe or cash), void, printable receipt, and a Sales report
   (by staff, by payment method, closed sales) for any date range.
 - Pure pricing math in `packages/core/pricing.ts` with unit tests (totals, proportional

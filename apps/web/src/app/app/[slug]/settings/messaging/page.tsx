@@ -26,8 +26,8 @@ export default async function MessagingPage({ params, searchParams }: { params: 
   const sp = await searchParams;
   const { business } = await requireAction(slug, "business.manage");
   const [numbers, locations] = await Promise.all([withTenant(business.id, listNumbers), listLocations(business.id)]);
-  const fee = numberMonthlyFeeCents();
-  const billing = billingState(business);
+  const fee = await numberMonthlyFeeCents(business.id);
+  const billing = await billingState(business);
   const multi = locations.length > 1;
   const main = numbers.find((n) => !n.locationId) ?? null;
   const locName = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "Unknown location") : null);

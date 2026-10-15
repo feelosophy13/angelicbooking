@@ -1,7 +1,9 @@
 /**
- * Platform pricing, read from env so it can change without a deploy of new code.
- * Pure (no Stripe import) so it can be unit tested and used in client-safe code.
+ * Platform pricing as billing sees it, derived from the price book (platform_pricing / business_pricing in the
+ * database, edited in the admin app). Pure (no Stripe import) so it can be unit tested and used in client-safe code.
  */
+import type { PriceBook } from "@angelic/core/platform-pricing";
+
 export interface BillingConfig {
   /** Flat monthly platform fee per business, in cents. 0 = free base plan (card still collected for add-ons). */
   baseCents: number;
@@ -15,26 +17,18 @@ export interface BillingConfig {
   trialDays: number;
 }
 
-function int(name: string, fallback: number): number {
-  const n = Number(process.env[name] ?? fallback);
-  return Number.isFinite(n) && n >= 0 ? Math.round(n) : fallback;
+export function configFromBook(book: PriceBook): BillingConfig {
+  return { baseCents: book.baseCents, numberCents: book.numberCents, smsUsageCents: book.smsUsageCents, smsIncluded: book.smsIncluded, trialDays: book.trialDays };
 }
 
-export function billingConfig(): BillingConfig {
-  return {
-    baseCents: int("BILLING_BASE_CENTS", 0),
-    numberCents: int("SMS_NUMBER_MONTHLY_FEE_CENTS", 0),
-    smsUsageCents: int("SMS_USAGE_CENTS", 0),
-    smsIncluded: int("SMS_INCLUDED_PER_MONTH", 0),
-    trialDays: int("BILLING_TRIAL_DAYS", 0),
-  };
-}
+/** Every number-fee price's lookup key starts with this, whatever the amount. */
+export const NUMBER_KEY_PREFIX = "angelic_sms_number_monthly_";
 
-/** Stripe price lookup keys encode the amounts, so changing a price in env creates a new Stripe price automatically. */
+/** Stripe price lookup keys encode the amounts, so changing a price in the price book creates a new Stripe price automatically. */
 export function lookupKeys(c: BillingConfig) {
   return {
     base: `angelic_base_monthly_${c.baseCents}`,
-    number: `angelic_sms_number_monthly_${c.numberCents}`,
+    number: `${NUMBER_KEY_PREFIX}${c.numberCents}`,
     usage: `angelic_sms_usage_${c.smsUsageCents}_incl_${c.smsIncluded}`,
   };
 }

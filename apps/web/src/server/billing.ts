@@ -14,7 +14,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { appUrl, isStripeConfigured, stripe } from "@/lib/stripe";
 import { and, inArray, sql } from "drizzle-orm";
 import type { PriceBook } from "@angelic/core/platform-pricing";
-import { billingConfig, canBuyNumber, isDelinquent, isSubscribed, lookupKeys, SMS_METER_EVENT, type BillingConfig } from "@/lib/billing-config";
+import { canBuyNumber, configFromBook, isDelinquent, isSubscribed, lookupKeys, NUMBER_KEY_PREFIX, SMS_METER_EVENT, type BillingConfig } from "@/lib/billing-config";
 import { desiredItems, pauseAction, planChanges, priceKey, SUSPEND_PAUSE_MARKER, type ManagedKind } from "@/lib/billing-plan";
 import { platformPriceBook, priceBookFor } from "@/server/price-book";
 
@@ -81,7 +81,7 @@ const catalogCache = new Map<string, Catalog>();
 
 /** Products, prices and the meter for a price book. Cached per process and per set of amounts. */
 export async function ensureCatalog(book: PriceBook): Promise<Catalog> {
-  const config: BillingConfig = { baseCents: book.baseCents, numberCents: book.numberCents, smsUsageCents: book.smsUsageCents, smsIncluded: book.smsIncluded, trialDays: book.trialDays };
+  const config: BillingConfig = configFromBook(book);
   const keys = lookupKeys(config);
   const cacheKey = `${process.env.STRIPE_SECRET_KEY?.slice(0, 12)}:${keys.base}:${keys.number}:${keys.usage}`;
   const cached = catalogCache.get(cacheKey);
@@ -155,8 +155,7 @@ export async function syncSubscription(businessId: string, sub: Stripe.Subscript
     })
     .where(eq(schema.businesses.id, businessId));
   // Keep the number item id in sync in case it was added/removed outside the app.
-  const numberKey = lookupKeys(billingConfig()).number.replace(/_\d+$/, "");
-  const numberItem = sub.items.data.find((i) => i.price.lookup_key?.startsWith(numberKey));
+  const numberItem = sub.items.data.find((i) => i.price.lookup_key?.startsWith(NUMBER_KEY_PREFIX));
   await withTenant(businessId, async (tx) => {
     const active = await tx.query.messagingNumbers.findFirst({ where: (t, { isNull }) => isNull(t.releasedAt) });
     if (active && active.stripeItemId !== (numberItem?.id ?? null)) {
@@ -247,8 +246,8 @@ export async function portalUrl(business: Business, slug: string): Promise<strin
 // Add-ons and usage
 // ---------------------------------------------------------------------------
 
-export function billingState(business: Business) {
-  const config = billingConfig();
+export async function billingState(business: Business) {
+  const config = configFromBook(await priceBookFor(business.id));
   const enabled = billingEnabled();
   return {
     enabled,

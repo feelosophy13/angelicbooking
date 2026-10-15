@@ -27,9 +27,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       copies one variable per call if the classifier objects) and deploy.
 - [ ] Put **live** keys on Render and in `.env`; redeploy; verify a real card payment + refund from the sale page.
 - [ ] Save the Customer Portal configuration once in the Stripe dashboard (branding, cancellation copy).
-- [ ] Decide pricing: base plan (`BILLING_BASE_CENTS`, now 0), trial (`BILLING_TRIAL_DAYS`, now 0),
-      number fee (`SMS_NUMBER_MONTHLY_FEE_CENTS`, 1500), text usage (`SMS_USAGE_CENTS`, 2) and
-      included texts (`SMS_INCLUDED_PER_MONTH`, 0). Optional `PLATFORM_FEE_BPS` on card payments (now 0).
+- [ ] Decide pricing on the admin Pricing page (base plan, trial, number fee, text usage, included texts, platform fee on card
+      payments). Prices are in the database now, not in environment variables.
 
 ### Twilio
 - [ ] Buy the first toll-free number for Angelic Beauty in production (Settings → Text messaging) and submit
@@ -365,7 +364,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] 2026-10-14 (migration 0080): platform fee is part of the price book. Default in admin → Price book, override per
       business on its Billing tab (percent, 0–20, stored as basis points); card checkout, online deposits and shop
       orders read the business's effective fee (`platformFeeBpsFor`), the salon's Payments page shows it. Starts at
-      `PLATFORM_FEE_BPS` until a price book is saved. Not run against live Stripe; apply 0080 in production.
+      nothing (0) until a price book is saved. Not run against live Stripe; apply 0080 in production.
 - [x] 2026-10-14 (migration 0077): online payment per service. Each service collects nothing, a fixed deposit, a
       percent of the price (of the stylist's own price) or the full price when booked online; the amount rides the
       existing deposit flow, so it comes off the bill at checkout and refunds on in-window cancellations. A mobile

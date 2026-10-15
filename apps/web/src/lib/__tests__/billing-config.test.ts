@@ -1,24 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { billingConfig, canBuyNumber, isDelinquent, isSubscribed, lookupKeys } from "../billing-config";
+import { describe, expect, it } from "vitest";
+import { DEFAULT_PRICE_BOOK } from "@angelic/core/platform-pricing";
+import { canBuyNumber, configFromBook, isDelinquent, isSubscribed, lookupKeys, NUMBER_KEY_PREFIX } from "../billing-config";
 
-const ENV = ["BILLING_BASE_CENTS", "SMS_NUMBER_MONTHLY_FEE_CENTS", "SMS_USAGE_CENTS", "SMS_INCLUDED_PER_MONTH", "BILLING_TRIAL_DAYS"];
-const saved = Object.fromEntries(ENV.map((k) => [k, process.env[k]]));
-afterEach(() => {
-  for (const k of ENV) {
-    if (saved[k] === undefined) delete process.env[k];
-    else process.env[k] = saved[k];
-  }
-});
+const book = { ...DEFAULT_PRICE_BOOK, baseCents: 2900, numberCents: 1500, smsUsageCents: 2, smsIncluded: 100, trialDays: 14 };
 
 describe("billing config", () => {
-  it("reads amounts from env with safe fallbacks", () => {
-    process.env.BILLING_BASE_CENTS = "0";
-    process.env.SMS_NUMBER_MONTHLY_FEE_CENTS = "1500";
-    process.env.SMS_USAGE_CENTS = "2";
-    process.env.SMS_INCLUDED_PER_MONTH = "garbage";
-    delete process.env.BILLING_TRIAL_DAYS;
-    const c = billingConfig();
-    expect(c).toEqual({ baseCents: 0, numberCents: 1500, smsUsageCents: 2, smsIncluded: 0, trialDays: 0 });
+  it("is derived from the price book, with no environment involved", () => {
+    expect(configFromBook(book)).toEqual({ baseCents: 2900, numberCents: 1500, smsUsageCents: 2, smsIncluded: 100, trialDays: 14 });
+    expect(configFromBook(DEFAULT_PRICE_BOOK)).toEqual({ baseCents: 0, numberCents: 0, smsUsageCents: 0, smsIncluded: 0, trialDays: 0 });
   });
 
   it("encodes amounts in the Stripe lookup keys so a price change makes a new price", () => {
@@ -27,6 +16,7 @@ describe("billing config", () => {
     expect(a.base).not.toBe(b.base);
     expect(a.number).toBe(b.number);
     expect(a.usage).not.toBe(b.usage);
+    expect(a.number.startsWith(NUMBER_KEY_PREFIX)).toBe(true);
   });
 
   it("statuses", () => {

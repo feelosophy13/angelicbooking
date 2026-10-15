@@ -18,6 +18,7 @@ export async function listAudit(opts: { businessId?: string; limit?: number } = 
 
 const LABELS: Record<string, string> = {
   "pricing.default.update": "Changed the default pricing",
+  "pricing.default.seed": "Default pricing set up from the old settings",
   "pricing.business.update": "Changed custom pricing",
   "tenant.suspend": "Suspended",
   "tenant.reactivate": "Reactivated",

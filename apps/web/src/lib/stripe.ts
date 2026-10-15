@@ -28,12 +28,6 @@ export class StripeNotConfigured extends Error {
   }
 }
 
-/** Optional platform fee on each direct charge, in basis points (e.g. 100 = 1%). */
-export function platformFeeBps(): number {
-  const n = Number(process.env.PLATFORM_FEE_BPS ?? 0);
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
-}
-
 export function appUrl(path = ""): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL ?? "http://localhost:3001";
   return `${base}${path}`;

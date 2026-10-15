@@ -9,6 +9,7 @@ import { schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { attachNumberItem, billingState, detachNumberItem } from "@/server/billing";
+import { priceBookFor } from "@/server/price-book";
 import {
   createTollfreeVerification,
   fetchTollfreeVerification,
@@ -27,9 +28,9 @@ type Business = typeof schema.businesses.$inferSelect;
 
 export class MessagingError extends Error {}
 
-export function numberMonthlyFeeCents(): number {
-  const n = Number(process.env.SMS_NUMBER_MONTHLY_FEE_CENTS ?? 0);
-  return Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
+/** What a text number costs this business per month: its price book (the platform default, or its own deal). */
+export async function numberMonthlyFeeCents(businessId: string): Promise<number> {
+  return (await priceBookFor(businessId)).numberCents;
 }
 
 /** Public image of the booking form's SMS consent checkbox, shown to carrier reviewers. */
@@ -74,7 +75,7 @@ export async function buyNumber(business: Business, phoneNumber: string, locatio
   if (existing) throw new MessagingError(`You already have a number (${existing.phoneNumber}) for this. Release it first to pick a different one.`);
   const location = locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) })) : null;
   if (locationId && !location) throw new MessagingError("Location not found.");
-  if (!billingState(business).canBuyNumber) throw new MessagingError("Add a card under Settings → Billing first; the number is billed monthly.");
+  if (!(await billingState(business)).canBuyNumber) throw new MessagingError("Add a card under Settings → Billing first; the number is billed monthly.");
   let bought: { sid: string; phoneNumber: string };
   try {
     bought = await purchaseNumber(phoneNumber, { friendlyName: `${location ? location.name : business.name} (${business.slug})`, smsUrl: appUrl("/api/twilio/inbound") });
@@ -82,11 +83,12 @@ export async function buyNumber(business: Business, phoneNumber: string, locatio
     if (e instanceof TwilioError) throw new MessagingError(e.code === 21422 ? "That number was just taken. Pick another one." : `Twilio: ${e.message}`);
     throw e;
   }
+  const monthlyFeeCents = await numberMonthlyFeeCents(business.id);
   try {
     const [row] = await withTenant(business.id, (tx) =>
       tx
         .insert(schema.messagingNumbers)
-        .values({ businessId: business.id, phoneNumber: bought.phoneNumber, providerSid: bought.sid, locationId, monthlyFeeCents: numberMonthlyFeeCents(), billingStartsAt: new Date() })
+        .values({ businessId: business.id, phoneNumber: bought.phoneNumber, providerSid: bought.sid, locationId, monthlyFeeCents, billingStartsAt: new Date() })
         .returning(),
     );
     await attachNumberItem(business, row!.id).catch((e) => console.error("[messaging] could not add number to subscription", (e as Error).message));

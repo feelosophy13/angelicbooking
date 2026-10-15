@@ -5,6 +5,7 @@ import { needsAttention } from "@/lib/attention";
 import { actionLabel, listAudit } from "@/lib/audit";
 import { platformHealth } from "@/lib/health";
 import { platformWeekly, weekLabel } from "@/lib/metrics";
+import { priceBookIsSet } from "@/lib/pricing";
 import { money } from "@/lib/price-form";
 import { listTenantsWithBills } from "@/lib/tenants";
 import { Bars, Sparkline, Stack } from "@/ui/chart";
@@ -14,7 +15,7 @@ import { Avatar, Badge, Card, Empty, PageHeader, Stat, relativeDay } from "@/ui/
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
-  const [{ tenants }, weekly, audit, health] = await Promise.all([listTenantsWithBills(), platformWeekly(), listAudit({ limit: 6 }), platformHealth()]);
+  const [{ tenants }, weekly, audit, health, priceSet] = await Promise.all([listTenantsWithBills(), platformWeekly(), listAudit({ limit: 6 }), platformHealth(), priceBookIsSet()]);
   const now = Date.now();
   const live = tenants.filter((t) => !t.suspendedAt);
   const paying = live.filter((t) => t.subscriptionStatus === "active").length;
@@ -38,6 +39,12 @@ export default async function Dashboard() {
         subtitle={`${tenants.length} businesses · ${new Date(now).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`}
         actions={<Link href="/tenants" className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium hover:bg-surface-2">All businesses <Icon name="arrow" /></Link>}
       />
+
+      {!priceSet && (
+        <Link href="/pricing" className="mb-4 block rounded-xl border border-warn/50 bg-warn-soft px-4 py-3 text-sm text-warn hover:opacity-90">
+          <strong>No price book saved yet.</strong> Every business is priced at $0 and nothing is charged. Set the prices on the Pricing page.
+        </Link>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Businesses" value={tenants.length} hint={`${thisWeek?.signups ?? 0} new this week · ${sum("signups")} in 12 weeks`} spark={spark("signups", "New businesses per week")} href="/tenants" />
