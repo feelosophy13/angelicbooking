@@ -39,7 +39,18 @@ export function ApiKeyForm({ slug }: { slug: string }) {
       </div>
       <fieldset>
         <legend className="mb-1 text-sm font-medium text-stone-800">What this key may do</legend>
-        <div className="space-y-2">{API_SCOPES.map((s) => <Checkbox key={s.scope} name="scopes" value={s.scope} label={s.label} hint={s.scope} />)}</div>
+        <div className="space-y-4">
+          {[...new Set(API_SCOPES.map((s) => s.group))].map((group) => (
+            <div key={group}>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-stone-500">{group}</div>
+              <div className="space-y-2">
+                {API_SCOPES.filter((s) => s.group === group).map((s) => (
+                  <Checkbox key={s.scope} name="scopes" value={s.scope} label={<>{s.label}{"sensitive" in s && s.sensitive ? <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">powerful</span> : null}</>} hint={s.scope} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
         {state?.fieldErrors?.scopes ? <p className="mt-1 text-xs text-red-600">{state.fieldErrors.scopes}</p> : null}
       </fieldset>
       <SubmitButton pendingText="Creating…">Create key</SubmitButton>

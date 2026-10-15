@@ -132,3 +132,24 @@ export async function apiAudit(ctx: ApiContext, action: string, entity: string, 
     tx.insert(schema.auditLog).values({ businessId: ctx.business.id, actorUserId: ctx.actor, action, entity, entityId, diff: diff === undefined ? null : JSON.stringify(diff) }),
   );
 }
+
+/**
+ * Foreign keys are not subject to row-level security, so every id a request names (a client, a service, a staff member) must be proven to
+ * belong to the key's business before it is used. Pass `[table, id, label]` triples (ids that are null/undefined are skipped); the result is the
+ * label of the first one that is not in this business ("client"), or null when all are. Use it inside the same withTenant transaction as the write.
+ */
+export async function firstForeign(
+  tx: import("@angelic/db").TenantDb,
+  businessId: string,
+  checks: [table: Owned, id: string | null | undefined, label: string][],
+): Promise<string | null> {
+  for (const [table, id, label] of checks) {
+    if (!id) continue;
+    const [row] = await tx.select({ id: table.id }).from(table).where(and(eq(table.id, id), eq(table.businessId, businessId))).limit(1);
+    if (!row) return label;
+  }
+  return null;
+}
+
+/** Any tenant table: it has an id and a business_id. */
+export type Owned = import("drizzle-orm/pg-core").PgTable & { id: import("drizzle-orm/pg-core").PgColumn; businessId: import("drizzle-orm/pg-core").PgColumn };
