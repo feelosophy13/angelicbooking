@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox } from "lucide-react";
+import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox, Plus } from "lucide-react";
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
@@ -20,6 +20,7 @@ import { unreadCount } from "@/server/inbound";
 import { NavLink } from "./nav-link";
 import { lowStockCount } from "@/server/inventory";
 import { MobileNav, type NavSection } from "./mobile-nav";
+import { newSale } from "./sales/actions";
 
 const ICON: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox };
 
@@ -36,6 +37,20 @@ export default async function AppLayout({ children, params }: { children: React.
   const base = `/app/${slug}`;
   // What clients see: the public booking page (custom domain when one is set). Opens in a new tab.
   const bookingUrl = business.customDomain ? `https://${business.customDomain}` : appUrl(`/book/${business.slug}`);
+  // New appointment / new sale: one button each, in the sidebar and at the top of the phone menu.
+  const quickActions = can(permissions, "appointments.write.any") || can(permissions, "checkout.take") ? (
+    <div className="flex gap-2">
+      {can(permissions, "appointments.write.any") ? (
+        <Link href={`${base}/appointments/new`} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-2 py-2 text-sm font-medium text-white hover:bg-brand-700"><Plus className="h-4 w-4" /> Appointment</Link>
+      ) : null}
+      {can(permissions, "checkout.take") ? (
+        <form action={newSale} className="flex flex-1">
+          <input type="hidden" name="slug" value={slug} />
+          <button type="submit" className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-stone-300 bg-white px-2 py-2 text-sm font-medium text-stone-800 hover:bg-stone-50"><Plus className="h-4 w-4" /> Sale</button>
+        </form>
+      ) : null}
+    </div>
+  ) : null;
   type Item = { href: string; label: string; iconName: string; exact?: boolean };
   const it = (href: string, label: string, iconName: string, exact?: boolean): Item => ({ href, label, iconName, exact });
   // Sidebar sections, the Settings directory and ⌘K share one definition: lib/nav.ts.
@@ -75,6 +90,7 @@ export default async function AppLayout({ children, params }: { children: React.
           ) : null}
         </div>
         <div className="px-3 pb-2"><CommandPalette slug={slug} /></div>
+        {quickActions ? <div className="px-3 pb-2">{quickActions}</div> : null}
         <div className="px-3 pb-3">
           <a href={bookingUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-100" title={bookingUrl}>
             <ExternalLink className="h-4 w-4" /> Open booking page
@@ -102,7 +118,7 @@ export default async function AppLayout({ children, params }: { children: React.
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <MobileNav sections={sections as NavSection[]} businessName={business.name} userName={`${user.name} · ${roleName}`} tabs={tabs} bookingUrl={bookingUrl}>
+        <MobileNav sections={sections as NavSection[]} businessName={business.name} userName={`${user.name} · ${roleName}`} tabs={tabs} bookingUrl={bookingUrl} quick={quickActions}>
           <UserMenu user={user} businesses={mine} currentSlug={slug} />
         </MobileNav>
         <main className="flex-1 p-4 pb-24 md:p-8 md:pb-8">
