@@ -23,6 +23,7 @@ const schema = z.object({
   locationId: z.string().optional().transform((v) => v || null),
   notes: z.string().trim().max(2000).transform((v) => v || null),
   // Standing appointment: repeat every N weeks, M visits in total (including this one).
+  sendConfirmation: z.string().optional(),
   repeatWeeks: z.coerce.number().int().min(0).max(12).default(0),
   repeatCount: z.coerce.number().int().min(2).max(52).default(6),
 });
@@ -73,7 +74,7 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
       });
       for (const c of r.created) await appendServices(ctx.business.id, c.appointmentId, extraServiceIds, d.staffId, ctx.user.id);
       // One confirmation (for the first visit) rather than one per occurrence; reminders for all.
-      await notifyAppointment(ctx.business, r.created[0]!.appointmentId, "confirmation");
+      if (d.sendConfirmation) await notifyAppointment(ctx.business, r.created[0]!.appointmentId, "confirmation");
       for (const c of r.created.slice(1)) await scheduleReminderFor(ctx.business, c.appointmentId);
       const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: ctx.business.timezone });
       const skipped = r.skipped.length ? ` ${r.skipped.length} skipped (${r.skipped.map((s) => `${fmt.format(s.startAt)}: ${s.reason}`).join("; ")}).` : "";
@@ -90,7 +91,7 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
         locationId: d.locationId,
       });
       await appendServices(ctx.business.id, appointmentId, extraServiceIds, d.staffId, ctx.user.id);
-      await notifyAppointment(ctx.business, appointmentId, "confirmation");
+      if (d.sendConfirmation) await notifyAppointment(ctx.business, appointmentId, "confirmation");
     }
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };

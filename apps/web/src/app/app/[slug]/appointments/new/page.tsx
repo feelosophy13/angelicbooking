@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 
 export const metadata: Metadata = { title: "New appointment" };
 import { schema, withTenant } from "@angelic/db";
 import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireBookingAccess } from "@/server/appointment-access";
-import { getStaffAvailability, staffForService, timingFor } from "@/server/availability";
+import { getStaffAvailability, getStaffAvailabilityForDates, staffForService, timingFor } from "@/server/availability";
 import { overridesForService, overridesForStaff, termsOf, type Override } from "@/server/stylist-pricing";
-import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
+import { formatDateLong, formatMoney, formatTime, shiftISODate } from "@/lib/utils";
 import { duration } from "@/lib/format";
 import Link from "next/link";
 import { Card, Field, Input, Label, PageHeader, Select, Empty } from "@/components/ui";
@@ -40,14 +40,23 @@ export default async function NewAppointmentPage({
   const tz = tzFor(business, location);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : instantToISODate(new Date(), tz);
 
-  const { services, client, categories, providersHere, mapping, providerCount, locIndex } = await withTenant(business.id, async (tx) => {
+  const { services, client, history, categories, providersHere, mapping, providerCount, locIndex } = await withTenant(business.id, async (tx) => {
     const hidden = await servicesHiddenAt(tx, location?.id);
     const providers = await tx.select({ id: schema.staff.id }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true)));
     const here = await staffIdsAt(tx, location?.id);
     return {
       services: (await tx.select().from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.sortOrder), asc(schema.services.name))).filter((s) => !hidden.has(s.id)),
       // Only the chosen client is loaded; the picker searches the rest as you type.
-      client: sp.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, sp.clientId), columns: { id: true, firstName: true, lastName: true } }) : null,
+      client: sp.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, sp.clientId), columns: { id: true, firstName: true, lastName: true, phone: true, email: true, notes: true } }) : null,
+      history: sp.clientId
+        ? await tx
+            .select({ status: schema.appointmentItems.status, startAt: schema.appointmentItems.startAt, staffId: schema.appointmentItems.staffId, serviceId: schema.appointmentItems.serviceId })
+            .from(schema.appointmentItems)
+            .innerJoin(schema.appointments, eq(schema.appointments.id, schema.appointmentItems.appointmentId))
+            .where(eq(schema.appointments.clientId, sp.clientId))
+            .orderBy(desc(schema.appointmentItems.startAt))
+            .limit(60)
+        : [],
       categories: await listCategories(business.id, "service"),
       providersHere: here ? providers.filter((p) => here.has(p.id)) : providers,
       mapping: await tx.select({ staffId: schema.staffServices.staffId, serviceId: schema.staffServices.serviceId }).from(schema.staffServices),
@@ -99,6 +108,9 @@ export default async function NewAppointmentPage({
       notBefore: new Date(),
       locationId: location?.id,
     });
+  const hourOf = (d: Date) => Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone: tz }).format(d));
+  const perStaff: { staffId: string; slots: { iso: string; label: string; hour: number }[] }[] = [];
+  const totals: Record<string, string> = {};
   let slots: { at: Date; staffId: string }[] = [];
   if (service && staffId && anyMode) {
     // Every eligible person's open times, merged; a time two people share goes to whoever comes first on the staff list.
@@ -107,14 +119,57 @@ export default async function NewAppointmentPage({
       const so = await withTenant(business.id, (tx) => overridesForStaff(tx, s.id));
       const tf = (svc: { id: string; priceCents: number; durationMin: number }) => termsOf(svc, so.get(svc.id));
       const chain = extras.reduce((sum, x) => sum + tf(x).durationMin + x.gapMin + x.finishMin + x.bufferAfterMin, 0);
-      for (const at of await availabilityFor(s.id, tf(service), chain)) if (!taken.has(at.getTime())) taken.set(at.getTime(), s.id);
+      const theirs = await availabilityFor(s.id, tf(service), chain);
+      perStaff.push({ staffId: s.id, slots: theirs.map((at) => ({ iso: at.toISOString(), label: formatTime(at, tz), hour: hourOf(at) })) });
+      const main = tf(service);
+      totals[s.id] = `${duration(main.durationMin + service.gapMin + service.finishMin + chain)} · ${formatMoney(main.priceCents + extras.reduce((sum, x) => sum + tf(x).priceCents, 0), business.currency)}`;
+      for (const at of theirs) if (!taken.has(at.getTime())) taken.set(at.getTime(), s.id);
     }
     slots = [...taken].sort((a, b) => a[0] - b[0]).map(([t, sid]) => ({ at: new Date(t), staffId: sid }));
   } else if (service && staffId) {
     slots = (await availabilityFor(staffId, mainTerms!, chainMin)).map((at) => ({ at, staffId }));
   }
+  if (service && staffId && !anyMode) totals[staffId] = `${duration(mainTerms!.durationMin + service.gapMin + service.finishMin + chainMin)} · ${formatMoney((mainTerms?.priceCents ?? 0) + extras.reduce((sum, x) => sum + termsFor(x).priceCents, 0), business.currency)}`;
   const chainPrice = (mainTerms?.priceCents ?? 0) + extras.reduce((s, x) => s + termsFor(x).priceCents, 0);
   const chainLabel = service ? [service, ...extras].map((s) => s.name).join(" + ") : "";
+  const people = anyMode ? eligibleStaff : eligibleStaff.filter((s) => s.id === staffId);
+  // Links that keep everything chosen so far and change one thing (day stepper, same-as-last-visit).
+  const linkWith = (over: Record<string, string | null>) => {
+    const p = new URLSearchParams();
+    const base: Record<string, string | null> = { location: location?.id ?? null, serviceId: service?.id ?? null, clientId: sp.clientId ?? null, staffId: anyMode ? "any" : (staffId ?? null), date, ...over };
+    for (const [k, v] of Object.entries(base)) if (v) p.set(k, v);
+    for (const x of extras) p.append("extra", x.id);
+    return `?${p.toString()}`;
+  };
+  // A day with nothing open: the next day (within ten weeks) when anyone in the search has a time.
+  let nextOpenDate: string | null = null;
+  if (service && staffId && !slots.length) {
+    const ahead = Array.from({ length: 70 }, (_, i) => shiftISODate(date, i + 1));
+    const found = new Set<string>();
+    for (const s of people) {
+      const so = await withTenant(business.id, (tx) => overridesForStaff(tx, s.id));
+      const tf = (svc: { id: string; priceCents: number; durationMin: number }) => termsOf(svc, so.get(svc.id));
+      const chain = extras.reduce((sum, x) => sum + tf(x).durationMin + x.gapMin + x.finishMin + x.bufferAfterMin, 0);
+      const main = tf(service);
+      const byDate = await getStaffAvailabilityForDates({
+        businessId: business.id, timeZone: tz, slotIntervalMin: business.slotIntervalMin, staffId: s.id, dates: ahead, notBefore: new Date(), locationId: location?.id,
+        service: chain > 0 ? { durationMin: main.durationMin + service.gapMin + service.finishMin + service.bufferAfterMin + chain, gapMin: 0, finishMin: 0, bufferAfterMin: 0 } : timingFor({ ...service, durationMin: main.durationMin }),
+      });
+      for (const [d, list] of byDate) if (list.length) found.add(d);
+    }
+    nextOpenDate = ahead.find((d) => found.has(d)) ?? null;
+  }
+  const todayISO = instantToISODate(new Date(), tz);
+  // What the desk wants to know before booking: contact, history, flags, and a one-click repeat of the last visit.
+  const nowMs = Date.now();
+  const noShows = history.filter((h) => h.status === "no_show").length;
+  const upcoming = history.filter((h) => h.startAt.getTime() > nowMs && h.status !== "cancelled" && h.status !== "no_show").length;
+  const lastVisit = history.find((h) => h.startAt.getTime() <= nowMs && h.status !== "cancelled" && h.status !== "no_show") ?? null;
+  const lastService = lastVisit?.serviceId ? services.find((x) => x.id === lastVisit.serviceId) ?? null : null;
+  const lastStaff = lastVisit?.staffId ? eligibleStaff.find((x) => x.id === lastVisit.staffId) ?? null : null;
+  const sameAsLast = lastService && (lastService.id !== service?.id || extras.length || (lastStaff && lastStaff.id !== staffId) || anyMode)
+    ? linkWith({ serviceId: lastService.id, staffId: lastStaff?.id ?? null, extra: null })
+    : null;
 
   return (
     <>
@@ -132,6 +187,18 @@ export default async function NewAppointmentPage({
             <div>
               <Label>Client</Label>
               <ClientPicker slug={slug} initial={client ? { id: client.id, name: `${client.firstName} ${client.lastName}`.trim() } : null} canCreate={can(permissions, "clients.write")} createClient={quickCreateClient} />
+              {client ? (
+                <div className="mt-2 space-y-1 rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">
+                  <p>
+                    {client.phone ? <>{client.phone} · </> : null}
+                    {lastVisit && lastService ? <>Last visit {formatDateLong(instantToISODate(lastVisit.startAt, tz)).replace(/^\w+, /, "").replace(/, \d{4}$/, "")}: {lastService.name}{lastStaff ? ` with ${lastStaff.displayName}` : ""}</> : "First visit"}
+                    {upcoming ? <> · {upcoming} upcoming</> : null}
+                  </p>
+                  {noShows ? <p className="font-medium text-amber-700">{noShows} no-show{noShows === 1 ? "" : "s"} on record</p> : null}
+                  {client.notes ? <p className="line-clamp-2 text-stone-500">{client.notes}</p> : null}
+                  {sameAsLast ? <Link href={sameAsLast} className="inline-block font-medium text-brand-700 underline">Same as last visit</Link> : null}
+                </div>
+              ) : null}
             </div>
             <Field label="Service" name="serviceId">
               <ServicePicker name="serviceId" groups={serviceGroups} value={service?.id ?? null} />
@@ -151,7 +218,17 @@ export default async function NewAppointmentPage({
                 })}
               </Select>
             </Field>
-            <Field label="Date"><Input name="date" type="date" defaultValue={date} /></Field>
+            <Field label="Date">
+              <div className="flex items-center gap-2">
+                <Link href={linkWith({ date: shiftISODate(date, -1) })} aria-label="Previous day" className="inline-flex h-10 w-9 shrink-0 items-center justify-center rounded-lg border border-stone-300 bg-white text-stone-600 hover:bg-stone-50">‹</Link>
+                <Input name="date" type="date" defaultValue={date} />
+                <Link href={linkWith({ date: shiftISODate(date, 1) })} aria-label="Next day" className="inline-flex h-10 w-9 shrink-0 items-center justify-center rounded-lg border border-stone-300 bg-white text-stone-600 hover:bg-stone-50">›</Link>
+              </div>
+              <div className="mt-1.5 flex gap-3 text-xs">
+                {date !== todayISO ? <Link href={linkWith({ date: todayISO })} className="text-brand-700 underline">Today</Link> : null}
+                <Link href={linkWith({ date: shiftISODate(date, 7) })} className="text-brand-700 underline">+1 week</Link>
+              </div>
+            </Field>
           </AutoSubmitForm>
         </Card>
 
@@ -192,14 +269,21 @@ export default async function NewAppointmentPage({
               extraServiceIds={extras.map((x) => x.id)}
               summary={`${chainLabel} · ${duration(mainTerms!.durationMin + service.gapMin + service.finishMin + chainMin)} · ${formatMoney(chainPrice, business.currency)}`}
               staffId={staffId}
-              staffName={anyMode ? eligibleStaff[0]?.displayName : undefined}
+              anyMode={anyMode}
+              perStaff={anyMode ? perStaff : undefined}
+              totals={totals}
+              serviceLabel={chainLabel}
+              confirmation={!client ? "Walk-in: no confirmation is sent." : client.email || client.phone ? `Confirmation goes to ${[client.phone ? "their phone" : null, client.email ? "their email" : null].filter(Boolean).join(" and ")} (if they accept messages).` : "No phone or email on file, so no confirmation can be sent."}
               staffNames={Object.fromEntries(eligibleStaff.map((s) => [s.id, s.displayName]))}
               locationId={location?.id ?? null}
               date={date}
               dateLabel={formatDateLong(date)}
-              slots={slots.map((d) => ({ iso: d.at.toISOString(), label: formatTime(d.at, tz), staffId: d.staffId }))}
+              slots={slots.map((d) => ({ iso: d.at.toISOString(), label: formatTime(d.at, tz), staffId: d.staffId, hour: hourOf(d.at) }))}
               preselectIso={preselectTime ? (slots.find((d) => formatTime(d.at, tz) === formatTime(zonedToInstant(date, preselectTime, tz), tz))?.at.toISOString() ?? null) : null}
               customTimeDefault={preselectTime}
+              clientName={client ? `${client.firstName} ${client.lastName}`.trim() : null}
+              nextOpen={nextOpenDate ? { label: formatDateLong(nextOpenDate), href: linkWith({ date: nextOpenDate }) } : null}
+              canConfirm={!!client}
             />
           )}
         </div>
