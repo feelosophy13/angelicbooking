@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { apiAudit, ApiErrors, list, pageParams, probe, readBody, route } from "@/lib/api";
+import { apiAudit, ApiErrors, list, pageParams, probe, readBody, route, PRICE_FIELDS } from "@/lib/api";
 import { listServices, serializeService } from "@/server/api-v1";
 import { SERVICE_DEFAULTS, serviceCreate } from "@/server/api-v1-more";
 import { setServiceLocations } from "@/server/locations";
@@ -34,4 +34,4 @@ export const POST = route("catalog:write", async (ctx, req) => {
   if (!created) return ApiErrors.notFound("category");
   await apiAudit(ctx, "api.service.create", "service", created.id, { name: created.name });
   return NextResponse.json({ data: serializeService(created) }, { status: 201 });
-});
+}, { fields: PRICE_FIELDS });

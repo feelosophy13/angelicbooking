@@ -10,7 +10,7 @@ import { notifyAppointment } from "@/lib/notify";
 const body = z.object({ reason: z.string().max(500).nullish(), notify: z.boolean().default(true) });
 
 /** POST /api/v1/appointments/:id/cancel. No fee is charged; refunds and fees stay in the staff app. */
-export const POST = route<{ id: string }>("appointments:write", async (ctx, req, { id }) => {
+export const POST = route<{ id: string }>("appointments:cancel", async (ctx, req, { id }) => {
   const parsed = await readBody(req, body);
   if ("error" in parsed) return parsed.error;
   const businessId = ctx.business.id;

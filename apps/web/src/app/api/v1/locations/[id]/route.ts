@@ -9,4 +9,4 @@ export const GET = route<{ id: string }>("catalog:read", async (ctx, _req, { id 
 });
 
 export const PATCH = route<{ id: string }>("settings:write", (ctx, req, { id }) => patchLocationApi(ctx, req, id));
-export const DELETE = route<{ id: string }>("settings:write", (ctx, _req, { id }) => deleteLocationApi(ctx, id));
+export const DELETE = route<{ id: string }>("settings:delete", (ctx, _req, { id }) => deleteLocationApi(ctx, id));

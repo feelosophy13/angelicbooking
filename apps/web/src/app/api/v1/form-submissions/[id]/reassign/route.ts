@@ -5,7 +5,7 @@ import { findSubmissionApi, reassignBody, serializeSubmission } from "@/server/a
 import { getSubmission, reassignSubmission } from "@/server/forms";
 
 /** POST /api/v1/form-submissions/:id/reassign {client_id}: move a submission filed under the wrong person to the right client (it is detached from any visit). */
-export const POST = route<{ id: string }>("forms:write", async (ctx, req, { id }) => {
+export const POST = route<{ id: string }>("forms:void", async (ctx, req, { id }) => {
   const body = await readBody(req, reassignBody);
   if ("error" in body) return body.error;
   const b = ctx.business.id;

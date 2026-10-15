@@ -102,8 +102,15 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       per-process counting if the database is unreachable); every response carries `X-RateLimit-*`; lists say `has_more` exactly (one extra row is
       fetched); bodies over 100 KB are refused as they stream in (413); the spec is `public/openapi/v1.json` (`pnpm openapi` regenerates it, a test
       fails when it is stale), linked from `/developers`.
-- [ ] Later: webhooks to subscribers, multi-service bookings, payments/refunds, staff writes, idempotency keys, a per-key usage log,
-      per-plan gating of the API if wanted. Request and response schemas in the OpenAPI file are generic: add zod-to-JSON-Schema for bodies.
+- [x] Finer scopes 2026-10-14 (migration 0084): 50 exact scopes (write no longer includes read; separate delete, book/change/cancel, campaigns:send,
+      clients:consent, client-notes:*, pricing:write, policies:write, time:*, purchasing:*, forms:void, messages:resend); prices/consent/notes/switching an
+      automation on need an extra scope when the field is sent; client notes and balances are left out of responses without theirs; per-key allowed IP
+      addresses (the proxy's last X-Forwarded-For entry) and per-key requests per minute. Keys made before this keep every ability (scope_version 1,
+      expanded on use; checked route by route: none lost, none gained). Rule for new routes: pick the narrowest scope that fits; a body field that
+      sets money, consent or private data goes in `fields` of `route(...)`.
+- [ ] Not done: limiting a key to one location or one staff member (every query would need the filter); a per-key usage log; the shared first-entry
+      `clientIp` used by the failed-sign-in throttle still trusts the first X-Forwarded-For entry (harmless with 256-bit keys, but the allowlist uses the last).
+- [ ] Later: webhooks to subscribers, idempotency keys, per-plan gating of the API if wanted. Rule for new API tests: import `packages/db/src/env` first (guarded by api-test-guard.test.ts).
 
 ## 3. Product backlog
 

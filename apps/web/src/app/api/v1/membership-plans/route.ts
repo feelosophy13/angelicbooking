@@ -1,6 +1,6 @@
 import { eq, and, asc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { list, pageParams, probe, readBody, route } from "@/lib/api";
+import { list, pageParams, probe, readBody, route, PRICE_FIELDS } from "@/lib/api";
 import { createPlanApi, planCreate, serializePlanFull } from "@/server/api-v1-catalog";
 
 /** GET /api/v1/membership-plans?include_inactive=1: the membership plans you sell (hidden ones only with include_inactive). */
@@ -19,4 +19,4 @@ export const POST = route("catalog:write", async (ctx, req) => {
   const body = await readBody(req, planCreate);
   if ("error" in body) return body.error;
   return createPlanApi(ctx, body.data);
-});
+}, { fields: PRICE_FIELDS });

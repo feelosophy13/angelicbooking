@@ -56,7 +56,7 @@ export const PATCH = route<{ id: string }>("forms:write", async (ctx, req, { id 
  * DELETE /api/v1/forms/:id: like the staff app, a form that clients have already submitted is archived (active=false) so the signed copies stay;
  * one nobody has submitted is deleted. The response says which (`deleted` or `archived`).
  */
-export const DELETE = route<{ id: string }>("forms:write", async (ctx, _req, { id }) => {
+export const DELETE = route<{ id: string }>("forms:delete", async (ctx, _req, { id }) => {
   const b = ctx.business.id;
   const outcome = await withTenant(b, async (tx) => {
     const form = await tx.query.forms.findFirst({ where: and(eq(schema.forms.id, id), eq(schema.forms.businessId, b)), columns: { id: true } });

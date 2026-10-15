@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { eq, or, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
-import { apiAudit, list, pageParams, readBody, route } from "@/lib/api";
+import { apiAudit, list, pageParams, readBody, route, CLIENT_FIELDS } from "@/lib/api";
 import { clientCreate, CLIENT_DEFAULTS, getClientApi, listClientsApi, serializeClient } from "@/server/api-v1";
 
 /** GET /api/v1/clients?q=&email=&phone=&updated_since=&page=&limit= */
@@ -19,7 +19,7 @@ export const GET = route("clients:read", async (ctx, req) => {
     limit: p.limit,
     offset: p.offset,
   });
-  return list(rows.map(serializeClient), p, total);
+  return list(rows.map((c) => serializeClient(c, ctx.scopes)), p, total);
 });
 
 /** POST /api/v1/clients. A client with the same email or phone already on file is a 409 that names the existing id. */
@@ -42,5 +42,5 @@ export const POST = route("clients:write", async (ctx, req) => {
   if ("duplicate" in result) return NextResponse.json({ error: { code: "conflict", message: "A client with that email or phone already exists.", existing_id: result.duplicate } }, { status: 409 });
   await apiAudit(ctx, "client.create", "client", result.id);
   const created = await getClientApi(businessId, result.id);
-  return NextResponse.json({ data: serializeClient(created!) }, { status: 201 });
-});
+  return NextResponse.json({ data: serializeClient(created!, ctx.scopes) }, { status: 201 });
+}, { fields: CLIENT_FIELDS });

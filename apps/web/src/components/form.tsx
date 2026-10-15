@@ -54,6 +54,11 @@ export function ActionForm({ action, children, className, onSuccess }: { action:
   );
 }
 
+/** For a hand-built form (one that must read its own action state, like a secret shown once): lets <Field> show that state's field errors. */
+export function FieldErrors({ state, children }: { state: FormState | undefined; children: React.ReactNode }) {
+  return <Ctx.Provider value={state}>{children}</Ctx.Provider>;
+}
+
 /** "Interval count" from "intervalCount": the fallback when a field never registered a label. */
 function labelFor(key: string): string {
   const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_.]+/g, " ").toLowerCase();

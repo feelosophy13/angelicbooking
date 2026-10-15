@@ -7,7 +7,7 @@ import { rescheduleService } from "@/server/booking";
 import { notifyAppointment } from "@/lib/notify";
 
 /** POST /api/v1/appointments/:id/items/:itemId/move {start_at, staff_id?, notify?}: move one service of a visit (with its finishing segment), optionally to another provider. 409 when the time is taken or outside their hours; class seats cannot be moved. */
-export const POST = route<{ id: string; itemId: string }>("appointments:write", async (ctx, req, { id, itemId }) => {
+export const POST = route<{ id: string; itemId: string }>("appointments:change", async (ctx, req, { id, itemId }) => {
   const body = await readBody(req, moveItemBody);
   if ("error" in body) return body.error;
   const d = body.data;

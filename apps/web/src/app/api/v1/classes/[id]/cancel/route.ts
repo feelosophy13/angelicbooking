@@ -7,7 +7,7 @@ import { cancelSession } from "@/server/classes";
 import { notifyAppointment } from "@/lib/notify";
 
 /** POST /api/v1/classes/:id/cancel {reason?, notify?}: cancel the session and every open seat in it. With notify (default true) each client is told. No refunds are made. */
-export const POST = route<{ id: string }>("appointments:write", async (ctx, req, { id }) => {
+export const POST = route<{ id: string }>("classes:write", async (ctx, req, { id }) => {
   const body = await readBody(req, classCancelBody);
   if ("error" in body) return body.error;
   const b = ctx.business.id;

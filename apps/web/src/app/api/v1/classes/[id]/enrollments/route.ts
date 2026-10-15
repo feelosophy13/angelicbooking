@@ -6,7 +6,7 @@ import { enrolClient } from "@/server/classes";
 import { notifyAppointment } from "@/lib/notify";
 
 /** POST /api/v1/classes/:id/enrollments {client_id, notes?, notify?}: give a client a seat (client_id may be null for a walk-in). 409 when the class is full, has started, is cancelled or the client already has a seat. Returns the class; the new booking is the roster row with the highest booked_at. */
-export const POST = route<{ id: string }>("appointments:write", async (ctx, req, { id }) => {
+export const POST = route<{ id: string }>("classes:write", async (ctx, req, { id }) => {
   const body = await readBody(req, enrolBody);
   if ("error" in body) return body.error;
   const d = body.data;

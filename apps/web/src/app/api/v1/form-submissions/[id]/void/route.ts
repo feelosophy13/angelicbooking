@@ -4,7 +4,7 @@ import { findSubmissionApi, serializeSubmission, voidBody } from "@/server/api-v
 import { getSubmission, voidSubmission } from "@/server/forms";
 
 /** POST /api/v1/form-submissions/:id/void {reason?}: it stays on file, struck through, and no longer counts as signed. 409 when already void. */
-export const POST = route<{ id: string }>("forms:write", async (ctx, req, { id }) => {
+export const POST = route<{ id: string }>("forms:void", async (ctx, req, { id }) => {
   const body = await readBody(req, voidBody);
   if ("error" in body) return body.error;
   const b = ctx.business.id;

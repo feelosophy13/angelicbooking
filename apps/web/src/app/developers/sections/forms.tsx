@@ -26,7 +26,7 @@ export function FormsDocs() {
       <Endpoint method="PATCH" path="/forms/{id}" scope="forms:write">
         <p>Send only what changes; unknown fields are rejected. Sending <code>fields</code> replaces the whole list of questions. Removing every question and the description is a <code>422</code>.</p>
       </Endpoint>
-      <Endpoint method="DELETE" path="/forms/{id}" scope="forms:write">
+      <Endpoint method="DELETE" path="/forms/{id}" scope="forms:delete">
         <p>Like the staff app: a form that clients have already submitted is archived (<code>active: false</code>) so the signed copies stay; a form nobody has submitted is deleted. The response says which: <code>{`{"id": "…", "deleted": true, "archived": false}`}</code>.</p>
       </Endpoint>
       <Endpoint method="POST" path="/forms/{id}/duplicate" scope="forms:write"><p>A copy named &ldquo;Copy of …&rdquo;, inactive until you turn it on. Returns <code>201</code> with the new form.</p></Endpoint>
@@ -38,10 +38,10 @@ export function FormsDocs() {
       <Endpoint method="GET" path="/form-submissions/{id}" scope="forms:read">
         <p>The summary plus <code>void_reason</code>, <code>voided_at</code> and <code>answers</code>: one entry per question (as the form was when signed) with <code>field_id</code>, <code>label</code>, <code>type</code> and <code>value</code> (a string, <code>true</code>/<code>false</code> for a checkbox, a list for multiselect). Uploaded files are not returned (<code>value: null</code>, <code>has_file: true</code>), and neither are the drawn signature image or the signer&apos;s IP address.</p>
       </Endpoint>
-      <Endpoint method="POST" path="/form-submissions/{id}/void" scope="forms:write">
+      <Endpoint method="POST" path="/form-submissions/{id}/void" scope="forms:void">
         <p>Body: optional <code>reason</code> (up to 200). The submission stays on file, struck through, and no longer counts as signed. <code>409</code> when it is already void.</p>
       </Endpoint>
-      <Endpoint method="POST" path="/form-submissions/{id}/reassign" scope="forms:write">
+      <Endpoint method="POST" path="/form-submissions/{id}/reassign" scope="forms:void">
         <p>Body: <code>client_id</code>. Moves a submission filed under the wrong person to the right client, and detaches it from any visit. <code>404</code> when the client is not yours.</p>
       </Endpoint>
     </>

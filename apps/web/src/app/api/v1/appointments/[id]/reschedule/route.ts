@@ -14,7 +14,7 @@ const body = z.object({
 }).strict();
 
 /** POST /api/v1/appointments/:id/reschedule {start_at, staff_id?, notify?}: moves the visit (its first service, which is the whole visit for a single-service booking); 409 when the time is taken or outside the provider's hours. */
-export const POST = route<{ id: string }>("appointments:write", async (ctx, req, { id }) => {
+export const POST = route<{ id: string }>("appointments:change", async (ctx, req, { id }) => {
   const parsed = await readBody(req, body);
   if ("error" in parsed) return parsed.error;
   const d = parsed.data;

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { isApiScope, type ApiScope } from "@/lib/api-scopes";
+import { expandScopes } from "@/lib/api-scopes";
 import { FormPage } from "@/components/ui";
 import { ApiKeyForm, type KeyDefaults } from "../key-form";
 
@@ -17,7 +17,7 @@ export default async function NewApiKeyPage({ params, searchParams }: { params: 
     ? (await withTenant(business.id, (tx) => tx.select().from(schema.apiKeys).where(eq(schema.apiKeys.businessId, business.id)))).find((k) => k.id === replace && !k.revokedAt)
     : undefined;
   const defaults: KeyDefaults | undefined = replacing
-    ? { name: replacing.name, scopes: replacing.scopes.filter(isApiScope) as ApiScope[], replaces: { id: replacing.id, name: replacing.name } }
+    ? { name: replacing.name, scopes: expandScopes(replacing.scopes, replacing.scopeVersion), replaces: { id: replacing.id, name: replacing.name } }
     : undefined;
   return (
     <FormPage title={replacing ? "Replace key" : "New API key"} backHref={`/app/${slug}/settings/api`} backLabel="API access" width="max-w-3xl">

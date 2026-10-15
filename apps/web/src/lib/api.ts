@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db, schema, withTenant } from "@angelic/db";
 import { clientIp } from "./rate-limit";
 import { sharedRateLimit, type RateResult } from "./shared-rate-limit";
-import { API_KEY_PREFIX, hasScope, type ApiScope } from "./api-scopes";
+import { API_KEY_PREFIX, DEFAULT_RATE_LIMIT_PER_MIN, expandScopes, hasScope, ipAllowed, type ApiScope } from "./api-scopes";
 
 /** What every /api/v1 handler receives. `business` comes from the key and nowhere else: never from the URL, query or body. */
 export type ApiContext = {
@@ -13,7 +13,27 @@ export type ApiContext = {
   keyId: string;
   /** Recorded as the actor in the activity log. */
   actor: string;
+  /** Exactly what this key may do (legacy keys already expanded). A handler that does more than its route scope checks `can`/`needScopes`. */
+  scopes: readonly string[];
 };
+
+/** Whether the key behind `ctx` holds `scope`. */
+export const can = (ctx: ApiContext, scope: ApiScope) => hasScope(ctx.scopes, scope);
+
+/**
+ * Some bodies carry fields that need a scope beyond the route's own (a price, a consent flag, a private note). Returns a 403 naming the first
+ * missing scope, or null when the key holds them all.
+ */
+export function needScopes(ctx: ApiContext, ...scopes: ApiScope[]): NextResponse | null {
+  const missing = scopes.find((s) => !hasScope(ctx.scopes, s));
+  return missing ? apiError(403, "insufficient_scope", `This key does not have the "${missing}" scope, which this request needs.`) : null;
+}
+
+/** The caller's address as our proxy saw it: the LAST X-Forwarded-For entry (one proxy hop, as on Render). Falls back to "local" in development. */
+export function trustedClientIp(req: Request): string {
+  const parts = (req.headers.get("x-forwarded-for") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  return parts.at(-1) ?? req.headers.get("x-real-ip")?.trim() ?? "local";
+}
 
 export function hashKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
@@ -35,18 +55,17 @@ export const ApiErrors = {
   conflict: (message: string) => apiError(409, "conflict", message),
 };
 
-const PER_KEY_LIMIT = 120; // requests per minute per key
 const BAD_AUTH_LIMIT = 30; // failed attempts per minute per IP
 const MAX_BODY_BYTES = 100_000;
 
-type Found = { id: string; businessId: string; scopes: string[]; expiresAt: Date | null; revokedAt: Date | null; lastUsedAt: Date | null };
+type Found = { id: string; businessId: string; scopes: string[]; scopeVersion: number; allowedIps: string[]; rateLimitPerMin: number | null; expiresAt: Date | null; revokedAt: Date | null; lastUsedAt: Date | null };
 
 async function findKey(hash: string): Promise<Found | null> {
   // The key_lookup RLS policy exposes exactly the row whose hash is in this variable, to this transaction only.
   return db.transaction(async (tx) => {
     await tx.execute(sql`select set_config('app.api_key_hash', ${hash}, true)`);
     const [row] = await tx
-      .select({ id: schema.apiKeys.id, businessId: schema.apiKeys.businessId, scopes: schema.apiKeys.scopes, expiresAt: schema.apiKeys.expiresAt, revokedAt: schema.apiKeys.revokedAt, lastUsedAt: schema.apiKeys.lastUsedAt })
+      .select({ id: schema.apiKeys.id, businessId: schema.apiKeys.businessId, scopes: schema.apiKeys.scopes, scopeVersion: schema.apiKeys.scopeVersion, allowedIps: schema.apiKeys.allowedIps, rateLimitPerMin: schema.apiKeys.rateLimitPerMin, expiresAt: schema.apiKeys.expiresAt, revokedAt: schema.apiKeys.revokedAt, lastUsedAt: schema.apiKeys.lastUsedAt })
       .from(schema.apiKeys)
       .where(eq(schema.apiKeys.keyHash, hash))
       .limit(1);
@@ -71,14 +90,19 @@ export async function authenticate(req: Request, scope: ApiScope): Promise<{ ctx
   if (!found || found.revokedAt || (found.expiresAt && found.expiresAt <= new Date())) return bad();
   const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, found.businessId) });
   if (!business || business.suspendedAt) return bad();
-  const rate = await sharedRateLimit(`api-key:${found.id}`, PER_KEY_LIMIT, 60_000);
-  if (!rate.ok) return { error: apiError(429, "rate_limited", `Rate limit is ${PER_KEY_LIMIT} requests per minute per key.`, undefined, { "Retry-After": String(rate.retryAfterSec) }), rate };
-  if (!hasScope(found.scopes, scope)) return { error: apiError(403, "insufficient_scope", `This key does not have the "${scope}" scope.`), rate };
+  // A key restricted to certain addresses answers like any other bad key from anywhere else. The address is the one our proxy saw (the last
+  // X-Forwarded-For entry): the first entry is whatever the caller wrote, so it proves nothing.
+  if (!ipAllowed(found.allowedIps, trustedClientIp(req))) return bad();
+  const limit = found.rateLimitPerMin ?? DEFAULT_RATE_LIMIT_PER_MIN;
+  const rate = await sharedRateLimit(`api-key:${found.id}`, limit, 60_000);
+  if (!rate.ok) return { error: apiError(429, "rate_limited", `Rate limit is ${limit} requests per minute for this key.`, undefined, { "Retry-After": String(rate.retryAfterSec) }), rate };
+  const scopes = expandScopes(found.scopes, found.scopeVersion);
+  if (!hasScope(scopes, scope)) return { error: apiError(403, "insufficient_scope", `This key does not have the "${scope}" scope.`), rate };
   // Record use at most once a minute, inside the key's own tenant.
   if (!found.lastUsedAt || Date.now() - found.lastUsedAt.getTime() > 60_000) {
     await withTenant(business.id, (tx) => tx.update(schema.apiKeys).set({ lastUsedAt: new Date() }).where(and(eq(schema.apiKeys.id, found.id), eq(schema.apiKeys.businessId, business.id)))).catch(() => {});
   }
-  return { ctx: { business, keyId: found.id, actor: `api:${found.id}` }, rate };
+  return { ctx: { business, keyId: found.id, actor: `api:${found.id}`, scopes }, rate };
 }
 
 /** Every response from /api/v1 says no-store, and carries the key's rate-limit window when there is one. */
@@ -94,12 +118,56 @@ function withApiHeaders(res: Response, rate?: RateResult): Response {
 
 type Handler<P> = (ctx: ApiContext, req: Request, params: P) => Promise<NextResponse | Response>;
 
-/** Wrap a route: authenticate, enforce the scope, turn thrown errors into JSON. Handlers never see an unauthenticated request. */
-export function route<P = Record<string, never>>(scope: ApiScope, handler: Handler<P>) {
+/** A body field that needs a scope beyond the route's own, optionally only for some values (switching something ON, say). */
+export type FieldRule = ApiScope | { scope: ApiScope; when: (value: unknown) => boolean };
+export type RouteOptions = {
+  /** Body field name (at any depth) → the extra scope sending it needs. Checked before the handler runs, so a tool that leaves the field out never needs the scope. */
+  fields?: Record<string, FieldRule>;
+  /** Scopes the route needs on top of its own, always. */
+  also?: ApiScope[];
+};
+
+/** Fields that set what clients pay or what things cost: sending any of them needs `pricing:write`. */
+export const PRICE_FIELDS: Record<string, FieldRule> = Object.fromEntries(
+  ["price_cents", "price_override_cents", "cost_cents", "deposit_cents", "deposit_percent", "deposit_type", "discount_bps"].map((f) => [f, "pricing:write" as const]),
+);
+/** Client fields that are consent, or private notes, rather than plain details. */
+export const CLIENT_FIELDS: Record<string, FieldRule> = { sms_opt_in: "clients:consent", email_opt_in: "clients:consent", notes: "client-notes:write" };
+
+/** Every key (with its value) in a parsed JSON body, at any depth. */
+function* walk(v: unknown): Generator<[string, unknown]> {
+  if (Array.isArray(v)) for (const x of v) yield* walk(x);
+  else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) { yield [k, x]; yield* walk(x); }
+}
+
+/** The first scope the body needs that the key lacks, or null. A body that is not JSON is left for the handler to refuse (400). */
+function missingFieldScope(ctx: ApiContext, bodyText: string, rules: Record<string, FieldRule>): ApiScope | null {
+  let parsed: unknown;
+  try { parsed = JSON.parse(bodyText); } catch { return null; }
+  for (const [key, value] of walk(parsed)) {
+    const rule = rules[key];
+    if (!rule || !Object.hasOwn(rules, key)) continue;
+    const scope = typeof rule === "string" ? rule : rule.when(value) ? rule.scope : null;
+    if (scope && !hasScope(ctx.scopes, scope)) return scope;
+  }
+  return null;
+}
+
+/** Wrap a route: authenticate, enforce the scope (and any field-level scopes), turn thrown errors into JSON. Handlers never see an unauthenticated request. */
+export function route<P = Record<string, never>>(scope: ApiScope, handler: Handler<P>, opts: RouteOptions = {}) {
   return async (req: Request, { params }: { params: Promise<P> }) => {
     const auth = await authenticate(req, scope);
     if ("error" in auth) return withApiHeaders(auth.error, auth.rate);
     try {
+      const lacks = needScopes(auth.ctx, ...(opts.also ?? []));
+      if (lacks) return withApiHeaders(lacks, auth.rate);
+      if (opts.fields && req.method !== "GET" && req.method !== "DELETE") {
+        // Read the body once, here, and hand the handler a request carrying the same text.
+        const text = await readCappedText(req);
+        const need = missingFieldScope(auth.ctx, text, opts.fields);
+        if (need) return withApiHeaders(needScopes(auth.ctx, need)!, auth.rate);
+        req = new Request(req.url, { method: req.method, headers: req.headers, body: text });
+      }
       return withApiHeaders(await handler(auth.ctx, req, await params), auth.rate);
     } catch (e) {
       const rate = auth.rate;

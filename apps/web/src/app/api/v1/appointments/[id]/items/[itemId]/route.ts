@@ -9,7 +9,7 @@ import { notifyAppointment } from "@/lib/notify";
  * DELETE /api/v1/appointments/:id/items/:itemId?notify=false: take one service off a visit (all of its segments). Taking off the last one cancels the
  * visit, and then the client is told unless notify=false. A completed, no-show or cancelled visit cannot be changed (409).
  */
-export const DELETE = route<{ id: string; itemId: string }>("appointments:write", async (ctx, req, { id, itemId }) => {
+export const DELETE = route<{ id: string; itemId: string }>("appointments:cancel", async (ctx, req, { id, itemId }) => {
   const b = ctx.business.id;
   const found = await findVisitItem(b, id, itemId);
   if (!found) return ApiErrors.notFound("appointment item");

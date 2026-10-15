@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { and, eq, ne, or, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
-import { apiAudit, ApiErrors, readBody, route } from "@/lib/api";
+import { apiAudit, ApiErrors, readBody, route, CLIENT_FIELDS } from "@/lib/api";
 import { clientPatch, getClientApi, serializeClient } from "@/server/api-v1";
 
 export const GET = route<{ id: string }>("clients:read", async (ctx, _req, { id }) => {
   const c = await getClientApi(ctx.business.id, id);
-  return c ? NextResponse.json({ data: serializeClient(c) }) : ApiErrors.notFound("client");
+  return c ? NextResponse.json({ data: serializeClient(c, ctx.scopes) }) : ApiErrors.notFound("client");
 });
 
 /** PATCH /api/v1/clients/:id: send only the fields to change. */
@@ -42,5 +42,5 @@ export const PATCH = route<{ id: string }>("clients:write", async (ctx, req, { i
   if (outcome === "missing") return ApiErrors.notFound("client");
   if (outcome === "duplicate") return ApiErrors.conflict("Another client already has that email or phone.");
   await apiAudit(ctx, "client.update", "client", id, { fields: Object.keys(d) });
-  return NextResponse.json({ data: serializeClient((await getClientApi(businessId, id))!) });
-});
+  return NextResponse.json({ data: serializeClient((await getClientApi(businessId, id))!, ctx.scopes) });
+}, { fields: CLIENT_FIELDS });

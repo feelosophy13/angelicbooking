@@ -14,7 +14,7 @@ export const GET = route("appointments:read", async (ctx, req) => {
 });
 
 /** POST /api/v1/waitlist: put a client on the waitlist for a date. */
-export const POST = route("appointments:write", async (ctx, req) => {
+export const POST = route("waitlist:write", async (ctx, req) => {
   const body = await readBody(req, waitlistInput);
   if ("error" in body) return body.error;
   const d = body.data;

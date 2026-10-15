@@ -13,7 +13,7 @@ export function CatalogDocs() {
         <p><code>404</code> when <code>parent_id</code> is not one of your categories; <code>409</code> when a category with that name already exists in the same place.</p>
       </Endpoint>
       <Endpoint method="PATCH" path="/categories/{id}" scope="catalog:write"><p>Query: <code>kind</code>. Send only what changes: <code>name</code>, and for service categories <code>parent_id</code> (<code>null</code> moves it to the top level), <code>description</code>, <code>prep_notes</code>. A category cannot be moved inside itself or one of its own sub-categories (<code>409</code>). Moving it to a new parent puts it last there.</p></Endpoint>
-      <Endpoint method="DELETE" path="/categories/{id}" scope="catalog:write"><p>Query: <code>kind</code>. Its services or products become uncategorised and its sub-categories move up one level. Returns <code>{`{ "data": { "id": "…", "deleted": true } }`}</code>.</p></Endpoint>
+      <Endpoint method="DELETE" path="/categories/{id}" scope="catalog:delete"><p>Query: <code>kind</code>. Its services or products become uncategorised and its sub-categories move up one level. Returns <code>{`{ "data": { "id": "…", "deleted": true } }`}</code>.</p></Endpoint>
       <Endpoint method="POST" path="/categories/{id}/move" scope="catalog:write"><p>Query: <code>kind</code>. Body: <code>{`{ "direction": "up" }`}</code> or <code>"down"</code>: one step among its siblings. Returns the renumbered list.</p></Endpoint>
 
       <h2>Service order and who performs a service</h2>
@@ -60,7 +60,7 @@ export function CatalogDocs() {
       <p>The product&apos;s main barcode is its <code>barcode</code> field. Extra barcodes cover a case or another pack size: one scan adds <code>units_per_scan</code> units. A code (barcode, extra barcode or SKU) can belong to one product only.</p>
       <Endpoint method="GET" path="/products/{id}/barcodes" scope="catalog:read"><p>Fields: <code>id</code>, <code>product_id</code>, <code>code</code>, <code>units_per_scan</code>, <code>created_at</code>.</p></Endpoint>
       <Endpoint method="POST" path="/products/{id}/barcodes" scope="catalog:write"><p>Body: <code>code</code> (1 to 60 characters), optional <code>units_per_scan</code> (1 to 1000, default 1). <code>409</code> when another product already uses the code.</p></Endpoint>
-      <Endpoint method="DELETE" path="/products/{id}/barcodes/{barcodeId}" scope="catalog:write" />
+      <Endpoint method="DELETE" path="/products/{id}/barcodes/{barcodeId}" scope="catalog:delete" />
     </>
   );
 }

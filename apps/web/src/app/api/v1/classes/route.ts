@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
-import { apiAudit, ApiErrors, firstForeign, list, pageParams, readBody, route } from "@/lib/api";
+import { apiAudit, ApiErrors, firstForeign, list, pageParams, readBody, route, PRICE_FIELDS } from "@/lib/api";
 import { classCreate, getSessionApi, listSessionsApi, NO_USER } from "@/server/api-v1-appointments";
 import { createSession } from "@/server/classes";
 
@@ -27,7 +27,7 @@ export const GET = route("appointments:read", async (ctx, req) => {
 });
 
 /** POST /api/v1/classes {service_id, staff_id, start_at, capacity?, notes?}: schedule a class session. The service must have a group size above 1; 409 when the instructor is not free then. */
-export const POST = route("appointments:write", async (ctx, req) => {
+export const POST = route("classes:write", async (ctx, req) => {
   const body = await readBody(req, classCreate);
   if ("error" in body) return body.error;
   const d = body.data;
@@ -37,6 +37,6 @@ export const POST = route("appointments:write", async (ctx, req) => {
   const row = await createSession({ businessId: b, timeZone: ctx.business.timezone, slotIntervalMin: ctx.business.slotIntervalMin, serviceId: d.service_id, staffId: d.staff_id, startAt: new Date(d.start_at), capacity: d.capacity ?? null, notes: d.notes || null, actorUserId: NO_USER });
   await apiAudit(ctx, "api.class.schedule", "class_session", row.id, { serviceId: d.service_id, staffId: d.staff_id, startAt: d.start_at });
   return NextResponse.json({ data: await getSessionApi(b, row.id) }, { status: 201 });
-});
+}, { fields: PRICE_FIELDS });
 
 void z;

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { ApiErrors, readBody, route } from "@/lib/api";
+import { ApiErrors, readBody, route, PRICE_FIELDS } from "@/lib/api";
 import { serializeProduct } from "@/server/api-v1";
 import { guarded, patchProductApi, productPatchX } from "@/server/api-v1-catalog";
 
@@ -21,4 +21,4 @@ export const PATCH = route<{ id: string }>("catalog:write", async (ctx, req, { i
   const body = await readBody(req, productPatchX);
   if ("error" in body) return body.error;
   return guarded(() => patchProductApi(ctx, id, body.data));
-});
+}, { fields: PRICE_FIELDS });

@@ -17,20 +17,20 @@ export function SettingsDocs() {
 
       <h2>Booking rules</h2>
       <Endpoint method="GET" path="/settings/booking" scope="settings:read" />
-      <Endpoint method="PATCH" path="/settings/booking" scope="settings:write">
+      <Endpoint method="PATCH" path="/settings/booking" scope="policies:write">
         <p>Fields: <code>online_booking_enabled</code>, <code>require_card_online</code>, <code>client_accounts_enabled</code>, <code>min_notice_min</code> (0 to 10080), <code>max_advance_days</code> (1 to 365), <code>cancel_window_hours</code> (0 to 168), <code>no_show_fee_cents</code>, <code>late_cancel_fee_type</code> (<code>none</code>, <code>flat</code>, <code>percent</code>), <code>late_cancel_fee_value</code> (cents for <code>flat</code>; basis points for <code>percent</code>, so <code>2500</code> = 25%, at most <code>10000</code>), <code>late_cancel_deposit</code> (<code>toward</code> or <code>extra</code>), <code>deposit_refund_as</code> (<code>original</code> or <code>store_credit</code>), <code>booking_policy</code> (up to 1000), <code>address_line</code> (up to 200).</p>
         <p>These are settings only; nothing is charged by changing them. A fee type other than <code>none</code> needs a value above zero (<code>422</code>); setting the type to <code>none</code> clears the value.</p>
       </Endpoint>
 
       <h2>Loyalty</h2>
       <Endpoint method="GET" path="/settings/loyalty" scope="settings:read" />
-      <Endpoint method="PATCH" path="/settings/loyalty" scope="settings:write">
+      <Endpoint method="PATCH" path="/settings/loyalty" scope="policies:write">
         <p>Fields: <code>enabled</code>, <code>points_per_dollar</code> (0 to 100), <code>points_per_visit</code> (0 to 10000), <code>point_value_cents</code> (1 to 1000: what one point is worth when redeemed), <code>min_redeem_points</code> (1 to 100000), <code>referral_bonus_points</code> and <code>referral_friend_bonus_points</code> (0 to 100000). Client balances cannot be changed through the API.</p>
       </Endpoint>
 
       <h2>Online store</h2>
       <Endpoint method="GET" path="/settings/store" scope="settings:read" />
-      <Endpoint method="PATCH" path="/settings/store" scope="settings:write"><p>Fields: <code>store_enabled</code>, <code>gift_cards_online</code>, <code>shipping_flat_cents</code> (0 = pickup only).</p></Endpoint>
+      <Endpoint method="PATCH" path="/settings/store" scope="policies:write"><p>Fields: <code>store_enabled</code>, <code>gift_cards_online</code>, <code>shipping_flat_cents</code> (0 = pickup only).</p></Endpoint>
 
       <h2>Reviews</h2>
       <Endpoint method="GET" path="/settings/reviews" scope="settings:read" />
@@ -52,7 +52,7 @@ export function SettingsDocs() {
       <Endpoint method="GET" path="/locations/{id}" scope="catalog:read"><p>One location, in the same shape as the list.</p></Endpoint>
       <Endpoint method="PATCH" path="/locations/{id}" scope="settings:write"><p>Same fields, all optional.</p></Endpoint>
       <Endpoint method="POST" path="/locations/{id}/default" scope="settings:write"><p>Makes this the default location (the one used when nothing else says where).</p></Endpoint>
-      <Endpoint method="DELETE" path="/locations/{id}" scope="settings:write">
+      <Endpoint method="DELETE" path="/locations/{id}" scope="settings:delete">
         <p>Removes a location. <code>409</code> for the default location, for the only location, and for a location that has its own payment account (remove that in the app first). Hours, staff and past visits that pointed at it are kept without a location.</p>
       </Endpoint>
 

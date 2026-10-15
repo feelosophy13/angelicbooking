@@ -1,10 +1,10 @@
 "use client";
 import { useActionState, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { Button, Checkbox, Input, LinkButton, Notice, Select } from "@/components/ui";
-import { Field, SubmitButton } from "@/components/form";
+import { Button, Checkbox, Input, LinkButton, Notice, Select, Textarea } from "@/components/ui";
+import { Field, FieldErrors, SubmitButton } from "@/components/form";
 import { Disclosure } from "@/components/disclosure";
-import { API_SCOPES, type ApiScope } from "@/lib/api-scopes";
+import { API_SCOPES, DEFAULT_RATE_LIMIT_PER_MIN, RATE_LIMIT_CHOICES, type ApiScope } from "@/lib/api-scopes";
 import { createApiKey } from "./actions";
 
 const BASE = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://app.angelicbooking.com"}/api/v1`;
@@ -14,8 +14,8 @@ export type KeyDefaults = { name: string; scopes: ApiScope[]; replaces?: { id: s
 
 const PRESETS: { label: string; scopes: (s: (typeof API_SCOPES)[number]) => boolean; hint: string }[] = [
   { label: "Read only", scopes: (s) => s.scope.endsWith(":read"), hint: "Looks at everything, changes nothing" },
-  { label: "Booking tool", scopes: (s) => ["catalog:read", "clients:read", "clients:write", "appointments:read", "appointments:write"].includes(s.scope), hint: "Clients and bookings" },
-  { label: "Everything but powerful", scopes: (s) => !("sensitive" in s && s.sensitive), hint: "Leaves out pay, roles, marketing sends, settings" },
+  { label: "Booking tool", scopes: (s) => ["catalog:read", "clients:read", "clients:write", "appointments:read", "appointments:book", "appointments:change", "appointments:cancel", "waitlist:write"].includes(s.scope), hint: "Clients and bookings" },
+  { label: "Everything but powerful", scopes: (s) => !("sensitive" in s && s.sensitive), hint: "Leaves out the powerful ones: prices, consent, pay, roles, sending, fees" },
 ];
 
 /** Which preset the selection matches exactly, or "Custom". */
@@ -33,7 +33,7 @@ function summarize(picked: Set<string>): string {
   const parts = groups.flatMap((g) => {
     const on = API_SCOPES.filter((s) => s.group === g && picked.has(s.scope));
     if (!on.length) return [];
-    const change = on.some((s) => s.scope.endsWith(":write"));
+    const change = on.some((s) => !s.scope.endsWith(":read"));
     return [`${g.toLowerCase()} (${change ? "read & change" : "read only"})`];
   });
   return parts.length ? parts.join(", ") : "nothing yet. Choose a level below.";
@@ -105,6 +105,7 @@ function ApiKeyRound({ slug, defaults, backHref, onAnother }: { slug: string; de
     );
   }
   return (
+    <FieldErrors state={state}>
     <form action={act} className="space-y-4" noValidate>
       {state?.error && !state.fieldErrors ? <Notice>{state.error}</Notice> : null}
       <input type="hidden" name="slug" value={slug} />
@@ -113,9 +114,9 @@ function ApiKeyRound({ slug, defaults, backHref, onAnother }: { slug: string; de
         <Notice kind="success">Replacing “{defaults.replaces.name}”. It stops working the moment this key is created, so update your tool first or right after.</Notice>
       ) : null}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Name" name="name" hint="So you can tell keys apart later."><Input name="name" placeholder="Website" maxLength={60} defaultValue={defaults?.name} /></Field>
+        <Field label="Name" name="name" hint="So you can tell keys apart later."><Input name="name" placeholder="Website" maxLength={60} defaultValue={state?.values?.name ?? defaults?.name} /></Field>
         <Field label="Expires" name="expiresInDays">
-          <Select name="expiresInDays" defaultValue="0">
+          <Select name="expiresInDays" defaultValue={state?.values?.expiresInDays ?? "0"}>
             <option value="0">Never</option><option value="30">In 30 days</option><option value="90">In 90 days</option><option value="365">In a year</option>
           </Select>
         </Field>
@@ -161,7 +162,20 @@ function ApiKeyRound({ slug, defaults, backHref, onAnother }: { slug: string; de
         </Disclosure>
         {state?.fieldErrors?.scopes ? <p className="text-xs text-red-600">{state.fieldErrors.scopes}</p> : null}
       </fieldset>
+      <Disclosure title="Limits" hint="Allowed addresses, requests per minute" open={state?.fieldErrors?.allowedIps || state?.fieldErrors?.rateLimit ? true : undefined}>
+        <div className="space-y-4">
+          <Field label="Allowed addresses" name="allowedIps" hint="Leave empty to allow any address. Otherwise only these can use the key: one per line, such as 203.0.113.7 or 203.0.113.0/24. Use it for a key that lives on a server with a fixed address.">
+            <Textarea name="allowedIps" rows={3} placeholder="203.0.113.7" defaultValue={state?.values?.allowedIps} />
+          </Field>
+          <Field label="Requests per minute" name="rateLimit" hint="A lower limit means a leaked or runaway tool can do less before it is stopped.">
+            <Select name="rateLimit" defaultValue={state?.values?.rateLimit ?? String(DEFAULT_RATE_LIMIT_PER_MIN)}>
+              {RATE_LIMIT_CHOICES.map((n) => <option key={n} value={n}>{n}{n === DEFAULT_RATE_LIMIT_PER_MIN ? " (default)" : ""}</option>)}
+            </Select>
+          </Field>
+        </div>
+      </Disclosure>
       <SubmitButton pendingText="Creating…">{defaults?.replaces ? "Create and replace" : "Create key"}</SubmitButton>
     </form>
+    </FieldErrors>
   );
 }

@@ -1,4 +1,4 @@
-import { readBody, route } from "@/lib/api";
+import { readBody, route, PRICE_FIELDS } from "@/lib/api";
 import { getServiceStaffApi, putServiceStaffApi, serviceStaffPut } from "@/server/api-v1-catalog";
 
 /** GET /api/v1/services/:id/staff: who performs the service, with the price and length each charges (their own, or the service's). */
@@ -9,4 +9,4 @@ export const PUT = route<{ id: string }>("catalog:write", async (ctx, req, { id 
   const body = await readBody(req, serviceStaffPut);
   if ("error" in body) return body.error;
   return putServiceStaffApi(ctx, id, body.data);
-});
+}, { fields: PRICE_FIELDS });

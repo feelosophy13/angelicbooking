@@ -3,7 +3,7 @@
   "info": {
     "title": "Angelic Booking API",
     "version": "1.0.0",
-    "description": "Business-scoped REST API. Authenticate with an API key from Settings → API access, sent as `Authorization: Bearer <key>`. Each key has scopes (`x:read`, `x:write`); a write scope implies its read scope. Rate limit: 120 requests per minute per key; every response carries `X-RateLimit-*` headers."
+    "description": "Business-scoped REST API. Authenticate with an API key from Settings → API access, sent as `Authorization: Bearer <key>`. Each key holds exact scopes (`x:read`, `x:write`, `x:delete` and a few finer ones, listed per operation as `x-scope`); a write scope does not include reading, and some fields (prices, consent, private notes) need an extra scope: see /developers. A key can be limited to certain IP addresses. Rate limit: 120 requests per minute per key by default (set per key); every response carries `X-RateLimit-*` headers."
   },
   "servers": [
     {
@@ -260,7 +260,7 @@
         "operationId": "postAppointments",
         "summary": "book one service for a client with one staff member.",
         "description": "book one service for a client with one staff member. 409 when the time is taken.",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:book",
         "requestBody": {
           "required": false,
           "content": {
@@ -357,7 +357,7 @@
         "operationId": "patchAppointmentsId",
         "summary": "change the status or the notes.",
         "description": "change the status or the notes.",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:change",
         "parameters": [
           {
             "name": "id",
@@ -420,7 +420,7 @@
         "operationId": "postAppointmentsIdCancel",
         "summary": "No fee is charged; refunds and fees stay in the staff app.",
         "description": "No fee is charged; refunds and fees stay in the staff app.",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:cancel",
         "parameters": [
           {
             "name": "id",
@@ -483,7 +483,7 @@
         "operationId": "postAppointmentsIdCancel-series",
         "summary": "{reason?, notify?}: cancel this visit and every later open visit of its standing appointment, and end the series.",
         "description": "{reason?, notify?}: cancel this visit and every later open visit of its standing appointment, and end the series. 409 when the visit is not part of a series. The client hears about the first cancelled visit (unless notify is false); no fee is charged.",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:cancel",
         "parameters": [
           {
             "name": "id",
@@ -546,7 +546,7 @@
         "operationId": "deleteAppointmentsIdItemsItemId",
         "summary": "take one service off a visit (all of its segments).",
         "description": "take one service off a visit (all of its segments). Taking off the last one cancels the visit, and then the client is told unless notify=false. A completed, no-show or cancelled visit cannot be changed (409).",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:cancel",
         "parameters": [
           {
             "name": "id",
@@ -617,7 +617,7 @@
         "operationId": "postAppointmentsIdItemsItemIdMove",
         "summary": "{start_at, staff_id?, notify?}: move one service of a visit (with its finishing segment), optionally to another provider.",
         "description": "{start_at, staff_id?, notify?}: move one service of a visit (with its finishing segment), optionally to another provider. 409 when the time is taken or outside their hours; class seats cannot be moved.",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:change",
         "parameters": [
           {
             "name": "id",
@@ -688,7 +688,7 @@
         "operationId": "postAppointmentsIdReschedule",
         "summary": "{start_at, staff_id?, notify?}: moves the visit (its first service, which is the whole visit for a single-service booking); 409 when the time is taken or outside the provider's hours.",
         "description": "{start_at, staff_id?, notify?}: moves the visit (its first service, which is the whole visit for a single-service booking); 409 when the time is taken or outside the provider's hours.",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:change",
         "parameters": [
           {
             "name": "id",
@@ -751,7 +751,7 @@
         "operationId": "postAppointmentsIdServices",
         "summary": "{service_id, staff_id, start_at}: add another service to an existing visit.",
         "description": "{service_id, staff_id, start_at}: add another service to an existing visit. 409 when the time is taken or the visit can no longer change. No message is sent (the staff app does not send one either).",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:change",
         "parameters": [
           {
             "name": "id",
@@ -862,7 +862,7 @@
         "operationId": "postAppointmentsIdSupplies",
         "summary": "{ items: [{ product_id, quantity }], note? }.",
         "description": "{ items: [{ product_id, quantity }], note? }. Comes off the visit's location; may take a count below zero.",
-        "x-scope": "inventory:write",
+        "x-scope": "supplies:write",
         "parameters": [
           {
             "name": "id",
@@ -925,7 +925,7 @@
         "operationId": "deleteAppointmentsIdSuppliesProductId",
         "summary": "take back supplies logged by mistake (default: everything logged for that product).",
         "description": "take back supplies logged by mistake (default: everything logged for that product).",
-        "x-scope": "inventory:write",
+        "x-scope": "supplies:write",
         "parameters": [
           {
             "name": "id",
@@ -1210,7 +1210,7 @@
         "operationId": "deleteAutomationsId",
         "summary": "delete a custom automation.",
         "description": "delete a custom automation. The built-in ones can only be turned off (409).",
-        "x-scope": "marketing:write",
+        "x-scope": "marketing:delete",
         "parameters": [
           {
             "name": "id",
@@ -1465,7 +1465,7 @@
         "operationId": "postBlocks",
         "summary": "take time off a provider's calendar (lunch, a training day, an outside appointment).",
         "description": "take time off a provider's calendar (lunch, a training day, an outside appointment). Up to 24 hours. 409 when it collides with a booking.",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:change",
         "requestBody": {
           "required": false,
           "content": {
@@ -1515,7 +1515,7 @@
         "operationId": "deleteBlocksId",
         "summary": "remove blocked time.",
         "description": "remove blocked time. Only blocks: a client's appointment is never deleted through here (cancel it instead).",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:delete",
         "parameters": [
           {
             "name": "id",
@@ -1887,7 +1887,7 @@
         "operationId": "deleteCampaignsId",
         "summary": "delete a campaign (messages it already queued stay in the log, as in the app).",
         "description": "delete a campaign (messages it already queued stay in the log, as in the app).",
-        "x-scope": "marketing:write",
+        "x-scope": "marketing:delete",
         "parameters": [
           {
             "name": "id",
@@ -2000,7 +2000,7 @@
         "operationId": "postCampaignsIdSend",
         "summary": "queue the campaign to everyone its audience matches (the same function the app's Send button calls).",
         "description": "queue the campaign to everyone its audience matches (the same function the app's Send button calls). A campaign can be sent once: a second call, or one made while the first is still running, answers 409.",
-        "x-scope": "marketing:write",
+        "x-scope": "campaigns:send",
         "parameters": [
           {
             "name": "id",
@@ -2257,7 +2257,7 @@
         "operationId": "deleteCategoriesId",
         "summary": "its items become uncategorised and its sub-categories move up a level.",
         "description": "its items become uncategorised and its sub-categories move up a level.",
-        "x-scope": "catalog:write",
+        "x-scope": "catalog:delete",
         "parameters": [
           {
             "name": "id",
@@ -2467,7 +2467,7 @@
         "operationId": "postClasses",
         "summary": "{service_id, staff_id, start_at, capacity?, notes?}: schedule a class session.",
         "description": "{service_id, staff_id, start_at, capacity?, notes?}: schedule a class session. The service must have a group size above 1; 409 when the instructor is not free then.",
-        "x-scope": "appointments:write",
+        "x-scope": "classes:write",
         "requestBody": {
           "required": false,
           "content": {
@@ -2567,7 +2567,7 @@
         "operationId": "postClassesIdCancel",
         "summary": "{reason?, notify?}: cancel the session and every open seat in it.",
         "description": "{reason?, notify?}: cancel the session and every open seat in it. With notify (default true) each client is told. No refunds are made.",
-        "x-scope": "appointments:write",
+        "x-scope": "classes:write",
         "parameters": [
           {
             "name": "id",
@@ -2630,7 +2630,7 @@
         "operationId": "postClassesIdEnrollments",
         "summary": "{client_id, notes?, notify?}: give a client a seat (client_id may be null for a walk-in).",
         "description": "{client_id, notes?, notify?}: give a client a seat (client_id may be null for a walk-in). 409 when the class is full, has started, is cancelled or the client already has a seat. Returns the class; the new booking is the roster row with the highest booked_at.",
-        "x-scope": "appointments:write",
+        "x-scope": "classes:write",
         "parameters": [
           {
             "name": "id",
@@ -3186,7 +3186,7 @@
         ],
         "operationId": "getClientsIdNotes",
         "summary": "GET /clients/{id}/notes",
-        "x-scope": "clients:read",
+        "x-scope": "client-notes:read",
         "parameters": [
           {
             "name": "id",
@@ -3253,7 +3253,7 @@
         "operationId": "postClientsIdNotes",
         "summary": "add a private note (formula, allergy, preference).",
         "description": "add a private note (formula, allergy, preference).",
-        "x-scope": "clients:write",
+        "x-scope": "client-notes:write",
         "parameters": [
           {
             "name": "id",
@@ -3316,7 +3316,7 @@
         "operationId": "patchClientsIdNotesNoteId",
         "summary": "{pinned}: pin or unpin a note (the same as the pin button in the staff app).",
         "description": "{pinned}: pin or unpin a note (the same as the pin button in the staff app).",
-        "x-scope": "clients:write",
+        "x-scope": "client-notes:write",
         "parameters": [
           {
             "name": "id",
@@ -3385,7 +3385,7 @@
         "operationId": "deleteClientsIdNotesNoteId",
         "summary": "notes are deleted outright in the staff app too.",
         "description": "notes are deleted outright in the staff app too.",
-        "x-scope": "clients:write",
+        "x-scope": "client-notes:delete",
         "parameters": [
           {
             "name": "id",
@@ -3822,7 +3822,7 @@
         "operationId": "postForm-submissionsIdReassign",
         "summary": "{client_id}: move a submission filed under the wrong person to the right client (it is detached from any visit).",
         "description": "{client_id}: move a submission filed under the wrong person to the right client (it is detached from any visit).",
-        "x-scope": "forms:write",
+        "x-scope": "forms:void",
         "parameters": [
           {
             "name": "id",
@@ -3885,7 +3885,7 @@
         "operationId": "postForm-submissionsIdVoid",
         "summary": "{reason?}: it stays on file, struck through, and no longer counts as signed.",
         "description": "{reason?}: it stays on file, struck through, and no longer counts as signed. 409 when already void.",
-        "x-scope": "forms:write",
+        "x-scope": "forms:void",
         "parameters": [
           {
             "name": "id",
@@ -4162,7 +4162,7 @@
         "operationId": "deleteFormsId",
         "summary": "like the staff app, a form that clients have already submitted is archived (active=false) so the signed copies stay; one nobody has submitted is deleted.",
         "description": "like the staff app, a form that clients have already submitted is archived (active=false) so the signed copies stay; one nobody has submitted is deleted. The response says which (`deleted` or `archived`).",
-        "x-scope": "forms:write",
+        "x-scope": "forms:delete",
         "parameters": [
           {
             "name": "id",
@@ -4574,7 +4574,7 @@
         ],
         "operationId": "deleteLocationsId",
         "summary": "DELETE /locations/{id}",
-        "x-scope": "settings:write",
+        "x-scope": "settings:delete",
         "parameters": [
           {
             "name": "id",
@@ -5102,7 +5102,7 @@
         "operationId": "postNotificationsIdResend",
         "summary": "try a failed or skipped message again, now (the app's \"Resend\" button).",
         "description": "try a failed or skipped message again, now (the app's \"Resend\" button). Anything else answers 409. The result says how the attempt went; the message is returned with its new status.",
-        "x-scope": "messages:write",
+        "x-scope": "messages:resend",
         "parameters": [
           {
             "name": "id",
@@ -6001,7 +6001,7 @@
         "operationId": "deleteProductsIdBarcodesBarcodeId",
         "summary": "remove an extra barcode.",
         "description": "remove an extra barcode.",
-        "x-scope": "catalog:write",
+        "x-scope": "catalog:delete",
         "parameters": [
           {
             "name": "id",
@@ -6540,7 +6540,7 @@
         "operationId": "getPurchase-orders",
         "summary": "(default open: draft, ordered and partly received; received covers cancelled too).",
         "description": "(default open: draft, ordered and partly received; received covers cancelled too).",
-        "x-scope": "inventory:read",
+        "x-scope": "purchasing:read",
         "parameters": [
           {
             "name": "limit",
@@ -6603,7 +6603,7 @@
         "operationId": "postPurchase-orders",
         "summary": "a draft order.",
         "description": "a draft order. { supplier_id?, location_id?, expected_on?, notes?, lines?: [{ product_id, quantity, unit_cost_cents? }] }.",
-        "x-scope": "inventory:write",
+        "x-scope": "purchasing:write",
         "requestBody": {
           "required": false,
           "content": {
@@ -6653,7 +6653,7 @@
         "operationId": "getPurchase-ordersId",
         "summary": "the order with its lines and what has been received against it.",
         "description": "the order with its lines and what has been received against it.",
-        "x-scope": "inventory:read",
+        "x-scope": "purchasing:read",
         "parameters": [
           {
             "name": "id",
@@ -6701,7 +6701,7 @@
         "operationId": "patchPurchase-ordersId",
         "summary": "supplier, location, expected_on, reference, notes.",
         "description": "supplier, location, expected_on, reference, notes. Only while the order is open (409 once received or cancelled).",
-        "x-scope": "inventory:write",
+        "x-scope": "purchasing:write",
         "parameters": [
           {
             "name": "id",
@@ -6764,7 +6764,7 @@
         "operationId": "postPurchase-ordersIdCancel",
         "summary": "cancel an order that is still open (409 otherwise).",
         "description": "cancel an order that is still open (409 otherwise).",
-        "x-scope": "inventory:write",
+        "x-scope": "purchasing:write",
         "parameters": [
           {
             "name": "id",
@@ -6827,7 +6827,7 @@
         "operationId": "postPurchase-ordersIdLines",
         "summary": "{ product_id, quantity, unit_cost_cents? }.",
         "description": "{ product_id, quantity, unit_cost_cents? }. Adds the product, or replaces its quantity if it is already on the order.",
-        "x-scope": "inventory:write",
+        "x-scope": "purchasing:write",
         "parameters": [
           {
             "name": "id",
@@ -6890,7 +6890,7 @@
         "operationId": "patchPurchase-ordersIdLinesProductId",
         "summary": "{ quantity?, unit_cost_cents? } on a line that is already on the order.",
         "description": "{ quantity?, unit_cost_cents? } on a line that is already on the order.",
-        "x-scope": "inventory:write",
+        "x-scope": "purchasing:write",
         "parameters": [
           {
             "name": "id",
@@ -6959,7 +6959,7 @@
         "operationId": "deletePurchase-ordersIdLinesProductId",
         "summary": "remove a line (409 once some of it has arrived).",
         "description": "remove a line (409 once some of it has arrived).",
-        "x-scope": "inventory:write",
+        "x-scope": "purchasing:write",
         "parameters": [
           {
             "name": "id",
@@ -7030,7 +7030,7 @@
         "operationId": "postPurchase-ordersIdOrder",
         "summary": "mark a draft as ordered (it needs at least one line).",
         "description": "mark a draft as ordered (it needs at least one line). This records that you ordered; it does not contact the supplier.",
-        "x-scope": "inventory:write",
+        "x-scope": "purchasing:write",
         "parameters": [
           {
             "name": "id",
@@ -7093,7 +7093,7 @@
         "operationId": "postPurchase-ordersIdReceive",
         "summary": "{ reference?, lines: [{ line_id, quantity, unit_cost_cents? }] }.",
         "description": "{ reference?, lines: [{ line_id, quantity, unit_cost_cents? }] }. Adds the stock; the order completes when everything has arrived.",
-        "x-scope": "inventory:write",
+        "x-scope": "purchasing:write",
         "parameters": [
           {
             "name": "id",
@@ -7663,7 +7663,7 @@
         ],
         "operationId": "deleteRolesId",
         "summary": "DELETE /roles/{id}",
-        "x-scope": "roles:write",
+        "x-scope": "roles:delete",
         "parameters": [
           {
             "name": "id",
@@ -7860,7 +7860,7 @@
         "operationId": "postSeries",
         "summary": "book a standing appointment (\"every N weeks, M visits\").",
         "description": "book a standing appointment (\"every N weeks, M visits\"). Dates that are outside the provider's hours or already taken are skipped and reported in `skipped`; 409 when none of the dates work. With notify (default true) the client gets one confirmation for the first visit and reminders are scheduled for the rest, as in the staff app.",
-        "x-scope": "appointments:write",
+        "x-scope": "appointments:book",
         "requestBody": {
           "required": false,
           "content": {
@@ -8389,7 +8389,7 @@
         ],
         "operationId": "patchSettingsBooking",
         "summary": "PATCH /settings/booking",
-        "x-scope": "settings:write",
+        "x-scope": "policies:write",
         "requestBody": {
           "required": false,
           "content": {
@@ -8472,7 +8472,7 @@
         ],
         "operationId": "patchSettingsLoyalty",
         "summary": "PATCH /settings/loyalty",
-        "x-scope": "settings:write",
+        "x-scope": "policies:write",
         "requestBody": {
           "required": false,
           "content": {
@@ -8804,7 +8804,7 @@
         ],
         "operationId": "patchSettingsStore",
         "summary": "PATCH /settings/store",
-        "x-scope": "settings:write",
+        "x-scope": "policies:write",
         "requestBody": {
           "required": false,
           "content": {
@@ -9907,7 +9907,7 @@
         ],
         "operationId": "getSuppliers",
         "summary": "GET /suppliers",
-        "x-scope": "inventory:read",
+        "x-scope": "purchasing:read",
         "parameters": [
           {
             "name": "limit",
@@ -9970,7 +9970,7 @@
         "operationId": "postSuppliers",
         "summary": "{ name, contact_name?, email?, phone?, account_number?, notes? }.",
         "description": "{ name, contact_name?, email?, phone?, account_number?, notes? }.",
-        "x-scope": "inventory:write",
+        "x-scope": "purchasing:write",
         "requestBody": {
           "required": false,
           "content": {
@@ -10019,7 +10019,7 @@
         ],
         "operationId": "getSuppliersId",
         "summary": "GET /suppliers/{id}",
-        "x-scope": "inventory:read",
+        "x-scope": "purchasing:read",
         "parameters": [
           {
             "name": "id",
@@ -10067,7 +10067,7 @@
         "operationId": "patchSuppliersId",
         "summary": "send only what changes.",
         "description": "send only what changes. {\"active\": false} hides the supplier (suppliers are never deleted: orders point at them).",
-        "x-scope": "inventory:write",
+        "x-scope": "purchasing:write",
         "parameters": [
           {
             "name": "id",
@@ -10215,7 +10215,7 @@
         ],
         "operationId": "getTime-entries",
         "summary": "GET /time-entries",
-        "x-scope": "staff:read",
+        "x-scope": "time:read",
         "responses": {
           "200": {
             "description": "Success. The body is `{ data }` (a list adds `page`, `limit` and `has_more`, and `total` where counted), or the bare object for single results.",
@@ -10249,7 +10249,7 @@
         ],
         "operationId": "postTime-entries",
         "summary": "POST /time-entries",
-        "x-scope": "staff:write",
+        "x-scope": "time:write",
         "requestBody": {
           "required": false,
           "content": {
@@ -10298,7 +10298,7 @@
         ],
         "operationId": "deleteTime-entriesId",
         "summary": "DELETE /time-entries/{id}",
-        "x-scope": "staff:write",
+        "x-scope": "time:delete",
         "parameters": [
           {
             "name": "id",
@@ -10423,7 +10423,7 @@
         "operationId": "postWaitlist",
         "summary": "put a client on the waitlist for a date.",
         "description": "put a client on the waitlist for a date.",
-        "x-scope": "appointments:write",
+        "x-scope": "waitlist:write",
         "requestBody": {
           "required": false,
           "content": {
@@ -10473,7 +10473,7 @@
         "operationId": "patchWaitlistId",
         "summary": "{status}",
         "description": "{status}",
-        "x-scope": "appointments:write",
+        "x-scope": "waitlist:write",
         "parameters": [
           {
             "name": "id",

@@ -7,7 +7,7 @@ import { getCampaignApi, sendingGuard, serializeCampaign } from "@/server/api-v1
  * POST /api/v1/campaigns/:id/send: queue the campaign to everyone its audience matches (the same function the app's Send button calls).
  * A campaign can be sent once: a second call, or one made while the first is still running, answers 409.
  */
-export const POST = route<{ id: string }>("marketing:write", async (ctx, _req, { id }) => {
+export const POST = route<{ id: string }>("campaigns:send", async (ctx, _req, { id }) => {
   const b = ctx.business.id;
   const c = await getCampaignApi(b, id);
   if (!c) return ApiErrors.notFound("campaign");

@@ -45,7 +45,7 @@ export const PATCH = route<{ id: string }>("marketing:write", async (ctx, req, {
 });
 
 /** DELETE /api/v1/campaigns/:id: delete a campaign (messages it already queued stay in the log, as in the app). */
-export const DELETE = route<{ id: string }>("marketing:write", async (ctx, _req, { id }) => {
+export const DELETE = route<{ id: string }>("marketing:delete", async (ctx, _req, { id }) => {
   const b = ctx.business.id;
   const rows = await withTenant(b, (tx) => tx.delete(schema.campaigns).where(and(eq(schema.campaigns.id, id), eq(schema.campaigns.businessId, b))).returning({ id: schema.campaigns.id }));
   if (!rows.length) return ApiErrors.notFound("campaign");

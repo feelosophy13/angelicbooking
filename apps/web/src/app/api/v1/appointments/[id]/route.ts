@@ -18,7 +18,7 @@ const patchBody = z.object({
 }).strict();
 
 /** PATCH /api/v1/appointments/:id: change the status or the notes. */
-export const PATCH = route<{ id: string }>("appointments:write", async (ctx, req, { id }) => {
+export const PATCH = route<{ id: string }>("appointments:change", async (ctx, req, { id }) => {
   const body = await readBody(req, patchBody);
   if ("error" in body) return body.error;
   const d = body.data;

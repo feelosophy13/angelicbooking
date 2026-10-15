@@ -7,7 +7,7 @@ import { getNotificationApi, serializeNotification } from "@/server/api-v1-messa
  * POST /api/v1/notifications/:id/resend: try a failed or skipped message again, now (the app's "Resend" button). Anything else answers 409.
  * The result says how the attempt went; the message is returned with its new status.
  */
-export const POST = route<{ id: string }>("messages:write", async (ctx, _req, { id }) => {
+export const POST = route<{ id: string }>("messages:resend", async (ctx, _req, { id }) => {
   const b = ctx.business.id;
   const n = await getNotificationApi(b, id);
   if (!n) return ApiErrors.notFound("message");

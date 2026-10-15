@@ -10,7 +10,7 @@ import { notifyAppointment, scheduleReminderFor } from "@/lib/notify";
  * skipped and reported in `skipped`; 409 when none of the dates work. With notify (default true) the client gets one confirmation for the first
  * visit and reminders are scheduled for the rest, as in the staff app.
  */
-export const POST = route("appointments:write", async (ctx, req) => {
+export const POST = route("appointments:book", async (ctx, req) => {
   const body = await readBody(req, seriesCreate);
   if ("error" in body) return body.error;
   const d = body.data;

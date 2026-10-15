@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { apiAudit, ApiErrors, readBody, route } from "@/lib/api";
+import { apiAudit, ApiErrors, readBody, route, PRICE_FIELDS } from "@/lib/api";
 import { getService, serializeService } from "@/server/api-v1";
 import { servicePatch } from "@/server/api-v1-more";
 import { setServiceLocations } from "@/server/locations";
@@ -38,4 +38,4 @@ export const PATCH = route<{ id: string }>("catalog:write", async (ctx, req, { i
   if (out === "service" || out === "category") return ApiErrors.notFound(out);
   await apiAudit(ctx, "api.service.update", "service", id, { fields: Object.keys(d) });
   return NextResponse.json({ data: serializeService(out) });
-});
+}, { fields: PRICE_FIELDS });

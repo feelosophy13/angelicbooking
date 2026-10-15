@@ -1,4 +1,4 @@
-import { readBody, route } from "@/lib/api";
+import { readBody, route, PRICE_FIELDS } from "@/lib/api";
 import { getPlanApi, patchPlanApi, planPatch } from "@/server/api-v1-catalog";
 
 export const GET = route<{ id: string }>("catalog:read", async (ctx, _req, { id }) => getPlanApi(ctx.business.id, id));
@@ -11,4 +11,4 @@ export const PATCH = route<{ id: string }>("catalog:write", async (ctx, req, { i
   const body = await readBody(req, planPatch);
   if ("error" in body) return body.error;
   return patchPlanApi(ctx, id, body.data);
-});
+}, { fields: PRICE_FIELDS });

@@ -32,4 +32,4 @@ export const POST = route("marketing:write", async (ctx, req) => {
   }
   await apiAudit(ctx, "api.automation.create", "workflow", id, { name: input.name, trigger: input.trigger });
   return NextResponse.json({ data: serializeWorkflow((await getWorkflowApi(b, id))!) }, { status: 201 });
-});
+}, { fields: { enabled: { scope: "campaigns:send", when: (v) => v === true } } });

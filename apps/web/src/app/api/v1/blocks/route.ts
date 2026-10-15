@@ -10,7 +10,7 @@ const at = z.string().refine((s) => /(Z|[+-]\d{2}:\d{2})$/.test(s) && !Number.is
 const body = z.object({ staff_id: z.string().min(1).max(100), start_at: at, end_at: at, reason: z.string().trim().max(100).nullish(), location_id: z.string().max(100).nullish() }).strict();
 
 /** POST /api/v1/blocks: take time off a provider's calendar (lunch, a training day, an outside appointment). Up to 24 hours. 409 when it collides with a booking. */
-export const POST = route("appointments:write", async (ctx, req) => {
+export const POST = route("appointments:change", async (ctx, req) => {
   const parsed = await readBody(req, body);
   if ("error" in parsed) return parsed.error;
   const d = parsed.data;

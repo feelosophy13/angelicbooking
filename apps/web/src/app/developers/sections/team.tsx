@@ -50,13 +50,13 @@ export function TeamDocs() {
 
       <h2>Time clock</h2>
       <p>Hours worked, whether clocked in at the kiosk or added by hand. Clocking in and out, and the clock-in PINs and QR codes, are not in the API.</p>
-      <Endpoint method="GET" path="/time-entries" scope="staff:read">
+      <Endpoint method="GET" path="/time-entries" scope="time:read">
         <p>Newest first. Query: <code>staff_id</code>, <code>from</code> and <code>to</code> (<code>YYYY-MM-DD</code>, on the entry&apos;s date), <code>limit</code>, <code>page</code>. Includes <code>total</code>. Each: <code>id</code>, <code>staff_id</code>, <code>date</code>, <code>minutes</code>, <code>hours</code>, <code>clock_in_at</code>, <code>clock_out_at</code>, <code>location_id</code>, <code>note</code>, <code>created_at</code>. An entry still clocked in has <code>minutes</code> 0 and no <code>clock_out_at</code>.</p>
       </Endpoint>
-      <Endpoint method="POST" path="/time-entries" scope="staff:write">
+      <Endpoint method="POST" path="/time-entries" scope="time:write">
         <p>Add hours by hand. Body: <code>staff_id</code>, <code>date</code> and <code>hours</code> (0.25 to 24) are required; <code>note</code> (up to 120) is optional. Returns <code>201</code>.</p>
       </Endpoint>
-      <Endpoint method="DELETE" path="/time-entries/{id}" scope="staff:write"><p>Removes the entry for good, as the app does.</p></Endpoint>
+      <Endpoint method="DELETE" path="/time-entries/{id}" scope="time:delete"><p>Removes the entry for good, as the app does.</p></Endpoint>
 
       <h2>Roles and permissions</h2>
       <p>The roles a business can give to people who log in. Giving a role to a person is done in the staff app, not here. A role made or changed through the API is saved on your account at once; it is registered with the sign-in system the next time someone saves it in the app, so assign it to people from the app.</p>
@@ -71,7 +71,7 @@ export function TeamDocs() {
       <Endpoint method="PATCH" path="/roles/{id}" scope="roles:write">
         <p>Any of <code>name</code>, <code>description</code>, <code>permissions</code>. The Owner role cannot be changed (<code>409</code>). Built-in roles can be edited.</p>
       </Endpoint>
-      <Endpoint method="DELETE" path="/roles/{id}" scope="roles:write">
+      <Endpoint method="DELETE" path="/roles/{id}" scope="roles:delete">
         <p>Deletes a custom role. <code>409</code> for a built-in role, and when people still hold it (move them to another role in the app first).</p>
       </Endpoint>
     </>

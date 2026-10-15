@@ -59,7 +59,7 @@ export function buildOpenApi(apiDir: string) {
       const m = /^export const (GET|POST|PATCH|PUT|DELETE)\b/.exec(line);
       if (!m) return;
       const method = m[1]!;
-      const scope = /route(?:<[^>]*>)?\(\s*"([a-z]+:(?:read|write))"/.exec(lines.slice(i, i + 4).join("\n"))?.[1];
+      const scope = /route(?:<[^>]*>)?\(\s*"([a-z-]+:[a-z]+)"/.exec(lines.slice(i, i + 4).join("\n"))?.[1];
       if (!scope || !(API_SCOPE_NAMES as readonly string[]).includes(scope)) {
         throw new Error(`${file}: ${method} is not wrapped in route("<scope>", …)`);
       }
@@ -106,7 +106,7 @@ export function buildOpenApi(apiDir: string) {
     info: {
       title: "Angelic Booking API",
       version: "1.0.0",
-      description: "Business-scoped REST API. Authenticate with an API key from Settings → API access, sent as `Authorization: Bearer <key>`. Each key has scopes (`x:read`, `x:write`); a write scope implies its read scope. Rate limit: 120 requests per minute per key; every response carries `X-RateLimit-*` headers.",
+      description: "Business-scoped REST API. Authenticate with an API key from Settings → API access, sent as `Authorization: Bearer <key>`. Each key holds exact scopes (`x:read`, `x:write`, `x:delete` and a few finer ones, listed per operation as `x-scope`); a write scope does not include reading, and some fields (prices, consent, private notes) need an extra scope: see /developers. A key can be limited to certain IP addresses. Rate limit: 120 requests per minute per key by default (set per key); every response carries `X-RateLimit-*` headers.",
     },
     servers: [{ url: "https://app.angelicbooking.com/api/v1" }],
     tags: [...new Set(tagsIn(sorted))].sort().map((name) => ({ name })),

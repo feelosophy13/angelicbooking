@@ -32,7 +32,7 @@ const createBody = z.object({
 });
 
 /** POST /api/v1/appointments: book one service for a client with one staff member. 409 when the time is taken. */
-export const POST = route("appointments:write", async (ctx, req) => {
+export const POST = route("appointments:book", async (ctx, req) => {
   const body = await readBody(req, createBody);
   if ("error" in body) return body.error;
   const d = body.data;

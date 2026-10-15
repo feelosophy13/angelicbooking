@@ -8,7 +8,7 @@ import { serializeWaitlist } from "@/server/api-v1-more";
 const body = z.object({ status: z.enum(["open", "booked", "closed"]) }).strict();
 
 /** PATCH /api/v1/waitlist/:id {status} */
-export const PATCH = route<{ id: string }>("appointments:write", async (ctx, req, { id }) => {
+export const PATCH = route<{ id: string }>("waitlist:write", async (ctx, req, { id }) => {
   const parsed = await readBody(req, body);
   if ("error" in parsed) return parsed.error;
   const b = ctx.business.id;

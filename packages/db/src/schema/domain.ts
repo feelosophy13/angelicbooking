@@ -1035,6 +1035,12 @@ export const apiKeys = pgTable(
     keyHash: text("key_hash").notNull(),
     // e.g. clients:read, appointments:write (see lib/api-scopes.ts). A write scope implies its read scope.
     scopes: text("scopes").array().notNull().default(sql`'{}'::text[]`),
+    // 1 = made before the finer scopes (expanded on use, see lib/api-scopes.ts); 2 = scopes are exact.
+    scopeVersion: smallint("scope_version").notNull().default(1),
+    // Empty = any address; otherwise only these (exact addresses or IPv4 CIDR ranges).
+    allowedIps: text("allowed_ips").array().notNull().default(sql`'{}'::text[]`),
+    // Requests per minute; null = the default.
+    rateLimitPerMin: integer("rate_limit_per_min"),
     createdByUserId: text("created_by_user_id"),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),

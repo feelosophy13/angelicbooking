@@ -1,4 +1,4 @@
-import { list, pageParams, probe, readBody, route } from "@/lib/api";
+import { list, pageParams, probe, readBody, route, PRICE_FIELDS } from "@/lib/api";
 import { listProducts, serializeProduct } from "@/server/api-v1";
 import { createProductApi, productCreateX } from "@/server/api-v1-catalog";
 
@@ -14,4 +14,4 @@ export const POST = route("catalog:write", async (ctx, req) => {
   const body = await readBody(req, productCreateX);
   if ("error" in body) return body.error;
   return createProductApi(ctx, body.data);
-});
+}, { fields: PRICE_FIELDS });

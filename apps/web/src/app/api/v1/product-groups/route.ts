@@ -1,4 +1,4 @@
-import { list, pageParams, probe, readBody, route } from "@/lib/api";
+import { list, pageParams, probe, readBody, route, PRICE_FIELDS } from "@/lib/api";
 import { createGroupApi, groupCreate, guarded, listGroupsApi } from "@/server/api-v1-catalog";
 
 /** GET /api/v1/product-groups?include_inactive=1: products that come in options (sizes, shades), each with its options. */
@@ -13,4 +13,4 @@ export const POST = route("catalog:write", async (ctx, req) => {
   const body = await readBody(req, groupCreate);
   if ("error" in body) return body.error;
   return guarded(() => createGroupApi(ctx, body.data));
-});
+}, { fields: PRICE_FIELDS });

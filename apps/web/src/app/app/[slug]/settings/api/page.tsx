@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { desc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { API_SCOPES } from "@/lib/api-scopes";
+import { API_SCOPES, expandScopes } from "@/lib/api-scopes";
 import { dateTime } from "@/lib/format";
 import { BackLink, Card, LinkButton, PageHeader } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
@@ -17,16 +17,16 @@ const REVOKED_SHOWN_DAYS = 30;
 /** Keys expiring inside this window get a warning. */
 const EXPIRY_WARNING_DAYS = 14;
 
-/** "Catalog (read) · Clients (read & write)": one phrase per group, not one per scope. */
-function describeScopes(scopes: string[]): string {
-  const byGroup = new Map<string, { read: boolean; write: boolean }>();
-  for (const scope of scopes) {
+/** "Catalog (read) · Clients (read & change)": one phrase per group, not one per scope. A key made before the finer scopes shows what it really holds. */
+function describeScopes(scopes: string[], version: number): string {
+  const byGroup = new Map<string, { change: boolean }>();
+  for (const scope of expandScopes(scopes, version)) {
     const group = API_SCOPES.find((x) => x.scope === scope)?.group ?? "Other";
-    const g = byGroup.get(group) ?? { read: false, write: false };
-    if (scope.endsWith(":write")) g.write = true; else g.read = true;
+    const g = byGroup.get(group) ?? { change: false };
+    if (!scope.endsWith(":read")) g.change = true;
     byGroup.set(group, g);
   }
-  return [...byGroup].map(([group, g]) => `${group} (${g.write ? "read & write" : "read"})`).join(" · ");
+  return [...byGroup].map(([group, g]) => `${group} (${g.change ? "read & change" : "read"})`).join(" · ");
 }
 
 /** Keys for the REST API: see what is in use, replace, or revoke. Creating a key is on its own page. */
@@ -64,7 +64,7 @@ export default async function ApiAccessPage({ params }: { params: Promise<{ slug
                   <li key={k.id} className={`flex flex-wrap items-center gap-3 px-4 py-3 ${state ? "text-stone-400" : ""}`}>
                     <div className="min-w-0 flex-1">
                       <div className="font-medium">{k.name} {state ? <span className="ml-1 rounded-full bg-stone-100 px-2 py-0.5 text-xs font-normal">{state}</span> : null}</div>
-                      <div className="text-xs text-stone-500">{describeScopes(k.scopes)} · <code>{k.prefix}…</code></div>
+                      <div className="text-xs text-stone-500">{describeScopes(k.scopes, k.scopeVersion)} · <code>{k.prefix}…</code>{k.allowedIps.length ? ` · only from ${k.allowedIps.length === 1 ? k.allowedIps[0] : `${k.allowedIps.length} addresses`}` : ""}{k.rateLimitPerMin ? ` · ${k.rateLimitPerMin}/min` : ""}</div>
                       <div className="text-xs text-stone-500">Created {when(k.createdAt)} · {k.lastUsedAt ? `last used ${when(k.lastUsedAt)}` : "never used"}{k.expiresAt && !state ? ` · expires ${when(k.expiresAt)}` : ""}</div>
                       {expiringSoon ? <div className="mt-0.5 text-xs font-medium text-amber-700">{daysLeft === 0 ? "Expires today" : `Expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`}. Replace it before then.</div> : null}
                     </div>

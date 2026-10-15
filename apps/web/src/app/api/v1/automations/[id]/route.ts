@@ -45,10 +45,10 @@ export const PATCH = route<{ id: string }>("marketing:write", async (ctx, req, {
   }
   await apiAudit(ctx, "api.automation.update", "workflow", id, { fields: keys });
   return NextResponse.json({ data: serializeWorkflow((await getWorkflowApi(b, id))!) });
-});
+}, { fields: { enabled: { scope: "campaigns:send", when: (v) => v === true } } });
 
 /** DELETE /api/v1/automations/:id: delete a custom automation. The built-in ones can only be turned off (409). */
-export const DELETE = route<{ id: string }>("marketing:write", async (ctx, _req, { id }) => {
+export const DELETE = route<{ id: string }>("marketing:delete", async (ctx, _req, { id }) => {
   const b = ctx.business.id;
   if (!(await getWorkflowApi(b, id))) return ApiErrors.notFound("automation");
   try {

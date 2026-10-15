@@ -8,7 +8,7 @@ import { findNoteApi, notePatch } from "@/server/api-v1-clients";
 type P = { id: string; noteId: string };
 
 /** PATCH /api/v1/clients/:id/notes/:noteId {pinned}: pin or unpin a note (the same as the pin button in the staff app). */
-export const PATCH = route<P>("clients:write", async (ctx, req, { id, noteId }) => {
+export const PATCH = route<P>("client-notes:write", async (ctx, req, { id, noteId }) => {
   const body = await readBody(req, notePatch);
   if ("error" in body) return body.error;
   const b = ctx.business.id;
@@ -19,7 +19,7 @@ export const PATCH = route<P>("clients:write", async (ctx, req, { id, noteId }) 
 });
 
 /** DELETE /api/v1/clients/:id/notes/:noteId: notes are deleted outright in the staff app too. */
-export const DELETE = route<P>("clients:write", async (ctx, _req, { id, noteId }) => {
+export const DELETE = route<P>("client-notes:delete", async (ctx, _req, { id, noteId }) => {
   const b = ctx.business.id;
   const rows = await withTenant(b, (tx) => tx.delete(schema.clientNotes).where(and(eq(schema.clientNotes.id, noteId), eq(schema.clientNotes.clientId, id), eq(schema.clientNotes.businessId, b))).returning({ id: schema.clientNotes.id }));
   if (!rows.length) return ApiErrors.notFound("note");

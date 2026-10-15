@@ -6,10 +6,10 @@ export function ClientsDocs() {
     <>
       <h2>Client notes, history and referral codes</h2>
       <p>These extend the client endpoints above. Store credit and loyalty points are money-like and can only be changed in the staff app, and memberships are managed there too because they involve the card processor.</p>
-      <Endpoint method="PATCH" path="/clients/{id}/notes/{note_id}" scope="clients:write">
+      <Endpoint method="PATCH" path="/clients/{id}/notes/{note_id}" scope="client-notes:write">
         <p>Pin or unpin a note. Body: <code>pinned</code> (true or false, required). No other field can be sent. <code>404</code> when the note does not belong to that client.</p>
       </Endpoint>
-      <Endpoint method="DELETE" path="/clients/{id}/notes/{note_id}" scope="clients:write">
+      <Endpoint method="DELETE" path="/clients/{id}/notes/{note_id}" scope="client-notes:delete">
         <p>Deletes the note for good, as the staff app does. Returns <code>{`{"data": {"id": "…", "deleted": true}}`}</code>.</p>
       </Endpoint>
       <Endpoint method="GET" path="/clients/{id}/appointments" scope="clients:read">

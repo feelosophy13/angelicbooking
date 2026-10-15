@@ -17,10 +17,10 @@ export function MarketingDocs() {
         <p><code>409</code> with the app&apos;s message when an email has no subject, a text is over 320 characters, or the business has no verified text number for a text campaign.</p>
       </Endpoint>
       <Endpoint method="PATCH" path="/campaigns/{id}" scope="marketing:write"><p>Any of the create fields; the rest stay as they were. <code>audience</code>, when sent, replaces the whole audience. A sent campaign cannot be edited: <code>409</code>.</p></Endpoint>
-      <Endpoint method="DELETE" path="/campaigns/{id}" scope="marketing:write"><p>Deletes the campaign. Messages it already queued stay in the delivery log.</p></Endpoint>
+      <Endpoint method="DELETE" path="/campaigns/{id}" scope="marketing:delete"><p>Deletes the campaign. Messages it already queued stay in the delivery log.</p></Endpoint>
       <Endpoint method="GET" path="/campaigns/{id}/audience" scope="marketing:read"><p>How many clients the campaign would reach right now: <code>count</code> and up to eight example names (<code>sample</code>).</p></Endpoint>
       <Endpoint method="POST" path="/campaigns/audience-preview" scope="marketing:read"><p>The same count for an audience you have not saved. Body: <code>channel</code>, optional <code>audience</code>. Sends nothing.</p></Endpoint>
-      <Endpoint method="POST" path="/campaigns/{id}/send" scope="marketing:write">
+      <Endpoint method="POST" path="/campaigns/{id}/send" scope="campaigns:send">
         <p>Queues one message per matching client (texts carry the STOP notice, emails an unsubscribe link) and marks the campaign sent. No body. Returns <code>queued</code> (the number of messages) and the campaign. Delivery then follows the normal pipeline: see <code>/notifications</code>.</p>
         <p>This cannot be undone and cannot be repeated: a second call, or one made while the first is still running, answers <code>409</code>, as does an audience nobody matches.</p>
       </Endpoint>
@@ -55,7 +55,7 @@ export function MarketingDocs() {
       <Endpoint method="POST" path="/automations" scope="marketing:write"><p>Body: <code>name</code> (1 to 80), <code>trigger</code>, <code>steps</code>, optional <code>description</code> (up to 300), <code>filters</code>, <code>exit_on_booking</code> (stop as soon as the client books again; default false), <code>enabled</code> (default <strong>false</strong>: nothing sends until you turn it on). Answers <code>201</code>.</p></Endpoint>
       <Endpoint method="PATCH" path="/automations/{id}" scope="marketing:write"><p>Any of the create fields plus <code>enabled</code>; the rest stay as they were. <code>filters</code> and <code>steps</code>, when sent, replace the whole value. Sending only <code>enabled</code> is the on/off switch; turning off also cancels runs in flight.</p></Endpoint>
       <Endpoint method="POST" path="/automations/{id}/duplicate" scope="marketing:write"><p>A copy named &quot;... (copy)&quot;, switched off. Answers <code>201</code>.</p></Endpoint>
-      <Endpoint method="DELETE" path="/automations/{id}" scope="marketing:write"><p>Deletes a custom automation. A built-in one answers <code>409</code>: switch it off instead.</p></Endpoint>
+      <Endpoint method="DELETE" path="/automations/{id}" scope="marketing:delete"><p>Deletes a custom automation. A built-in one answers <code>409</code>: switch it off instead.</p></Endpoint>
     </>
   );
 }

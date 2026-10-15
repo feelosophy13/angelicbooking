@@ -10,7 +10,7 @@ import { cancelQueuedReminders, notifyAppointment } from "@/lib/notify";
  * POST /api/v1/appointments/:id/cancel-series {reason?, notify?}: cancel this visit and every later open visit of its standing appointment, and end
  * the series. 409 when the visit is not part of a series. The client hears about the first cancelled visit (unless notify is false); no fee is charged.
  */
-export const POST = route<{ id: string }>("appointments:write", async (ctx, req, { id }) => {
+export const POST = route<{ id: string }>("appointments:cancel", async (ctx, req, { id }) => {
   const body = await readBody(req, cancelSeriesBody);
   if ("error" in body) return body.error;
   const b = ctx.business.id;

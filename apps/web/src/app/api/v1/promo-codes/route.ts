@@ -41,4 +41,4 @@ export const POST = route("marketing:write", async (ctx, req) => {
   if ("dup" in out) return ApiErrors.conflict("That code already exists");
   await apiAudit(ctx, "api.promo.create", "promo_code", out.row.id, { code });
   return NextResponse.json({ data: serializePromo(out.row) }, { status: 201 });
-});
+}, { also: ["pricing:write"] });

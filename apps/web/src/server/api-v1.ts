@@ -29,9 +29,13 @@ export const serializeStaff = (s: StaffRow) => ({
 });
 
 type ClientRow = typeof schema.clients.$inferSelect;
-export const serializeClient = (c: ClientRow) => ({
-  id: c.id, first_name: c.firstName, last_name: c.lastName, email: c.email, phone: c.phone, notes: c.notes, tags: c.tags, birthday: c.birthday,
-  sms_opt_in: c.smsOptIn, email_opt_in: c.emailOptIn, store_credit_cents: c.storeCreditCents, created_at: iso(c.createdAt), updated_at: iso(c.updatedAt),
+/** `notes` are private (client-notes:read) and `store_credit_cents` is a balance (clients:balances): left out unless the key holds that scope. */
+export const serializeClient = (c: ClientRow, scopes: readonly string[]) => ({
+  id: c.id, first_name: c.firstName, last_name: c.lastName, email: c.email, phone: c.phone, tags: c.tags, birthday: c.birthday,
+  ...(scopes.includes("client-notes:read") ? { notes: c.notes } : {}),
+  sms_opt_in: c.smsOptIn, email_opt_in: c.emailOptIn,
+  ...(scopes.includes("clients:balances") ? { store_credit_cents: c.storeCreditCents } : {}),
+  created_at: iso(c.createdAt), updated_at: iso(c.updatedAt),
 });
 
 type ProductRow = typeof schema.products.$inferSelect;

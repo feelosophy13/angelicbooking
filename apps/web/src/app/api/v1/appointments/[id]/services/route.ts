@@ -7,7 +7,7 @@ import { addServiceBody } from "@/server/api-v1-appointments";
 import { addServiceToAppointment } from "@/server/booking";
 
 /** POST /api/v1/appointments/:id/services {service_id, staff_id, start_at}: add another service to an existing visit. 409 when the time is taken or the visit can no longer change. No message is sent (the staff app does not send one either). */
-export const POST = route<{ id: string }>("appointments:write", async (ctx, req, { id }) => {
+export const POST = route<{ id: string }>("appointments:change", async (ctx, req, { id }) => {
   const body = await readBody(req, addServiceBody);
   if ("error" in body) return body.error;
   const d = body.data;

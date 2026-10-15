@@ -20,7 +20,7 @@ export const PATCH = route<{ id: string }>("catalog:write", async (ctx, req, { i
 });
 
 /** DELETE /api/v1/categories/:id?kind=...: its items become uncategorised and its sub-categories move up a level. */
-export const DELETE = route<{ id: string }>("catalog:write", async (ctx, req, { id }) => {
+export const DELETE = route<{ id: string }>("catalog:delete", async (ctx, req, { id }) => {
   const kind = kindOrError(req);
   if (!kind) return ApiErrors.invalid("kind must be service or product.");
   return guarded(() => deleteCategoryApi(ctx, kind, id));
