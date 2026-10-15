@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { requireAction } from "@/lib/tenant";
 import { listLocations } from "@/server/locations";
-import { isStripeConfigured, platformFeeBps } from "@/lib/stripe";
+import { isStripeConfigured } from "@/lib/stripe";
+import { platformFeeBpsFor } from "@/server/price-book";
 import type { Metadata } from "next";
 import { BackLink, Button, Card, Input, Notice, PageHeader } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
@@ -22,7 +23,7 @@ export default async function PaymentsSettingsPage({
   const configured = isStripeConfigured();
   const connected = !!business.stripeAccountId;
   const ready = connected && business.stripeChargesEnabled;
-  const fee = platformFeeBps();
+  const fee = await platformFeeBpsFor(business.id);
   const locations = await listLocations(business.id);
   const multi = locations.length > 1;
 

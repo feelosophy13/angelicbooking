@@ -61,7 +61,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (`PROD_ADMIN_*`, `# prod admin password:`). The authenticator-code step is supported but turned off in production (removed 2026-10-14: Cloudflare Access is the second factor); set `ADMIN_TOTP_SECRET` on the service to turn it back on.
 - [x] `admin-role.sql` applied to production 2026-10-14 (role without BYPASSRLS, read policy on all 60 tenant tables, write only to pricing, audit log and the suspend/comp/trial columns). Re-run it after any migration that adds a tenant table.
 - [x] Cloudflare Access in front of the admin app (2026-10-14): Zero Trust team `plain-tooth-40f9`, app "Angelic platform admin", policy "Owner only" (your email, one-time code), 8h sessions, `admin` DNS record proxied. Add a second email there if someone else ever needs access.
-- [ ] Password reset and Google sign-in for the admin app are built (2026-10-14) but not yet live: push (runs migration 0079), set `ADMIN_BASE_URL`, `RESEND_API_KEY`, `EMAIL_FROM`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` on the `angelic-admin` service, add `https://admin.angelicbooking.com/auth/google/callback` (and the localhost one) to the Google OAuth client, deploy.
+- [x] Password reset (emailed link) and Google sign-in are live on the admin service (2026-10-14; migration 0079 applied, env vars set, redirect URIs added to the Google client). Try both once from the real site: Google can take a few minutes to accept new redirect URIs. The service's `onrender.com` address is disabled so only the Cloudflare-protected `admin.angelicbooking.com` reaches it.
 - [ ] **Test the price-book billing against the Stripe sandbox** once keys exist (built 2026-10-14, only the planning logic is unit-tested):
       `server/billing.ts` now starts subscriptions from the price book (base + extra locations + extra staff, metered texts) and
       `reconcileSubscription` (daily, in the 07:00 UTC run of the reminders job) keeps quantities in line with locations and active staff.
@@ -98,17 +98,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Run migration 0076 on production (deploys do this) and try one key against production.
 - [x] Second round 2026-10-14: locations, categories, packages, plans, staff schedule, reviews, waitlist, blocks, reschedule, client notes/packages/memberships,
       service and product create/update, inventory read and stock adjustments (scopes catalog:write, inventory:read/write, reviews:read).
-- [x] Admin parity 2026-10-14 (122 route files, 25 scopes): categories, service staff and stylist prices, packages and plans, product options and barcodes,
-      inventory counts/transfers/suppliers/purchase orders/supplies, staff + hours + time off + pay, time clock entries, roles, business settings,
-      locations, refund reasons, clients' notes and history, visit services, standing appointments, classes, forms and submissions, campaigns
-      (send locks the row), promo codes, automations, delivery log and replies. Deliberately NOT in the API: anything that moves money (payments,
-      refunds, fees, gift cards, store credit and points, package/membership sales, payroll runs, Stripe, billing), logins/invites/role assignment,
-      clock PINs, uploads, imports.
-- [ ] Known gaps in that work: roles written by API are registered with Better Auth only when next saved in the app, and API-deleted roles can leave an
-      orphan `organizationRole` row; `server/categories.ts` and a few marketing/workflow readers filter by business only through RLS (safe as `angelic_app`);
-      an `updateGroup` flip retail to back-bar and back leaves option prices at 0.
-- [ ] Later: webhooks to subscribers, idempotency keys, a per-key usage log, an OpenAPI file, a shared (Redis) rate limiter once there is more than
-      one web instance, per-plan gating of the API if wanted. Rule for new API tests: import `packages/db/src/env` first (guarded by api-test-guard.test.ts).
+- [ ] Later: webhooks to subscribers, multi-service bookings, payments/refunds, staff writes, idempotency keys, a per-key usage log,
+      an OpenAPI file, a shared (Redis) rate limiter once there is more than one web instance, per-plan gating of the API if wanted.
 
 ## 3. Product backlog
 
@@ -367,6 +358,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       salary the person's primary location (`payrollByLocation`, ties to the whole-business figures to the cent).
       The location filter on Reports now apportions wages the same way (`runPayroll(..., { split: true })`), fixing
       overstated wages for people who clock in at two sites; the Payroll page itself still shows each person whole.
+- [x] 2026-10-14 (migration 0080): platform fee is part of the price book. Default in admin → Price book, override per
+      business on its Billing tab (percent, 0–20, stored as basis points); card checkout, online deposits and shop
+      orders read the business's effective fee (`platformFeeBpsFor`), the salon's Payments page shows it. Starts at
+      `PLATFORM_FEE_BPS` until a price book is saved. Not run against live Stripe; apply 0080 in production.
 - [x] 2026-10-14 (migration 0077): online payment per service. Each service collects nothing, a fixed deposit, a
       percent of the price (of the stylist's own price) or the full price when booked online; the amount rides the
       existing deposit flow, so it comes off the bill at checkout and refunds on in-window cancellations. A mobile

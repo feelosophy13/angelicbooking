@@ -3,7 +3,8 @@ import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { allocateProportionally, computeTotals, type Discount } from "@angelic/core";
 import { after } from "next/server";
 import { db } from "@angelic/db";
-import { platformFeeBps, stripe } from "@/lib/stripe";
+import { stripe } from "@/lib/stripe";
+import { platformFeeBpsFor } from "./price-book";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { fulfilOfferLines, restoreCreditForLine } from "./offers";
 import { changeStoreCredit, creditedAgainstPayment } from "./store-credit";
@@ -557,7 +558,7 @@ export async function chargeCardOnFile(input: {
     const amount = Math.min(input.amountCents, balance(sale));
     if (amount < 50) throw new SaleError("Amount must be at least $0.50.");
     const customerId = await ensureStripeCustomer({ accountId: input.accountId, businessId: input.businessId, client, tx });
-    const fee = Math.round((amount * platformFeeBps()) / 10_000);
+    const fee = Math.round((amount * (await platformFeeBpsFor(input.businessId, tx))) / 10_000);
     const [pending] = await tx
       .insert(schema.payments)
       .values({
@@ -637,7 +638,7 @@ export async function createCardPaymentIntent(input: {
         createdByUserId: input.actorUserId,
       })
       .returning();
-    const fee = Math.round((amount * platformFeeBps()) / 10_000);
+    const fee = Math.round((amount * (await platformFeeBpsFor(input.businessId, tx))) / 10_000);
     const pi = await stripe().paymentIntents.create(
       {
         amount,

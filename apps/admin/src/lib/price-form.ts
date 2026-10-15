@@ -1,6 +1,6 @@
 import type { PriceBook } from "@angelic/core/platform-pricing";
 
-export type FieldDef = { key: keyof PriceBook; label: string; kind: "money" | "count"; help: string };
+export type FieldDef = { key: keyof PriceBook; label: string; kind: "money" | "count" | "percent"; help: string };
 
 export const FIELDS: FieldDef[] = [
   { key: "baseCents", label: "Base plan", kind: "money", help: "Per business, per month" },
@@ -12,6 +12,7 @@ export const FIELDS: FieldDef[] = [
   { key: "smsIncluded", label: "Texts included", kind: "count", help: "Per month" },
   { key: "smsUsageCents", label: "Per extra text", kind: "money", help: "Whole cents; 0.02 = 2¢" },
   { key: "trialDays", label: "Free trial", kind: "count", help: "Days, for new businesses" },
+  { key: "platformFeeBps", label: "Platform fee", kind: "percent", help: "% of each card payment the business takes from clients; 0 = none" },
 ];
 
 export function money(cents: number): string {
@@ -23,6 +24,14 @@ export function parseCents(raw: string): number | null {
   const s = raw.trim().replace(/^\$/, "").replace(/,/g, "");
   if (!/^\d+(\.\d{1,2})?$/.test(s)) return null;
   return Math.round(Number(s) * 100);
+}
+
+/** "0.5", "1%", "2.25" → basis points (50, 100, 225); null for blank, invalid or above 20%. */
+export function parsePercentBps(raw: string): number | null {
+  const s = raw.trim().replace(/%$/, "");
+  if (!/^\d{1,2}(\.\d{1,2})?$/.test(s)) return null;
+  const bps = Math.round(Number(s) * 100);
+  return bps <= 2000 ? bps : null;
 }
 
 export function parseCount(raw: string): number | null {
@@ -41,8 +50,8 @@ export function readPrices(form: FormData, allowBlank: boolean): { values: Parti
       else errors.push(`${f.label} is required.`);
       continue;
     }
-    const v = f.kind === "money" ? parseCents(raw) : parseCount(raw);
-    if (v === null) errors.push(`${f.label} is not a valid ${f.kind === "money" ? "amount" : "number"}.`);
+    const v = f.kind === "money" ? parseCents(raw) : f.kind === "percent" ? parsePercentBps(raw) : parseCount(raw);
+    if (v === null) errors.push(`${f.label} is not a valid ${f.kind === "money" ? "amount" : f.kind === "percent" ? "percentage (0 to 20)" : "number"}.`);
     else values[f.key] = v;
   }
   return { values, errors };
@@ -50,6 +59,6 @@ export function readPrices(form: FormData, allowBlank: boolean): { values: Parti
 
 export function inputValue(f: FieldDef, v: number | null | undefined): string {
   if (v == null) return "";
-  return f.kind === "money" ? (v / 100).toFixed(2) : String(v);
+  return f.kind === "money" ? (v / 100).toFixed(2) : f.kind === "percent" ? String(v / 100) : String(v);
 }
 

@@ -26,3 +26,20 @@ describe("price form parsing", () => {
     expect(o.values.perStaffCents).toBeNull();
   });
 });
+
+describe("platform fee percent", () => {
+  it("reads percents as basis points", async () => {
+    const { parsePercentBps } = await import("../price-form");
+    expect(parsePercentBps("0.5")).toBe(50);
+    expect(parsePercentBps("1%")).toBe(100);
+    expect(parsePercentBps("2.25")).toBe(225);
+    expect(parsePercentBps("0")).toBe(0);
+  });
+  it("rejects junk and anything above 20%", async () => {
+    const { parsePercentBps } = await import("../price-form");
+    expect(parsePercentBps("")).toBeNull();
+    expect(parsePercentBps("abc")).toBeNull();
+    expect(parsePercentBps("21")).toBeNull();
+    expect(parsePercentBps("-1")).toBeNull();
+  });
+});

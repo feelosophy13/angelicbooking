@@ -9,7 +9,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
-import { platformFeeBps, stripe, appUrl } from "@/lib/stripe";
+import { stripe, appUrl } from "@/lib/stripe";
+import { platformFeeBpsFor } from "./price-book";
 import { paymentContextFor, paymentContextForSale } from "./locations";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { findOrCreateClient, type PublicBusiness } from "./public-booking";
@@ -115,7 +116,7 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
     const customer = client ? await ensureStripeCustomer({ accountId, businessId: business.id, client, tx }) : undefined;
     const [pending] = await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card", status: "pending", amountCents: total, tipCents: 0 }).returning();
-    const fee = Math.round((total * platformFeeBps()) / 10_000);
+    const fee = Math.round((total * (await platformFeeBpsFor(business.id, tx))) / 10_000);
     const pi = await stripe().paymentIntents.create(
       { amount: total, currency: business.currency, customer, allowed_payment_method_types: ["card"], description: `Order #${sale!.number} · ${pay.name}`, receipt_email: input.buyer.email, metadata: { businessId: business.id, saleId: sale!.id, paymentId: pending!.id, kind: "order" }, ...(fee > 0 ? { application_fee_amount: fee } : {}) },
       { stripeAccount: accountId, idempotencyKey: `order_${pending!.id}` },

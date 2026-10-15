@@ -561,6 +561,13 @@
       "when": 1792200100000,
       "tag": "0079_admin_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1792300000000,
+      "tag": "0080_platform_fee_price",
+      "breakpoints": true
     }
   ]
 }

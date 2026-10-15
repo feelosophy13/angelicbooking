@@ -19,6 +19,7 @@ export function PriceInputs({ values, defaults }: { values: Partial<Record<keyof
               required={!defaults}
               className="w-full bg-transparent px-3 py-2 outline-none placeholder:text-ink-3"
             />
+            {f.kind === "percent" && <span className="pr-3 text-ink-3">%</span>}
           </div>
         </label>
       ))}

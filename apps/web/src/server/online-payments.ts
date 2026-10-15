@@ -11,7 +11,8 @@ import type Stripe from "stripe";
 import { eq, or } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { changeStoreCredit } from "./store-credit";
-import { platformFeeBps, stripe } from "@/lib/stripe";
+import { stripe } from "@/lib/stripe";
+import { platformFeeBpsFor } from "./price-book";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { BookingError } from "./booking";
 import type { PublicBusiness } from "./public-booking";
@@ -63,7 +64,7 @@ export async function startOnlinePayment(business: PublicBusiness, pay: PaymentC
   const customer = await withTenant(business.id, (tx) => ensureStripeCustomer({ accountId, businessId: business.id, client, tx }));
   const metadata = { ...meta, kind: mode };
   if (mode === "deposit") {
-    const fee = Math.round((amountCents * platformFeeBps()) / 10_000);
+    const fee = Math.round((amountCents * (await platformFeeBpsFor(business.id))) / 10_000);
     const pi = await stripe().paymentIntents.create(
       {
         amount: amountCents,

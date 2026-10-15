@@ -85,7 +85,7 @@ Environment). Saving in the dashboard offers "Save, rebuild, and deploy"; take i
 2. Settings → Connect → Get started and fill in the platform profile. The app creates connected accounts with the
    **Accounts v2** API in the SaaS configuration (`dashboard: full`, Stripe collects fees and carries losses, merchant
    `card_payments`); that is the v2 equivalent of a Standard account, and Stripe rejects v1 `type: standard` creation
-   for new integrations. Direct charges with an optional `PLATFORM_FEE_BPS` application fee are unchanged.
+   for new integrations. Direct charges with an optional platform (application) fee are unchanged; set the fee in the admin Price book (per business on its Billing tab), `PLATFORM_FEE_BPS` is only the starting value.
 3. Developers → API keys (live mode): copy the secret key and the publishable key.
 4. Developers → Webhooks → Add endpoint. Tick **"Listen to events on Connected accounts"** (not
    "your account"). URL `https://app.angelicbooking.com/api/stripe/webhook`. Events:
