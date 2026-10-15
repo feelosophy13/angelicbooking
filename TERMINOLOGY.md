@@ -37,6 +37,17 @@ Pay type is a property of the staff member, not of the role: **Commission** (a s
 "1099" providers), **Hourly** and **Salary**. Product sales have their own commission rate. Do not call a
 commission provider "contractor" or "employee" in the product; that is the owner's tax status, not ours.
 
+## Money the platform takes
+
+Two different charges, never both called "fees" without saying which:
+
+| Say | Means | Code / where set |
+|---|---|---|
+| **Subscription** | The monthly invoice the platform sends a business: base plan, extra locations and staff, text number, texts. | Price book (admin app); a business can have a custom price on its Billing tab. `platform_pricing`, `business_pricing` |
+| **Platform fee** | Our name for a percentage of each card payment a business takes from its clients, kept by the platform. Zero by default. Written as a percent ("0.5%") in anything a person reads. | `PLATFORM_FEE_BPS` environment variable (basis points: 100 = 1%); no screen to change it |
+| **Application fee** | Stripe's name for the same thing. Use it only when talking about Stripe: the Dashboard, statements and the `application_fee_amount` API field. | Set on each charge in `server/sales.ts`, `online-payments.ts`, `store.ts` |
+| **Deposit** | Money a client pays at booking: a fixed amount, a percent of the price, or the full price. It goes to the business's own Stripe account and comes off the bill at checkout. | Per service: `deposit_type`, `deposit_cents`, `deposit_percent` |
+
 ## Words that are easy to mix up
 
 | Say | Not | Why |
@@ -47,6 +58,7 @@ commission provider "contractor" or "employee" in the product; that is the owner
 | Provider | Stylist, technician, employee | The role name. A business may still say "stylist" in its own copy. |
 | Staff member | Team member, employee | "Team member" appears only in the public API and a few error messages, where it means a staff member. |
 | Login | User, account | "Account" is reserved for a client account. |
+| Platform fee | Commission, cut, take rate | "Commission" is what staff earn; keep it for pay. |
 | Role | Permission, level | A role is a named bundle of permissions. Permissions are the single abilities inside it. |
 | Platform admin | Admin, superadmin | A business's own Owner and Manager are not "admins". |
 
