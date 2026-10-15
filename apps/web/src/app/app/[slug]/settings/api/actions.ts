@@ -16,6 +16,8 @@ export async function createApiKey(_prev: FormState | undefined, fd: FormData): 
   const name = String(fd.get("name") ?? "").trim();
   const scopes = [...new Set(fd.getAll("scopes").map(String))].filter(isApiScope);
   const days = Number(fd.get("expiresInDays") ?? 0);
+  // Set when this key replaces an older one (the "Replace" button): the old key is revoked in the same transaction.
+  const replaces = String(fd.get("replaces") ?? "") || null;
   const fieldErrors: Record<string, string> = {};
   if (name.length < 2 || name.length > 60) fieldErrors.name = "Give the key a short name, like \"Website\" or \"Zapier\".";
   if (!scopes.length) fieldErrors.scopes = "Pick at least one thing the key may do.";
@@ -30,7 +32,11 @@ export async function createApiKey(_prev: FormState | undefined, fd: FormData): 
       .insert(schema.apiKeys)
       .values({ businessId, name, prefix: k.prefix, keyHash: k.hash, scopes, createdByUserId: ctx.user.id, expiresAt: days ? new Date(Date.now() + days * 86_400_000) : null })
       .returning({ id: schema.apiKeys.id });
-    await tx.insert(schema.auditLog).values({ businessId, actorUserId: ctx.user.id, action: "api_key.create", entity: "api_key", entityId: row!.id, diff: JSON.stringify({ name, scopes }) });
+    await tx.insert(schema.auditLog).values({ businessId, actorUserId: ctx.user.id, action: "api_key.create", entity: "api_key", entityId: row!.id, diff: JSON.stringify({ name, scopes, replaces }) });
+    if (replaces) {
+      const revoked = await tx.update(schema.apiKeys).set({ revokedAt: new Date() }).where(and(eq(schema.apiKeys.id, replaces), eq(schema.apiKeys.businessId, businessId), isNull(schema.apiKeys.revokedAt))).returning({ id: schema.apiKeys.id });
+      if (revoked.length) await tx.insert(schema.auditLog).values({ businessId, actorUserId: ctx.user.id, action: "api_key.revoke", entity: "api_key", entityId: replaces, diff: JSON.stringify({ replacedBy: row!.id }) });
+    }
     return false;
   });
   if (full) return { error: `You can have up to ${MAX_ACTIVE_KEYS} active keys. Revoke one you no longer use.` };

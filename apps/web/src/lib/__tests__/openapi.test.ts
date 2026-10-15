@@ -1,5 +1,6 @@
 /** The committed OpenAPI file (public/openapi/v1.json) must match the route files. Run `pnpm openapi` after changing a route. */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { API_SCOPE_NAMES } from "../api-scopes";
@@ -23,6 +24,37 @@ describe("OpenAPI spec", () => {
           expect(declared.has(name), `${method.toUpperCase()} ${path} declares {${name}}`).toBe(true);
         }
       }
+    }
+  });
+
+  it("the developers page documents every endpoint, with its scope, and nothing that does not exist", () => {
+    // The field lists and examples on /developers are hand-written and can drift; the endpoint list and scopes are checked here.
+    const docsDir = fileURLToPath(new URL("../../app/developers", import.meta.url));
+    const sources: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (name.endsWith(".tsx")) sources.push(readFileSync(full, "utf8"));
+      }
+    };
+    walk(docsDir);
+    // Path parameters may be named differently in the docs ({item_id}) and the folders ({itemId}); compare the shape only.
+    const shape = (method: string, path: string) => `${method.toLowerCase()} ${path.replace(/\{\w+\}/g, "{}")}`;
+    const documented = new Map<string, string | undefined>();
+    for (const src of sources) {
+      for (const m of src.matchAll(/<Endpoint method="(\w+)" path="([^"]+)"(?: scope="([^"]+)")?/g)) {
+        documented.set(shape(m[1]!, m[2]!), m[3]);
+      }
+    }
+    const specOps = new Map<string, string>();
+    for (const [path, ops] of Object.entries(built.paths) as [string, Record<string, { "x-scope": string }>][]) {
+      for (const [method, op] of Object.entries(ops)) specOps.set(shape(method, path.replace(/^\/api\/v1/, "")), op["x-scope"]);
+    }
+    expect([...documented.keys()].filter((k) => !specOps.has(k)), "documented but not in the API").toEqual([]);
+    expect([...specOps.keys()].filter((k) => !documented.has(k)), "in the API but not documented").toEqual([]);
+    for (const [k, scope] of documented) {
+      expect(scope, `${k} scope on /developers`).toBe(specOps.get(k));
     }
   });
 });

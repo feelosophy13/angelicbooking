@@ -49,6 +49,7 @@ export function SettingsDocs() {
       <Endpoint method="POST" path="/locations" scope="settings:write">
         <p>Required: <code>name</code> (1 to 80). Optional: <code>address_line1</code> (120), <code>city</code> (60), <code>state</code> (40), <code>postal_code</code> (20), <code>phone</code> (30), <code>timezone</code> (an IANA name from the list the app offers, such as <code>America/Chicago</code>; <code>null</code> = the business&apos;s), <code>hours</code>: an object keyed by weekday <code>&quot;0&quot;</code> (Sunday) to <code>&quot;6&quot;</code>, each <code>{`{"open": "09:00", "close": "17:00"}`}</code> or <code>null</code> for closed (a missing day is closed; <code>open</code> must be before <code>close</code>). Returns <code>201</code>.</p>
       </Endpoint>
+      <Endpoint method="GET" path="/locations/{id}" scope="catalog:read"><p>One location, in the same shape as the list.</p></Endpoint>
       <Endpoint method="PATCH" path="/locations/{id}" scope="settings:write"><p>Same fields, all optional.</p></Endpoint>
       <Endpoint method="POST" path="/locations/{id}/default" scope="settings:write"><p>Makes this the default location (the one used when nothing else says where).</p></Endpoint>
       <Endpoint method="DELETE" path="/locations/{id}" scope="settings:write">
