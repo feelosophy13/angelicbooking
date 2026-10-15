@@ -5,7 +5,7 @@ import { normalizePhone } from "@angelic/core";
 import { BookingError } from "@/server/booking";
 import { PromoError, validatePromo } from "@/server/promos";
 import { priceForStaff } from "@/server/stylist-pricing";
-import { assertQuotedPrice, assertSlotOpen, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
+import { assertQuotedPrice, assertSlotOpen, planExtras, type PublicBusiness, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
 import { appointmentForIntent, cancelOnlineIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
 import { getSession } from "@/server/classes";
 import { paymentContextFor } from "@/server/locations";
@@ -25,7 +25,7 @@ const contact = z.object({
   promoCode: z.string().trim().max(40).optional().transform((v) => v || null),
 });
 
-const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), quotedPriceCents: z.string().regex(/^\d+$/).optional().transform((v) => (v === undefined ? undefined : Number(v))), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null), locationId: z.string().optional().transform((v) => v || null), embed: z.string().optional() });
+const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), quotedPriceCents: z.string().regex(/^\d+$/).optional().transform((v) => (v === undefined ? undefined : Number(v))), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null), locationId: z.string().optional().transform((v) => v || null), extraServiceIds: z.string().optional().transform((v) => (v ? v.split(",").filter(Boolean).slice(0, 4) : [])), embed: z.string().optional() });
 const confirmedPath = (d: { slug: string; embed?: string }, token: string) => `${d.embed ? "/embed" : "/book"}/${d.slug}/confirmed/${token}`;
 type BookingFields = z.infer<typeof bookingFields>;
 
@@ -39,10 +39,12 @@ function parseBooking(raw: Record<string, unknown>): { d: BookingFields } | { er
   return { d };
 }
 
-/** What this stylist charges for the service (classes are priced per seat). */
-async function priceFor(business: { id: string }, service: { id: string; priceCents: number }, d: { staffId: string; classSessionId: string | null }): Promise<number> {
+/** What this visit costs: this stylist's price for the service (classes are priced per seat), plus any services added to it. */
+async function priceFor(business: PublicBusiness, service: { id: string; priceCents: number }, d: { staffId: string; classSessionId: string | null; startAt: string; extraServiceIds: string[]; locationId: string | null }): Promise<number> {
   if (d.classSessionId) return service.priceCents;
-  return (await priceForStaff(business.id, service.id, d.staffId)) ?? service.priceCents;
+  const own = (await priceForStaff(business.id, service.id, d.staffId)) ?? service.priceCents;
+  const extras = await planExtras(business, { serviceId: service.id, staffId: d.staffId, startAt: new Date(d.startAt), extraServiceIds: d.extraServiceIds, locationId: d.locationId });
+  return own + extras.reduce((s, x) => s + x.priceCents, 0);
 }
 
 export async function bookOnline(_prev: PublicState, formData: FormData): Promise<PublicState> {
@@ -55,7 +57,14 @@ export async function bookOnline(_prev: PublicState, formData: FormData): Promis
   const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, d.serviceId), eq(schema.services.active, true)) }));
   if (!service) return { error: "That service is no longer available." };
   const pay = await paymentContextFor(business, d.locationId);
-  if (onlinePaymentRequirement(business, service, pay, await priceFor(business, service, d)).mode !== "none") return { error: "This booking needs a card. Please reload the page and try again." };
+  let visitPrice: number;
+  try {
+    visitPrice = await priceFor(business, service, d);
+  } catch (e) {
+    if (e instanceof BookingError) return { error: e.message };
+    throw e;
+  }
+  if (onlinePaymentRequirement(business, service, pay, visitPrice).mode !== "none") return { error: "This booking needs a card. Please reload the page and try again." };
   let token: string;
   try {
     const r = await createOnlineBooking(business, { ...d, startAt: new Date(d.startAt) });
@@ -88,7 +97,14 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
     throw e;
   }
   const pay = await paymentContextFor(business, d.locationId);
-  const req = onlinePaymentRequirement(business, service, pay, await priceFor(business, service, d));
+  let visitPrice: number;
+  try {
+    visitPrice = await priceFor(business, service, d);
+  } catch (e) {
+    if (e instanceof BookingError) return { error: e.message };
+    throw e;
+  }
+  const req = onlinePaymentRequirement(business, service, pay, visitPrice);
   if (req.mode === "none") return { error: "No payment is needed for this booking. Please reload the page." };
   const startAt = new Date(d.startAt);
   // A bad promo code must fail here, before a deposit is taken, not after (charge-then-refund).

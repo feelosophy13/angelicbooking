@@ -32,6 +32,9 @@ const profileSchema = z.object({
   bio: f.optional(300),
   position: f.optional(60),
   removePhoto: f.checkbox(),
+  removeWork0: f.checkbox(),
+  removeWork1: f.checkbox(),
+  removeWork2: f.checkbox(),
   bookableOnline: f.checkbox(),
   takesAppointments: f.checkbox(),
   active: f.checkbox(),
@@ -62,7 +65,7 @@ export const createStaff = formAction(profileSchema, async (d) => {
 export const updateStaffProfile = formAction(profileSchema, async (d, raw) => {
   const ctx = await requireAction(d.slug, "staff.manage");
   if (!d.staffId) throw new FormError("Missing staff member.");
-  const current = await withTenant(ctx.business.id, (tx) => tx.query.staff.findFirst({ where: eq(schema.staff.id, d.staffId!), columns: { photoUrl: true } }));
+  const current = await withTenant(ctx.business.id, (tx) => tx.query.staff.findFirst({ where: eq(schema.staff.id, d.staffId!), columns: { photoUrl: true, workPhotoUrls: true } }));
   // Photo: a new upload replaces the old file; "Remove photo" clears it.
   let photoUrl: string | null | undefined = undefined;
   const file = raw.get("photo");
@@ -74,13 +77,34 @@ export const updateStaffProfile = formAction(profileSchema, async (d, raw) => {
       throw e;
     }
   } else if (d.removePhoto) photoUrl = null;
+  // Work photos: three slots; a new file replaces that slot, "remove" empties it, the rest keep their place.
+  const slots: (string | null)[] = [0, 1, 2].map((i) => current?.workPhotoUrls?.[i] ?? null);
+  const removedFiles: string[] = [];
+  for (const i of [0, 1, 2]) {
+    const wf = raw.get(`work${i}`);
+    if (wf instanceof File && wf.size > 0) {
+      try {
+        const url = (await storeImage(ctx.business.id, "staff", wf)).url;
+        if (slots[i]) removedFiles.push(slots[i]!);
+        slots[i] = url;
+      } catch (e) {
+        if (e instanceof FileError) throw new FormError(e.message, `work${i}`);
+        throw e;
+      }
+    } else if (d[`removeWork${i}` as "removeWork0" | "removeWork1" | "removeWork2"]) {
+      if (slots[i]) removedFiles.push(slots[i]!);
+      slots[i] = null;
+    }
+  }
+  const workPhotoUrls = slots.filter((u): u is string => !!u);
   await withTenant(ctx.business.id, (tx) =>
     tx
       .update(schema.staff)
-      .set({ displayName: d.displayName, fullName: d.fullName, email: d.email, phone: d.phone, color: d.color, bio: d.bio, position: d.position, bookableOnline: d.bookableOnline && d.takesAppointments, takesAppointments: d.takesAppointments, active: d.active, locationId: d.locationId || null, ...(photoUrl !== undefined ? { photoUrl } : {}) })
+      .set({ workPhotoUrls, displayName: d.displayName, fullName: d.fullName, email: d.email, phone: d.phone, color: d.color, bio: d.bio, position: d.position, bookableOnline: d.bookableOnline && d.takesAppointments, takesAppointments: d.takesAppointments, active: d.active, locationId: d.locationId || null, ...(photoUrl !== undefined ? { photoUrl } : {}) })
       .where(eq(schema.staff.id, d.staffId!)),
   );
   if (photoUrl !== undefined && current?.photoUrl) await deleteFileByUrl(current.photoUrl);
+  for (const u of removedFiles) await deleteFileByUrl(u);
   if (d.clearPin) await setClockPin(ctx.business.id, d.staffId, null);
   else if (d.clockPin) {
     try {

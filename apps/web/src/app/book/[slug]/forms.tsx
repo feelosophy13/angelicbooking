@@ -7,7 +7,7 @@ import { SubmitButton } from "@/components/form";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean } | null;
 
-export function BookingForm(props: { /** The price being confirmed, shown on the button. */ priceLabel?: string; slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null }) {
+export function BookingForm(props: { extraServiceIds?: string[]; /** The price being confirmed, shown on the button. */ priceLabel?: string; slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
   const d = props.defaults;
   return (
@@ -19,6 +19,7 @@ export function BookingForm(props: { /** The price being confirmed, shown on the
       <input type="hidden" name="serviceId" value={props.serviceId} />
       <input type="hidden" name="staffId" value={props.staffId} />
       <input type="hidden" name="startAt" value={props.startAt} />
+      {props.extraServiceIds?.length ? <input type="hidden" name="extraServiceIds" value={props.extraServiceIds.join(",")} /> : null}
       {props.quotedPriceCents !== undefined ? <input type="hidden" name="quotedPriceCents" value={props.quotedPriceCents} /> : null}
       <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} />
       {state?.error ? <Notice>{state.error}</Notice> : null}

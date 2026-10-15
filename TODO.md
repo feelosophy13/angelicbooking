@@ -350,6 +350,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (public, series, add/move service). New appointment lists each stylist's price/length when they differ.
       `server/stylist-pricing.ts`. Not changed: deposits stay per service; packages and memberships still cover a
       line whatever its price; classes use the service's price per seat.
+- [x] 2026-10-15: booking page, client-trust pass (migration 0087). Provider cards show rating + review count, next opening,
+      title and up to three work photos (tap to enlarge; edited on the staff profile, `staff.work_photo_urls`); signed-in
+      clients get "Book with <last stylist> again"; the deposit reason and the free-cancel window / late fee show before
+      a time is picked; clients can add more services to one visit with the same stylist, back to back
+      (`planExtras`, extras booked in the same transaction as the first; the deposit/"pay in full" amount uses the visit
+      total). Not walked live: the paid (Stripe) path with extra services. Demo prices and photos are SQL, not in the seed.
 - [x] 2026-10-15: stylist title on the booking page. The existing staff `position` (was only on the Pay page) now also has a
       "Title" field on the staff profile and shows under the name in the provider list, the "With" line, and the
       higher-price note, so a higher price reads as seniority.

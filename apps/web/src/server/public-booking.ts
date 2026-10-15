@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
-import { canClientCancel, instantToISODate, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
+import { buildBookingSegments, canClientCancel, instantToISODate, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
 import { getStaffAvailability, getStaffAvailabilityForDates, staffForService, timingFor } from "./availability";
 import { bookAppointment, BookingError, rescheduleAppointment, rescheduleService, setAppointmentStatus } from "./booking";
 import { refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
@@ -13,7 +13,7 @@ import { staffAlertEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
 import { businessAccess, publishBlockedReason } from "./access";
 import { formatMoney, shiftISODate } from "@/lib/utils";
-import { overridesForService, priceForStaff } from "./stylist-pricing";
+import { overridesForService, priceForStaff, termsOf } from "./stylist-pricing";
 import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt, tzFor } from "./locations";
 
 export type PublicBusiness = typeof schema.businesses.$inferSelect;
@@ -50,7 +50,7 @@ export async function getPublicMenu(businessId: string, locationId?: string | nu
         .orderBy(asc(schema.services.sortOrder), asc(schema.services.name)),
       tx.select().from(schema.serviceCategories).orderBy(asc(schema.serviceCategories.sortOrder), asc(schema.serviceCategories.name)),
       tx
-        .select({ id: schema.staff.id, displayName: schema.staff.displayName, color: schema.staff.color, photoUrl: schema.staff.photoUrl, bio: schema.staff.bio, position: schema.staff.position })
+        .select({ id: schema.staff.id, displayName: schema.staff.displayName, color: schema.staff.color, photoUrl: schema.staff.photoUrl, bio: schema.staff.bio, position: schema.staff.position, workPhotoUrls: schema.staff.workPhotoUrls })
         .from(schema.staff)
         .where(and(eq(schema.staff.active, true), eq(schema.staff.bookableOnline, true), eq(schema.staff.takesAppointments, true)))
         .orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
@@ -142,6 +142,62 @@ export async function getAvailableDates(business: PublicBusiness, serviceId: str
   return dates.filter((d) => open.has(d));
 }
 
+/** Average rating and review count per provider, from submitted reviews. */
+export async function providerRatings(businessId: string): Promise<Map<string, { average: number; count: number }>> {
+  const rows = await withTenant(businessId, (tx) =>
+    tx
+      .select({ staffId: schema.reviews.staffId, n: sql<number>`count(*)`, avg: sql<number>`avg(${schema.reviews.rating})` })
+      .from(schema.reviews)
+      .where(sql`${schema.reviews.submittedAt} is not null and ${schema.reviews.rating} is not null and ${schema.reviews.staffId} is not null`)
+      .groupBy(schema.reviews.staffId),
+  );
+  return new Map(rows.map((r) => [r.staffId!, { average: Number(r.avg), count: Number(r.n) }]));
+}
+
+/** The soonest bookable start for each provider (null when nothing opens in the next three weeks). */
+export async function nextOpenings(business: PublicBusiness, serviceId: string, staffIds: string[], locationId?: string | null): Promise<Map<string, Date | null>> {
+  const out = new Map<string, Date | null>();
+  const service = await publicService(business, serviceId, locationId);
+  if (!service || !staffIds.length) return out;
+  const window = onlineBookingWindow(new Date(), business);
+  const loc = locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) })) : null;
+  const from = instantToISODate(new Date(), tzFor(business, loc ?? null));
+  const dates = Array.from({ length: 21 }, (_, i) => shiftISODate(from, i));
+  const overrides = await withTenant(business.id, (tx) => overridesForService(tx, serviceId));
+  await Promise.all(
+    staffIds.map(async (id) => {
+      const byDate = await getStaffAvailabilityForDates({
+        businessId: business.id,
+        timeZone: business.timezone,
+        slotIntervalMin: business.slotIntervalMin,
+        staffId: id,
+        dates,
+        service: timingFor({ ...service, durationMin: overrides.get(id)?.duration ?? service.durationMin }),
+        notBefore: window.notBefore,
+        locationId,
+      });
+      let best: Date | null = null;
+      for (const slots of byDate.values()) for (const at of slots) if (at <= window.notAfter && (!best || at < best)) best = at;
+      out.set(id, best);
+    }),
+  );
+  return out;
+}
+
+/** Who this signed-in client last saw for the service, if that person can still be booked for it. */
+export async function lastProviderFor(businessId: string, clientId: string, serviceId: string): Promise<{ staffId: string; at: Date } | null> {
+  const [row] = await withTenant(businessId, (tx) =>
+    tx
+      .select({ staffId: schema.appointmentItems.staffId, at: schema.appointmentItems.startAt })
+      .from(schema.appointmentItems)
+      .innerJoin(schema.appointments, eq(schema.appointments.id, schema.appointmentItems.appointmentId))
+      .where(and(eq(schema.appointments.clientId, clientId), eq(schema.appointmentItems.serviceId, serviceId), lt(schema.appointmentItems.startAt, new Date()), sql`${schema.appointmentItems.status} not in ('cancelled','no_show')`))
+      .orderBy(sql`${schema.appointmentItems.startAt} desc`)
+      .limit(1),
+  );
+  return row ?? null;
+}
+
 export interface OnlineBookingInput {
   serviceId: string;
   staffId: string;
@@ -165,6 +221,8 @@ export interface OnlineBookingInput {
   locationId?: string | null;
   /** The price in cents the page showed for this stylist, to catch a price that changed while the form was open. */
   quotedPriceCents?: number;
+  /** Further services for the same visit and provider, in order, each starting when the one before ends. */
+  extraServiceIds?: string[] | null;
 }
 
 /** Find a client by phone or email, else create one. Runs inside the tenant tx. */
@@ -222,11 +280,62 @@ export async function assertQuotedPrice(business: PublicBusiness, input: { servi
   }
 }
 
+
+export interface PlannedExtra { serviceId: string; name: string; startAt: Date; endAt: Date; priceCents: number; durationMin: number }
+
+/**
+ * Further services added to one visit: same provider, back to back after the first. Each must be bookable online,
+ * performed by that provider, and open at the moment the one before it ends. Throws a BookingError the client can read.
+ */
+export async function planExtras(
+  business: PublicBusiness,
+  input: { serviceId: string; staffId: string; startAt: Date; extraServiceIds?: string[] | null; locationId?: string | null },
+  now = new Date(),
+): Promise<PlannedExtra[]> {
+  const ids = [...new Set(input.extraServiceIds ?? [])].filter((id) => id && id !== input.serviceId).slice(0, 4);
+  if (!ids.length) return [];
+  const first = await publicService(business, input.serviceId, input.locationId);
+  if (!first) throw new BookingError("That service is no longer available.");
+  const loc = input.locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, input.locationId!) })) : null;
+  const tz = tzFor(business, loc ?? null);
+  const window = onlineBookingWindow(now, business);
+  const endOf = (start: Date, timing: ReturnType<typeof timingFor>) => buildBookingSegments(start, timing).at(-1)!.end;
+  const firstOv = (await withTenant(business.id, (tx) => overridesForService(tx, first.id))).get(input.staffId);
+  let cursor = endOf(input.startAt, timingFor({ ...first, durationMin: firstOv?.duration ?? first.durationMin }));
+  const out: PlannedExtra[] = [];
+  for (const id of ids) {
+    const svc = await publicService(business, id, input.locationId);
+    if (!svc || svc.capacity > 1) throw new BookingError("One of the added services is no longer available.");
+    if (!(await publicProvidersFor(business, id, input.locationId)).some((s) => s.id === input.staffId)) throw new BookingError(`This provider doesn't perform ${svc.name}.`);
+    const ov = (await withTenant(business.id, (tx) => overridesForService(tx, id))).get(input.staffId);
+    const terms = termsOf(svc, ov);
+    const timing = timingFor({ ...svc, durationMin: terms.durationMin });
+    // A 5-minute grid, because the previous service can end between the salon's usual start times.
+    const open = await getStaffAvailability({ businessId: business.id, timeZone: business.timezone, slotIntervalMin: 5, staffId: input.staffId, date: isoDateIn(cursor, tz), service: timing, notBefore: window.notBefore, locationId: input.locationId });
+    if (cursor > window.notAfter || !open.some((at) => at.getTime() === cursor.getTime())) {
+      throw new BookingError(`${svc.name} isn't open right after your first service. Remove it, or pick another time.`);
+    }
+    const startedAt = cursor;
+    cursor = endOf(cursor, timing);
+    out.push({ serviceId: id, name: svc.name, startAt: startedAt, endAt: cursor, priceCents: terms.priceCents, durationMin: terms.durationMin });
+  }
+  return out;
+}
+
 export async function createOnlineBooking(business: PublicBusiness, input: OnlineBookingInput, now = new Date(), paid?: VerifiedIntent) {
   if (!input.classSessionId) {
     try {
       await assertQuotedPrice(business, input);
       await assertSlotOpen(business, input.serviceId, input.staffId, input.startAt, now, input.locationId);
+    } catch (e) {
+      await undoPayment(business, paid);
+      throw e;
+    }
+  }
+  let extras: PlannedExtra[] = [];
+  if (!input.classSessionId) {
+    try {
+      extras = await planExtras(business, input, now);
     } catch (e) {
       await undoPayment(business, paid);
       throw e;
@@ -259,6 +368,7 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
       classSessionId: input.classSessionId ?? null,
       promoCodeId,
       locationId: input.locationId ?? null,
+      extras: extras.map((x) => ({ serviceId: x.serviceId, startAt: x.startAt })),
     }));
   } catch (e) {
     await undoPayment(business, paid);

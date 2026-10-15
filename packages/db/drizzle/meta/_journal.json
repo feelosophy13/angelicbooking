@@ -603,6 +603,20 @@
       "when": 1792600000000,
       "tag": "0085_client_and_product_category_images",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1792700000000,
+      "tag": "0086_message_delivery_and_media",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1792800000000,
+      "tag": "0087_staff_work_photos",
+      "breakpoints": true
     }
   ]
 }

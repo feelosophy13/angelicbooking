@@ -196,6 +196,8 @@ export const staff = pgTable(
     // Shown on the booking page's provider step and the staff list.
     photoUrl: text("photo_url"),
     bio: text("bio"),
+    // Up to three pictures of their work, shown on the booking page's provider step.
+    workPhotoUrls: text("work_photo_urls").array().notNull().default(sql`'{}'::text[]`),
     locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }), // primary location
     // Rotating schedules: hours repeat every N weeks (1 = the same every week). `rotationAnchor` is the Monday of a
     // week that is "Week 1"; staff_schedules.week_index says which week of the cycle a row belongs to.
@@ -875,6 +877,9 @@ export const notifications = pgTable(
     // Delivery attempts so far; a failed send is re-queued with backoff until MAX_ATTEMPTS.
     attempts: integer("attempts").notNull().default(0),
     providerId: text("provider_id"),
+    // Carrier-reported outcome of a text (Twilio status callback): queued | sent | delivered | undelivered | failed. Null for email and until the first callback.
+    deliveryStatus: text("delivery_status"),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     error: text("error"),
     campaignId: text("campaign_id"),
     // Set when a workflow step queued this message (Marketing → Automations), for the "why did this send" trail.
@@ -885,6 +890,7 @@ export const notifications = pgTable(
     index("notifications_due_idx").on(t.status, t.scheduledAt),
     index("notifications_appointment_idx").on(t.appointmentId),
     index("notifications_business_idx").on(t.businessId, t.createdAt),
+    index("notifications_provider_idx").on(t.providerId),
   ],
 );
 
@@ -1177,6 +1183,8 @@ export const inboundMessages = pgTable(
     toNumber: text("to_number").notNull(),
     body: text("body").notNull(),
     providerSid: text("provider_sid").unique(),
+    // Picture/file attachments (MMS): [{ url, type }] as Twilio sent them.
+    media: jsonb("media").$type<{ url: string; type: string }[]>().notNull().default(sql`'[]'::jsonb`),
     receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
     readAt: timestamp("read_at", { withTimezone: true }),
   },

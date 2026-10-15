@@ -16,6 +16,8 @@ type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"
 export function PaidBookingForm(props: {
   /** The full price of the visit, shown above the button. */
   priceLabel?: string;
+  /** More services in this visit, same provider, booked back to back. */
+  extraServiceIds?: string[];
   slug: string;
   serviceId: string;
   staffId: string;
@@ -70,6 +72,7 @@ export function PaidBookingForm(props: {
         <input type="hidden" name="serviceId" value={props.serviceId} />
         <input type="hidden" name="staffId" value={props.staffId} />
         <input type="hidden" name="startAt" value={props.startAt} />
+        {props.extraServiceIds?.length ? <input type="hidden" name="extraServiceIds" value={props.extraServiceIds.join(",")} /> : null}
       {props.quotedPriceCents !== undefined ? <input type="hidden" name="quotedPriceCents" value={props.quotedPriceCents} /> : null}
         {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
         {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}

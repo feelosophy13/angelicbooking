@@ -91,6 +91,8 @@ export interface BookAppointmentInput {
   promoCodeId?: string | null;
   /** Where the visit happens. Defaults to where the provider works that weekday, else their primary site, else the default. */
   locationId?: string | null;
+  /** More services booked in the same visit, with the same provider, each starting where the last one ends. */
+  extras?: { serviceId: string; startAt: Date }[];
 }
 
 /** The location an appointment belongs to when none was chosen explicitly. */
@@ -137,7 +139,13 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
           promoCodeId: input.promoCodeId ?? null,
         })
         .returning({ id: schema.appointments.id });
-      await insertServiceItems(tx, { ...input, appointmentId: appt!.id, sortOrderBase: 0 });
+      const firstItems = await insertServiceItems(tx, { ...input, appointmentId: appt!.id, sortOrderBase: 0 });
+      let order = firstItems.segments.length;
+      for (const x of input.extras ?? []) {
+        if (!(await serviceOfferedAt(tx, x.serviceId, locationId))) throw new BookingError("One of the added services isn't offered at this location.");
+        const r = await insertServiceItems(tx, { businessId: input.businessId, appointmentId: appt!.id, serviceId: x.serviceId, staffId: input.staffId, startAt: x.startAt, sortOrderBase: order });
+        order += r.segments.length;
+      }
       await refreshHomeLocation(tx, input.clientId);
       await audit(tx, input.businessId, input.source === "online" ? "client" : input.createdByUserId, "appointment.create", appt!.id, {
         serviceId: input.serviceId,
