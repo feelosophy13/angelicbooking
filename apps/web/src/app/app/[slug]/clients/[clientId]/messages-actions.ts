@@ -13,5 +13,6 @@ export const replyToClient = formAction(z.object({ slug: z.string(), clientId: f
     throw new FormError((e as Error).message, "body");
   }
   revalidatePath(`/app/${d.slug}/clients/${d.clientId}`);
+  revalidatePath(`/app/${d.slug}/inbox`, "layout");
   return "Text queued";
 });
