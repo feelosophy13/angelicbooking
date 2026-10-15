@@ -38,6 +38,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
         <Field label="Photo" name="photo" hint="Shown to clients when they pick a provider, and on the staff list. A square crop looks best.">
           <ImageField name="photo" removeName="removePhoto" current={person.photoUrl} shape="round" placeholder={person.displayName.slice(0, 1)} placeholderColor={person.color} />
         </Field>
+        <Field label="Title" name="position" hint="Shown to clients next to the name when they pick a provider, so a higher price makes sense: Master Stylist, Senior Esthetician, Lash Artist."><Input name="position" defaultValue={person.position ?? ""} maxLength={60} placeholder="Master Stylist" /></Field>
         <Field label="Bio" name="bio" hint="A sentence or two clients see on the booking page: specialties, years of experience."><Textarea name="bio" rows={4} defaultValue={person.bio ?? ""} maxLength={300} placeholder="Balayage specialist with 8 years behind the chair." /></Field>
         {locations.length > 1 ? (
           <Field label="Primary location" name="locationId">

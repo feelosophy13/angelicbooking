@@ -30,6 +30,7 @@ const profileSchema = z.object({
   phone: f.optional(30),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Pick a colour"),
   bio: f.optional(300),
+  position: f.optional(60),
   removePhoto: f.checkbox(),
   bookableOnline: f.checkbox(),
   takesAppointments: f.checkbox(),
@@ -76,7 +77,7 @@ export const updateStaffProfile = formAction(profileSchema, async (d, raw) => {
   await withTenant(ctx.business.id, (tx) =>
     tx
       .update(schema.staff)
-      .set({ displayName: d.displayName, fullName: d.fullName, email: d.email, phone: d.phone, color: d.color, bio: d.bio, bookableOnline: d.bookableOnline && d.takesAppointments, takesAppointments: d.takesAppointments, active: d.active, locationId: d.locationId || null, ...(photoUrl !== undefined ? { photoUrl } : {}) })
+      .set({ displayName: d.displayName, fullName: d.fullName, email: d.email, phone: d.phone, color: d.color, bio: d.bio, position: d.position, bookableOnline: d.bookableOnline && d.takesAppointments, takesAppointments: d.takesAppointments, active: d.active, locationId: d.locationId || null, ...(photoUrl !== undefined ? { photoUrl } : {}) })
       .where(eq(schema.staff.id, d.staffId!)),
   );
   if (photoUrl !== undefined && current?.photoUrl) await deleteFileByUrl(current.photoUrl);

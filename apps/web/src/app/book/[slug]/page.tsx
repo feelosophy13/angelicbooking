@@ -77,6 +77,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   // One provider: nothing to choose, so the step is skipped.
   const onlyProvider = service && providers.length === 1 ? providers[0]!.id : null;
   const staffChoice = sp.staff === "any" || providers.some((s) => s.id === sp.staff) ? sp.staff! : onlyProvider;
+  const withTitle = (id: string, name: string) => { const t = staff.find((s) => s.id === id)?.position; return t ? `${name} · ${t}` : name; };
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : null;
   const q = (extra: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
@@ -156,10 +157,13 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const priceVaries = new Set(provTerms.map((t) => t.priceCents)).size > 1;
   const lowestPrice = provTerms.length ? Math.min(...provTerms.map((t) => t.priceCents)) : service.priceCents;
   // Said out loud when the chosen provider costs more than the "from" price the client saw earlier.
-  const pricierNote = (staffId: string, name: string) => {
+  const pricierNote = (staffId: string, fallbackName: string) => {
     const cents = termsFor(staffId).priceCents;
-    return priceVaries && cents > lowestPrice ? <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{name}&apos;s price for this service is {money(cents)}, higher than the {money(lowestPrice)} starting price.</p> : null;
+    const who = staff.find((s) => s.id === staffId);
+    const label = `${who?.displayName ?? fallbackName}${who?.position ? ` (${who.position})` : ""}`;
+    return priceVaries && cents > lowestPrice ? <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{label} charges {money(cents)} for this service, higher than the {money(lowestPrice)} starting price.</p> : null;
   };
+
   const durationVaries = new Set(provTerms.map((t) => t.durationMin)).size > 1;
   const scope = staffChoice && staffChoice !== "any" ? provTerms.filter((t) => t.id === staffChoice) : provTerms;
   const scopePrices = scope.length ? scope.map((t) => t.priceCents) : [service.priceCents];
@@ -168,7 +172,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const priceText = fromIf(Math.min(...scopePrices), Math.max(...scopePrices), money(Math.min(...scopePrices)));
   const spanOf = (mins: number) => duration(mins + service.gapMin + service.finishMin);
   const durationText = fromIf(Math.min(...scopeMins), Math.max(...scopeMins), spanOf(Math.min(...scopeMins)));
-  const providerName = staffChoice === "any" ? "Any available provider" : staff.find((s) => s.id === staffChoice)?.displayName;
+  const providerName = staffChoice === "any" ? "Any available provider" : staffChoice ? withTitle(staffChoice, staff.find((s) => s.id === staffChoice)?.displayName ?? "") : undefined;
   const summaryRows = (extra: { label: string; value: string; href?: string }[] = []) => [
     { label: "Duration", value: durationText },
     ...(staffChoice ? [{ label: "With", value: providerName ?? "", href: onlyProvider ? undefined : q({ staff: undefined, date: undefined, time: undefined }) }] : []),
@@ -259,6 +263,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
                 )}
                 <span className="min-w-0">
                   <span className="block font-semibold text-stone-900">{s.displayName}</span>
+                  {s.position ? <span className="block text-xs font-medium" style={{ color: "var(--brand-dark)" }}>{s.position}</span> : null}
                   {s.bio ? <span className="line-clamp-2 block text-xs text-stone-500">{s.bio}</span> : null}
                 </span>
                 {priceVaries || durationVaries ? (
@@ -302,7 +307,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <Steps labels={stepLabels} current={3} hrefs={stepHrefs(2)} />
         <StepTitle title="Pick a time" />
         <Summary imageUrl={service.imageUrl} title={service.name} rows={summaryRows([{ label: "Price", value: priceText }, ...depositRow])} />
-        {staffChoice !== "any" ? pricierNote(staffChoice, providerName ?? "This provider") : null}
+        {staffChoice !== "any" ? pricierNote(staffChoice, "This provider") : null}
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <MonthCalendar
             monthStart={monthStart}
@@ -366,7 +371,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       {locBar}
       <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
       <StepTitle title="Your details" subtitle="Almost done. Tell us who you are and we'll hold this time." />
-      <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: slot.staffName, href: onlyProvider ? undefined : q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: spanOf(termsFor(slot.staffId).durationMin) }, { label: "Price", value: money(termsFor(slot.staffId).priceCents) }]} />
+      <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: withTitle(slot.staffId, slot.staffName), href: onlyProvider ? undefined : q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: spanOf(termsFor(slot.staffId).durationMin) }, { label: "Price", value: money(termsFor(slot.staffId).priceCents) }]} />
       {pricierNote(slot.staffId, slot.staffName)}
       {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">{req.full ? `Payment of ${formatMoney(req.amountCents, business.currency)} in full is due now.` : `A ${formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.`}</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
       {req.mode === "none" ? (

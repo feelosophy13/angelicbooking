@@ -350,6 +350,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (public, series, add/move service). New appointment lists each stylist's price/length when they differ.
       `server/stylist-pricing.ts`. Not changed: deposits stay per service; packages and memberships still cover a
       line whatever its price; classes use the service's price per seat.
+- [x] 2026-10-15: stylist title on the booking page. The existing staff `position` (was only on the Pay page) now also has a
+      "Title" field on the staff profile and shows under the name in the provider list, the "With" line, and the
+      higher-price note, so a higher price reads as seniority.
 - [x] 2026-10-15: booking self-service fixes. Reschedule uses the same month calendar as booking (`book/[slug]/calendar.tsx`),
       can change provider (single service) or move a whole multi-service booking together (`rescheduleAppointment`), and
       shows the free-change deadline; Cancel states the deadline, deposit refund and late fee up front. Confirmation shows
@@ -479,8 +482,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Inbox v1 (SMS) built 2026-10-15: People → Inbox lists every text conversation (unread dot, newest first); a conversation shows the
       whole thread and a reply box. Unknown numbers show read-only. Needs no migration (reads `inbound_messages` + `notifications`).
 - [x] Inbox unread badge in the sidebar (desktop + mobile menu), 2026-10-15.
+- [x] Messaging gaps fixed 2026-10-15 (migration 0086): delivery receipts (Twilio status callback `/api/twilio/status`; "Delivered" badge, undelivered texts become Failed with a plain reason and "Send again"); picture texts (MMS) stored and shown; client matched by last 10 digits; STOP in short messages ("please stop"), CANCEL/END/QUIT/YES only as the whole message; HELP answered on non-toll-free numbers; owner emailed when a conversation first goes unread; Inbox has search, paging, "not a client" / "opted out" / "not delivered" markers and "Add as client" for unknown numbers; reply box shows the text count; the old replies box on Settings → Messages is gone. Untested against live Twilio.
 - [ ] Inbox follow-ups: email in the same thread (needs inbound email via Resend), assign a conversation to a
-      staff member, saved quick replies, start a new conversation from the inbox, search, paging past 200 conversations.
+      staff member, saved quick replies, start a new conversation from the inbox, sending pictures, a turn-off for the new-reply email,
+      a separate permission for reading client texts (today `clients.read`), quiet hours for staff replies.
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 

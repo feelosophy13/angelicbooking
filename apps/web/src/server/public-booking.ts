@@ -50,7 +50,7 @@ export async function getPublicMenu(businessId: string, locationId?: string | nu
         .orderBy(asc(schema.services.sortOrder), asc(schema.services.name)),
       tx.select().from(schema.serviceCategories).orderBy(asc(schema.serviceCategories.sortOrder), asc(schema.serviceCategories.name)),
       tx
-        .select({ id: schema.staff.id, displayName: schema.staff.displayName, color: schema.staff.color, photoUrl: schema.staff.photoUrl, bio: schema.staff.bio })
+        .select({ id: schema.staff.id, displayName: schema.staff.displayName, color: schema.staff.color, photoUrl: schema.staff.photoUrl, bio: schema.staff.bio, position: schema.staff.position })
         .from(schema.staff)
         .where(and(eq(schema.staff.active, true), eq(schema.staff.bookableOnline, true), eq(schema.staff.takesAppointments, true)))
         .orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
