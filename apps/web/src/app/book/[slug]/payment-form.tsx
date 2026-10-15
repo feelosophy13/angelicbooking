@@ -2,8 +2,8 @@
 import { useMemo, useState, useTransition } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
-import { Field, Input, Notice, Textarea } from "@/components/ui";
-import { SmsConsent, type BookingDefaults } from "./forms";
+import { Button, Notice } from "@/components/ui";
+import { ContactFields, type BookingDefaults } from "./forms";
 import { finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
 
 type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string };
@@ -71,22 +71,12 @@ export function PaidBookingForm(props: {
       {props.quotedPriceCents !== undefined ? <input type="hidden" name="quotedPriceCents" value={props.quotedPriceCents} /> : null}
         {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
         {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}
-        {d ? <p className="text-sm text-stone-600">Booking as <b>{d.firstName} {d.lastName}</b>.</p> : null}
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="First name" required><Input name="firstName" required autoComplete="given-name" defaultValue={d?.firstName} /></Field>
-          <Field label="Last name"><Input name="lastName" autoComplete="family-name" defaultValue={d?.lastName} /></Field>
-        </div>
-        <Field label="Mobile number" required><Input name="phone" type="tel" required autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
-        <p className="-mt-2 text-xs text-stone-500">We text your confirmation to this number.</p>
-        <Field label="Email" required><Input name="email" type="email" required autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
-        {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
-        <Field label="Anything we should know?"><Textarea name="notes" rows={4} /></Field>
-        {props.referrals && !d ? <Field label="Referral code (optional)"><Input name="referralCode" placeholder="From a friend who comes here" className="uppercase placeholder:normal-case" /></Field> : null}
-      {props.promos ? <Field label="Promo code (optional)"><Input name="promoCode" placeholder="Code" className="uppercase placeholder:normal-case" /></Field> : null}
+        <p className="text-xs font-medium uppercase tracking-wide text-stone-400">Step 1 of 2 · Your details</p>
+        <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} />
         {error ? <Notice>{error}</Notice> : null}
-        <button type="submit" disabled={pending} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: props.brand }}>
+        <Button type="submit" disabled={pending} className="w-full" style={{ background: props.brand }}>
           {pending ? "One moment…" : props.mode === "deposit" ? props.full ? `Continue to pay ${props.amountLabel}` : `Continue to pay ${props.amountLabel} deposit` : "Continue to add a card"}
-        </button>
+        </Button>
         <p className="text-xs text-stone-500">
           {props.mode === "deposit" ? props.full ? `${props.amountLabel} is charged now, paying for your visit in full.` : `A ${props.amountLabel} deposit is charged now and comes off your bill on the day.` : "Your card is saved to hold the booking. Nothing is charged now."} You can cancel or reschedule online up to {props.cancelWindowHours} hours before.{props.lateFee ? ` Cancellations inside that window carry a fee of ${props.lateFee}.` : ""}{props.policy ? ` ${props.policy}` : ""}
         </p>
@@ -96,6 +86,7 @@ export function PaidBookingForm(props: {
 
   return (
     <div className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
+      <p className="text-xs font-medium uppercase tracking-wide text-stone-400">Step 2 of 2 · {props.mode === "deposit" ? "Payment" : "Card"}</p>
       <p className="text-sm">
         <span className="font-medium">{fields.firstName} {fields.lastName}</span> · {fields.phone || fields.email}{" "}
         <button type="button" className="underline" onClick={() => setIntent(null)}>Edit</button>
@@ -142,9 +133,9 @@ function ConfirmStep({ fields, intent, mode, amountLabel, brand }: { fields: Rec
     <form onSubmit={submit} className="space-y-3">
       <PaymentElement options={{ layout: "tabs" }} />
       {error ? <Notice>{error}</Notice> : null}
-      <button type="submit" disabled={!stripe || busy} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: brand }}>
+      <Button type="submit" disabled={!stripe || busy} className="w-full" style={{ background: brand }}>
         {busy ? "Confirming…" : mode === "deposit" ? `Pay ${amountLabel} and book` : "Save card and book"}
-      </button>
+      </Button>
       <p className="text-xs text-stone-500">Payments are processed by Stripe. Your card details never touch our servers.</p>
     </form>
   );

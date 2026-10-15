@@ -2,6 +2,7 @@
 import { useActionState } from "react";
 import { bookOnline, joinWaitlistAction, type PublicState } from "./actions";
 import { Field, Input, Notice, Textarea, Checkbox } from "@/components/ui";
+import { Disclosure } from "@/components/disclosure";
 import { SubmitButton } from "@/components/form";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean } | null;
@@ -19,18 +20,7 @@ export function BookingForm(props: { slug: string; serviceId: string; staffId: s
       <input type="hidden" name="staffId" value={props.staffId} />
       <input type="hidden" name="startAt" value={props.startAt} />
       {props.quotedPriceCents !== undefined ? <input type="hidden" name="quotedPriceCents" value={props.quotedPriceCents} /> : null}
-      {d ? <p className="text-sm text-stone-600">Booking as <b>{d.firstName} {d.lastName}</b>.</p> : null}
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="First name" required><Input name="firstName" required autoComplete="given-name" defaultValue={d?.firstName} /></Field>
-        <Field label="Last name"><Input name="lastName" autoComplete="family-name" defaultValue={d?.lastName} /></Field>
-      </div>
-      <Field label="Mobile number" required><Input name="phone" type="tel" required autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
-      <p className="-mt-2 text-xs text-stone-500">We text your confirmation to this number.</p>
-      <Field label="Email" required><Input name="email" type="email" required autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
-      {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
-      <Field label="Anything we should know?"><Textarea name="notes" rows={4} /></Field>
-      {props.referrals && !d ? <Field label="Referral code (optional)"><Input name="referralCode" placeholder="From a friend who comes here" className="uppercase placeholder:normal-case" /></Field> : null}
-      {props.promos ? <Field label="Promo code (optional)"><Input name="promoCode" placeholder="Code" className="uppercase placeholder:normal-case" /></Field> : null}
+      <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Booking…">Confirm booking</SubmitButton>
       <p className="text-xs text-stone-500">You can cancel or reschedule online up to {props.cancelWindowHours} hours before.{props.lateFee ? ` Cancellations inside that window carry a fee of ${props.lateFee}.` : ""}{props.policy ? ` ${props.policy}` : ""}</p>
@@ -38,7 +28,37 @@ export function BookingForm(props: { slug: string; serviceId: string; staffId: s
   );
 }
 
-export function WaitlistForm(props: { slug: string; serviceId: string; staffId: string; date: string; locationId?: string | null }) {
+/**
+ * The details every booking asks for, shared by the free and the paid form so they cannot drift.
+ * Codes are rare, so they sit behind one "Have a code?" line.
+ */
+export function ContactFields({ defaults: d, referrals, promos }: { defaults?: BookingDefaults; referrals?: boolean; promos?: boolean }) {
+  const showReferral = !!referrals && !d;
+  return (
+    <>
+      {d ? <p className="text-sm text-stone-600">Booking as <b>{d.firstName} {d.lastName}</b>.</p> : null}
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="First name" required><Input name="firstName" required autoComplete="given-name" defaultValue={d?.firstName} /></Field>
+        <Field label="Last name"><Input name="lastName" autoComplete="family-name" defaultValue={d?.lastName} /></Field>
+      </div>
+      <Field label="Mobile number" required hint="We text your confirmation to this number."><Input name="phone" type="tel" required autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
+      <Field label="Email" required><Input name="email" type="email" required autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
+      {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
+      <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
+      {showReferral || promos ? (
+        <Disclosure title="Have a code?" className="shadow-none">
+          <div className="space-y-3">
+            {showReferral ? <Field label="Referral code"><Input name="referralCode" placeholder="From a friend who comes here" className="uppercase placeholder:normal-case" /></Field> : null}
+            {promos ? <Field label="Promo code"><Input name="promoCode" placeholder="Code" className="uppercase placeholder:normal-case" /></Field> : null}
+          </div>
+        </Disclosure>
+      ) : null}
+    </>
+  );
+}
+
+export function WaitlistForm(props: { slug: string; serviceId: string; staffId: string; date: string; locationId?: string | null; defaults?: BookingDefaults }) {
+  const d = props.defaults;
   const [state, action] = useActionState<PublicState, FormData>(joinWaitlistAction, undefined);
   if (state?.ok) return <Notice kind="success">You're on the waitlist. We'll contact you if a spot opens up.</Notice>;
   return (
@@ -50,12 +70,12 @@ export function WaitlistForm(props: { slug: string; serviceId: string; staffId: 
       <input type="hidden" name="date" value={props.date} />
       <p className="text-sm font-medium">Join the waitlist for this day</p>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="First name" required><Input name="firstName" required /></Field>
-        <Field label="Last name"><Input name="lastName" /></Field>
+        <Field label="First name" required><Input name="firstName" required autoComplete="given-name" defaultValue={d?.firstName} /></Field>
+        <Field label="Last name"><Input name="lastName" autoComplete="family-name" defaultValue={d?.lastName} /></Field>
       </div>
-      <Field label="Mobile number" required><Input name="phone" type="tel" required autoComplete="tel" /></Field>
-      <Field label="Email"><Input name="email" type="email" /></Field>
-      <SmsConsent />
+      <Field label="Mobile number" required><Input name="phone" type="tel" required autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
+      <Field label="Email"><Input name="email" type="email" autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
+      {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
       <Field label="Preferred times"><Input name="notes" placeholder="Afternoons, after 3pm…" /></Field>
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton variant="secondary" className="w-full" pendingText="Joining…">Join waitlist</SubmitButton>

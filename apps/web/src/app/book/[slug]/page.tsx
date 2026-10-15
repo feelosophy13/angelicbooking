@@ -18,8 +18,9 @@ import { currentClient } from "@/server/client-auth";
 import { schema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { CategoryTile, Crumbs, ServiceCard, Steps, StepTitle, Summary } from "./ui";
+import { ServiceSearch } from "./service-search";
 
-type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string };
+type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string };
 
 export default async function PublicBookingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
@@ -72,14 +73,20 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   // Only providers who perform this service (and are bookable online here) are offered.
   const providerIds = service ? new Set((await publicProvidersFor(business, service.id, locId)).map((s) => s.id)) : null;
   const providers = providerIds ? staff.filter((s) => providerIds.has(s.id)) : staff;
-  const staffChoice = sp.staff === "any" || providers.some((s) => s.id === sp.staff) ? sp.staff! : null;
+  // One provider: nothing to choose, so the step is skipped.
+  const onlyProvider = service && providers.length === 1 ? providers[0]!.id : null;
+  const staffChoice = sp.staff === "any" || providers.some((s) => s.id === sp.staff) ? sp.staff! : onlyProvider;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : null;
   const q = (extra: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries({ location: locations.length > 1 ? location?.id : undefined, category: service?.categoryId ?? sp.category, service: service?.id, staff: staffChoice ?? undefined, date: date ?? undefined, ...extra })) if (v) p.set(k, v);
     return `?${p.toString()}`;
   };
-  const stepHrefs = (upTo: number) => [q({ service: undefined, staff: undefined, date: undefined, time: undefined, session: undefined }), q({ staff: undefined, date: undefined, time: undefined }), q({ time: undefined }), null].map((h, i) => (i < upTo ? h : null));
+  const locBar = locations.length > 1 && location ? (
+    <p className="mb-3 flex items-center gap-1.5 text-sm text-stone-600"><MapPin className="h-4 w-4 text-stone-400" aria-hidden />{location.name}<Link href="?" className="text-xs underline" style={{ color: "var(--brand-dark)" }}>Change</Link></p>
+  ) : null;
+  const stepHrefs = (upTo: number) => [q({ service: undefined, staff: undefined, date: undefined, time: undefined, session: undefined }), onlyProvider ? null : q({ staff: undefined, date: undefined, time: undefined }), q({ time: undefined }), null].map((h, i) => (i < upTo ? h : null));
+  const callUs = business.phone ? <> or call <a href={`tel:${business.phone}`} className="font-medium underline">{business.phone}</a></> : null;
   const money = (c: number) => formatMoney(c, business.currency);
   const depositRow = service && depositLabel(service, money) ? [{ label: "Pay now", value: depositLabel(service, money)!.replace(/ deposit$/, " deposit") }] : [];
   // Prices differ between stylists: the service list says "from" the lowest one.
@@ -97,12 +104,32 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const countIn = (id: string) => { const ids = subtreeIds(liveCats, id); return services.filter((s) => s.categoryId && ids.includes(s.categoryId)).length; };
     const catMeta = (id: string, subs: number) => { const n = countIn(id); return subs ? `${n} services · ${subs} groups` : `${n} service${n === 1 ? "" : "s"}`; };
     const linkFor = (c: { id: string }) => q({ category: c.id });
+    const term = (sp.q ?? "").trim().toLowerCase().slice(0, 80);
+    const catName = (id: string | null) => liveCats.find((c) => c.id === id)?.name ?? "";
+    const hits = term ? services.filter((s) => `${s.name} ${s.description ?? ""} ${catName(s.categoryId)}`.toLowerCase().includes(term)) : [];
+    const card = (s: (typeof services)[number], cat?: string) => <ServiceCard key={s.id} href={q({ service: s.id, category: cat })} name={s.name} imageUrl={s.imageUrl} description={s.description} durationLabel={serviceMeta(s)} price={priceLabel(ranges?.get(s.id) ?? { min: s.priceCents, max: s.priceCents }, money).label} priceFrom={priceLabel(ranges?.get(s.id) ?? { min: s.priceCents, max: s.priceCents }, money).varies} from={s.capacity > 1 ? "class" : undefined} deposit={depositLabel(s, money) ?? undefined} />;
+    const search = services.length > 8 ? <ServiceSearch value={sp.q ?? ""} location={locations.length > 1 ? location?.id : undefined} /> : null;
+    if (term) {
+      return (
+        <>
+          {locBar}
+          <Steps labels={stepLabels} current={1} hrefs={stepHrefs(0)} />
+          <StepTitle title="What would you like to book?" />
+          {search}
+          <p className="mb-3 text-sm text-stone-500">{hits.length} result{hits.length === 1 ? "" : "s"} for “{sp.q!.trim()}”. <Link href={q({ category: undefined })} className="underline">Browse all services</Link></p>
+          {hits.length === 0 ? <p className="rounded-2xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-500">Nothing matches that. Try a shorter word like “lash” or “wax”{callUs}.</p> : null}
+          <ul className="space-y-3">{hits.map((s) => card(s, s.categoryId ?? undefined))}</ul>
+        </>
+      );
+    }
     return (
       <>
+        {locBar}
         <Steps labels={stepLabels} current={1} hrefs={stepHrefs(0)} />
-        <StepTitle title={current ? current.name : "What would you like to book?"} subtitle={current?.description ?? (current ? undefined : "Pick a category to see services, prices and times.")} />
+        <StepTitle title={current ? current.name : "What would you like to book?"} subtitle={current?.description ?? (current ? undefined : "Search, or pick a category to see services, prices and times.")} />
+        {search}
         {current ? <Crumbs items={[{ label: "All services", href: q({ category: undefined }) }, ...trail.map((c, i) => ({ label: c.name, href: i === trail.length - 1 ? null : linkFor(c) }))]} /> : null}
-        {services.length === 0 ? <p className="rounded-2xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-500">No services are bookable online right now. Please call{business.phone ? ` ${business.phone}` : ""}.</p> : null}
+        {services.length === 0 ? <p className="rounded-2xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-500">No services are bookable online right now. Please check back{callUs ? null : " soon"}{callUs}.</p> : null}
         {children.length ? (
           <div className={cn("grid gap-3 sm:gap-4", children.length === 1 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-2 sm:grid-cols-3", direct.length && "mb-8")}>
             {children.map((c) => <CategoryTile key={c.id} href={linkFor(c)} name={c.name} imageUrl={c.imageUrl ?? null} description={c.description ?? null} meta={catMeta(c.id, c.children.length)} />)}
@@ -112,7 +139,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           <section>
             {children.length ? <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">{current ? `More in ${current.name}` : "More services"}</h2> : null}
             <ul className="space-y-3">
-              {direct.map((s) => <ServiceCard key={s.id} href={q({ service: s.id, category: current?.id })} name={s.name} imageUrl={s.imageUrl} description={s.description} durationLabel={serviceMeta(s)} price={priceLabel(ranges?.get(s.id) ?? { min: s.priceCents, max: s.priceCents }, money).label} priceFrom={priceLabel(ranges?.get(s.id) ?? { min: s.priceCents, max: s.priceCents }, money).varies} from={s.capacity > 1 ? "class" : undefined} deposit={depositLabel(s, money) ?? undefined} />)}
+              {direct.map((s) => card(s, current?.id))}
             </ul>
           </section>
         ) : null}
@@ -137,7 +164,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const providerName = staffChoice === "any" ? "Any available provider" : staff.find((s) => s.id === staffChoice)?.displayName;
   const summaryRows = (extra: { label: string; value: string; href?: string }[] = []) => [
     { label: "Duration", value: durationText },
-    ...(staffChoice ? [{ label: "With", value: providerName ?? "", href: q({ staff: undefined, date: undefined, time: undefined }) }] : []),
+    ...(staffChoice ? [{ label: "With", value: providerName ?? "", href: onlyProvider ? undefined : q({ staff: undefined, date: undefined, time: undefined }) }] : []),
     ...extra,
   ];
 
@@ -154,10 +181,11 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       }
       return (
         <>
+          {locBar}
           <Steps labels={classLabels} current={2} hrefs={[q({ service: undefined }), null, null]} />
           <StepTitle title="Pick a class" />
           <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "Per person", value: formatMoney(service.priceCents, business.currency) }, { label: "Duration", value: serviceMeta(service), href: q({ service: undefined }) }]} />
-          {sessions.length === 0 ? <p className="rounded-2xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-600">No upcoming sessions are open for booking. Please check back soon{business.phone ? ` or call ${business.phone}` : ""}.</p> : null}
+          {sessions.length === 0 ? <p className="rounded-2xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-600">No upcoming sessions are open for booking. Please check back soon{callUs}.</p> : null}
           {[...byDate.entries()].map(([d, list]) => (
             <section key={d} className="mb-4">
               <h2 className="mb-2 text-sm font-semibold text-stone-700">{formatDateLong(d)}</h2>
@@ -183,6 +211,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const sessionDate = instantToISODate(chosen.startAt, tz);
     return (
       <>
+        {locBar}
         <Steps labels={classLabels} current={3} hrefs={[q({ service: undefined, session: undefined }), q({ session: undefined }), null]} />
         <StepTitle title="Your details" />
         <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(sessionDate)} at ${formatTime(chosen.startAt, tz)}`, href: q({ session: undefined }) }, { label: "With", value: chosen.staffName }, { label: "Per person", value: formatMoney(service.priceCents, business.currency) }, { label: "Seats left", value: String(chosen.seatsLeft) }]} />
@@ -200,6 +229,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   if (!staffChoice) {
     return (
       <>
+        {locBar}
         <Steps labels={stepLabels} current={2} hrefs={stepHrefs(1)} />
         <StepTitle title="Choose a provider" />
         <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "Price", value: priceText }, ...depositRow, { label: "Duration", value: durationText, href: q({ service: undefined }) }]} />
@@ -233,7 +263,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
             </li>
           ))}
         </ul>
-        {providers.length === 0 ? <p className="mt-3 text-sm text-stone-500">No one is set up to take this service online yet. Please call{business.phone ? ` ${business.phone}` : ""}.</p> : null}
+        {providers.length === 0 ? <p className="mt-3 text-sm text-stone-500">No one is set up to take this service online yet. <Link href={q({ service: undefined })} className="font-medium underline">Pick another service</Link>{callUs}.</p> : null}
       </>
     );
   }
@@ -264,6 +294,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     };
     return (
       <>
+        {locBar}
         <Steps labels={stepLabels} current={3} hrefs={stepHrefs(2)} />
         <StepTitle title="Pick a time" />
         <Summary imageUrl={service.imageUrl} title={service.name} rows={summaryRows([{ label: "Price", value: priceText }, ...depositRow])} />
@@ -306,7 +337,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
             ) : slots.length === 0 ? (
               <div className="space-y-3">
                 <p className="text-sm text-stone-600">No openings on {formatDateLong(date)}.</p>
-                <WaitlistForm slug={slug} serviceId={service.id} staffId={staffChoice} date={date} locationId={locId} />
+                <WaitlistForm slug={slug} serviceId={service.id} staffId={staffChoice} date={date} locationId={locId} defaults={defaults} />
               </div>
             ) : (
               <div className="space-y-4">
@@ -338,18 +369,20 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   if (!slot) {
     return (
       <>
+        {locBar}
         <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
         <StepTitle title="Your details" />
-        <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">That time is no longer available. <Link href={q({ time: undefined })} className="font-medium underline">Pick another</Link>.</p>
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">That time was just taken or is no longer open. <Link href={q({ time: undefined })} className="font-medium underline">Pick another time</Link>.</p>
       </>
     );
   }
   const req = onlinePaymentRequirement(business, service, pay, termsFor(slot.staffId).priceCents);
   return (
     <>
+      {locBar}
       <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
       <StepTitle title="Your details" subtitle="Almost done. Tell us who you are and we'll hold this time." />
-      <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: slot.staffName, href: q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: spanOf(termsFor(slot.staffId).durationMin) }, { label: "Price", value: money(termsFor(slot.staffId).priceCents) }]} />
+      <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: slot.staffName, href: onlyProvider ? undefined : q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: spanOf(termsFor(slot.staffId).durationMin) }, { label: "Price", value: money(termsFor(slot.staffId).priceCents) }]} />
       {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">{req.full ? `Payment of ${formatMoney(req.amountCents, business.currency)} in full is due now.` : `A ${formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.`}</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
       {req.mode === "none" ? (
         <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={termsFor(slot.staffId).priceCents} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />

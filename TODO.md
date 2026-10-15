@@ -348,6 +348,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (public, series, add/move service). New appointment lists each stylist's price/length when they differ.
       `server/stylist-pricing.ts`. Not changed: deposits stay per service; packages and memberships still cover a
       line whatever its price; classes use the service's price per seat.
+- [x] 2026-10-15: booking page review fixes. Service search (shown above 8 services); the Provider step is skipped when one
+      provider does the service; multi-location salons get a "Change" location line on every step; one shared
+      `ContactFields` for the free and paid forms, with promo/referral codes behind "Have a code?"; paid form labelled
+      Step 1/2 and 2/2 and uses the shared `Button`; waitlist pre-fills for signed-in clients; dead ends link to another
+      service or a tel: link. Not yet walked live: the details form and the Stripe payment steps.
 - [x] 2026-10-13: public booking page. Header: the logo straddles the cover with the name below it (it was painted
       over by the photo); once a client starts choosing, the cover collapses to a slim bar with a small logo
       and name so the choices sit near the top. Category tiles: description clamp no longer shows a sliver of
