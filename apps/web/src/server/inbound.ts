@@ -141,3 +141,14 @@ export async function markConversationRead(businessId: string, key: string) {
       .where(and(isNull(schema.inboundMessages.readAt), key.startsWith("tel:") ? and(isNull(schema.inboundMessages.clientId), eq(schema.inboundMessages.fromNumber, key.slice(4))) : eq(schema.inboundMessages.clientId, key))),
   );
 }
+
+/** Unread texts in one conversation (a client id or a `tel:` key). */
+export async function unreadFor(businessId: string, key: string) {
+  const [r] = await withTenant(businessId, (tx) =>
+    tx
+      .select({ n: sql<number>`count(*)` })
+      .from(schema.inboundMessages)
+      .where(and(isNull(schema.inboundMessages.readAt), key.startsWith("tel:") ? and(isNull(schema.inboundMessages.clientId), eq(schema.inboundMessages.fromNumber, key.slice(4))) : eq(schema.inboundMessages.clientId, key))),
+  );
+  return Number(r?.n ?? 0);
+}

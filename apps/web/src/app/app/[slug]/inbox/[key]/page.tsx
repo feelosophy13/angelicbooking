@@ -6,7 +6,8 @@ import { can } from "@angelic/core";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { BackLink, Card, PageHeader } from "@/components/ui";
-import { clientThread, markConversationRead, numberThread } from "@/server/inbound";
+import { clientThread, numberThread, unreadFor } from "@/server/inbound";
+import { MarkRead } from "./mark-read";
 import { ReplyBox } from "./reply-box";
 
 export const metadata: Metadata = { title: "Conversation" };
@@ -19,12 +20,13 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
   const isNumber = key.startsWith("tel:");
   const client = isNumber ? null : await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, key) }));
   if (!isNumber && !client) notFound();
-  await markConversationRead(business.id, key);
+  const unread = (await unreadFor(business.id, key)) > 0;
   const thread = client ? await clientThread(business.id, client.id, 200) : await numberThread(business.id, key.slice(4), 200);
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
   const name = client ? `${client.firstName} ${client.lastName}`.trim() : key.slice(4);
   return (
     <>
+      <MarkRead slug={slug} convoKey={key} unread={unread} />
       <BackLink href={`/app/${slug}/inbox`}>Inbox</BackLink>
       <PageHeader title={name}>
         {client ? <Link href={`/app/${slug}/clients/${client.id}`} className="text-sm text-brand-700 hover:underline">Client page</Link> : null}

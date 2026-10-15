@@ -476,7 +476,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Inbound SMS: store client replies (currently acknowledged and dropped) and show them on the client page. Done 2026-10-10 (client page thread + reply, Settings → Messages inbox, STOP/START update opt-in).
 - [x] Inbox v1 (SMS) built 2026-10-15: People → Inbox lists every text conversation (unread dot, newest first); a conversation shows the
       whole thread and a reply box. Unknown numbers show read-only. Needs no migration (reads `inbound_messages` + `notifications`).
-- [ ] Inbox follow-ups: email in the same thread (needs inbound email via Resend), unread badge in the sidebar, assign a conversation to a
+- [x] Inbox unread badge in the sidebar (desktop + mobile menu), 2026-10-15.
+- [ ] Inbox follow-ups: email in the same thread (needs inbound email via Resend), assign a conversation to a
       staff member, saved quick replies, start a new conversation from the inbox, search, paging past 200 conversations.
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
