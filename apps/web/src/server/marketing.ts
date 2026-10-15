@@ -112,7 +112,8 @@ export async function previewCampaign(business: Business, id: string) {
 /** Queue one message per matching client and mark the campaign sent. */
 export async function sendCampaign(business: Business, id: string, actorUserId: string): Promise<number> {
   const ids = await withTenant(business.id, async (tx) => {
-    const c = await tx.query.campaigns.findFirst({ where: eq(schema.campaigns.id, id) });
+    // Lock the row: a second send waits here until the first commits, then sees "sent" and stops (no double texting).
+    const [c] = await tx.select().from(schema.campaigns).where(eq(schema.campaigns.id, id)).for("update");
     if (!c) throw new MarketingError("Campaign not found.");
     if (c.status === "sent") throw new MarketingError("This campaign was already sent.");
     const clients = await audienceClients(tx, business, c.audience, c.channel);

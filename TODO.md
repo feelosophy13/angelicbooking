@@ -98,8 +98,17 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Run migration 0076 on production (deploys do this) and try one key against production.
 - [x] Second round 2026-10-14: locations, categories, packages, plans, staff schedule, reviews, waitlist, blocks, reschedule, client notes/packages/memberships,
       service and product create/update, inventory read and stock adjustments (scopes catalog:write, inventory:read/write, reviews:read).
-- [ ] Later: webhooks to subscribers, multi-service bookings, payments/refunds, staff writes, idempotency keys, a per-key usage log,
-      an OpenAPI file, a shared (Redis) rate limiter once there is more than one web instance, per-plan gating of the API if wanted.
+- [x] Admin parity 2026-10-14 (122 route files, 25 scopes): categories, service staff and stylist prices, packages and plans, product options and barcodes,
+      inventory counts/transfers/suppliers/purchase orders/supplies, staff + hours + time off + pay, time clock entries, roles, business settings,
+      locations, refund reasons, clients' notes and history, visit services, standing appointments, classes, forms and submissions, campaigns
+      (send locks the row), promo codes, automations, delivery log and replies. Deliberately NOT in the API: anything that moves money (payments,
+      refunds, fees, gift cards, store credit and points, package/membership sales, payroll runs, Stripe, billing), logins/invites/role assignment,
+      clock PINs, uploads, imports.
+- [ ] Known gaps in that work: roles written by API are registered with Better Auth only when next saved in the app, and API-deleted roles can leave an
+      orphan `organizationRole` row; `server/categories.ts` and a few marketing/workflow readers filter by business only through RLS (safe as `angelic_app`);
+      an `updateGroup` flip retail to back-bar and back leaves option prices at 0.
+- [ ] Later: webhooks to subscribers, idempotency keys, a per-key usage log, an OpenAPI file, a shared (Redis) rate limiter once there is more than
+      one web instance, per-plan gating of the API if wanted. Rule for new API tests: import `packages/db/src/env` first (guarded by api-test-guard.test.ts).
 
 ## 3. Product backlog
 

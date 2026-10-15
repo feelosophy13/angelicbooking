@@ -2,6 +2,15 @@ import type { Metadata } from "next";
 import { DocPage } from "@/components/doc-page";
 import { API_SCOPES } from "@/lib/api-scopes";
 import { Code, Endpoint } from "./doc-kit";
+import { CatalogDocs } from "./sections/catalog";
+import { InventoryDocs } from "./sections/inventory";
+import { ClientsDocs } from "./sections/clients";
+import { AppointmentsDocs } from "./sections/appointments";
+import { FormsDocs } from "./sections/forms";
+import { TeamDocs } from "./sections/team";
+import { SettingsDocs } from "./sections/settings";
+import { MarketingDocs } from "./sections/marketing";
+import { MessagesDocs } from "./sections/messages";
 
 export const metadata: Metadata = { title: "API documentation", description: "Read and manage your Angelic Booking business from your own software." };
 
@@ -150,6 +159,18 @@ export default function DevelopersPage() {
       <Endpoint method="GET" path="/sales" scope="sales:read"><p>Sales, newest first. Query: <code>from</code>, <code>to</code>, <code>status</code> (<code>open</code>, <code>paid</code>, <code>refunded</code>, <code>void</code>), <code>client_id</code>. Includes <code>total</code>.</p></Endpoint>
       <Endpoint method="GET" path="/sales/{id}" scope="sales:read"><p>One sale with its lines and payments. Card details beyond the amount are not included.</p></Endpoint>
 
+      <h1 className="!mt-12 text-2xl font-semibold tracking-tight">Managing your business</h1>
+      <p>The endpoints below let a key do what an admin can do in the app. Each section names the scope it needs. Scopes marked powerful in the key form can change who may do what, pay settings or reach many clients at once: give them only to software you trust, and prefer a separate key for each.</p>
+      <CatalogDocs />
+      <InventoryDocs />
+      <AppointmentsDocs />
+      <ClientsDocs />
+      <FormsDocs />
+      <TeamDocs />
+      <SettingsDocs />
+      <MarketingDocs />
+      <MessagesDocs />
+
       <h2>Security</h2>
       <ul>
         <li><strong>Your business only.</strong> The business is taken from the key and nothing else. An id from another business answers <code>404</code>, exactly as if it did not exist, and the database itself refuses to return other businesses&apos; rows.</li>
@@ -161,7 +182,7 @@ export default function DevelopersPage() {
       <p>Found a security problem? Please tell us before you tell anyone else{process.env.SUPPORT_EMAIL ? <>: <a href={`mailto:${process.env.SUPPORT_EMAIL}`}>{process.env.SUPPORT_EMAIL}</a></> : "."}</p>
 
       <h2>Not in the API yet</h2>
-      <p>Taking payments and refunds, gift cards (their codes are as good as cash, so they are not exposed), staff and login management, webhooks, and booking several services in one request. If you need one, tell us.</p>
+      <p>Anything that moves money (payments, refunds, deposits and fees, gift cards, store credit and loyalty points, selling packages or memberships, payroll runs, Stripe and billing), logins and invitations, clock PINs, file and photo uploads, spreadsheet imports, and webhooks. If you need one, tell us.</p>
     </DocPage>
   );
 }
