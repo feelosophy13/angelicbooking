@@ -1,8 +1,9 @@
 "use client";
 import { useActionState, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { Button, Checkbox, Input, Notice, Select } from "@/components/ui";
+import { Button, Checkbox, Input, LinkButton, Notice, Select } from "@/components/ui";
 import { Field, SubmitButton } from "@/components/form";
+import { Disclosure } from "@/components/disclosure";
 import { API_SCOPES, type ApiScope } from "@/lib/api-scopes";
 import { createApiKey } from "./actions";
 
@@ -17,13 +18,34 @@ const PRESETS: { label: string; scopes: (s: (typeof API_SCOPES)[number]) => bool
   { label: "Everything but powerful", scopes: (s) => !("sensitive" in s && s.sensitive), hint: "Leaves out pay, roles, marketing sends, settings" },
 ];
 
-/** Create a key. The secret is shown once, right here, then never again. Creating another remounts the form, which clears its action state. */
-export function ApiKeyForm({ slug, defaults }: { slug: string; defaults?: KeyDefaults }) {
-  const [round, setRound] = useState(0);
-  return <ApiKeyRound key={round} slug={slug} defaults={defaults} onAnother={() => setRound((r) => r + 1)} />;
+/** Which preset the selection matches exactly, or "Custom". */
+function levelOf(picked: Set<string>): string {
+  const match = PRESETS.find((p) => {
+    const want = API_SCOPES.filter(p.scopes).map((x) => x.scope);
+    return want.length === picked.size && want.every((x) => picked.has(x));
+  });
+  return match?.label ?? "Custom";
 }
 
-function ApiKeyRound({ slug, defaults, onAnother }: { slug: string; defaults?: KeyDefaults; onAnother: () => void }) {
+/** One plain sentence for the selection: "clients (read & change), appointments (read only)". */
+function summarize(picked: Set<string>): string {
+  const groups = [...new Set(API_SCOPES.map((s) => s.group))];
+  const parts = groups.flatMap((g) => {
+    const on = API_SCOPES.filter((s) => s.group === g && picked.has(s.scope));
+    if (!on.length) return [];
+    const change = on.some((s) => s.scope.endsWith(":write"));
+    return [`${g.toLowerCase()} (${change ? "read & change" : "read only"})`];
+  });
+  return parts.length ? parts.join(", ") : "nothing yet. Choose a level below.";
+}
+
+/** Create a key. The secret is shown once, right here, then never again. Creating another remounts the form, which clears its action state. */
+export function ApiKeyForm({ slug, defaults, backHref }: { slug: string; defaults?: KeyDefaults; backHref: string }) {
+  const [round, setRound] = useState(0);
+  return <ApiKeyRound key={round} slug={slug} defaults={defaults} backHref={backHref} onAnother={() => setRound((r) => r + 1)} />;
+}
+
+function ApiKeyRound({ slug, defaults, backHref, onAnother }: { slug: string; defaults?: KeyDefaults; backHref: string; onAnother: () => void }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set(defaults?.scopes ?? []));
   const toggle = (scope: string, on: boolean) =>
     setPicked((prev) => {
@@ -75,7 +97,10 @@ function ApiKeyRound({ slug, defaults, onAnother }: { slug: string; defaults?: K
           <p className="mt-1 text-xs text-stone-500">This lists your services. Full reference: <a className="underline" href="/developers" target="_blank" rel="noreferrer">API documentation</a>, or the <a className="underline" href="/openapi/v1.json" target="_blank" rel="noreferrer">OpenAPI file</a> for code generators.</p>
         </div>
         <p className="text-xs text-stone-500">Treat it like a password: keep it on your server, never in a web page or an app you ship.</p>
-        <Button type="button" variant="secondary" onClick={onAnother}>Create another key</Button>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <LinkButton href={backHref} variant="primary">Done</LinkButton>
+          <Button type="button" variant="secondary" onClick={onAnother}>Create another key</Button>
+        </div>
       </div>
     );
   }
@@ -95,34 +120,46 @@ function ApiKeyRound({ slug, defaults, onAnother }: { slug: string; defaults?: K
           </Select>
         </Field>
       </div>
-      <fieldset>
-        <legend className="mb-1 text-sm font-medium text-stone-800">What this key may do</legend>
-        <div className="mb-3 flex flex-wrap gap-2">
-          {PRESETS.map((p) => (
-            <Button key={p.label} type="button" variant="secondary" size="sm" title={p.hint} onClick={() => setPicked(new Set(API_SCOPES.filter(p.scopes).map((x) => x.scope)))}>{p.label}</Button>
-          ))}
-          <Button type="button" variant="ghost" size="sm" onClick={() => setPicked(new Set())}>Clear</Button>
-        </div>
-        <div className="space-y-4">
-          {[...new Set(API_SCOPES.map((s) => s.group))].map((group) => {
-            const inGroup = API_SCOPES.filter((s) => s.group === group).map((s) => s.scope);
-            const allOn = inGroup.every((x) => picked.has(x));
+      <fieldset className="space-y-3">
+        <legend className="mb-2 text-sm font-medium text-stone-800">What can this key do?</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {PRESETS.map((p) => {
+            const on = levelOf(picked) === p.label;
             return (
-              <div key={group}>
-                <div className="mb-1 flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">{group}</span>
-                  <button type="button" className="text-xs text-stone-500 underline hover:text-stone-800" onClick={() => setMany(inGroup, !allOn)}>{allOn ? "None" : "All"}</button>
-                </div>
-                <div className="space-y-2">
-                  {API_SCOPES.filter((s) => s.group === group).map((s) => (
-                    <Checkbox key={s.scope} name="scopes" value={s.scope} checked={picked.has(s.scope)} onChange={(e) => toggle(s.scope, e.target.checked)} label={<>{s.label}{"sensitive" in s && s.sensitive ? <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">powerful</span> : null}</>} hint={s.scope} />
-                  ))}
-                </div>
-              </div>
+              <label key={p.label} className={`cursor-pointer rounded-lg border px-3 py-2.5 text-sm transition-colors ${on ? "border-brand-600 bg-brand-50 ring-1 ring-brand-600" : "border-stone-200 hover:bg-stone-50"}`}>
+                <input type="radio" name="access_level" className="sr-only" checked={on} onChange={() => setPicked(new Set(API_SCOPES.filter(p.scopes).map((x) => x.scope)))} />
+                <span className="block font-medium text-stone-800">{p.label}</span>
+                <span className="block text-xs text-stone-500">{p.hint}</span>
+              </label>
             );
           })}
         </div>
-        {state?.fieldErrors?.scopes ? <p className="mt-1 text-xs text-red-600">{state.fieldErrors.scopes}</p> : null}
+        <div className="rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600">
+          <span className="font-medium text-stone-700">This key can: </span>{summarize(picked)}
+        </div>
+        <Disclosure title="Customize permissions" hint={`${picked.size} of ${API_SCOPES.length} selected`} open={picked.size > 0 && levelOf(picked) === "Custom" ? true : undefined}>
+          <div className="space-y-5">
+            {[...new Set(API_SCOPES.map((s) => s.group))].map((group) => {
+              const inGroup = API_SCOPES.filter((s) => s.group === group);
+              const onCount = inGroup.filter((s) => picked.has(s.scope)).length;
+              const allOn = onCount === inGroup.length;
+              return (
+                <div key={group}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium text-stone-800">{group} <span className="text-xs font-normal text-stone-400">{onCount} of {inGroup.length}</span></span>
+                    <button type="button" className="text-xs text-stone-500 underline hover:text-stone-800" onClick={() => setMany(inGroup.map((x) => x.scope), !allOn)}>{allOn ? "None" : "All"}</button>
+                  </div>
+                  <div className="space-y-2">
+                    {inGroup.map((s) => (
+                      <Checkbox key={s.scope} name="scopes" value={s.scope} checked={picked.has(s.scope)} onChange={(e) => toggle(s.scope, e.target.checked)} label={<>{s.label}{"sensitive" in s && s.sensitive ? <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">powerful</span> : null}</>} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Disclosure>
+        {state?.fieldErrors?.scopes ? <p className="text-xs text-red-600">{state.fieldErrors.scopes}</p> : null}
       </fieldset>
       <SubmitButton pendingText="Creating…">{defaults?.replaces ? "Create and replace" : "Create key"}</SubmitButton>
     </form>

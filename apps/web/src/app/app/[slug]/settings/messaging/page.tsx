@@ -81,7 +81,7 @@ export default async function MessagingPage({ params, searchParams }: { params: 
               profile) receive texts. Every text names your salon, and clients can reply STOP at any time; Twilio honours that automatically.
             </p>
             <p className="mt-2">
-              See every message and its delivery status in <Link href={`/app/${slug}/settings/notifications`} className="text-brand-700 underline">Messages</Link>.
+              See every message and its delivery status in <Link href={`/app/${slug}/messages`} className="text-brand-700 underline">Messages</Link>.
             </p>
           </Card>
         </div>

@@ -45,9 +45,9 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     // Bringing clients back: campaigns and promo codes, automated messages, and what clients say.
     { title: "Grow", items: [
       ...(ok("reports.view") ? [it(`${base}/marketing`, "Marketing", "Megaphone", { exclude: [`${base}/marketing/automations`] }), it(`${base}/marketing/automations`, "Automations", "Workflow")] : []),
-      ...(ok("business.manage") ? [it(`${base}/settings/loyalty`, "Loyalty & referrals", "Heart")] : []),
+      ...(ok("business.manage") ? [it(`${base}/loyalty`, "Loyalty & referrals", "Heart", { exclude: [`${base}/settings/loyalty`] })] : []),
       it(`${base}/reviews`, "Reviews", "Star"),
-      ...(ok("business.manage") ? [it(`${base}/settings/notifications`, "Messages", "MessageSquare")] : []),
+      ...(ok("business.manage") ? [it(`${base}/messages`, "Messages", "MessageSquare")] : []),
     ] },
     { title: "", items: ok("business.manage") ? [it(`${base}/settings/api`, "API", "KeyRound"), it(`${base}/settings`, "Settings", "Settings", { exclude: [`${base}/settings/loyalty`, `${base}/settings/roles`, `${base}/settings/forms`, `${base}/settings/notifications`, `${base}/settings/api`] })] : [] },
   ].filter((s) => s.items.length > 0);

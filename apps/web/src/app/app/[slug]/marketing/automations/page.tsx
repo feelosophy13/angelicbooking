@@ -46,7 +46,7 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
                   <Card className="p-4">
                     <div className="mb-1 flex items-center justify-between"><h3 className="font-medium">Confirmation</h3><span className="rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-600">Always on</span></div>
                     <p className="text-xs text-stone-500">Sent when an appointment is booked, by email and text (to clients who opted in), with the manage link, deposit and any forms to complete.</p>
-                    <p className="mt-2 text-xs text-stone-600">Wording: <Link href={`/app/${slug}/settings/notifications`} className="text-brand-700 underline">Settings → Messages</Link>.</p>
+                    <p className="mt-2 text-xs text-stone-600">Wording: <Link href={`/app/${slug}/messages`} className="text-brand-700 underline">Settings → Messages</Link>.</p>
                   </Card>
                 </>
               ) : null}
