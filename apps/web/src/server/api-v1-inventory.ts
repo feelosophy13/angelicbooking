@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
-import { apiAudit, ApiErrors, list, type ApiContext } from "@/lib/api";
+import { apiAudit, ApiErrors, list, type ApiContext, probe } from "@/lib/api";
 import {
   applyCount, cancelOrder, createPurchaseOrder, getPurchaseOrder, listPurchaseOrders, logUsage, markOrdered, orderReceipts, receiveOrder, recordMovement,
   reorderSuggestions, setPoLine, stockByLocation, transferStock, undoMovement, undoReceipt, undoUsage, updatePurchaseOrder, visitSupplies,
@@ -184,7 +184,8 @@ export const supplierPatch = z.object({
 export const supplierCreate = supplierPatch.required({ name: true });
 
 export async function listSuppliersApi(b: string, p: { limit: number; page: number; offset: number }, includeInactive: boolean) {
-  const rows = await withTenant(b, (tx) => tx.select().from(schema.suppliers).where(and(eq(schema.suppliers.businessId, b), includeInactive ? undefined : eq(schema.suppliers.active, true))).orderBy(asc(schema.suppliers.name)).limit(p.limit).offset(p.offset));
+  const take = probe(p);
+  const rows = await withTenant(b, (tx) => tx.select().from(schema.suppliers).where(and(eq(schema.suppliers.businessId, b), includeInactive ? undefined : eq(schema.suppliers.active, true))).orderBy(asc(schema.suppliers.name)).limit(take.limit).offset(take.offset));
   return list(rows.map(serializeSupplier), p);
 }
 export async function getSupplierApi(b: string, id: string) {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { schema, withTenant } from "@angelic/db";
-import { apiAudit, ApiErrors, firstForeign, list, pageParams, readBody, route } from "@/lib/api";
+import { apiAudit, ApiErrors, firstForeign, list, pageParams, probe, readBody, route } from "@/lib/api";
 import { listPromosApi, normalizePromoCode, promoCreate, promoEnd, promoStart, serializePromo } from "@/server/api-v1-marketing";
 
 /** GET /api/v1/promo-codes?active=true|false: promo codes, active ones first. */
@@ -8,7 +8,7 @@ export const GET = route("marketing:read", async (ctx, req) => {
   const url = new URL(req.url);
   const p = pageParams(url);
   const a = url.searchParams.get("active");
-  return list((await listPromosApi(ctx.business.id, p, a === "true" ? true : a === "false" ? false : undefined)).map(serializePromo), p);
+  return list((await listPromosApi(ctx.business.id, probe(p), a === "true" ? true : a === "false" ? false : undefined)).map(serializePromo), p);
 });
 
 /** POST /api/v1/promo-codes: create a code (the app's rules: letters/digits/dashes only, percent 1-100 or an amount in cents, unique per business). */

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { schema, withTenant } from "@angelic/db";
-import { apiAudit, ApiErrors, list, pageParams, readBody, route } from "@/lib/api";
+import { apiAudit, ApiErrors, list, pageParams, probe, readBody, route } from "@/lib/api";
 import { audienceForeign, campaignCreate, campaignRuleError, listCampaignsApi, serializeCampaign, toAudience } from "@/server/api-v1-marketing";
 
 /** GET /api/v1/campaigns?status=draft|sent: campaigns, newest first. */
@@ -8,7 +8,7 @@ export const GET = route("marketing:read", async (ctx, req) => {
   const url = new URL(req.url);
   const p = pageParams(url);
   const status = url.searchParams.get("status");
-  return list((await listCampaignsApi(ctx.business.id, p, status === "draft" || status === "sent" ? status : undefined)).map(serializeCampaign), p);
+  return list((await listCampaignsApi(ctx.business.id, probe(p), status === "draft" || status === "sent" ? status : undefined)).map(serializeCampaign), p);
 });
 
 /** POST /api/v1/campaigns: create a draft. Nothing is sent until POST /campaigns/:id/send. */

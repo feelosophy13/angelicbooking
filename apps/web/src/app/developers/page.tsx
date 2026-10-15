@@ -20,7 +20,7 @@ export default function DevelopersPage() {
   return (
     <DocsShell updated="October 14, 2026">
       <p>The REST API lets you read and manage your own business from your own software: a website, a spreadsheet, Zapier, a point-of-sale or an internal tool. It speaks JSON over HTTPS. Every key belongs to exactly one business and can never see another.</p>
-      <p>Base URL: <code>{BASE}</code></p>
+      <p>Base URL: <code>{BASE}</code>. The whole API as an <a className="underline" href="/openapi/v1.json">OpenAPI 3.1 file</a> for code generators and API tools.</p>
 
 
       <Group title="Getting started" />
@@ -54,7 +54,7 @@ export default function DevelopersPage() {
         <li><strong>One item</strong> returns <code>{`{ "data": { ... } }`}</code>.</li>
         <li><strong>Partial updates</strong> (<code>PATCH</code>) change only the fields you send. Unknown fields are rejected.</li>
         <li><strong>Request bodies</strong> are JSON with <code>Content-Type: application/json</code>, up to 100 KB.</li>
-        <li><strong>Rate limit</strong>: 120 requests per minute per key. Over it, you get <code>429</code> and a <code>Retry-After</code> header (seconds).</li>
+        <li><strong>Rate limit</strong>: 120 requests per minute per key, shared across our servers. Every response carries <code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code> and <code>X-RateLimit-Reset</code> (Unix time when the window resets). Over the limit, you get <code>429</code> and a <code>Retry-After</code> header (seconds).</li>
       </ul>
 
       <h2>Errors</h2>
@@ -70,6 +70,7 @@ export default function DevelopersPage() {
             ["403", "insufficient_scope", "The key lacks the scope this call needs."],
             ["404", "not_found", "No such item in your business (including ids that belong to someone else)."],
             ["409", "conflict / booking_conflict", "Duplicate client, wrong state, or the time is taken."],
+            ["413", "payload_too_large", "The request body is over 100 KB."],
             ["422", "validation_failed", "A field is missing or invalid; see issues."],
             ["429", "rate_limited", "Slow down; wait Retry-After seconds."],
             ["500", "server_error", "Our side. Safe to retry reads."],

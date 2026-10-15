@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { apiAudit, ApiErrors, list, pageParams, readBody, route } from "@/lib/api";
+import { apiAudit, ApiErrors, list, pageParams, probe, readBody, route } from "@/lib/api";
 import { listServices, serializeService } from "@/server/api-v1";
 import { SERVICE_DEFAULTS, serviceCreate } from "@/server/api-v1-more";
 import { setServiceLocations } from "@/server/locations";
@@ -10,7 +10,7 @@ import { setServiceLocations } from "@/server/locations";
 export const GET = route("catalog:read", async (ctx, req) => {
   const url = new URL(req.url);
   const p = pageParams(url);
-  const rows = await listServices(ctx.business.id, { activeOnly: url.searchParams.get("include_inactive") !== "1", limit: p.limit, offset: p.offset });
+  const rows = await listServices(ctx.business.id, { activeOnly: url.searchParams.get("include_inactive") !== "1", ...probe(p) });
   return list(rows.map(serializeService), p);
 });
 

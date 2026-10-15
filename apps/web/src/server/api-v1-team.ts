@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema, withTenant } from "@angelic/db";
 import { ACTIONS, DEFAULT_ROLE_META, DEFAULT_ROLE_PERMISSIONS, PERMISSION_GROUPS, ROLES, instantToISODate, mondayOf } from "@angelic/core";
-import { ApiErrors, apiAudit, firstForeign, list, pageParams, readBody, type ApiContext } from "@/lib/api";
+import { ApiErrors, apiAudit, firstForeign, list, pageParams, readBody, type ApiContext, probe } from "@/lib/api";
 import { rateAsOf } from "@/lib/pay-rates";
 import { shiftISODate } from "@/lib/utils";
 import { listPayRates, recordPayChange } from "@/server/pay-rates";
@@ -61,11 +61,12 @@ export const staffCreate = staffPatch.required({ display_name: true });
 export async function listTeam(ctx: ApiContext, req: Request) {
   const url = new URL(req.url);
   const p = pageParams(url);
+  const take = probe(p);
   const activeParam = url.searchParams.get("active");
   const rows = await withTenant(ctx.business.id, (tx) =>
     tx.select().from(schema.staff)
       .where(and(eq(schema.staff.businessId, ctx.business.id), ...(activeParam === "true" ? [eq(schema.staff.active, true)] : activeParam === "false" ? [eq(schema.staff.active, false)] : [])))
-      .orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName), asc(schema.staff.id)).limit(p.limit).offset(p.offset),
+      .orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName), asc(schema.staff.id)).limit(take.limit).offset(take.offset),
   );
   return list(rows.map(serializeTeamMember), p);
 }

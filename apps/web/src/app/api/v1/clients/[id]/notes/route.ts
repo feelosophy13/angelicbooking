@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { schema, withTenant } from "@angelic/db";
-import { apiAudit, ApiErrors, list, pageParams, readBody, route } from "@/lib/api";
+import { apiAudit, ApiErrors, list, pageParams, probe, readBody, route } from "@/lib/api";
 import { clientExists, listNotesApi, noteInput, serializeNote } from "@/server/api-v1-more";
 
 export const GET = route<{ id: string }>("clients:read", async (ctx, req, { id }) => {
   if (!(await clientExists(ctx.business.id, id))) return ApiErrors.notFound("client");
   const p = pageParams(new URL(req.url));
-  return list((await listNotesApi(ctx.business.id, id, p)).map(serializeNote), p);
+  return list((await listNotesApi(ctx.business.id, id, probe(p))).map(serializeNote), p);
 });
 
 /** POST /api/v1/clients/:id/notes: add a private note (formula, allergy, preference). */

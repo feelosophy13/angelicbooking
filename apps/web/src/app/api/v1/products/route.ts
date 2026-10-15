@@ -1,11 +1,11 @@
-import { list, pageParams, readBody, route } from "@/lib/api";
+import { list, pageParams, probe, readBody, route } from "@/lib/api";
 import { listProducts, serializeProduct } from "@/server/api-v1";
 import { createProductApi, productCreateX } from "@/server/api-v1-catalog";
 
 /** GET /api/v1/products: active products. Cost, supplier and reorder settings are not exposed (see /inventory for those). */
 export const GET = route("catalog:read", async (ctx, req) => {
   const p = pageParams(new URL(req.url));
-  const rows = await listProducts(ctx.business.id, { limit: p.limit, offset: p.offset });
+  const rows = await listProducts(ctx.business.id, probe(p));
   return list(rows.map(serializeProduct), p);
 });
 

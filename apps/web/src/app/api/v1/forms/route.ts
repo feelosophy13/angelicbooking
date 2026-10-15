@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { asc, desc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { apiAudit, ApiErrors, list, pageParams, readBody, route } from "@/lib/api";
+import { apiAudit, ApiErrors, list, pageParams, probe, readBody, route } from "@/lib/api";
 import { buildFields, checkFormScope, formCreate, FORM_DEFAULTS, serializeForm, serializeFormSummary } from "@/server/api-v1-forms";
 
 /** GET /api/v1/forms: your intake and consent forms, live ones first (with a field_count; GET /forms/:id has the questions). */
 export const GET = route("forms:read", async (ctx, req) => {
   const p = pageParams(new URL(req.url));
+  const take = probe(p);
   const b = ctx.business.id;
-  const rows = await withTenant(b, (tx) => tx.select().from(schema.forms).where(eq(schema.forms.businessId, b)).orderBy(desc(schema.forms.active), asc(schema.forms.name), asc(schema.forms.id)).limit(p.limit).offset(p.offset));
+  const rows = await withTenant(b, (tx) => tx.select().from(schema.forms).where(eq(schema.forms.businessId, b)).orderBy(desc(schema.forms.active), asc(schema.forms.name), asc(schema.forms.id)).limit(take.limit).offset(take.offset));
   return list(rows.map(serializeFormSummary), p);
 });
 

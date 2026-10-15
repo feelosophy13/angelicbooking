@@ -1,7 +1,6 @@
 /**
- * Fixed-window rate limiter kept in process memory. Good for a single instance
- * (and as a backstop behind a CDN/WAF). For several instances, swap the store for
- * Upstash Redis (same interface) — the call sites don't change.
+ * Fixed-window rate limiter kept in process memory. Good for one instance, and as the fallback when the shared store is unreachable.
+ * Call sites that must hold across instances use `sharedRateLimit` (lib/shared-rate-limit.ts), which counts in Postgres.
  */
 type Bucket = { count: number; resetAt: number };
 const store = new Map<string, Bucket>();

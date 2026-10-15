@@ -59,3 +59,13 @@ export const adminCredentials = pgTable("admin_credentials", {
   passwordHash: text("password_hash").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * Fixed-window request counters shared by every web instance (API keys, failed API logins). Not tenant data, so no RLS: the app writes
+ * one row per key and window, and the rows expire on their own (see lib/rate-limit.ts).
+ */
+export const apiRateLimits = pgTable("api_rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull(),
+  resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
+});

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { apiAudit, ApiErrors, list, pageParams, readBody, route } from "@/lib/api";
+import { apiAudit, ApiErrors, list, pageParams, probe, readBody, route } from "@/lib/api";
 import { listWaitlistApi, serializeWaitlist, waitlistInput } from "@/server/api-v1-more";
 
 /** GET /api/v1/waitlist?status=open|booked|closed */
@@ -10,7 +10,7 @@ export const GET = route("appointments:read", async (ctx, req) => {
   const p = pageParams(url);
   const status = url.searchParams.get("status");
   if (status && !(schema.waitlistStatus.enumValues as readonly string[]).includes(status)) return ApiErrors.invalid("status must be open, booked or closed.");
-  return list((await listWaitlistApi(ctx.business.id, p, status ?? undefined)).map(serializeWaitlist), p);
+  return list((await listWaitlistApi(ctx.business.id, probe(p), status ?? undefined)).map(serializeWaitlist), p);
 });
 
 /** POST /api/v1/waitlist: put a client on the waitlist for a date. */

@@ -98,8 +98,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Run migration 0076 on production (deploys do this) and try one key against production.
 - [x] Second round 2026-10-14: locations, categories, packages, plans, staff schedule, reviews, waitlist, blocks, reschedule, client notes/packages/memberships,
       service and product create/update, inventory read and stock adjustments (scopes catalog:write, inventory:read/write, reviews:read).
+- [x] Done 2026-10-14: the rate limit is counted in Postgres (`api_rate_limits`, migration 0081), so it holds across instances (falls back to
+      per-process counting if the database is unreachable); every response carries `X-RateLimit-*`; lists say `has_more` exactly (one extra row is
+      fetched); bodies over 100 KB are refused as they stream in (413); the spec is `public/openapi/v1.json` (`pnpm openapi` regenerates it, a test
+      fails when it is stale), linked from `/developers`.
 - [ ] Later: webhooks to subscribers, multi-service bookings, payments/refunds, staff writes, idempotency keys, a per-key usage log,
-      an OpenAPI file, a shared (Redis) rate limiter once there is more than one web instance, per-plan gating of the API if wanted.
+      per-plan gating of the API if wanted. Request and response schemas in the OpenAPI file are generic: add zod-to-JSON-Schema for bodies.
 
 ## 3. Product backlog
 

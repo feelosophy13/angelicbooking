@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { list, pageParams, route } from "@/lib/api";
+import { list, pageParams, probe, route } from "@/lib/api";
 
 /**
  * GET /api/v1/inventory: products whose stock is tracked, with the count on hand and whether it is at or under the low-stock level.
@@ -8,8 +8,9 @@ import { list, pageParams, route } from "@/lib/api";
  */
 export const GET = route("inventory:read", async (ctx, req) => {
   const p = pageParams(new URL(req.url));
+  const take = probe(p);
   const b = ctx.business.id;
-  const rows = await withTenant(b, (tx) => tx.select().from(schema.products).where(and(eq(schema.products.businessId, b), eq(schema.products.trackStock, true), eq(schema.products.active, true))).orderBy(asc(schema.products.name), asc(schema.products.variantLabel), asc(schema.products.id)).limit(p.limit).offset(p.offset));
+  const rows = await withTenant(b, (tx) => tx.select().from(schema.products).where(and(eq(schema.products.businessId, b), eq(schema.products.trackStock, true), eq(schema.products.active, true))).orderBy(asc(schema.products.name), asc(schema.products.variantLabel), asc(schema.products.id)).limit(take.limit).offset(take.offset));
   return list(rows.map((r) => ({
     product_id: r.id, name: r.name, sku: r.sku, barcode: r.barcode, kind: r.kind, on_hand: r.stockQty, low_stock_threshold: r.lowStockThreshold, is_low: r.stockQty <= r.lowStockThreshold,
     variant_label: r.variantLabel, group_id: r.groupId, reorder_up_to: r.reorderUpTo, supplier_id: r.supplierId, cost_cents: r.costCents,

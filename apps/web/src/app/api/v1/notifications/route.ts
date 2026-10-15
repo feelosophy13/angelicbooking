@@ -1,4 +1,4 @@
-import { list, pageParams, route } from "@/lib/api";
+import { list, pageParams, probe, route } from "@/lib/api";
 import { listNotificationsApi, NOTIFICATION_STATUSES, serializeNotification, type NotificationFilter } from "@/server/api-v1-messages";
 
 const date = (v: string | null) => {
@@ -18,5 +18,5 @@ export const GET = route("messages:read", async (ctx, req) => {
     status: NOTIFICATION_STATUSES.find((s) => s === status),
     clientId: q("client_id"), campaignId: q("campaign_id"), template: q("template"), from: date(q("from") ?? null), to: date(q("to") ?? null),
   };
-  return list((await listNotificationsApi(ctx.business.id, p, f)).map(serializeNotification), p);
+  return list((await listNotificationsApi(ctx.business.id, probe(p), f)).map(serializeNotification), p);
 });
