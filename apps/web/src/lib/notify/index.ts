@@ -10,7 +10,9 @@ import { emailConfigured, sendEmail, sendSms, smsConfigured, type SmsSender } fr
 import { platformSmsSender } from "@/lib/twilio";
 import { listNumbers } from "@/server/messaging";
 import { addressOf, tzFor } from "@/server/locations";
-import { reportSmsUsage } from "@/server/billing";
+import { billingEnabled, reportSmsUsage } from "@/server/billing";
+import { smsPausedReason } from "@/lib/billing-config";
+import { priceBookIn } from "@/server/price-book";
 import { templates, type ApptContext, type TemplateName } from "./templates";
 import { smsBody, smsWithStopNotice } from "./sms";
 
@@ -187,7 +189,7 @@ const retryDelayMs = (attempt: number) => 5 * 60_000 * 2 ** Math.max(0, attempt 
  * stale "sending" rows. The UPDATE is the lock, so two concurrent runs (cron +
  * after-response delivery, or overlapping deploys) can never both send a row.
  */
-type Claimed = { row: Row; sender: SmsSender | null; email: { fromName: string; replyTo?: string; demo: boolean; suspended: boolean } | null };
+type Claimed = { row: Row; sender: SmsSender | null; email: { fromName: string; replyTo?: string; demo: boolean; suspended: boolean; smsPausedReason: string | null } | null };
 
 /**
  * The sender a message texts from: the verified number of the location it is
@@ -211,8 +213,12 @@ async function claimWithSender(tx: TenantDb, opts: { ids?: string[]; limit: numb
     senders.set(r.locationId, await smsSenderFor(tx, r.locationId));
   }
   // Emails go out as "<Business> <platform address>" with replies routed to the business.
-  const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, rows[0]!.businessId), columns: { name: true, email: true, slug: true, suspendedAt: true } });
-  const email = biz ? { fromName: biz.name, replyTo: biz.email ?? undefined, demo: isDemoSlug(biz.slug), suspended: !!biz.suspendedAt } : null;
+  const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, rows[0]!.businessId), columns: { name: true, email: true, slug: true, suspendedAt: true, comped: true, subscriptionStatus: true } });
+  // Texts cost money and are billed on the subscription: no active subscription, no texts (see smsPausedReason).
+  const smsPausedWhy = biz && rows.some((r) => r.channel === "sms")
+    ? smsPausedReason({ billingEnabled: billingEnabled(), comped: biz.comped, status: biz.subscriptionStatus, smsUsageCents: (await priceBookIn(tx, rows[0]!.businessId)).smsUsageCents })
+    : null;
+  const email = biz ? { fromName: biz.name, replyTo: biz.email ?? undefined, demo: isDemoSlug(biz.slug), suspended: !!biz.suspendedAt, smsPausedReason: smsPausedWhy } : null;
   return rows.map((row) => ({ row, sender: row.channel === "sms" ? (senders.get(row.locationId) ?? null) : null, email }));
 }
 
@@ -241,6 +247,7 @@ async function send({ row: n, sender, email }: Claimed): Promise<Outcome> {
   // Demo businesses have fake clients: log the message but never email or text anyone.
   if (email?.demo) return { id: n.id, status: "skipped", error: "Demo business: nothing is sent" };
   if (email?.suspended) return { id: n.id, status: "skipped", error: "Business is suspended: nothing is sent" };
+  if (n.channel === "sms" && email?.smsPausedReason) return { id: n.id, status: "skipped", error: email.smsPausedReason };
   const configured = n.channel === "email" ? emailConfigured() : smsConfigured();
   if (!configured) return { id: n.id, status: "skipped", error: `${n.channel} provider not configured` };
   if (n.channel === "sms" && !sender) return { id: n.id, status: "skipped", error: "No verified text number yet (Settings → Text messaging)" };

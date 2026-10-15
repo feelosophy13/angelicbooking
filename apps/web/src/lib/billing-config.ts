@@ -56,3 +56,15 @@ export function canBuyNumber(opts: { billingEnabled: boolean; status: string; co
   if (!costsMoney || !opts.billingEnabled) return true;
   return opts.status === "active" || opts.status === "trialing";
 }
+
+/**
+ * Why a business's texts are paused, or null when they may go out. Every text costs us money and is billed on the
+ * subscription, so a business that has no active or trialing subscription does not send texts (emails are unaffected).
+ * Not paused: billing is not set up on the platform (nothing can be charged anywhere), the business is comped, or a text
+ * is priced at $0.
+ */
+export function smsPausedReason(opts: { billingEnabled: boolean; comped: boolean; status: string; smsUsageCents: number }): string | null {
+  if (!opts.billingEnabled || opts.comped || opts.smsUsageCents <= 0) return null;
+  if (opts.status === "active" || opts.status === "trialing") return null;
+  return "Texts are paused until a subscription is active. Add a card under Settings → Billing.";
+}

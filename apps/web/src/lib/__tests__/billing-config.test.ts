@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PRICE_BOOK } from "@angelic/core/platform-pricing";
-import { canBuyNumber, configFromBook, isDelinquent, isSubscribed, lookupKeys, NUMBER_KEY_PREFIX } from "../billing-config";
+import { canBuyNumber, configFromBook, isDelinquent, isSubscribed, lookupKeys, NUMBER_KEY_PREFIX, smsPausedReason } from "../billing-config";
 
 const book = { ...DEFAULT_PRICE_BOOK, baseCents: 2900, numberCents: 1500, smsUsageCents: 2, smsIncluded: 100, trialDays: 14 };
 
@@ -37,5 +37,21 @@ describe("billing config", () => {
     expect(canBuyNumber({ billingEnabled: true, status: "active", config: paid })).toBe(true);
     expect(canBuyNumber({ billingEnabled: true, status: "none", config: free })).toBe(true);
     expect(canBuyNumber({ billingEnabled: false, status: "none", config: paid })).toBe(true);
+  });
+});
+
+describe("texts paused without a subscription", () => {
+  const base = { billingEnabled: true, comped: false, status: "none", smsUsageCents: 2 };
+  it("pauses texts for a business that has no active or trialing subscription", () => {
+    for (const status of ["none", "canceled", "past_due", "unpaid", "incomplete", "paused"]) expect(smsPausedReason({ ...base, status })).toMatch(/paused/i);
+  });
+  it("lets them through with an active or trialing subscription", () => {
+    expect(smsPausedReason({ ...base, status: "active" })).toBeNull();
+    expect(smsPausedReason({ ...base, status: "trialing" })).toBeNull();
+  });
+  it("never pauses a comped business, a free text price, or a platform with billing off", () => {
+    expect(smsPausedReason({ ...base, comped: true })).toBeNull();
+    expect(smsPausedReason({ ...base, smsUsageCents: 0 })).toBeNull();
+    expect(smsPausedReason({ ...base, billingEnabled: false })).toBeNull();
   });
 });

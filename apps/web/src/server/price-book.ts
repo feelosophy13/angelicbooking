@@ -30,13 +30,18 @@ export async function priceBookFor(businessId: string): Promise<PriceBook> {
 
 type Tx = Parameters<Parameters<typeof withTenant>[1]>[0];
 
+/** The same price book as priceBookFor, read on an already open tenant transaction (no second connection). */
+export async function priceBookIn(tx: Tx, businessId: string): Promise<PriceBook> {
+  const [row] = await tx.select().from(schema.platformPricing).where(eq(schema.platformPricing.id, "default"));
+  const [own] = await tx.select().from(schema.businessPricing).where(eq(schema.businessPricing.businessId, businessId));
+  return effectivePriceBook(effectivePriceBook(DEFAULT_PRICE_BOOK, pick(row)), pick(own));
+}
+
 /**
  * The platform fee (basis points) on card payments this business takes: its own price, else the default price book,
  * else 0. Pass the open transaction when called inside one, so no second connection is needed.
  */
 export async function platformFeeBpsFor(businessId: string, tx?: Tx): Promise<number> {
   if (!tx) return (await priceBookFor(businessId)).platformFeeBps;
-  const [row] = await tx.select().from(schema.platformPricing).where(eq(schema.platformPricing.id, "default"));
-  const [own] = await tx.select().from(schema.businessPricing).where(eq(schema.businessPricing.businessId, businessId));
-  return effectivePriceBook(effectivePriceBook(DEFAULT_PRICE_BOOK, pick(row)), pick(own)).platformFeeBps;
+  return (await priceBookIn(tx, businessId)).platformFeeBps;
 }

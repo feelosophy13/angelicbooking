@@ -175,6 +175,10 @@ Customer with one subscription:
 - Owner flow: Settings → Billing → "Add a card" (Stripe Checkout, `payment_method_collection: always`)
   → back to the page, which syncs the subscription from the Checkout session; "Manage card & invoices"
   opens the Customer Portal. `past_due`/`unpaid` shows a red banner across the app.
+- **Texts need a subscription.** Every text costs us money and is billed on the subscription, so a business with no `active` or
+  `trialing` subscription sends no texts (they are marked skipped with the reason, and Settings → Billing and Text messaging say why).
+  Emails are unaffected. Exceptions: comped businesses, a $0 text price, and a platform where Stripe billing is not configured.
+  The rule is `smsPausedReason` in `apps/web/src/lib/billing-config.ts`, applied in `lib/notify/index.ts`.
 - Card payments salons take from clients still go to their own Connect account; a platform
   (application) fee, set on the admin Pricing page, can be charged on those independently of the subscription.
 - Local testing without the webhook: the Checkout return URL syncs state; "Refresh" re-reads the

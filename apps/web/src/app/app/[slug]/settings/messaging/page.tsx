@@ -39,6 +39,7 @@ export default async function MessagingPage({ params, searchParams }: { params: 
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Text messaging" />
+      {billing.smsPausedReason ? <div className="mb-4"><Notice>{billing.smsPausedReason} Until then no texts are sent to your clients; emails still go out.</Notice></div> : null}
       {sp.bought ? <div className="mb-4"><Notice kind="success">Your number is ready. Next, submit carrier verification so it can send texts.</Notice></div> : null}
       {sp.submitted ? <div className="mb-4"><Notice kind="success">Verification submitted. We will email {submittedFor?.verification?.contactEmail ?? "you"} when the carriers decide.</Notice></div> : null}
 

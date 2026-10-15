@@ -14,7 +14,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { appUrl, isStripeConfigured, stripe } from "@/lib/stripe";
 import { and, inArray, sql } from "drizzle-orm";
 import type { PriceBook } from "@angelic/core/platform-pricing";
-import { canBuyNumber, configFromBook, isDelinquent, isSubscribed, lookupKeys, NUMBER_KEY_PREFIX, SMS_METER_EVENT, type BillingConfig } from "@/lib/billing-config";
+import { canBuyNumber, configFromBook, isDelinquent, isSubscribed, lookupKeys, NUMBER_KEY_PREFIX, SMS_METER_EVENT, smsPausedReason, type BillingConfig } from "@/lib/billing-config";
 import { desiredItems, pauseAction, planChanges, priceKey, SUSPEND_PAUSE_MARKER, type ManagedKind } from "@/lib/billing-plan";
 import { platformPriceBook, priceBookFor } from "@/server/price-book";
 
@@ -256,6 +256,8 @@ export async function billingState(business: Business) {
     subscribed: isSubscribed(business.subscriptionStatus),
     delinquent: isDelinquent(business.subscriptionStatus),
     comped: business.comped,
+    /** Why texts are paused for this business, or null. */
+    smsPausedReason: smsPausedReason({ billingEnabled: enabled, comped: business.comped, status: business.subscriptionStatus, smsUsageCents: config.smsUsageCents }),
     canBuyNumber: business.comped || canBuyNumber({ billingEnabled: enabled, status: business.subscriptionStatus, config }),
   };
 }

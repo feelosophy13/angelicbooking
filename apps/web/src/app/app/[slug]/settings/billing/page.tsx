@@ -53,6 +53,7 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Billing" />
       {justSubscribed && state.subscribed ? <div className="mb-4"><Notice kind="success">Billing is set up. Thank you!</Notice></div> : null}
+      {state.smsPausedReason ? <div className="mb-4"><Notice>{state.smsPausedReason} Until then no texts are sent to your clients; emails still go out.</Notice></div> : null}
       {state.delinquent ? (
         <div className="mb-4"><Notice>Your last payment failed. Update your card to keep text messaging and add-ons running.</Notice></div>
       ) : null}
