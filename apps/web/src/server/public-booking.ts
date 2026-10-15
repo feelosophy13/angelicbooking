@@ -88,7 +88,8 @@ export async function getPublicSlots(business: PublicBusiness, serviceId: string
   const eligible = await publicProvidersFor(business, serviceId, locationId);
   const chosen = staffId === "any" ? eligible : eligible.filter((s) => s.id === staffId);
   const overrides = await withTenant(business.id, (tx) => overridesForService(tx, serviceId));
-  const out = new Map<number, { at: Date; staffId: string; staffName: string }>();
+  // One entry per start time. `staffId` is the provider booked if she takes it as is; `free` is everyone open then.
+  const out = new Map<number, { at: Date; staffId: string; staffName: string; free: string[] }>();
   for (const s of chosen) {
     const slots = await getStaffAvailability({
       businessId: business.id,
@@ -103,10 +104,42 @@ export async function getPublicSlots(business: PublicBusiness, serviceId: string
     });
     for (const at of slots) {
       if (at > window.notAfter) continue;
-      if (!out.has(at.getTime())) out.set(at.getTime(), { at, staffId: s.id, staffName: s.displayName });
+      const seen = out.get(at.getTime());
+      if (seen) seen.free.push(s.id);
+      else out.set(at.getTime(), { at, staffId: s.id, staffName: s.displayName, free: [s.id] });
     }
   }
-  return [...out.values()].sort((a, b) => a.at.getTime() - b.at.getTime());
+  const list = [...out.values()].sort((a, b) => a.at.getTime() - b.at.getTime());
+  // "Any available provider": which of the free people the visit goes to, by the salon's rule.
+  if (staffId === "any" && business.anyProviderMode !== "choose" && business.anyProviderMode !== "first" && list.some((s) => s.free.length > 1)) {
+    const price = (id: string) => overrides.get(id)?.price ?? service.priceCents;
+    const load = business.anyProviderMode === "fewest_bookings" ? await bookingsOn(business, chosen.map((s) => s.id), date, locationId) : null;
+    const order = new Map(chosen.map((s, i) => [s.id, i]));
+    const names = new Map(chosen.map((s) => [s.id, s.displayName]));
+    for (const s of list) {
+      if (s.free.length < 2) continue;
+      const best = [...s.free].sort((a, b) => (load ? (load.get(a) ?? 0) - (load.get(b) ?? 0) : price(a) - price(b)) || price(a) - price(b) || order.get(a)! - order.get(b)!)[0]!;
+      s.staffId = best;
+      s.staffName = names.get(best) ?? s.staffName;
+    }
+  }
+  return list;
+}
+
+/** Appointments each provider already has on a day (the lighter day gets the next "Any available" visit). */
+async function bookingsOn(business: PublicBusiness, staffIds: string[], date: string, locationId?: string | null): Promise<Map<string, number>> {
+  const loc = locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) })) : null;
+  const tz = tzFor(business, loc ?? null);
+  const from = zonedToInstant(date, "00:00", tz);
+  const to = zonedToInstant(shiftISODate(date, 1), "00:00", tz);
+  const rows = await withTenant(business.id, (tx) =>
+    tx
+      .select({ staffId: schema.appointmentItems.staffId, n: sql<number>`count(*)` })
+      .from(schema.appointmentItems)
+      .where(and(inArray(schema.appointmentItems.staffId, staffIds), gte(schema.appointmentItems.startAt, from), lt(schema.appointmentItems.startAt, to), sql`${schema.appointmentItems.status} not in ('cancelled','no_show')`, sql`${schema.appointmentItems.serviceName} not like '% (finish)'`))
+      .groupBy(schema.appointmentItems.staffId),
+  );
+  return new Map(rows.map((r) => [r.staffId, Number(r.n)]));
 }
 
 /**

@@ -23,7 +23,7 @@ import { WorkPhotos } from "./work-photos";
 import { ServiceSearch } from "./service-search";
 import { MonthCalendar } from "./calendar";
 
-type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string; extra?: string; add?: string; sort?: string };
+type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string; extra?: string; add?: string; sort?: string; who?: string };
 
 export default async function PublicBookingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
@@ -86,7 +86,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const p = new URLSearchParams();
     // Choosing a different service starts a new visit, so the added services go with the old one.
     const keepExtras = "service" in extra ? undefined : extraIds.join(",") || undefined;
-    for (const [k, v] of Object.entries({ location: locations.length > 1 ? location?.id : undefined, category: service?.categoryId ?? sp.category, service: service?.id, staff: staffChoice ?? undefined, date: date ?? undefined, extra: keepExtras, time: timeFirst ? sp.time : undefined, ...extra })) if (v) p.set(k, v);
+    for (const [k, v] of Object.entries({ location: locations.length > 1 ? location?.id : undefined, category: service?.categoryId ?? sp.category, service: service?.id, staff: staffChoice ?? undefined, date: date ?? undefined, extra: keepExtras, time: timeFirst || sp.who === "time" ? sp.time : undefined, ...extra })) if (v) p.set(k, v);
     return `?${p.toString()}`;
   };
   const locBar = locations.length > 1 && location ? (
@@ -261,8 +261,10 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   }
 
   // ---- Step 2: staff
-  const pickTime = timeFirst && date && sp.time ? new Date(sp.time) : null;
-  if (!staffChoice && (!timeFirst || pickTime)) {
+  // Who is free at one chosen time: always in time-first order, and in provider-first order when "Any available" met a time several people share.
+  const whoAtTime = timeFirst || (staffChoice === "any" && sp.who === "time");
+  const pickTime = whoAtTime && date && sp.time ? new Date(sp.time) : null;
+  if (pickTime ? (timeFirst ? !staffChoice : staffChoice === "any") : !staffChoice && !timeFirst) {
     // Time first: only the people who are free at the chosen time.
     const pool = pickTime ? (await Promise.all(providers.map(async (p) => ((await getPublicSlots(business, service.id, p.id, date!, new Date(), locId)).some((s) => s.at.getTime() === pickTime.getTime()) ? p : null)))).filter((p): p is (typeof providers)[number] => !!p) : providers;
     const [ratings, openings, last] = await Promise.all([
@@ -288,10 +290,10 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const lastPerson = last ? pool.find((s) => s.id === last.staffId) ?? null : null;
     return (
       <>
-        <StepBack href={timeFirst ? q({ time: undefined }) : q({ service: undefined })} />
+        <StepBack href={pickTime ? q({ time: undefined }) : q({ service: undefined })} />
         {locBar}
-        <Steps labels={stepLabels} current={timeFirst ? 3 : 2} hrefs={stepHrefs(timeFirst ? 2 : 1)} />
-        <StepTitle title="Choose a provider" subtitle={pickTime ? `Free ${formatDateLong(date!)} at ${formatTime(pickTime, tz)}` : undefined} />
+        <Steps labels={stepLabels} current={pickTime ? 3 : 2} hrefs={stepHrefs(pickTime ? 2 : 1)} />
+        <StepTitle title={pickTime && !timeFirst ? "Who would you like?" : "Choose a provider"} subtitle={pickTime ? `Free ${formatDateLong(date!)} at ${formatTime(pickTime, tz)}` : undefined} />
         <Summary imageUrl={service.imageUrl} title={service.name} rows={[...(pickTime ? [{ label: "When", value: `${formatDateLong(date!)} at ${formatTime(pickTime, tz)}`, href: q({ time: undefined }) }] : []), { label: "Price", value: shownPrice }, ...depositRow, { label: "Duration", value: durationText, href: q({ service: undefined }) }]} />
         {bookingNotes}
         {lastPerson ? (
@@ -309,7 +311,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
             {priceVaries ? <span className="shrink-0 font-semibold text-stone-900">{money(termsFor(lastPerson.id).priceCents)}</span> : null}
           </Link>
         ) : null}
-        {!timeFirst && providers.length > 2 ? (
+        {!pickTime && providers.length > 2 ? (
           <div className="mb-3 flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="Sort providers">
             <span className="text-stone-500">Sort:</span>
             {sortOptions.map((o) => (
@@ -321,7 +323,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           <li>
             <Link href={q({ staff: "any" })} className="flex h-full items-center gap-3 rounded-2xl border-2 border-dashed border-stone-300 bg-white p-4 transition hover:border-[var(--brand)] hover:shadow-md">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white" style={{ background: "var(--brand)" }}>✦</span>
-              <span><span className="block font-semibold text-stone-900">Any available provider</span><span className="block text-xs text-stone-500">{timeFirst ? "Whoever is free at this time" : "Shows the most openings"}{priceVaries ? ` · ${shownPrice}` : ""}</span>{earliest && !timeFirst ? <span className="mt-0.5 block text-xs text-stone-500">{openText(earliest)}</span> : null}</span>
+              <span><span className="block font-semibold text-stone-900">Any available provider</span><span className="block text-xs text-stone-500">{pickTime ? "Whoever is free at this time" : "Shows the most openings"}{priceVaries ? ` · ${shownPrice}` : ""}</span>{earliest && !pickTime ? <span className="mt-0.5 block text-xs text-stone-500">{openText(earliest)}</span> : null}</span>
             </Link>
           </li>
           {ordered.map((s) => {
@@ -340,7 +342,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
                     {s.position ? <span className="block text-xs font-medium" style={{ color: "var(--brand-dark)" }}>{s.position}</span> : null}
                     {rating ? <span className="mt-0.5 flex items-center gap-1 text-xs text-stone-600"><Stars value={rating.average} size="h-3 w-3" />{rating.average.toFixed(1)} <span className="text-stone-400">({rating.count})</span></span> : null}
                     {s.bio ? <span className="line-clamp-2 block text-xs text-stone-500">{s.bio}</span> : null}
-                    {!timeFirst ? <span className="mt-0.5 block text-xs text-stone-500">{openText(openings.get(s.id))}</span> : null}
+                    {!pickTime ? <span className="mt-0.5 block text-xs text-stone-500">{openText(openings.get(s.id))}</span> : null}
                   </span>
                   {priceVaries || durationVaries ? (
                     <span className="shrink-0 text-right">
@@ -418,8 +420,8 @@ export default async function PublicBookingPage({ params, searchParams }: { para
                     <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-stone-400">{g.label}</p>
                     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-3">
                       {g.list.map((s) => (
-                        <Link key={s.at.toISOString()} href={q({ date, time: s.at.toISOString(), staff: timeFirst && !staffChoice ? undefined : (staffChoice ?? undefined) })} className="rounded-xl border border-stone-200 bg-white px-2 py-2 text-center text-sm font-medium text-stone-800 shadow-sm transition hover:border-[var(--brand)] hover:text-[var(--brand-dark)]">
-                          {formatTime(s.at, tz)}{staffChoice === "any" ? <><span className="block truncate text-[10px] font-normal text-stone-500">{s.staffName}</span>{priceVaries ? <span className="block text-[10px] font-medium text-stone-700">{money(termsFor(s.staffId).priceCents)}</span> : null}</> : null}
+                        <Link key={s.at.toISOString()} href={staffChoice === "any" && business.anyProviderMode === "choose" && s.free.length > 1 ? q({ date, time: s.at.toISOString(), who: "time" }) : q({ date, time: s.at.toISOString(), staff: timeFirst && !staffChoice ? undefined : (staffChoice ?? undefined) })} className="rounded-xl border border-stone-200 bg-white px-2 py-2 text-center text-sm font-medium text-stone-800 shadow-sm transition hover:border-[var(--brand)] hover:text-[var(--brand-dark)]">
+                          {formatTime(s.at, tz)}{staffChoice === "any" ? (business.anyProviderMode === "choose" && s.free.length > 1 ? <><span className="block truncate text-[10px] font-normal text-stone-500">{s.free.length} available</span>{priceVaries ? <span className="block text-[10px] font-medium text-stone-700">{fromIf(Math.min(...s.free.map((id) => termsFor(id).priceCents)), Math.max(...s.free.map((id) => termsFor(id).priceCents)), money(Math.min(...s.free.map((id) => termsFor(id).priceCents))))}</span> : null}</> : <><span className="block truncate text-[10px] font-normal text-stone-500">{s.staffName}</span>{priceVaries ? <span className="block text-[10px] font-medium text-stone-700">{money(termsFor(s.staffId).priceCents)}</span> : null}</>) : null}
                         </Link>
                       ))}
                     </div>

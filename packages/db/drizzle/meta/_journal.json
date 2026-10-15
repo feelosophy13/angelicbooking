@@ -624,6 +624,13 @@
       "when": 1792900000000,
       "tag": "0088_booking_order",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1793000000000,
+      "tag": "0089_any_provider_mode",
+      "breakpoints": true
     }
   ]
 }

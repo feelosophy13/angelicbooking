@@ -44,6 +44,14 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
                 <option value="time">Choose a day and time, then a provider</option>
               </Select>
             </Field>
+            <Field label="When a client picks “Any available provider”" name="anyProviderMode" hint="What happens when several people are free at the same time.">
+              <Select name="anyProviderMode" defaultValue={business.anyProviderMode}>
+                <option value="choose">Show who is free and let the client choose</option>
+                <option value="first">Give it to the first in the Staff list order</option>
+                <option value="lowest_price">Give it to the lowest price</option>
+                <option value="fewest_bookings">Give it to whoever has the fewest bookings that day</option>
+              </Select>
+            </Field>
             <details className="rounded-lg border border-stone-200 p-3" open={business.requireCardOnline || business.noShowFeeCents > 0 || business.lateCancelFeeType !== "none"}>
               <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">
                 Fees, deposits and cards <span className="font-normal text-stone-500">· {[

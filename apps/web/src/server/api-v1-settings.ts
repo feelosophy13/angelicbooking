@@ -59,6 +59,7 @@ const booking = section({
     min_notice_min: z.number().int().min(0).max(7 * 24 * 60),
     max_advance_days: z.number().int().min(1).max(365),
     booking_order: z.enum(["provider", "time"]),
+    any_provider_mode: z.enum(["choose", "first", "lowest_price", "fewest_bookings"]),
     cancel_window_hours: z.number().int().min(0).max(168),
     no_show_fee_cents: money,
     late_cancel_fee_type: z.enum(["none", "flat", "percent"]),
@@ -70,7 +71,7 @@ const booking = section({
   }).partial().strict(),
   serialize: (b) => ({
     online_booking_enabled: b.onlineBookingEnabled, require_card_online: b.requireCardOnline, client_accounts_enabled: b.clientAccountsEnabled, min_notice_min: b.minNoticeMin,
-    max_advance_days: b.maxAdvanceDays, booking_order: b.bookingOrder, cancel_window_hours: b.cancelWindowHours, no_show_fee_cents: b.noShowFeeCents, late_cancel_fee_type: b.lateCancelFeeType,
+    max_advance_days: b.maxAdvanceDays, booking_order: b.bookingOrder, any_provider_mode: b.anyProviderMode, cancel_window_hours: b.cancelWindowHours, no_show_fee_cents: b.noShowFeeCents, late_cancel_fee_type: b.lateCancelFeeType,
     late_cancel_fee_value: b.lateCancelFeeValue, late_cancel_deposit: b.lateCancelDeposit, deposit_refund_as: b.depositRefundAs, booking_policy: b.bookingPolicy, address_line: b.addressLine,
   }),
   columns: (d, b) => {
@@ -88,6 +89,7 @@ const booking = section({
       ...(d.min_notice_min !== undefined ? { minNoticeMin: d.min_notice_min } : {}),
       ...(d.max_advance_days !== undefined ? { maxAdvanceDays: d.max_advance_days } : {}),
       ...(d.booking_order !== undefined ? { bookingOrder: d.booking_order } : {}),
+      ...(d.any_provider_mode !== undefined ? { anyProviderMode: d.any_provider_mode } : {}),
       ...(d.cancel_window_hours !== undefined ? { cancelWindowHours: d.cancel_window_hours } : {}),
       ...(d.no_show_fee_cents !== undefined ? { noShowFeeCents: d.no_show_fee_cents } : {}),
       ...(d.deposit_refund_as !== undefined ? { depositRefundAs: d.deposit_refund_as } : {}),

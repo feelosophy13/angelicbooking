@@ -350,6 +350,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (public, series, add/move service). New appointment lists each stylist's price/length when they differ.
       `server/stylist-pricing.ts`. Not changed: deposits stay per service; packages and memberships still cover a
       line whatever its price; classes use the service's price per seat.
+- [x] 2026-10-15: "Any available provider" rule is a salon setting (migration 0089, `businesses.any_provider_mode`, also
+      `any_provider_mode` in the settings API). Settings > Online booking: show who is free and let the client choose
+      (default: the time list says "2 available · from $45" and tapping it opens "Who would you like?"), or give it to
+      the first in Staff order / the lowest price / the fewest bookings that day. `getPublicSlots` now returns `free`
+      (everyone open at each time) and picks `staffId` by the rule. Fewest-bookings counts non-finish items on that day.
 - [x] 2026-10-15: booking order is a salon setting (migration 0088, `businesses.booking_order`). Settings > Online booking >
       "Order of steps" (needs `business.manage`; also `booking_order` in the settings API). Provider first (default):
       service, provider, time, details. Time first: service, a calendar across everyone, then only the providers free at
