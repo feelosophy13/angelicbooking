@@ -348,6 +348,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (public, series, add/move service). New appointment lists each stylist's price/length when they differ.
       `server/stylist-pricing.ts`. Not changed: deposits stay per service; packages and memberships still cover a
       line whatever its price; classes use the service's price per seat.
+- [x] 2026-10-15: booking self-service fixes. Reschedule uses the same month calendar as booking (`book/[slug]/calendar.tsx`),
+      can change provider (single service) or move a whole multi-service booking together (`rescheduleAppointment`), and
+      shows the free-change deadline; Cancel states the deadline, deposit refund and late fee up front. Confirmation shows
+      total, deposit paid / due, address, phone and policy. Class list shows description and price; going back to Edit in
+      the paid form cancels the unpaid Stripe intent; calendar-shaped loading skeleton. Not walked live: an actual
+      reschedule/cancel submit, multi-service move, and the Stripe edit-cancel (needs live keys).
 - [x] 2026-10-15: booking page review fixes. Service search (shown above 8 services); the Provider step is skipped when one
       provider does the service; multi-location salons get a "Change" location line on every step; one shared
       `ContactFields` for the free and paid forms, with promo/referral codes behind "Have a code?"; paid form labelled

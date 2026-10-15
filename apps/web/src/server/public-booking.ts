@@ -2,7 +2,7 @@ import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { canClientCancel, instantToISODate, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
 import { getStaffAvailability, getStaffAvailabilityForDates, staffForService, timingFor } from "./availability";
-import { bookAppointment, BookingError, rescheduleService, setAppointmentStatus } from "./booking";
+import { bookAppointment, BookingError, rescheduleAppointment, rescheduleService, setAppointmentStatus } from "./booking";
 import { refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
 import { findReferrer } from "./loyalty";
 import { validatePromo, PromoError } from "./promos";
@@ -295,7 +295,7 @@ export async function getManagedAppointment(slug: string, token: string) {
     const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.manageToken, token) });
     if (!appt) return null;
     const items = await tx
-      .select({ id: schema.appointmentItems.id, name: schema.appointmentItems.serviceName, staffId: schema.appointmentItems.staffId, staffName: schema.staff.displayName, serviceId: schema.appointmentItems.serviceId, startAt: schema.appointmentItems.startAt, endAt: schema.appointmentItems.endAt, status: schema.appointmentItems.status })
+      .select({ id: schema.appointmentItems.id, name: schema.appointmentItems.serviceName, staffId: schema.appointmentItems.staffId, staffName: schema.staff.displayName, serviceId: schema.appointmentItems.serviceId, classSessionId: schema.appointmentItems.classSessionId, priceCents: schema.appointmentItems.priceCents, startAt: schema.appointmentItems.startAt, endAt: schema.appointmentItems.endAt, status: schema.appointmentItems.status })
       .from(schema.appointmentItems)
       .innerJoin(schema.staff, eq(schema.staff.id, schema.appointmentItems.staffId))
       .where(eq(schema.appointmentItems.appointmentId, appt.id))
@@ -322,19 +322,25 @@ export async function cancelOnline(slug: string, token: string) {
   await alertBusiness(m.business, m.appt.id, "cancelled");
 }
 
-export async function rescheduleOnline(slug: string, token: string, newStartAt: Date) {
+/**
+ * Client moves their own appointment. A single service can also change provider (`staffChoice`: a staff id,
+ * "any", or omitted to keep the current one); a multi-service booking moves as a whole with the same providers.
+ */
+export async function rescheduleOnline(slug: string, token: string, newStartAt: Date, staffChoice?: string | null) {
   const m = await getManagedAppointment(slug, token);
   if (!m) throw new BookingError("Appointment not found.");
   if (!m.canChange) throw new BookingError(`Online changes close ${m.business.cancelWindowHours} hours before the appointment.`);
-  if (m.live.length !== 1 && new Set(m.live.map((i) => i.serviceId)).size !== 1) {
-    throw new BookingError("This appointment has several services. Please call to reschedule.");
-  }
-  const first = m.live[0]!;
-  if (!first.serviceId) throw new BookingError("Please call to reschedule.");
+  if (m.live.some((i) => i.classSessionId)) throw new BookingError("Seats in a class move with the class. Cancel and book another session instead.");
+  const first = m.live[0];
+  if (!first?.serviceId) throw new BookingError("Please call to reschedule.");
   if (!isWithinBookingWindow(newStartAt, new Date(), m.business)) throw new BookingError("That time can't be booked online.");
-  const slots = await getPublicSlots(m.business, first.serviceId, first.staffId, isoDateIn(newStartAt, m.business.timezone), new Date(), m.appt.locationId);
-  if (!slots.some((s) => s.at.getTime() === newStartAt.getTime())) throw new BookingError("That time was just taken. Please pick another.");
-  await rescheduleService({ businessId: m.business.id, itemId: first.id, newStartAt, actorUserId: "client" });
+  const single = new Set(m.live.map((i) => i.serviceId)).size === 1;
+  const wanted = single && staffChoice ? staffChoice : first.staffId;
+  const slots = await getPublicSlots(m.business, first.serviceId, wanted, isoDateIn(newStartAt, m.timeZone), new Date(), m.appt.locationId);
+  const slot = slots.find((s) => s.at.getTime() === newStartAt.getTime());
+  if (!slot) throw new BookingError("That time was just taken. Please pick another.");
+  if (single) await rescheduleService({ businessId: m.business.id, itemId: first.id, newStartAt, newStaffId: slot.staffId, actorUserId: "client" });
+  else await rescheduleAppointment({ businessId: m.business.id, appointmentId: m.appt.id, newStartAt, actorUserId: "client" });
   await notifyAppointment(m.business, m.appt.id, "rescheduled");
   await alertBusiness(m.business, m.appt.id, "rescheduled");
 }

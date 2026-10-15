@@ -16,6 +16,7 @@ import { viewAsEnabled } from "@/lib/dev-view-as";
 import { CommandPalette } from "@/components/command-palette";
 import { NavHistory } from "@/components/nav-history";
 import { navSections } from "@/lib/nav";
+import { unreadCount } from "@/server/inbound";
 import { NavLink } from "./nav-link";
 import { lowStockCount } from "@/server/inventory";
 import { MobileNav, type NavSection } from "./mobile-nav";
@@ -28,6 +29,7 @@ export default async function AppLayout({ children, params }: { children: React.
   const [mine, roles, locations] = await Promise.all([listMyBusinesses(user.id), listRoles(business.id), withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations).orderBy(desc(schema.locations.isDefault), asc(schema.locations.name)))]);
   void permissionsForRole;
   const lowCount = can(permissions, "inventory.manage") ? await lowStockCount(business.id) : 0;
+  const unreadTexts = can(permissions, "clients.read") ? await unreadCount(business.id) : 0;
   // Development only: the staff a Provider can be viewed as.
   const viewAsStaff = viewAsEnabled() ? await withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName))) : [];
   const roleName = roles.find((r) => r.key === role)?.name ?? role.replace("_", " ");
@@ -37,7 +39,7 @@ export default async function AppLayout({ children, params }: { children: React.
   type Item = { href: string; label: string; iconName: string; exact?: boolean };
   const it = (href: string, label: string, iconName: string, exact?: boolean): Item => ({ href, label, iconName, exact });
   // Sidebar sections, the Settings directory and ⌘K share one definition: lib/nav.ts.
-  const sections = navSections(base, permissions);
+  const sections = navSections(base, permissions).map((s) => ({ ...s, items: s.items.map((n) => (n.href === `${base}/inbox` && unreadTexts ? { ...n, badge: unreadTexts } : n)) }));
   const tabs: Item[] = [
     it(base, "Calendar", "CalendarDays", true),
     it(`${base}/clients`, "Clients", "Users"),
@@ -87,7 +89,7 @@ export default async function AppLayout({ children, params }: { children: React.
                   const I = ICON[n.iconName] ?? CalendarDays;
                   return (
                     <NavLink key={n.href} href={n.href} exact={n.exact} exclude={n.exclude}>
-                      <span className="flex items-center gap-2.5"><I className="h-4 w-4 text-stone-400" />{n.label}{n.href === `${base}/inventory` && lowCount ? <span className="ml-auto rounded-full bg-amber-100 px-1.5 text-[11px] font-medium text-amber-800" title={`${lowCount} product${lowCount === 1 ? "" : "s"} low, out or off`}>{lowCount}</span> : null}</span>
+                      <span className="flex items-center gap-2.5"><I className="h-4 w-4 text-stone-400" />{n.label}{"badge" in n && n.badge ? <span className="ml-auto rounded-full bg-brand-600 px-1.5 text-[11px] font-medium text-white" title={`${n.badge} unread text${n.badge === 1 ? "" : "s"}`}>{n.badge}</span> : null}{n.href === `${base}/inventory` && lowCount ? <span className="ml-auto rounded-full bg-amber-100 px-1.5 text-[11px] font-medium text-amber-800" title={`${lowCount} product${lowCount === 1 ? "" : "s"} low, out or off`}>{lowCount}</span> : null}</span>
                     </NavLink>
                   );
                 })}

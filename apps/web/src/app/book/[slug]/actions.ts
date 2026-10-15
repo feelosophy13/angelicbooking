@@ -6,7 +6,7 @@ import { BookingError } from "@/server/booking";
 import { PromoError, validatePromo } from "@/server/promos";
 import { priceForStaff } from "@/server/stylist-pricing";
 import { assertQuotedPrice, assertSlotOpen, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
-import { appointmentForIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
+import { appointmentForIntent, cancelOnlineIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
 import { getSession } from "@/server/classes";
 import { paymentContextFor } from "@/server/locations";
 import { schema, withTenant } from "@angelic/db";
@@ -112,6 +112,14 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
   }
 }
 
+/** The client went back to edit their details before paying. */
+export async function abandonOnlinePaymentAction(slug: string, locationId: string | null, intent: { kind: "deposit" | "card"; id: string }): Promise<void> {
+  if (typeof slug !== "string" || !/^(pi|seti)_\w+$/.test(intent.id)) return;
+  const business = await getPublicBusiness(slug);
+  if (!business) return;
+  await cancelOnlineIntent(business, await paymentContextFor(business, locationId || null), intent.kind, intent.id);
+}
+
 /** Step 2: the browser confirmed the intent. Verify with Stripe, then book. */
 export async function finishOnlineBookingAction(raw: Record<string, string>, intent: { kind: "deposit" | "card"; id: string }): Promise<{ error?: string }> {
   const p = parseBooking(raw);
@@ -147,9 +155,9 @@ export async function cancelBooking(_prev: PublicState, formData: FormData): Pro
 }
 
 export async function rescheduleBooking(_prev: PublicState, formData: FormData): Promise<PublicState> {
-  const d = z.object({ slug: z.string(), token: z.string().min(10), startAt: z.string().datetime() }).parse(Object.fromEntries(formData));
+  const d = z.object({ slug: z.string(), token: z.string().min(10), startAt: z.string().datetime(), staff: z.string().optional() }).parse(Object.fromEntries(formData));
   try {
-    await rescheduleOnline(d.slug, d.token, new Date(d.startAt));
+    await rescheduleOnline(d.slug, d.token, new Date(d.startAt), d.staff || null);
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     throw e;

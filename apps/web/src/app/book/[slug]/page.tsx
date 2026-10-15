@@ -19,6 +19,7 @@ import { schema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { CategoryTile, Crumbs, ServiceCard, Steps, StepTitle, Summary } from "./ui";
 import { ServiceSearch } from "./service-search";
+import { MonthCalendar } from "./calendar";
 
 type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string };
 
@@ -185,6 +186,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           <Steps labels={classLabels} current={2} hrefs={[q({ service: undefined }), null, null]} />
           <StepTitle title="Pick a class" />
           <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "Per person", value: formatMoney(service.priceCents, business.currency) }, { label: "Duration", value: serviceMeta(service), href: q({ service: undefined }) }]} />
+          {service.description ? <p className="mb-4 text-sm text-stone-600">{service.description}</p> : null}
           {sessions.length === 0 ? <p className="rounded-2xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-600">No upcoming sessions are open for booking. Please check back soon{callUs}.</p> : null}
           {[...byDate.entries()].map(([d, list]) => (
             <section key={d} className="mb-4">
@@ -197,7 +199,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
                         <p className="font-semibold text-stone-900">{formatTime(x.startAt, tz)} – {formatTime(x.endAt, tz)}</p>
                         <p className="text-xs text-stone-500">with {x.staffName}{x.notes ? ` · ${x.notes}` : ""}</p>
                       </div>
-                      <span className="rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: "var(--brand-tint)", color: "var(--brand-dark)" }}>{x.seatsLeft} {x.seatsLeft === 1 ? "seat" : "seats"} left</span>
+                      <span className="flex shrink-0 flex-col items-end gap-1"><span className="font-semibold text-stone-900">{formatMoney(service.priceCents, business.currency)}</span><span className="rounded-full px-2.5 py-1 text-xs font-medium" style={{ background: "var(--brand-tint)", color: "var(--brand-dark)" }}>{x.seatsLeft} {x.seatsLeft === 1 ? "seat" : "seats"} left</span></span>
                     </Link>
                   </li>
                 ))}
@@ -272,7 +274,6 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   if (!date || !sp.time) {
     const monthStart = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? `${sp.month}-01` : `${today.slice(0, 7)}-01`;
     const daysInMonth = new Date(Date.UTC(Number(monthStart.slice(0, 4)), Number(monthStart.slice(5, 7)), 0)).getUTCDate();
-    const firstDow = new Date(monthStart + "T00:00:00Z").getUTCDay();
     const maxDate = shiftISODate(today, business.maxAdvanceDays);
     // Only the part of the month that can be booked is checked for openings.
     const rangeStart = monthStart < today ? today : monthStart;
@@ -281,9 +282,6 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const rangeDays = rangeEnd < rangeStart ? 0 : Math.round((Date.parse(`${rangeEnd}T00:00:00Z`) - Date.parse(`${rangeStart}T00:00:00Z`)) / 86_400_000) + 1;
     const available = new Set(await getAvailableDates(business, service.id, staffChoice as "any" | string, rangeStart, rangeDays, locId));
     const slots = date ? await getPublicSlots(business, service.id, staffChoice as "any" | string, date, new Date(), locId) : [];
-    const prevMonth = shiftISODate(monthStart, -1).slice(0, 7);
-    const nextMonth = shiftISODate(monthStart, daysInMonth).slice(0, 7);
-    const monthLabel = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(monthStart + "T00:00:00Z"));
     const byPeriod = (list: typeof slots) => {
       const groups: { label: string; list: typeof slots }[] = [{ label: "Morning", list: [] }, { label: "Afternoon", list: [] }, { label: "Evening", list: [] }];
       for (const s of list) {
@@ -299,38 +297,17 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <StepTitle title="Pick a time" />
         <Summary imageUrl={service.imageUrl} title={service.name} rows={summaryRows([{ label: "Price", value: priceText }, ...depositRow])} />
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          <div className="rounded-2xl border border-stone-200 bg-white p-4 shadow-sm">
-            <div className="mb-3 flex items-center justify-between">
-              <Link href={q({ month: prevMonth, date: undefined })} scroll={false} aria-label="Previous month" className={cn("flex h-8 w-8 items-center justify-center rounded-full text-stone-600 hover:bg-stone-100", prevMonth < today.slice(0, 7) && "pointer-events-none opacity-30")}>‹</Link>
-              <p className="font-semibold text-stone-900">{monthLabel}</p>
-              <Link href={q({ month: nextMonth, date: undefined })} scroll={false} aria-label="Next month" className={cn("flex h-8 w-8 items-center justify-center rounded-full text-stone-600 hover:bg-stone-100", `${nextMonth}-01` > maxDate && "pointer-events-none opacity-30")}>›</Link>
-            </div>
-            <div className="grid grid-cols-7 gap-1 text-center text-[11px] font-medium uppercase tracking-wide text-stone-400">{["S", "M", "T", "W", "T", "F", "S"].map((d, i) => <div key={i}>{d}</div>)}</div>
-            <div className="mt-1 grid grid-cols-7 gap-1">
-              {Array.from({ length: firstDow }).map((_, i) => <div key={`e${i}`} />)}
-              {Array.from({ length: daysInMonth }, (_, i) => {
-                const d = shiftISODate(monthStart, i);
-                // Days the location is closed are neither bookable nor waitlist-able.
-                const closed = location?.hours ? location.hours[String(weekdayOf(d))] === null : false;
-                const bookable = d >= today && d <= maxDate && !closed;
-                const ok = available.has(d) && bookable;
-                const label = formatDateLong(d);
-                if (ok) {
-                  return (
-                    <Link key={d} href={`${q({ date: d, month: sp.month })}#times`} aria-label={`${label}: openings available`} aria-current={d === date ? "date" : undefined} className={cn("rounded-xl py-2 text-center text-sm font-semibold transition", d === date ? "text-white shadow" : "hover:brightness-95")} style={d === date ? { background: "var(--brand)" } : { background: "var(--brand-tint)", color: "var(--brand-dark)" }}>{i + 1}</Link>
-                  );
-                }
-                // A full day can still be tapped to join the waitlist for it.
-                if (bookable) {
-                  return (
-                    <Link key={d} href={`${q({ date: d, month: sp.month })}#times`} aria-label={`${label}: no openings, join the waitlist`} aria-current={d === date ? "date" : undefined} className={cn("rounded-xl border border-dashed py-2 text-center text-sm", d === date ? "border-stone-500 text-stone-800" : "border-stone-200 text-stone-400 hover:border-stone-400")}>{i + 1}</Link>
-                  );
-                }
-                return <div key={d} aria-hidden className="py-2 text-center text-sm text-stone-300">{i + 1}</div>;
-              })}
-            </div>
-            <p className="mt-3 text-[11px] text-stone-500">Highlighted days have openings. Tap a full day to join its waitlist.</p>
-          </div>
+          <MonthCalendar
+            monthStart={monthStart}
+            today={today}
+            maxDate={maxDate}
+            available={available}
+            selected={date}
+            isClosed={(d) => (location?.hours ? location.hours[String(weekdayOf(d))] === null : false)}
+            dayHref={(d) => `${q({ date: d, month: sp.month })}#times`}
+            monthHref={(ym) => q({ month: ym, date: undefined })}
+            fullDayHint
+          />
           <div id="times" className="scroll-mt-4">
             {!date ? (
               <div className="flex h-full min-h-32 items-center justify-center rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">Choose a day to see times.</div>

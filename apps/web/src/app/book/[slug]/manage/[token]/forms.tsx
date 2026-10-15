@@ -25,7 +25,7 @@ export function CancelForm({ slug, token }: { slug: string; token: string }) {
   );
 }
 
-export function RescheduleForm({ slug, token, slots, dateLabel }: { slug: string; token: string; slots: { iso: string; label: string }[]; dateLabel: string }) {
+export function RescheduleForm({ slug, token, slots, dateLabel, staff, showStaff }: { slug: string; token: string; slots: { iso: string; label: string; staff?: string }[]; dateLabel: string; /** Provider to move to, when it is not the current one. */ staff?: string; showStaff?: boolean }) {
   const [state, action, pending] = useActionState<PublicState, FormData>(rescheduleBooking, undefined);
   const [picked, setPicked] = useState<string | null>(null);
   return (
@@ -33,10 +33,11 @@ export function RescheduleForm({ slug, token, slots, dateLabel }: { slug: string
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="token" value={token} />
       <input type="hidden" name="startAt" value={picked ?? ""} />
+      {staff ? <input type="hidden" name="staff" value={staff} /> : null}
       <p className="text-sm font-medium">{dateLabel}</p>
       <div className="flex flex-wrap gap-2">
         {slots.map((s) => (
-          <button key={s.iso} type="button" onClick={() => setPicked(s.iso)} className={cn("rounded-lg border px-3 py-1.5 text-sm", picked === s.iso ? "border-brand-600 bg-brand-600 text-white" : "border-stone-300 bg-white hover:bg-stone-50")}>{s.label}</button>
+          <button key={s.iso} type="button" onClick={() => setPicked(s.iso)} className={cn("rounded-lg border px-3 py-1.5 text-sm", picked === s.iso ? "border-brand-600 bg-brand-600 text-white" : "border-stone-300 bg-white hover:bg-stone-50")}>{s.label}{showStaff && s.staff ? <span className="block text-[10px] opacity-70">{s.staff}</span> : null}</button>
         ))}
       </div>
       {state?.error ? <Notice>{state.error}</Notice> : null}

@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { instantToISODate } from "@angelic/core";
-import { getManagedAppointment, getPublicSlots } from "@/server/public-booking";
-import { formatDateLong, formatMoney, formatTime, shiftISODate } from "@/lib/utils";
+import { instantToISODate, lateCancelFeeLabel, weekdayOf } from "@angelic/core";
+import { getAvailableDates, getManagedAppointment, getPublicSlots, publicProvidersFor } from "@/server/public-booking";
+import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
 import { CancelForm, RescheduleForm } from "./forms";
+import { MonthCalendar } from "../../calendar";
 
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
-export default async function ManagePage({ params, searchParams }: { params: Promise<{ slug: string; token: string }>; searchParams: Promise<{ date?: string; moved?: string; cancelled?: string }> }) {
+export default async function ManagePage({ params, searchParams }: { params: Promise<{ slug: string; token: string }>; searchParams: Promise<{ date?: string; month?: string; staff?: string; moved?: string; cancelled?: string }> }) {
   const { slug, token } = await params;
   const sp = await searchParams;
   const m = await getManagedAppointment(slug, token);
@@ -17,10 +18,35 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
   const day = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: tz }).format(m.start);
   const status = m.appt.status;
   const first = m.live[0];
-  const canReschedule = m.canChange && first?.serviceId && new Set(m.live.map((i) => i.serviceId)).size === 1;
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : null;
-  const slots = canReschedule && date ? await getPublicSlots(m.business, first!.serviceId!, first!.staffId, date, new Date(), m.appt.locationId) : [];
+  const service = first?.serviceId ?? null;
+  const single = new Set(m.live.map((i) => i.serviceId)).size === 1;
+  const canReschedule = m.canChange && !!service && !m.live.some((i) => i.classSessionId);
   const today = instantToISODate(new Date(), tz);
+  const locId = m.appt.locationId;
+  // One service can change provider; a multi-service booking moves as a whole with the same people.
+  const providers = canReschedule && single ? await publicProvidersFor(m.business, service!, locId) : [];
+  const staffChoice = single && (sp.staff === "any" || providers.some((s) => s.id === sp.staff)) ? sp.staff! : first!.staffId;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : null;
+  const apptDay = instantToISODate(m.start, tz);
+  const monthStart = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? `${sp.month}-01` : `${(date ?? (apptDay > today && `${apptDay.slice(0, 7)}-01` <= shiftISODate(today, m.business.maxAdvanceDays) ? apptDay : today)).slice(0, 7)}-01`;
+  const daysInMonth = new Date(Date.UTC(Number(monthStart.slice(0, 4)), Number(monthStart.slice(5, 7)), 0)).getUTCDate();
+  const maxDate = shiftISODate(today, m.business.maxAdvanceDays);
+  const rangeStart = monthStart < today ? today : monthStart;
+  const monthEnd = shiftISODate(monthStart, daysInMonth - 1);
+  const rangeEnd = monthEnd < maxDate ? monthEnd : maxDate;
+  const rangeDays = rangeEnd < rangeStart ? 0 : Math.round((Date.parse(`${rangeEnd}T00:00:00Z`) - Date.parse(`${rangeStart}T00:00:00Z`)) / 86_400_000) + 1;
+  const available = canReschedule ? new Set(await getAvailableDates(m.business, service!, staffChoice, rangeStart, rangeDays, locId)) : new Set<string>();
+  const slots = canReschedule && date ? await getPublicSlots(m.business, service!, staffChoice, date, new Date(), locId) : [];
+  const qs = (extra: Record<string, string | undefined>) => {
+    const u = new URLSearchParams();
+    for (const [k, v] of Object.entries({ staff: staffChoice !== first!.staffId ? staffChoice : undefined, month: sp.month, date: date ?? undefined, ...extra })) if (v) u.set(k, v);
+    return `?${u.toString()}`;
+  };
+  const money = (c: number) => formatMoney(c, m.business.currency);
+  const lateFee = lateCancelFeeLabel({ feeType: m.business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: m.business.lateCancelFeeValue, deposit: m.business.lateCancelDeposit as "toward" | "extra" }, money);
+  const deadline = new Date(m.start.getTime() - m.business.cancelWindowHours * 3_600_000);
+  const deadlineText = `${new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: tz }).format(deadline)} at ${formatTime(deadline, tz)}`;
+  const depositPaid = m.appt.depositStatus === "paid";
 
   return (
     <div className="space-y-4">
@@ -41,33 +67,56 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
         </div>
       ) : !m.canChange ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-          Online changes close {m.business.cancelWindowHours} hours before your appointment. {m.business.phone ? <>Please call <a className="underline" href={`tel:${m.business.phone}`}>{m.business.phone}</a>.</> : "Please contact the salon."}
+          Online changes closed {m.business.cancelWindowHours} hours before your appointment.{lateFee ? ` Cancelling now carries a fee of ${lateFee}.` : ""} {m.business.phone ? <>Please call <a className="underline" href={`tel:${m.business.phone}`}>{m.business.phone}</a>.</> : "Please contact the salon."}
         </div>
       ) : (
         <>
-          <div className="rounded-xl border border-stone-200 bg-white p-5">
-            <h2 className="mb-2 font-medium">Reschedule</h2>
+          <div className="space-y-4 rounded-xl border border-stone-200 bg-white p-5">
+            <div>
+              <h2 className="font-medium">Reschedule</h2>
+              <p className="text-xs text-stone-500">Free to change until {deadlineText}.</p>
+            </div>
             {!canReschedule ? (
-              <p className="text-sm text-stone-600">This booking has several services. Please call to change the time.</p>
+              <p className="text-sm text-stone-600">{m.live.some((i) => i.classSessionId) ? "A class seat moves with the class. Cancel this seat and book another session." : `Please call${m.business.phone ? ` ${m.business.phone}` : ""} to change the time.`}</p>
             ) : (
               <>
-                <form className="mb-3 flex items-end gap-2">
-                  <label className="text-sm">
-                    <span className="mb-1 block text-stone-600">New date</span>
-                    <input type="date" name="date" defaultValue={date ?? shiftISODate(today, 1)} min={today} className="h-10 rounded-lg border border-stone-300 px-3 text-sm" />
-                  </label>
-                  <button className="h-10 rounded-lg border border-stone-300 bg-white px-3 text-sm">Show times</button>
-                </form>
-                {date ? (
-                  slots.length === 0 ? <p className="text-sm text-stone-500">No openings on {formatDateLong(date)}.</p> : (
-                    <RescheduleForm slug={slug} token={token} slots={slots.map((s) => ({ iso: s.at.toISOString(), label: formatTime(s.at, tz) }))} dateLabel={formatDateLong(date)} />
-                  )
+                {providers.length > 1 ? (
+                  <div className="flex flex-wrap gap-2" role="group" aria-label="Provider">
+                    {[...providers.map((s) => ({ id: s.id, name: s.id === first!.staffId ? `${s.displayName} (current)` : s.displayName })), { id: "any", name: "Any available" }].map((o) => (
+                      <Link key={o.id} href={qs({ staff: o.id === first!.staffId ? undefined : o.id, date: undefined })} scroll={false} aria-current={o.id === staffChoice ? "true" : undefined} className={cn("rounded-full border px-3 py-1 text-sm", o.id === staffChoice ? "border-stone-800 bg-stone-800 text-white" : "border-stone-300 bg-white hover:bg-stone-50")}>{o.name}</Link>
+                    ))}
+                  </div>
                 ) : null}
+                {!single ? <p className="text-xs text-stone-500">All {m.live.length} services move together, keeping the same order and providers.</p> : null}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <MonthCalendar
+                    monthStart={monthStart}
+                    today={today}
+                    maxDate={maxDate}
+                    available={available}
+                    selected={date}
+                    isClosed={(d) => (m.location?.hours ? m.location.hours[String(weekdayOf(d))] === null : false)}
+                    dayHref={(d) => `${qs({ date: d })}#times`}
+                    monthHref={(ym) => qs({ month: ym, date: undefined })}
+                  />
+                  <div id="times" className="scroll-mt-4">
+                    {!date ? (
+                      <div className="flex h-full min-h-32 items-center justify-center rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">Choose a day to see times.</div>
+                    ) : slots.length === 0 ? (
+                      <p className="text-sm text-stone-500">No openings on {formatDateLong(date)}. Pick a highlighted day{m.business.phone ? <> or call <a className="underline" href={`tel:${m.business.phone}`}>{m.business.phone}</a></> : null}.</p>
+                    ) : (
+                      <RescheduleForm slug={slug} token={token} staff={staffChoice !== first!.staffId ? staffChoice : undefined} showStaff={staffChoice === "any"} slots={slots.map((s) => ({ iso: s.at.toISOString(), label: formatTime(s.at, tz), staff: s.staffName }))} dateLabel={formatDateLong(date)} />
+                    )}
+                  </div>
+                </div>
               </>
             )}
           </div>
           <div className="rounded-xl border border-stone-200 bg-white p-5">
-            <h2 className="mb-2 font-medium">Cancel</h2>
+            <h2 className="mb-1 font-medium">Cancel</h2>
+            <p className="mb-3 text-xs text-stone-500">
+              Free until {deadlineText}.{depositPaid ? ` Your ${money(m.appt.depositCents)} deposit is ${m.business.depositRefundAs === "store_credit" ? "returned as store credit" : "refunded"} when you cancel in time.` : ""}{lateFee ? ` After that, cancelling carries a fee of ${lateFee}.` : ""}
+            </p>
             <CancelForm slug={slug} token={token} />
           </div>
         </>

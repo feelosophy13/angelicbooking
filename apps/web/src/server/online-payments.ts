@@ -84,6 +84,24 @@ export async function startOnlinePayment(business: PublicBusiness, pay: PaymentC
   return { kind: "card" as const, id: si.id, clientSecret: si.client_secret!, accountId };
 }
 
+/** The client went back to edit their details: drop the unpaid intent so abandoned ones don't pile up. Best effort; only ours and only if nothing was paid. */
+export async function cancelOnlineIntent(business: PublicBusiness, pay: PaymentContext, kind: "deposit" | "card", intentId: string): Promise<void> {
+  const accountId = pay.accountId;
+  if (!accountId) return;
+  const opts = { stripeAccount: accountId };
+  try {
+    if (kind === "deposit") {
+      const pi = await stripe().paymentIntents.retrieve(intentId, undefined, opts);
+      if (pi.metadata.businessId === business.id && ["requires_payment_method", "requires_confirmation", "requires_action"].includes(pi.status)) await stripe().paymentIntents.cancel(intentId, undefined, opts);
+    } else {
+      const si = await stripe().setupIntents.retrieve(intentId, undefined, opts);
+      if (si.metadata?.businessId === business.id && ["requires_payment_method", "requires_confirmation", "requires_action"].includes(si.status)) await stripe().setupIntents.cancel(intentId, undefined, opts);
+    }
+  } catch (e) {
+    console.error("[online-payments] could not cancel abandoned intent", intentId, (e as Error).message);
+  }
+}
+
 export type VerifiedIntent =
   | { kind: "deposit"; paymentIntentId: string; cents: number; cardLabel: string | null; meta: IntentMeta }
   | { kind: "card"; setupIntentId: string; meta: IntentMeta };

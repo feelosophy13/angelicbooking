@@ -4,7 +4,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { Button, Notice } from "@/components/ui";
 import { ContactFields, type BookingDefaults } from "./forms";
-import { finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
+import { abandonOnlinePaymentAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
 
 type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string };
 
@@ -89,7 +89,7 @@ export function PaidBookingForm(props: {
       <p className="text-xs font-medium uppercase tracking-wide text-stone-400">Step 2 of 2 · {props.mode === "deposit" ? "Payment" : "Card"}</p>
       <p className="text-sm">
         <span className="font-medium">{fields.firstName} {fields.lastName}</span> · {fields.phone || fields.email}{" "}
-        <button type="button" className="underline" onClick={() => setIntent(null)}>Edit</button>
+        <button type="button" className="underline" onClick={() => { void abandonOnlinePaymentAction(props.slug, props.locationId ?? null, { kind: intent.kind, id: intent.intentId }); setIntent(null); }}>Edit</button>
       </p>
       <Elements stripe={stripePromise} options={{ clientSecret: intent.clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: props.brand } } }}>
         <ConfirmStep fields={fields} intent={intent} mode={props.mode} amountLabel={props.amountLabel} brand={props.brand} />

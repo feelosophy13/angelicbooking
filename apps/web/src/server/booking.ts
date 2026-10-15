@@ -259,6 +259,44 @@ export async function rescheduleService(input: {
 }
 
 /**
+ * Move a whole appointment (every live service) to a new start, keeping the gaps between services.
+ * One transaction with the overlap check deferred, so services that follow each other can swap into
+ * each other's old times.
+ */
+export async function rescheduleAppointment(input: { businessId: string; appointmentId: string; newStartAt: Date; actorUserId: string }) {
+  try {
+    await withTenant(input.businessId, async (tx) => {
+      const items = (await tx.select().from(schema.appointmentItems).where(eq(schema.appointmentItems.appointmentId, input.appointmentId)))
+        .filter((i) => i.status !== "cancelled" && i.status !== "completed" && i.status !== "no_show")
+        .sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+      if (!items.length) throw new BookingError("This appointment can no longer be moved.");
+      if (items.some((i) => i.classSessionId)) throw new BookingError("Seats in a class move with the class. Cancel the seat and book another session instead.");
+      const deltaMs = input.newStartAt.getTime() - items[0]!.startAt.getTime();
+      if (deltaMs === 0) return;
+      const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
+      const tz = biz?.timezone ?? "America/New_York";
+      const moved = items.map((i) => ({ item: i, start: new Date(i.startAt.getTime() + deltaMs), end: new Date(i.endAt.getTime() + deltaMs) }));
+      const staffIds = [...new Set(moved.map((m) => m.item.staffId))];
+      const dates = [...new Set(moved.map((m) => instantToISODate(m.start, tz)))];
+      const blocks = await workingBlocksFor({ businessId: input.businessId, timeZone: tz, staffIds, dates });
+      for (const staffId of staffIds) {
+        for (const day of dates) {
+          const mine = moved.filter((m) => m.item.staffId === staffId && instantToISODate(m.start, tz) === day);
+          if (!mine.length) continue;
+          if (!withinWorkingBlocks(blocks.get(`${staffId}:${day}`) ?? [], mine)) throw new BookingError("That time doesn't fit every service in this appointment. Please pick another.");
+        }
+      }
+      await tx.execute(sql`set constraints appointment_items_no_double_booking deferred`);
+      for (const m of moved) await tx.update(schema.appointmentItems).set({ startAt: m.start, endAt: m.end }).where(eq(schema.appointmentItems.id, m.item.id));
+      await followProviderLocation(tx, input.businessId, input.appointmentId);
+      await audit(tx, input.businessId, input.actorUserId, "appointment.reschedule", input.appointmentId, { from: items[0]!.startAt, to: input.newStartAt, items: items.length });
+    });
+  } catch (e) {
+    translate(e);
+  }
+}
+
+/**
  * After a move, the visit happens wherever its (first) provider works on the new
  * day. If that is a different site, every service on the ticket must be offered
  * there; then the appointment and the client's home location follow.
