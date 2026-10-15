@@ -23,7 +23,7 @@ import { WorkPhotos } from "./work-photos";
 import { ServiceSearch } from "./service-search";
 import { MonthCalendar } from "./calendar";
 
-type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string; extra?: string; add?: string; sort?: string; order?: string };
+type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string; extra?: string; add?: string; sort?: string };
 
 export default async function PublicBookingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
@@ -33,8 +33,8 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const business = (await getPublicBusiness(slug))!;
   const locations = await getPublicLocations(business.id);
   const location = locations.length > 1 ? (locations.find((l) => l.id === sp.location) ?? null) : (locations[0] ?? null);
-  // Clients can pick a stylist first (default) or a day and time first, then see who is free then.
-  const timeFirst = sp.order === "time";
+  // The salon decides the order: a stylist first (default), or a day and time first and then who is free.
+  const timeFirst = business.bookingOrder === "time";
   const stepLabels = timeFirst ? ["Service", "Time", "Provider", "Details"] : ["Service", "Provider", "Time", "Details"];
   if (locations.length > 1 && !location) {
     return (
@@ -86,7 +86,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const p = new URLSearchParams();
     // Choosing a different service starts a new visit, so the added services go with the old one.
     const keepExtras = "service" in extra ? undefined : extraIds.join(",") || undefined;
-    for (const [k, v] of Object.entries({ location: locations.length > 1 ? location?.id : undefined, category: service?.categoryId ?? sp.category, service: service?.id, staff: staffChoice ?? undefined, date: date ?? undefined, extra: keepExtras, order: timeFirst ? "time" : undefined, time: timeFirst ? sp.time : undefined, ...extra })) if (v) p.set(k, v);
+    for (const [k, v] of Object.entries({ location: locations.length > 1 ? location?.id : undefined, category: service?.categoryId ?? sp.category, service: service?.id, staff: staffChoice ?? undefined, date: date ?? undefined, extra: keepExtras, time: timeFirst ? sp.time : undefined, ...extra })) if (v) p.set(k, v);
     return `?${p.toString()}`;
   };
   const locBar = locations.length > 1 && location ? (
@@ -294,7 +294,6 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <StepTitle title="Choose a provider" subtitle={pickTime ? `Free ${formatDateLong(date!)} at ${formatTime(pickTime, tz)}` : undefined} />
         <Summary imageUrl={service.imageUrl} title={service.name} rows={[...(pickTime ? [{ label: "When", value: `${formatDateLong(date!)} at ${formatTime(pickTime, tz)}`, href: q({ time: undefined }) }] : []), { label: "Price", value: shownPrice }, ...depositRow, { label: "Duration", value: durationText, href: q({ service: undefined }) }]} />
         {bookingNotes}
-        {!timeFirst ? <p className="mb-3 text-sm text-stone-600">Care more about when than who? <Link href={q({ order: "time" })} className="font-medium underline" style={{ color: "var(--brand-dark)" }}>Pick a day and time first</Link></p> : null}
         {lastPerson ? (
           <Link href={q({ staff: lastPerson.id })} className="mb-3 flex items-center gap-3 rounded-2xl border-2 bg-white p-4 shadow-sm transition hover:shadow-md" style={{ borderColor: "var(--brand)" }}>
             {lastPerson.photoUrl ? (
@@ -391,7 +390,6 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <Summary imageUrl={service.imageUrl} title={service.name} rows={summaryRows([{ label: "Price", value: priceText }, ...depositRow])} />
         {staffChoice && staffChoice !== "any" ? pricierNote(staffChoice, "This provider") : null}
         {bookingNotes}
-        {timeFirst && !staffChoice ? <p className="mb-3 text-sm text-stone-600">Prefer to choose your stylist first? <Link href={q({ order: undefined, staff: undefined, date: undefined, time: undefined })} className="font-medium underline" style={{ color: "var(--brand-dark)" }}>Choose a provider first</Link></p> : null}
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <MonthCalendar
             monthStart={monthStart}

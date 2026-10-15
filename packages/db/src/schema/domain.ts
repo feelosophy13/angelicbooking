@@ -74,6 +74,8 @@ export const businesses = pgTable("businesses", {
   onlineBookingEnabled: boolean("online_booking_enabled").notNull().default(true),
   minNoticeMin: integer("min_notice_min").notNull().default(120),
   maxAdvanceDays: integer("max_advance_days").notNull().default(60),
+  // Which comes first on the booking page: "provider" (choose a stylist, then a time) or "time" (choose a time, then who is free).
+  bookingOrder: text("booking_order").notNull().default("provider"),
   cancelWindowHours: integer("cancel_window_hours").notNull().default(24),
     // Late cancellation (inside the window): none, a flat amount (cents) or a percent of the booked services (bps).
     lateCancelFeeType: text("late_cancel_fee_type").notNull().default("none"), // none | flat | percent

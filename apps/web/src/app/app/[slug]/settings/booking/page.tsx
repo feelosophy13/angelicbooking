@@ -38,6 +38,12 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
               <Field label="Book up to" name="maxAdvanceDays" hint="Days ahead."><Input name="maxAdvanceDays" type="number" min={1} max={365} defaultValue={business.maxAdvanceDays} /></Field>
               <Field label="Cancellation window" name="cancelWindowHours" hint="Hours before the visit."><Input name="cancelWindowHours" type="number" min={0} defaultValue={business.cancelWindowHours} /></Field>
             </div>
+            <Field label="Order of steps" name="bookingOrder" hint="Clients can't change this. Provider first suits salons where people ask for a stylist; time first suits clients who just want the earliest slot.">
+              <Select name="bookingOrder" defaultValue={business.bookingOrder}>
+                <option value="provider">Choose a provider, then a day and time</option>
+                <option value="time">Choose a day and time, then a provider</option>
+              </Select>
+            </Field>
             <details className="rounded-lg border border-stone-200 p-3" open={business.requireCardOnline || business.noShowFeeCents > 0 || business.lateCancelFeeType !== "none"}>
               <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">
                 Fees, deposits and cards <span className="font-normal text-stone-500">· {[
