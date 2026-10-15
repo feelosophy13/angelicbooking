@@ -169,10 +169,13 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   return <div className={cn("rounded-xl border border-stone-200 bg-white shadow-sm", className)} {...props} />;
 }
 
-export function PageHeader({ title, children }: { title: string; children?: React.ReactNode }) {
+export function PageHeader({ title, lead, children }: { title: string; /** Picture shown before the title. */ lead?: React.ReactNode; children?: React.ReactNode }) {
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+      <div className="flex min-w-0 items-center gap-3">
+        {lead}
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+      </div>
       {children ? <div className="flex max-w-full flex-wrap items-center gap-2">{children}</div> : null}
     </div>
   );

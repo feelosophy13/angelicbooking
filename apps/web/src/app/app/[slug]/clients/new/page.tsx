@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
 import { FormPage, Input, Textarea } from "@/components/ui";
+import { ImageField } from "@/components/image-field";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { createClient } from "../actions";
 
@@ -13,6 +14,7 @@ export default async function NewClientPage({ params }: { params: Promise<{ slug
     <FormPage title="New client" backHref={`/app/${slug}/clients`} backLabel="Clients">
       <ActionForm action={createClient}>
         <input type="hidden" name="slug" value={slug} />
+        <ImageField name="photo" current={null} shape="round" />
         <div className="grid grid-cols-2 gap-3">
           <Field label="First name" name="firstName" required><Input name="firstName" required autoFocus /></Field>
           <Field label="Last name" name="lastName"><Input name="lastName" /></Field>

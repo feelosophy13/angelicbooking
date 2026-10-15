@@ -119,6 +119,20 @@ export async function renameCategory(businessId: string, kind: Kind, id: string,
 
 export class CategoryError extends Error {}
 
+/** Name and picture of a product category (imageUrl: undefined keeps, null clears). */
+export async function updateProductCategory(businessId: string, id: string, input: { name: string; imageUrl?: string | null }) {
+  await withTenant(businessId, async (tx) => {
+    const me = await tx.query.productCategories.findFirst({ where: eq(schema.productCategories.id, id) });
+    if (!me) throw new CategoryError("Category not found.");
+    const set: Partial<typeof schema.productCategories.$inferInsert> = { name: input.name.trim() };
+    if (input.imageUrl !== undefined) {
+      if (me.imageUrl && me.imageUrl !== input.imageUrl) await deleteFileByUrl(me.imageUrl);
+      set.imageUrl = input.imageUrl || null;
+    }
+    await tx.update(schema.productCategories).set(set).where(eq(schema.productCategories.id, id));
+  });
+}
+
 /** Full edit for a service category: name, description, parent, image (null keeps, "" clears). */
 export async function updateServiceCategory(
   businessId: string,
@@ -148,6 +162,10 @@ export async function deleteCategory(businessId: string, kind: Kind, id: string)
   const it = itemTable(kind);
   await withTenant(businessId, async (tx) => {
     await tx.update(it).set({ categoryId: null }).where(eq(it.categoryId, id));
+    if (kind === "product") {
+      const me = await tx.query.productCategories.findFirst({ where: eq(schema.productCategories.id, id) });
+      if (me?.imageUrl) await deleteFileByUrl(me.imageUrl);
+    }
     if (kind === "service") {
       const me = await tx.query.serviceCategories.findFirst({ where: eq(schema.serviceCategories.id, id) });
       await tx.update(schema.serviceCategories).set({ parentId: me?.parentId ?? null }).where(eq(schema.serviceCategories.parentId, id));

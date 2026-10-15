@@ -9,6 +9,7 @@ import { normalizePhone } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
+import { deleteFileByUrl, FileError, uploadedImageFrom } from "@/lib/files";
 
 const fields = z.object({
   slug: z.string(),
@@ -21,15 +22,26 @@ const fields = z.object({
   birthday: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Pick a date").transform((v) => v || null).optional(),
   smsOptIn: f.checkbox(),
   emailOptIn: f.checkbox(),
+  removePhoto: f.checkbox(),
 });
 
-export const createClient = formAction(fields, async (d) => {
+async function photoOrFieldError(businessId: string, raw: FormData) {
+  try {
+    return await uploadedImageFrom(businessId, "client", raw, "photo");
+  } catch (e) {
+    if (e instanceof FileError) throw new FormError(e.message, "photo");
+    throw e;
+  }
+}
+
+export const createClient = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "clients.write");
   if (d.phone && !normalizePhone(d.phone)) throw new FormError("Enter a valid mobile number", "phone");
+  const photoUrl = await photoOrFieldError(ctx.business.id, raw);
   const [row] = await withTenant(ctx.business.id, (tx) =>
     tx
       .insert(schema.clients)
-      .values({ businessId: ctx.business.id, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, smsOptIn: true, emailOptIn: true })
+      .values({ businessId: ctx.business.id, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, photoUrl, smsOptIn: true, emailOptIn: true })
       .returning({ id: schema.clients.id }),
   );
   await triggerWorkflows(ctx.business, "client_created", { clientId: row!.id, dedupeKey: row!.id, facts: { firstVisit: true, clientTags: [] }, context: { reason: "New client (desk)" } });
@@ -38,15 +50,19 @@ export const createClient = formAction(fields, async (d) => {
   redirect(`/app/${d.slug}/clients/${row!.id}`);
 });
 
-export const updateClient = formAction(fields, async (d) => {
+export const updateClient = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "clients.write");
   if (d.phone && !normalizePhone(d.phone)) throw new FormError("Enter a valid mobile number", "phone");
+  const uploaded = await photoOrFieldError(ctx.business.id, raw);
+  const before = await withTenant(ctx.business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, d.clientId ?? ""), columns: { photoUrl: true } }));
+  const photo = uploaded ? { photoUrl: uploaded } : d.removePhoto ? { photoUrl: null } : {};
   await withTenant(ctx.business.id, (tx) =>
     tx
       .update(schema.clients)
-      .set({ firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, smsOptIn: d.smsOptIn, emailOptIn: d.emailOptIn })
+      .set({ ...photo, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, smsOptIn: d.smsOptIn, emailOptIn: d.emailOptIn })
       .where(eq(schema.clients.id, d.clientId ?? "")),
   );
+  if (before?.photoUrl && "photoUrl" in photo && before.photoUrl !== photo.photoUrl) await deleteFileByUrl(before.photoUrl);
   revalidatePath(`/app/${d.slug}/clients`);
   revalidatePath(`/app/${d.slug}/clients/${d.clientId}`);
   return "Client saved";

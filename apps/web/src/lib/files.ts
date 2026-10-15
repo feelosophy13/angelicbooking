@@ -42,7 +42,7 @@ async function saveFile(businessId: string, kind: string, p: { data: Buffer; con
   return { id: row!.id, url: appUrl(`/api/files/${row!.id}`) };
 }
 
-export async function storeImage(businessId: string, kind: "logo" | "cover" | "product" | "package" | "service" | "category" | "staff", file: File): Promise<{ id: string; url: string }> {
+export async function storeImage(businessId: string, kind: "logo" | "cover" | "product" | "package" | "service" | "category" | "staff" | "client", file: File): Promise<{ id: string; url: string }> {
   if (!file || file.size === 0) throw new FileError("Choose an image file.");
   if (!ALLOWED.has(file.type)) throw new FileError("Use a PNG, JPEG, WebP, GIF or SVG image.");
   if (file.size > MAX_FILE_BYTES) throw new FileError("Images must be 8 MB or smaller.");
@@ -143,7 +143,7 @@ export const fileUrl = (id: string) => appUrl(`/api/files/${id}`);
  * Read an optional `<input type="file" name="image">` from a form and store it.
  * Returns the new URL, or null when nothing was chosen. Throws FileError on bad input.
  */
-export async function uploadedImageFrom(businessId: string, kind: "product" | "package" | "service" | "category", raw: FormData, field = "image"): Promise<string | null> {
+export async function uploadedImageFrom(businessId: string, kind: "product" | "package" | "service" | "category" | "client", raw: FormData, field = "image"): Promise<string | null> {
   const file = raw.get(field);
   if (!(file instanceof File) || file.size === 0) return null;
   return (await storeImage(businessId, kind, file)).url;

@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireAction } from "@/lib/tenant";
-import { CategoryError, deleteCategory, ensureCategory, getServiceCategory, moveCategory, renameCategory, updateServiceCategory } from "@/server/categories";
+import { CategoryError, deleteCategory, ensureCategory, getServiceCategory, moveCategory, renameCategory, updateProductCategory, updateServiceCategory } from "@/server/categories";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { FileError, uploadedImageFrom } from "@/lib/files";
@@ -34,6 +34,10 @@ export const createCategory = formAction(base.extend({ name: f.text(1, 60), pare
   const ctx = await requireAction(d.slug, "services.manage");
   const parentId = d.kind === "service" ? d.parentId || null : null;
   const id = await ensureCategory(ctx.business.id, d.kind, d.name, parentId);
+  if (id && d.kind === "product") {
+    const imageUrl = await imageOrFieldError(ctx.business.id, raw);
+    if (imageUrl) await updateProductCategory(ctx.business.id, id, { name: d.name, imageUrl });
+  }
   if (id && d.kind === "service") {
     const imageUrl = await imageOrFieldError(ctx.business.id, raw);
     await updateServiceCategory(ctx.business.id, id, { name: d.name, description: d.description, prepNotes: d.prepNotes, parentId, ...(imageUrl ? { imageUrl } : {}) });
@@ -59,6 +63,15 @@ export const updateServiceCategoryAction = formAction(
     return "Category saved";
   },
 );
+
+/** Edit a product category: name and picture. */
+export const updateProductCategoryAction = formAction(z.object({ slug: z.string(), id: z.string().min(1), name: f.text(1, 60), removeImage: f.checkbox() }), async (d, raw) => {
+  const ctx = await requireAction(d.slug, "services.manage");
+  const uploaded = await imageOrFieldError(ctx.business.id, raw);
+  await updateProductCategory(ctx.business.id, d.id, { name: d.name, ...(uploaded ? { imageUrl: uploaded } : d.removeImage ? { imageUrl: null } : {}) });
+  revalidateAll(d.slug, "product");
+  return "Category saved";
+});
 
 export async function renameCategoryAction(formData: FormData) {
   const d = base.extend({ id: z.string().min(1), name: z.string().trim().min(1).max(60) }).safeParse(Object.fromEntries(formData));

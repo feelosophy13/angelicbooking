@@ -43,13 +43,13 @@ export function CategoryList(props: {
                 {hidden({ id: c.id, dir: "down" })}
                 <button className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-30" disabled={i === sibs.length - 1} aria-label={`Move ${c.name} down`}><ArrowDown className="h-4 w-4" /></button>
               </form>
-              {props.kind === "service" ? <CategoryThumb imageUrl={c.imageUrl} name={c.name} className="h-8 w-8 rounded-md text-xs" /> : null}
+              <CategoryThumb imageUrl={c.imageUrl} name={c.name} className="h-8 w-8 rounded-md text-xs" />
               <form action={props.actions.rename} className="flex flex-1 items-center gap-1">
                 {hidden({ id: c.id })}
                 <Input name="name" defaultValue={c.name} className="h-8 max-w-sm flex-1" aria-label={`Name of ${c.name}`} />
                 <button className="rounded px-2 py-1 text-xs text-stone-600 hover:bg-stone-100">Rename</button>
               </form>
-              {props.kind === "service" ? <Link href={`/app/${props.slug}/services/categories/${c.id}/edit`} className="rounded px-2 py-1 text-xs text-brand-700 hover:bg-brand-50">Edit</Link> : null}
+              <Link href={`/app/${props.slug}/${props.kind === "service" ? "services" : "products"}/categories/${c.id}/edit`} className="rounded px-2 py-1 text-xs text-brand-700 hover:bg-brand-50">Edit</Link>
               <span className="w-16 text-right text-xs text-stone-400">{n} item{n === 1 ? "" : "s"}</span>
               <form action={props.actions.remove}>
                 {hidden({ id: c.id })}

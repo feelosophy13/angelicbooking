@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
 import { FormPage, Input } from "@/components/ui";
+import { ImageField } from "@/components/image-field";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { createCategory } from "../../../categories-actions";
 
@@ -15,6 +16,7 @@ export default async function NewCategoryPage({ params }: { params: Promise<{ sl
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="kind" value="product" />
         <Field label="Name" name="name" required><Input name="name" required placeholder="Hair care" autoFocus /></Field>
+        <Field label="Image" name="image" hint="Optional. Shown with the category."><ImageField name="image" current={null} shape="wide" /></Field>
         <SubmitButton pendingText="Creating…">Create category</SubmitButton>
       </ActionForm>
     </FormPage>

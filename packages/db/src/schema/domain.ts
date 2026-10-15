@@ -411,6 +411,7 @@ export const clients = pgTable(
     email: text("email"),
     phone: text("phone"),
     notes: text("notes"), // general/private notes
+    photoUrl: text("photo_url"),
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
     // Cached sum of store_credit_ledger for this client.
     storeCreditCents: integer("store_credit_cents").notNull().default(0),

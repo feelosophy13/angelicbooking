@@ -246,6 +246,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Postgres. Old `/api/files` links redirect to the CDN. Deployed 2026-10-13: all six `R2_*` variables are on Render and the
       production migration job found nothing left in the database (production holds no pictures yet), so new uploads there
       go straight to R2. Restart the local dev server to pick up the R2 variables.
+- [x] 2026-10-15 (migration 0085): clients have a profile photo (new client form, Edit details, avatar on the client page) and
+      product categories have an image (new and edit pages; the list shows thumbnails). Not yet shown on checkout or booking.
 - [x] 2026-10-13 (migration 0067): before/after photos and a Gallery. Photos belong to the appointment (and its service and
       stylist), with tags and a "client agreed to public sharing" record per pair; added from the appointment's Photos
       card (tap, shoot, uploads at once), stored privately with thumbnails. Gallery page (People) filters by service,

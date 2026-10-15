@@ -12,6 +12,7 @@ import { can } from "@angelic/core";
 import { requireAction, requireBusiness } from "@/lib/tenant";
 import { formatMoney, formatTime } from "@/lib/utils";
 import { BackLink, Button, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox, MoneyInput } from "@/components/ui";
+import { ImageField } from "@/components/image-field";
 import { updateClient } from "../actions";
 import { addNote, deleteNote, togglePin } from "./notes-actions";
 import { Pin, PinOff } from "lucide-react";
@@ -137,7 +138,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   return (
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/clients`}>Clients</BackLink></div>
-      <PageHeader title={`${client.firstName} ${client.lastName}`.trim()}>
+      <PageHeader title={`${client.firstName} ${client.lastName}`.trim()} lead={client.photoUrl ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={client.photoUrl} alt="" className="h-10 w-10 rounded-full object-cover" /> : undefined}>
         {can(permissions, "appointments.write.any") ? <LinkButton href={`/app/${slug}/appointments/new?clientId=${client.id}`} variant="primary"><Plus className="h-4 w-4" /> Book appointment</LinkButton> : null}
       </PageHeader>
       {/* At a glance: the numbers the desk asks about before anything else. */}
@@ -251,6 +252,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               <ActionForm action={updateClient} className="mt-3">
                 <input type="hidden" name="slug" value={slug} />
                 <input type="hidden" name="clientId" value={client.id} />
+                <ImageField name="photo" removeName="removePhoto" current={client.photoUrl} shape="round" placeholder={client.firstName.slice(0, 1)} />
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="First name" name="firstName" required><Input name="firstName" defaultValue={client.firstName} required /></Field>
                   <Field label="Last name" name="lastName"><Input name="lastName" defaultValue={client.lastName} /></Field>

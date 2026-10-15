@@ -28,6 +28,7 @@ export const productCategories = pgTable(
     id: id(),
     businessId: businessId(),
     name: text("name").notNull(),
+    imageUrl: text("image_url"),
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("product_categories_business_idx").on(t.businessId)],
