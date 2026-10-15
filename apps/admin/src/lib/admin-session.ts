@@ -1,16 +1,10 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { COOKIE, SESSION_HOURS, createToken } from "./session";
+import { COOKIE, createToken, sessionCookieOptions } from "./session";
 
 /** Start a signed-in session (password or Google). */
 export async function startSession(): Promise<void> {
-  (await cookies()).set(COOKIE, createToken(), {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: SESSION_HOURS * 3600,
-  });
+  (await cookies()).set(COOKIE, createToken(), sessionCookieOptions(process.env.NODE_ENV === "production"));
 }
 
 export function baseUrl(): string {

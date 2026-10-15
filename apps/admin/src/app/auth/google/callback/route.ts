@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { baseUrl, startSession } from "@/lib/admin-session";
+import { baseUrl } from "@/lib/admin-session";
 import { GOOGLE_TOKEN, acceptedEmail, allowedGoogleEmails, decodeIdToken, googleEnabled } from "@/lib/google";
-import { clearFailures, recordFailure, throttled } from "@/lib/session";
+import { COOKIE, clearFailures, createToken, recordFailure, sessionCookieOptions, throttled } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -77,8 +77,9 @@ export async function GET(req: NextRequest) {
     }
     note("signed in", { email });
     clearFailures(ip);
-    await startSession();
     const ok = NextResponse.redirect(new URL("/", baseUrl()));
+    // Set on this very response (not through next/headers) so the cookie is certainly on the redirect.
+    ok.cookies.set(COOKIE, createToken(), sessionCookieOptions(process.env.NODE_ENV === "production"));
     ok.cookies.delete({ name: "g_state", path: "/auth/google" });
     ok.cookies.delete({ name: "g_verifier", path: "/auth/google" });
     return ok;

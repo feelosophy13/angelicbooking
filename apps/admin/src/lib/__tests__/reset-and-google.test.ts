@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { acceptedEmail, allowedGoogleEmails, decodeIdToken, googleEnabled, pkcePair } from "../google";
 import { createResetToken, fingerprint, mayRequestReset, noteResetRequest, verifyResetToken } from "../reset-token";
-import { checkPassword, hashPassword } from "../session";
+import { checkPassword, hashPassword, sessionCookieOptions } from "../session";
 
 const SECRET = "s".repeat(40);
 const HASH = "scrypt:aa:bb";
@@ -67,5 +67,12 @@ describe("google sign-in", () => {
     expect(allowedGoogleEmails({ ADMIN_EMAIL: "me@x.com", ADMIN_GOOGLE_EMAILS: "a@x.com, B@x.com" })).toEqual(["a@x.com", "b@x.com"]);
     expect(googleEnabled({ GOOGLE_CLIENT_ID: "a" })).toBe(false);
     expect(googleEnabled({ GOOGLE_CLIENT_ID: "a", GOOGLE_CLIENT_SECRET: "b" })).toBe(true);
+  });
+});
+
+describe("session cookie", () => {
+  it("is Lax so it survives the redirect back from Google, and secure in production", () => {
+    expect(sessionCookieOptions(true)).toMatchObject({ httpOnly: true, sameSite: "lax", secure: true, path: "/" });
+    expect(sessionCookieOptions(false).secure).toBe(false);
   });
 });

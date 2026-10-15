@@ -3,6 +3,15 @@ import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypt
 export const COOKIE = "admin_session";
 export const SESSION_HOURS = 8;
 
+/**
+ * Lax, not Strict: after "Continue with Google" the browser arrives from google.com, and a Strict cookie set on that
+ * chain is withheld from the very next request ("/"), which bounces back to the login page. Lax still keeps the cookie
+ * off cross-site POSTs; the admin's changes are all POST server actions, which Next also checks the Origin of.
+ */
+export function sessionCookieOptions(production: boolean) {
+  return { httpOnly: true, sameSite: "lax" as const, secure: production, path: "/", maxAge: SESSION_HOURS * 3600 };
+}
+
 function secret(): string {
   const s = process.env.ADMIN_SESSION_SECRET;
   if (!s || s.length < 32) throw new Error("ADMIN_SESSION_SECRET must be set to a random string of at least 32 characters");
