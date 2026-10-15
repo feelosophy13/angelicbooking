@@ -65,7 +65,7 @@ export function CategoryTile({ href, name, imageUrl, description, meta }: { href
 }
 
 /** One bookable service: photo, name, duration, description, price. */
-export function ServiceCard({ href, name, imageUrl, description, durationLabel, price, priceFrom, from, deposit }: { href: string; name: string; imageUrl: string | null; description: string | null; durationLabel: string; price: string; /** Providers charge different amounts: the price shown is the lowest. */ priceFrom?: boolean; from?: string; /** e.g. "$50.00" when the service takes a deposit. */ deposit?: string }) {
+export function ServiceCard({ href, name, imageUrl, description, durationLabel, price, priceFrom, from, deposit }: { href: string; name: string; imageUrl: string | null; description: string | null; durationLabel: string; price: string; /** Providers charge different amounts: the price shown is the lowest. */ priceFrom?: boolean; from?: string; /** The full label, e.g. "$50.00 deposit" or "Pay in full". */ deposit?: string }) {
   return (
     <li>
       <Link href={href} className="group flex items-center gap-3 rounded-2xl border border-stone-200 bg-white p-3 shadow-sm transition hover:border-[var(--brand-ring)] hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--brand)] sm:gap-4 sm:p-4">
@@ -77,7 +77,7 @@ export function ServiceCard({ href, name, imageUrl, description, durationLabel, 
         )}
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-stone-900">{name}</p>
-          <p className="mt-0.5 flex items-center gap-1 text-xs text-stone-500"><Clock className="h-3.5 w-3.5" aria-hidden />{durationLabel}{from ? <span className="ml-1 rounded-full bg-stone-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-stone-500">{from}</span> : null}{deposit ? <span className="ml-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">{deposit} deposit</span> : null}</p>
+          <p className="mt-0.5 flex items-center gap-1 text-xs text-stone-500"><Clock className="h-3.5 w-3.5" aria-hidden />{durationLabel}{from ? <span className="ml-1 rounded-full bg-stone-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-stone-500">{from}</span> : null}{deposit ? <span className="ml-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">{deposit}</span> : null}</p>
           {description ? <p className="mt-1 line-clamp-2 text-xs text-stone-500">{description}</p> : null}
         </div>
         <div className="flex shrink-0 items-center gap-2">
