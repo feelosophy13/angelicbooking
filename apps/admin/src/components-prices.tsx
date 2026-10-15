@@ -13,7 +13,7 @@ export function PriceInputs({ values, defaults }: { values: Partial<Record<keyof
           <div className="grid gap-3 sm:grid-cols-2">
             {FIELDS.filter((f) => f.group === g).map((f) => (
               <label key={f.key} className="block text-sm">
-                <span className="font-medium">{f.label}</span>
+                <span className="flex items-center gap-2"><span className="font-medium">{f.label}</span>{defaults && (values[f.key] != null ? <span className="rounded-full bg-brand-soft px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-brand">custom</span> : <span className="text-[10px] uppercase tracking-wide text-ink-3">default</span>)}</span>
                 <span className="block text-xs text-ink-3">{f.help}</span>
                 <div className="mt-1 flex items-center rounded-lg border border-line bg-surface focus-within:outline-2 focus-within:outline-brand">
                   {f.kind === "money" && <span className="pl-3 text-ink-3">$</span>}

@@ -36,8 +36,8 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
     return `/tenants${s ? `?${s}` : ""}`;
   };
   const exportHref = `/export.csv?${new URLSearchParams({ q: query.q, status: query.status, sort: query.sort, dir: query.dir })}`;
-  const th = (label: string, k: SortKey, right = false) => (
-    <th scope="col" className={`px-3 py-2.5 font-medium ${right ? "text-right" : ""}`}>
+  const th = (label: string, k: SortKey, right = false, extra = "") => (
+    <th scope="col" className={`px-3 py-2.5 font-medium ${right ? "text-right" : ""} ${extra}`}>
       <Link href={href({ sort: k, dir: query.sort === k && query.dir === "desc" ? "asc" : "desc" })} className="hover:text-ink">{label}{query.sort === k ? (query.dir === "asc" ? " ↑" : " ↓") : ""}</Link>
     </th>
   );
@@ -51,9 +51,9 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
       />
 
       <form action="/tenants" className="flex flex-wrap items-center gap-2" role="search">
-        <input name="q" defaultValue={query.q} placeholder="Search name, slug or owner email" className={`${INPUT} min-w-0 flex-1 sm:max-w-sm sm:flex-none sm:w-80`} />
+        <input name="q" defaultValue={query.q} placeholder="Search name, slug or owner email" className={`${INPUT} w-full sm:w-80`} />
         <input type="hidden" name="status" value={query.status} />
-        <select name="sort" defaultValue={query.sort} className={SELECT} aria-label="Sort by">
+        <select name="sort" defaultValue={query.sort} className={`${SELECT} min-w-0 flex-1 sm:flex-none`} aria-label="Sort by">
           {SORTS.map(([k, label]) => <option key={k} value={k}>Sort: {label}</option>)}
         </select>
         <button className={BTN}>Search</button>
@@ -76,18 +76,18 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
         <div className="mt-4"><Empty title={all.length === 0 ? "No businesses yet" : "No businesses match"}>{all.length === 0 ? "They appear here as soon as someone signs up." : "Try a different search or filter."}</Empty></div>
       ) : (
         <div className="mt-4 overflow-x-auto rounded-xl border border-line bg-surface">
-          <table className="w-full min-w-[960px] text-left text-sm">
+          <table className="w-full min-w-[600px] text-left text-sm">
             <thead className="border-b border-line bg-surface-2 text-xs uppercase tracking-wide text-ink-3">
               <tr>
                 {th("Business", "name")}
                 <th scope="col" className="px-3 py-2.5 font-medium">Status</th>
                 {th("Locations", "locations", true)}
                 {th("Staff", "staff", true)}
-                {th("Clients", "clients", true)}
-                <th scope="col" className="px-3 py-2.5 font-medium">Bookings (30d)</th>
-                {th("Texts", "texts", true)}
+                {th("Clients", "clients", true, "hidden 2xl:table-cell")}
+                <th scope="col" className="hidden px-3 py-2.5 font-medium xl:table-cell">Bookings (30d)</th>
+                {th("Texts", "texts", true, "hidden 2xl:table-cell")}
                 {th("Est. / month", "estimate", true)}
-                {th("Last booking", "activity")}
+                {th("Last booking", "activity", false, "hidden 2xl:table-cell")}
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -111,19 +111,19 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{t.locations}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{t.activeStaff}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{t.clients}</td>
-                  <td className="px-3 py-2.5">
+                  <td className="hidden px-3 py-2.5 text-right tabular-nums 2xl:table-cell">{t.clients}</td>
+                  <td className="hidden px-3 py-2.5 xl:table-cell">
                     <div className="flex items-center gap-2">
                       <span className="w-8 text-right tabular-nums">{t.appointments30d}</span>
                       <span className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-2 ring-1 ring-line"><span className="block h-full rounded-full bg-brand" style={{ width: `${(t.appointments30d / maxBookings) * 100}%` }} /></span>
                     </div>
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{t.sms30d}</td>
+                  <td className="hidden px-3 py-2.5 text-right tabular-nums 2xl:table-cell">{t.sms30d}</td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
                     {money(t.bill.totalCents)}
                     {t.hasOverrides && <span className="ml-1.5 align-middle"><Badge tone="brand" title="Custom pricing">custom</Badge></span>}
                   </td>
-                  <td className="px-3 py-2.5 text-ink-2" title={date(t.lastAppointmentAt)}>{relativeDay(t.lastAppointmentAt, now)}</td>
+                  <td className="hidden px-3 py-2.5 text-ink-2 2xl:table-cell" title={date(t.lastAppointmentAt)}>{relativeDay(t.lastAppointmentAt, now)}</td>
                 </tr>
               ))}
             </tbody>

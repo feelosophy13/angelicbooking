@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Shell, dateTime } from "@/components";
 import { platformHealth } from "@/lib/health";
+import { waiting, waitingShort } from "@/lib/audit-text";
 import { Bars } from "@/ui/chart";
 import { Badge, Card, Empty, PageHeader, Stat } from "@/ui/kit";
 
@@ -16,7 +17,7 @@ export default async function HealthPage() {
       <PageHeader title="Platform health" subtitle={<span className="inline-flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${bad ? "bg-warn" : "bg-good"}`} />{bad ? "Something needs a look" : "Everything is running"}</span>} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Messages overdue" value={h.queuedOverdue} hint="Queued 15+ minutes ago" tone={h.queuedOverdue > 0 ? "warn" : undefined} />
-        <Stat label="Oldest overdue" value={h.oldestQueuedMinutes == null ? "—" : `${h.oldestQueuedMinutes}m`} hint="Minutes waiting" tone={(h.oldestQueuedMinutes ?? 0) > 30 ? "warn" : undefined} />
+        <Stat label="Oldest overdue" value={h.oldestQueuedMinutes == null ? "—" : waitingShort(h.oldestQueuedMinutes)} hint={h.oldestQueuedMinutes != null && h.oldestQueuedMinutes >= 60 ? `Waiting ${waiting(h.oldestQueuedMinutes)}` : "Waiting so far"} tone={(h.oldestQueuedMinutes ?? 0) > 30 ? "warn" : undefined} />
         <Stat label="Failed messages" value={failed} hint="Last 24 hours" tone={failed > 0 ? "warn" : undefined} />
         <Stat label="Stuck webhooks" value={h.webhookUnprocessed} hint="Unprocessed 10+ minutes" tone={h.webhookUnprocessed > 0 ? "warn" : undefined} />
       </div>

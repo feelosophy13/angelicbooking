@@ -12,7 +12,7 @@ export const FIELDS: FieldDef[] = [
   { key: "smsIncluded", label: "Texts included", kind: "count", help: "Per month", group: "Texts" },
   { key: "smsUsageCents", label: "Per extra text", kind: "money", help: "Whole cents; 0.02 = 2¢", group: "Texts" },
   { key: "trialDays", label: "Free trial", kind: "count", help: "Days, for new businesses", group: "Plan" },
-  { key: "platformFeeBps", label: "Platform fee", kind: "percent", help: "% of each card payment the business takes from clients; 0 = none", group: "Card payments" },
+  { key: "platformFeeBps", label: "Platform fee", kind: "percent", help: "% of each card payment; 0 = none", group: "Card payments" },
 ];
 
 export function money(cents: number): string {

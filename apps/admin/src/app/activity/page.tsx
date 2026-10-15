@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Shell, dateTime } from "@/components";
 import { actionLabel, listAudit } from "@/lib/audit";
+import { pricingChanges } from "@/lib/audit-text";
 import { Badge, Card, Empty, PageHeader, type Tone } from "@/ui/kit";
 
 export const metadata: Metadata = { title: "Activity" };
@@ -28,6 +29,7 @@ export default async function ActivityPage() {
                   {typeof r.detail.days === "number" && <span className="text-ink-3">+{r.detail.days} days</span>}
                 </span>
                 <span className="text-xs text-ink-3">{r.actor} · {dateTime(r.at)}</span>
+                {pricingChanges(r.action, r.detail).length > 0 && <div className="basis-full text-xs text-ink-2">{pricingChanges(r.action, r.detail).join(" · ")}</div>}
               </li>
             ))}
           </ul>
