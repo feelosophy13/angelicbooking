@@ -1,4 +1,4 @@
-import { createHmac, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 export const COOKIE = "admin_session";
 export const SESSION_HOURS = 8;
@@ -41,6 +41,14 @@ export function checkPassword(password: string, hash: string | undefined): boole
   const got = scryptSync(password, Buffer.from(saltHex, "hex"), want.length);
   return timingSafeEqual(want, got);
 }
+
+/** Same format scripts/hash-password.mjs prints, so a reset password and an env password are interchangeable. */
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16);
+  return `scrypt:${salt.toString("hex")}:${scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+export const MIN_PASSWORD = 12;
 
 // Login throttle: 5 failures per IP per 15 minutes (per instance; Cloudflare Access is the real gate).
 const failures = new Map<string, { n: number; first: number }>();

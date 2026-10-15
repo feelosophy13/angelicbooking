@@ -1,9 +1,11 @@
 "use server";
 
 import { cookies, headers } from "next/headers";
+import { adminEmail, passwordMatches } from "@/lib/credentials";
+import { startSession } from "@/lib/admin-session";
 import { redirect } from "next/navigation";
 import { verifyTotp } from "@/lib/totp";
-import { COOKIE, SESSION_HOURS, checkPassword, clearFailures, createToken, recordFailure, throttled } from "@/lib/session";
+import { COOKIE, clearFailures, recordFailure, throttled } from "@/lib/session";
 
 export async function login(_prev: { error: string } | null, form: FormData): Promise<{ error: string }> {
   const h = await headers();
@@ -13,8 +15,8 @@ export async function login(_prev: { error: string } | null, form: FormData): Pr
   const email = String(form.get("email") ?? "").trim().toLowerCase();
   const password = String(form.get("password") ?? "");
   // Run the hash check even when the email is wrong so timing doesn't reveal which half failed.
-  const passwordOk = checkPassword(password, process.env.ADMIN_PASSWORD_HASH);
-  const emailOk = !!process.env.ADMIN_EMAIL && email === process.env.ADMIN_EMAIL.trim().toLowerCase();
+  const passwordOk = await passwordMatches(password);
+  const emailOk = !!adminEmail() && email === adminEmail();
   // When ADMIN_TOTP_SECRET is set a current authenticator code is required too. Checked last, and only after the password, so a code can't be guessed alone.
   const totpSecret = process.env.ADMIN_TOTP_SECRET;
   const codeOk = !totpSecret || (emailOk && passwordOk && verifyTotp(totpSecret, String(form.get("code") ?? "").replace(/\s/g, "")));
@@ -24,13 +26,7 @@ export async function login(_prev: { error: string } | null, form: FormData): Pr
   }
 
   clearFailures(ip);
-  (await cookies()).set(COOKIE, createToken(), {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: SESSION_HOURS * 3600,
-  });
+  await startSession();
   redirect("/");
 }
 

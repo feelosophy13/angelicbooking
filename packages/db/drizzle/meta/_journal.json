@@ -554,6 +554,13 @@
       "when": 1792200000000,
       "tag": "0078_drop_require_mobile",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1792200100000,
+      "tag": "0079_admin_credentials",
+      "breakpoints": true
     }
   ]
 }

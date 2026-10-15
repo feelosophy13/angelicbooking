@@ -299,7 +299,19 @@ authenticator app; login then needs the 6-digit code; off in production, where C
 `pnpm --filter @angelic/admin start`, domain `admin.angelicbooking.com`, with a Cloudflare Access policy (your email only) in front.
 Sessions last 8 hours; logins are throttled to 5 failures per IP per 15 minutes per instance.
 
-**Locked out?** Generate a new hash/secret with the scripts above and update the env vars; there is no account table to repair.
+**Forgot the password?** The login page has "Forgot your password?": it emails a link (valid 30 minutes, works once, dies the moment the
+password changes) to `ADMIN_EMAIL` through Resend (`RESEND_API_KEY` and `EMAIL_FROM` on the admin service). The new password is stored
+hashed in the `admin_credentials` table (migration 0079) and from then on wins over `ADMIN_PASSWORD_HASH`. The form always gives the same
+answer, so it can't be used to find out which email is the admin's. Needs `ADMIN_BASE_URL` (https://admin.angelicbooking.com) for the link.
+
+**Google sign-in.** "Continue with Google" appears when `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set on the admin service (the same
+OAuth client as the web app is fine). Add `<ADMIN_BASE_URL>/auth/google/callback` to that client's authorised redirect URIs (and
+`http://localhost:3002/auth/google/callback` for local). Only `ADMIN_EMAIL` (or the comma-separated `ADMIN_GOOGLE_EMAILS`) may get in, and the
+Google account's email must be verified. It uses authorization code + PKCE + a state cookie. Google sign-in counts as the full login (no
+authenticator code on top). Cloudflare Access still sits in front of everything.
+
+**Locked out completely?** Generate a new hash with the script above and set `ADMIN_PASSWORD_HASH`, and delete the row in `admin_credentials`
+(a saved reset password overrides the env var).
 
 **What suspend does.** Closes the staff app (redirects to `/suspended`), the public booking page, client self-service links, calendar
 feeds, the clock-in kiosk and the mobile API, and skips outgoing texts and emails. Data is kept. The daily billing sweep also pauses

@@ -46,3 +46,14 @@ export const adminAuditLog = pgTable(
   },
   (t) => [index("admin_audit_log_at_idx").on(t.at), index("admin_audit_log_business_idx").on(t.businessId)],
 );
+
+/**
+ * The platform admin's password once it has been reset from the admin app (one row, id = 'admin'). Until then the
+ * login uses the ADMIN_PASSWORD_HASH environment variable. Only the admin app reads or writes it.
+ */
+export const adminCredentials = pgTable("admin_credentials", {
+  id: text("id").primaryKey().default("admin"),
+  email: text("email").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

@@ -30,6 +30,9 @@ DO $$ BEGIN
     GRANT INSERT, UPDATE, DELETE ON business_pricing TO angelic_admin;
     GRANT INSERT ON admin_audit_log TO angelic_admin;
   END IF;
+  IF to_regclass('public.admin_credentials') IS NOT NULL THEN
+    GRANT SELECT, INSERT, UPDATE ON admin_credentials TO angelic_admin;
+  END IF;
 END $$;
 
 -- The only business columns the admin app may change (suspend, comp, extend a trial). Re-run after migrating.
