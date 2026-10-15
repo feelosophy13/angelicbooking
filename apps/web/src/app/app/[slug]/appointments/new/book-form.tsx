@@ -23,10 +23,13 @@ export function BookForm(props: {
   extraServiceIds?: string[];
   summary?: string;
   staffId: string;
+  /** Set in "Any available" mode: who an exact time (not a listed one) is booked with. */
+  staffName?: string;
+  staffNames?: Record<string, string>;
   locationId?: string | null;
   date: string;
   dateLabel: string;
-  slots: { iso: string; label: string }[];
+  slots: { iso: string; label: string; staffId?: string }[];
   preselectIso?: string | null;
   customTimeDefault?: string | null;
 }) {
@@ -34,7 +37,11 @@ export function BookForm(props: {
   const [picked, setPicked] = useState<string | null>(props.preselectIso ?? null);
   const [custom, setCustom] = useState<string>(props.preselectIso ? "" : (props.customTimeDefault ?? ""));
   const [repeat, setRepeat] = useState(0);
-  const pickedLabel = props.slots.find((s) => s.iso === picked)?.label;
+  const pickedSlot = props.slots.find((s) => s.iso === picked);
+  const pickedLabel = pickedSlot?.label;
+  // A listed time carries its own person ("Any available"); an exact time uses the page's person.
+  const bookWith = pickedSlot?.staffId ?? props.staffId;
+  const bookWithName = props.staffNames?.[bookWith];
   const ready = !!picked || /^\d{2}:\d{2}$/.test(custom);
   return (
     <Card className="p-4">
@@ -46,6 +53,7 @@ export function BookForm(props: {
             <button
               key={s.iso}
               type="button"
+              title={props.staffName && s.staffId ? `with ${props.staffNames?.[s.staffId] ?? ""}` : undefined}
               onClick={() => {
                 setPicked(s.iso);
                 setCustom("");
@@ -67,11 +75,11 @@ export function BookForm(props: {
         <input type="hidden" name="clientId" value={props.clientId} />
         <input type="hidden" name="serviceId" value={props.serviceId} />
         {(props.extraServiceIds ?? []).map((id) => <input key={id} type="hidden" name="extraServiceIds" value={id} />)}
-        <input type="hidden" name="staffId" value={props.staffId} />
+        <input type="hidden" name="staffId" value={bookWith} />
         <input type="hidden" name="date" value={props.date} />
         {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}
         <input type="hidden" name="startAt" value={picked ?? ""} />
-        <Field label="Or an exact time" hint="Walk-in already in the chair? Enter when it actually started.">
+        <Field label="Or an exact time" hint={`Walk-in already in the chair? Enter when it actually started.${props.staffName ? ` Booked with ${props.staffName}.` : ""}`}>
           <Input
             name="customTime"
             type="time"
@@ -94,7 +102,7 @@ export function BookForm(props: {
         </div>
         {state?.error ? <Notice>{state.error}</Notice> : null}
         <Button type="submit" disabled={!ready || pending}>
-          {pending ? "Booking…" : ready ? `${repeat > 0 ? "Book series from" : "Book"} ${pickedLabel ?? custom}` : "Pick a time"}
+          {pending ? "Booking…" : ready ? `${repeat > 0 ? "Book series from" : "Book"} ${pickedLabel ?? custom}${props.staffName && bookWithName ? ` with ${bookWithName}` : ""}` : "Pick a time"}
         </Button>
       </form>
     </Card>

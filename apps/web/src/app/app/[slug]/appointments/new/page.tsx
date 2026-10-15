@@ -10,7 +10,8 @@ import { overridesForService, overridesForStaff, termsOf, type Override } from "
 import { formatDateLong, formatMoney, formatTime } from "@/lib/utils";
 import { duration } from "@/lib/format";
 import Link from "next/link";
-import { Button, Card, Field, Input, Label, PageHeader, Select, Empty } from "@/components/ui";
+import { Card, Field, Input, Label, PageHeader, Select, Empty } from "@/components/ui";
+import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { ServicePicker, type ServiceGroup } from "@/components/service-picker";
 import { groupServices } from "@/server/service-groups";
 import { listCategories, pathTo } from "@/server/categories";
@@ -68,7 +69,11 @@ export default async function NewAppointmentPage({
   const preselectTime = /^\d{2}:\d{2}$/.test(sp.time ?? "") ? sp.time! : null;
   // Someone who may only book for themselves sees only their own calendar here.
   const eligibleStaff = (service ? await staffForService(business.id, service.id, location?.id) : []).filter((s) => access === "any" || s.id === myStaffId);
-  const staffId = eligibleStaff.some((s) => s.id === sp.staffId) ? sp.staffId! : eligibleStaff[0]?.id;
+  // "Any available": the desk picks a time and whoever is free then gets it. The default when several people can do the service.
+  const canAny = eligibleStaff.length > 1;
+  const anyMode = canAny && (sp.staffId === "any" || !eligibleStaff.some((s) => s.id === sp.staffId));
+  // In "any" mode the first person stands in for the price and length shown; each time is checked against its own person.
+  const staffId = anyMode ? eligibleStaff[0]?.id : eligibleStaff.some((s) => s.id === sp.staffId) ? sp.staffId! : eligibleStaff[0]?.id;
   // When nobody here can do it: who can, and where, so the desk knows what to do next.
   const performersAnywhere = service && !staffId ? await staffForService(business.id, service.id) : [];
   const locName = (id: string) => (locations.find((l) => l.id === id)?.name ?? "").replace(`${business.name} - `, "");
@@ -83,19 +88,31 @@ export default async function NewAppointmentPage({
   const mainTerms = service ? termsFor(service) : null;
   // Open times must fit the whole chain: the first service's timing plus every extra, end to end.
   const chainMin = extras.reduce((s, x) => s + termsFor(x).durationMin + x.gapMin + x.finishMin + x.bufferAfterMin, 0);
-  const slots =
-    service && staffId
-      ? await getStaffAvailability({
-          businessId: business.id,
-          timeZone: tz,
-          slotIntervalMin: business.slotIntervalMin,
-          staffId,
-          date,
-          service: chainMin > 0 ? { durationMin: mainTerms!.durationMin + service.gapMin + service.finishMin + service.bufferAfterMin + chainMin, gapMin: 0, finishMin: 0, bufferAfterMin: 0 } : timingFor({ ...service, durationMin: mainTerms!.durationMin }),
-          notBefore: new Date(),
-          locationId: location?.id,
-        })
-      : [];
+  const availabilityFor = (sid: string, main: { durationMin: number }, chain: number) =>
+    getStaffAvailability({
+      businessId: business.id,
+      timeZone: tz,
+      slotIntervalMin: business.slotIntervalMin,
+      staffId: sid,
+      date,
+      service: chain > 0 ? { durationMin: main.durationMin + service!.gapMin + service!.finishMin + service!.bufferAfterMin + chain, gapMin: 0, finishMin: 0, bufferAfterMin: 0 } : timingFor({ ...service!, durationMin: main.durationMin }),
+      notBefore: new Date(),
+      locationId: location?.id,
+    });
+  let slots: { at: Date; staffId: string }[] = [];
+  if (service && staffId && anyMode) {
+    // Every eligible person's open times, merged; a time two people share goes to whoever comes first on the staff list.
+    const taken = new Map<number, string>();
+    for (const s of eligibleStaff) {
+      const so = await withTenant(business.id, (tx) => overridesForStaff(tx, s.id));
+      const tf = (svc: { id: string; priceCents: number; durationMin: number }) => termsOf(svc, so.get(svc.id));
+      const chain = extras.reduce((sum, x) => sum + tf(x).durationMin + x.gapMin + x.finishMin + x.bufferAfterMin, 0);
+      for (const at of await availabilityFor(s.id, tf(service), chain)) if (!taken.has(at.getTime())) taken.set(at.getTime(), s.id);
+    }
+    slots = [...taken].sort((a, b) => a[0] - b[0]).map(([t, sid]) => ({ at: new Date(t), staffId: sid }));
+  } else if (service && staffId) {
+    slots = (await availabilityFor(staffId, mainTerms!, chainMin)).map((at) => ({ at, staffId }));
+  }
   const chainPrice = (mainTerms?.priceCents ?? 0) + extras.reduce((s, x) => s + termsFor(x).priceCents, 0);
   const chainLabel = service ? [service, ...extras].map((s) => s.name).join(" + ") : "";
 
@@ -104,7 +121,7 @@ export default async function NewAppointmentPage({
       <PageHeader title="New appointment" />
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <Card className="p-4">
-          <form className="space-y-3">
+          <AutoSubmitForm className="space-y-3">
             {multi ? (
               <Field label="Location">
                 <Select name="location" defaultValue={location?.id ?? ""}>
@@ -117,15 +134,16 @@ export default async function NewAppointmentPage({
               <ClientPicker slug={slug} initial={client ? { id: client.id, name: `${client.firstName} ${client.lastName}`.trim() } : null} canCreate={can(permissions, "clients.write")} createClient={quickCreateClient} />
             </div>
             <Field label="Service" name="serviceId">
-              <ServicePicker name="serviceId" groups={serviceGroups} value={service?.id ?? null} submitOnPick />
+              <ServicePicker name="serviceId" groups={serviceGroups} value={service?.id ?? null} />
             </Field>
             {[...extras, null].map((x, i) => (
               <Field key={x?.id ?? "new"} label={i === 0 && !x ? "Add another service (optional)" : x ? `Also: ${x.name}` : "Add another service"} name={`extra-${i}`}>
-                <ServicePicker name="extra" groups={serviceGroups.map((g) => ({ ...g, services: g.services.filter((s) => s.id !== service?.id) })).filter((g) => g.services.length)} value={x?.id ?? null} placeholder="None" noneLabel={x ? "Remove this one" : "None"} submitOnPick />
+                <ServicePicker name="extra" groups={serviceGroups.map((g) => ({ ...g, services: g.services.filter((s) => s.id !== service?.id) })).filter((g) => g.services.length)} value={x?.id ?? null} placeholder="None" noneLabel={x ? "Remove this one" : "None"} />
               </Field>
             ))}
             <Field label="Staff">
-              <Select name="staffId" defaultValue={staffId ?? ""} disabled={!service}>
+              <Select name="staffId" defaultValue={anyMode ? "any" : (staffId ?? "")} disabled={!service}>
+                {canAny ? <option value="any">Any available</option> : null}
                 {eligibleStaff.map((s) => {
                   const t = service ? termsOf(service, svcOverrides.get(s.id)) : null;
                   const note = t ? [t.priceCustom ? formatMoney(t.priceCents, business.currency) : null, t.durationCustom ? duration(t.durationMin) : null].filter(Boolean).join(" · ") : "";
@@ -134,8 +152,7 @@ export default async function NewAppointmentPage({
               </Select>
             </Field>
             <Field label="Date"><Input name="date" type="date" defaultValue={date} /></Field>
-            <Button type="submit" variant="secondary" className="w-full">Find times</Button>
-          </form>
+          </AutoSubmitForm>
         </Card>
 
         <div>
@@ -168,17 +185,20 @@ export default async function NewAppointmentPage({
             </Card>
           ) : (
             <BookForm
+              key={[service.id, ...extras.map((x) => x.id), anyMode ? "any" : staffId, date, location?.id ?? ""].join("|")}
               slug={slug}
               clientId={sp.clientId ?? ""}
               serviceId={service.id}
               extraServiceIds={extras.map((x) => x.id)}
               summary={`${chainLabel} · ${duration(mainTerms!.durationMin + service.gapMin + service.finishMin + chainMin)} · ${formatMoney(chainPrice, business.currency)}`}
               staffId={staffId}
+              staffName={anyMode ? eligibleStaff[0]?.displayName : undefined}
+              staffNames={Object.fromEntries(eligibleStaff.map((s) => [s.id, s.displayName]))}
               locationId={location?.id ?? null}
               date={date}
               dateLabel={formatDateLong(date)}
-              slots={slots.map((d) => ({ iso: d.toISOString(), label: formatTime(d, tz) }))}
-              preselectIso={preselectTime ? (slots.find((d) => formatTime(d, tz) === formatTime(zonedToInstant(date, preselectTime, tz), tz))?.toISOString() ?? null) : null}
+              slots={slots.map((d) => ({ iso: d.at.toISOString(), label: formatTime(d.at, tz), staffId: d.staffId }))}
+              preselectIso={preselectTime ? (slots.find((d) => formatTime(d.at, tz) === formatTime(zonedToInstant(date, preselectTime, tz), tz))?.at.toISOString() ?? null) : null}
               customTimeDefault={preselectTime}
             />
           )}

@@ -32,6 +32,7 @@ export function ClientPicker(props: {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement>(null);
+  const hidden = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (q.trim().length < 2) {
@@ -70,6 +71,8 @@ export function ClientPicker(props: {
     setOpen(false);
     setCreating(false);
     props.onPick?.(c);
+    // Once the hidden input holds the new id, let a surrounding live form (New appointment) notice the change.
+    setTimeout(() => hidden.current?.dispatchEvent(new Event("change", { bubbles: true })), 0);
   };
 
   async function create(e: React.FormEvent<HTMLFormElement>) {
@@ -90,7 +93,7 @@ export function ClientPicker(props: {
 
   return (
     <div ref={box} className="relative">
-      <input type="hidden" name={name} value={picked?.id ?? ""} />
+      <input ref={hidden} type="hidden" name={name} value={picked?.id ?? ""} readOnly />
       {picked ? (
         <div className="flex h-10 items-center justify-between gap-2 rounded-lg border border-stone-300 bg-white px-3 text-sm">
           <span className="truncate font-medium">{picked.name}</span>

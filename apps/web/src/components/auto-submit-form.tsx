@@ -17,7 +17,9 @@ export function AutoSubmitForm({ children, className }: { children: React.ReactN
   useEffect(() => {
     const el = form.current;
     if (!el) return;
-    const onChange = () => {
+    const onChange = (e: Event) => {
+      // A form nested inside (the client picker's "New client") is not a filter: typing there must not reload the page.
+      if ((e.target as HTMLElement | null)?.closest?.("form") !== el) return;
       const params = new URLSearchParams();
       for (const [k, v] of new FormData(el)) if (typeof v === "string" && v) params.set(k, v);
       const qs = params.toString();
