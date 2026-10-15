@@ -30,20 +30,53 @@ export function DiscountForm({ action, slug, saleId, currentCents, current, note
   );
 }
 
-export function TipsForm({ action, slug, saleId, staff, current }: { action: Action; slug: string; saleId: string; staff: { id: string; name: string }[]; current: Record<string, number> }) {
+export function TipsForm({ action, slug, saleId, staff, current, baseCents, choices = [], currency = "USD" }: { action: Action; slug: string; saleId: string; staff: { id: string; name: string }[]; current: Record<string, number>; /** Everyone who could receive a tip, offered when nobody is credited on the ticket yet (a products-only sale). */ choices?: { id: string; name: string }[]; /** What a percentage tip is worked out on: the goods after any discount, before tax. */ baseCents: number; currency?: string }) {
   const [state, act, pending] = useActionState(action, undefined);
+  const initial: Record<string, string> = {};
+  const [who, setWho] = useState(choices[0]?.id ?? "");
+  const nobody = staff.length === 0;
+  for (const x of staff) initial[x.id] = current[x.id] ? (current[x.id]! / 100).toFixed(2) : "";
+  initial[""] = "";
+  const [vals, setVals] = useState(initial);
+  // One person: the preset fills their field; several: it fills the whole-ticket field, which is split by who earned the revenue.
+  const target = staff.length === 1 ? staff[0]!.id : "";
+  const fill = (pct: number) => setVals((v) => {
+    const next: Record<string, string> = {};
+    for (const k of Object.keys(v)) next[k] = "";
+    next[target] = pct ? ((Math.round((baseCents * pct) / 100)) / 100).toFixed(2) : "";
+    return next;
+  });
+  const money = (c: number) => new Intl.NumberFormat("en-US", { style: "currency", currency }).format(c / 100);
   return (
     <form action={act} className="space-y-2">
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
+      {baseCents > 0 ? (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Tip presets">
+          {[0, 15, 20, 25].map((pct) => (
+            <button key={pct} type="button" onClick={() => fill(pct)} className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-sm hover:bg-stone-50">
+              {pct ? <>{pct}% <span className="text-xs text-stone-500">{money(Math.round((baseCents * pct) / 100))}</span></> : "No tip"}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {staff.map((s) => (
         <Field key={s.id} label={`Tip for ${s.name}`}>
-          <Input name={`tip_${s.id}`} inputMode="decimal" placeholder="0" defaultValue={current[s.id] ? (current[s.id]! / 100).toFixed(2) : ""} />
+          <Input name={`tip_${s.id}`} inputMode="decimal" placeholder="0" value={vals[s.id] ?? ""} onChange={(e) => setVals((v) => ({ ...v, [s.id]: e.target.value }))} />
         </Field>
       ))}
-      {staff.length > 1 ? (
-        <Field label="Tip on the whole ticket (split by service revenue)">
-          <MoneyInput name="tip_" />
+      {nobody && choices.length ? (
+        <div className="grid grid-cols-[1fr_7rem] gap-2">
+          <Field label="Tip for">
+            <Select value={who} onChange={(e) => { setVals({ "": "" }); setWho(e.target.value); }}>
+              {choices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </Select>
+          </Field>
+          <Field label="Amount"><MoneyInput name={`tip_${who}`} value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} /></Field>
+        </div>
+      ) : staff.length > 1 ? (
+        <Field label="Tip on the whole ticket (split by who earned the revenue)">
+          <MoneyInput name="tip_" value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} />
         </Field>
       ) : null}
       {state?.error ? <Notice>{state.error}</Notice> : null}
@@ -52,19 +85,43 @@ export function TipsForm({ action, slug, saleId, staff, current }: { action: Act
   );
 }
 
-export function ManualPayForm({ action, slug, saleId, dueCents }: { action: Action; slug: string; saleId: string; dueCents: number }) {
+export function ManualPayForm({ action, slug, saleId, dueCents, currency = "USD" }: { action: Action; slug: string; saleId: string; dueCents: number; currency?: string }) {
   const [state, act, pending] = useActionState(action, undefined);
+  const [method, setMethod] = useState("cash");
+  const [amount, setAmount] = useState((dueCents / 100).toFixed(2));
+  const [tendered, setTendered] = useState("");
+  const toCents = (v: string) => { const n = Number(v.replace(/[^0-9.]/g, "")); return Number.isFinite(n) ? Math.round(n * 100) : NaN; };
+  const money = (c: number) => new Intl.NumberFormat("en-US", { style: "currency", currency }).format(c / 100);
+  const pay = toCents(amount);
+  const given = toCents(tendered);
+  const change = method === "cash" && tendered.trim() !== "" && Number.isFinite(given) && Number.isFinite(pay) ? given - pay : null;
+  // Bills a customer is likely to hand over: the exact amount, then the next round notes above it.
+  const quick = [...new Set([pay, ...[5, 10, 20, 50, 100].map((n) => n * 100).filter((n) => n > pay)].filter((n) => Number.isFinite(n) && n > 0))].slice(0, 4);
   return (
     <form action={act} className="space-y-2">
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
       <div className="grid grid-cols-[7rem_1fr] gap-2">
-        <Select name="method" defaultValue="cash">
+        <Select name="method" value={method} onChange={(e) => setMethod(e.target.value)}>
           <option value="cash">Cash</option>
           <option value="other">Other</option>
         </Select>
-        <MoneyInput name="amount" defaultValue={(dueCents / 100).toFixed(2)} />
+        <MoneyInput name="amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
       </div>
+      {method === "cash" ? (
+        <div className="space-y-1.5 rounded-lg bg-stone-50 p-2">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-stone-500">Cash received</span>
+            {quick.map((c) => (
+              <button key={c} type="button" onClick={() => setTendered((c / 100).toFixed(2))} className="rounded-md border border-stone-300 bg-white px-2 py-0.5 text-xs hover:bg-stone-100">{c === pay ? "Exact" : money(c)}</button>
+            ))}
+          </div>
+          <MoneyInput name="tendered" value={tendered} onChange={(e) => setTendered(e.target.value)} aria-label="Cash received" />
+          {change !== null ? (
+            change >= 0 ? <p className="text-sm font-medium">Change due: <span className="text-brand-700">{money(change)}</span></p> : <p className="text-sm text-red-700">{money(-change)} short</p>
+          ) : null}
+        </div>
+      ) : null}
       <Input name="note" placeholder="Note (e.g. Venmo, gift)" />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton size="sm" pendingText="Recording…">Record payment</SubmitButton>
@@ -230,6 +287,41 @@ export function PromoForm({ action, slug, saleId, applied, removeAction }: { act
       <Input name="code" placeholder="Promo code" className="font-mono uppercase" required />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <Button type="submit" size="sm" variant="secondary" disabled={pending}>{pending ? "…" : "Apply code"}</Button>
+    </form>
+  );
+}
+
+/** Send the receipt of a paid sale by email or text, to the client's details or anything typed in. */
+export function SendReceiptForm({ action, slug, saleId, email, phone }: { action: (fd: FormData) => Promise<void>; slug: string; saleId: string; email: string | null; phone: string | null }) {
+  const [channel, setChannel] = useState<"email" | "sms">(email || !phone ? "email" : "sms");
+  const [to, setTo] = useState(email ?? phone ?? "");
+  const pick = (c: "email" | "sms") => { setChannel(c); setTo(c === "email" ? (email ?? "") : (phone ?? "")); };
+  return (
+    <form action={action} className="space-y-2">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="saleId" value={saleId} />
+      <input type="hidden" name="channel" value={channel} />
+      <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Send the receipt by">
+        {([["email", "Email"], ["sms", "Text"]] as const).map(([k, l]) => (
+          <button key={k} type="button" onClick={() => pick(k)} aria-pressed={channel === k} className={`flex-1 rounded-md px-3 py-1 ${channel === k ? "bg-stone-900 text-white" : "text-stone-700"}`}>{l}</button>
+        ))}
+      </div>
+      <Input name="to" type={channel === "email" ? "email" : "tel"} value={to} onChange={(e) => setTo(e.target.value)} placeholder={channel === "email" ? "name@example.com" : "Mobile number"} required aria-label={channel === "email" ? "Email address" : "Mobile number"} />
+      <SubmitButton size="sm" variant="secondary" pendingText="Sending…">Send receipt</SubmitButton>
+    </form>
+  );
+}
+
+/** A private note on the ticket (not printed on the receipt). */
+export function SaleNoteForm({ action, slug, saleId, notes }: { action: Action; slug: string; saleId: string; notes: string | null }) {
+  const [state, act, pending] = useActionState(action, undefined);
+  return (
+    <form action={act} className="space-y-2">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="saleId" value={saleId} />
+      <textarea name="notes" rows={2} maxLength={1000} defaultValue={notes ?? ""} placeholder="Private note, e.g. gift for Maria, price matched" className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm" aria-label="Note on this sale" />
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+      <Button type="submit" size="sm" variant="secondary" disabled={pending}>{state?.ok ? "Saved" : "Save note"}</Button>
     </form>
   );
 }

@@ -195,6 +195,10 @@ export interface ReceiptCtx extends BrandCtx {
   refunded: string | null;
   /** "Share your code X with a friend…" when referrals are on. */
   referral?: string | null;
+  /** The business's receipt footer (return policy, tax number). */
+  footer?: string | null;
+  /** The tax rate, e.g. "6%", shown beside the tax line. */
+  taxRate?: string | null;
 }
 
 /** Itemised receipt for a closed sale. */
@@ -204,11 +208,11 @@ export function receiptEmail(r: ReceiptCtx) {
 <table style="width:100%;font-size:15px;border-collapse:collapse">
 ${r.lines.map((l) => row(l.quantity > 1 ? `${l.name} × ${l.quantity}` : l.name, l.amount)).join("")}
 <tr><td colspan="2" style="border-top:1px solid #e7e5e4;padding-top:8px"></td></tr>
-${row("Subtotal", r.subtotal)}${r.discount ? row("Discount", `-${r.discount}`) : ""}${r.tax ? row("Tax", r.tax) : ""}${r.tip ? row("Tip", r.tip) : ""}
+${row("Subtotal", r.subtotal)}${r.discount ? row("Discount", `-${r.discount}`) : ""}${r.tax ? row(r.taxRate ? `Tax (${r.taxRate})` : "Tax", r.tax) : ""}${r.tip ? row("Tip", r.tip) : ""}
 ${row("Total", r.total, true)}
 <tr><td colspan="2" style="border-top:1px solid #e7e5e4;padding-top:8px"></td></tr>
 ${r.payments.map((p) => row(p.label, p.amount)).join("")}${r.refunded ? row("Refunded", `-${r.refunded}`) : ""}
 </table>
-<p style="margin-top:20px">Thank you for visiting!</p>${r.referral ? `<p style="margin-top:12px;padding:12px;background:#f5f5f4;border-radius:8px">${esc(r.referral)}</p>` : ""}`;
+<p style="margin-top:20px">Thank you for visiting!</p>${r.footer ? `<p style="margin-top:8px;color:#78716c;font-size:13px;white-space:pre-line">${esc(r.footer)}</p>` : ""}${r.referral ? `<p style="margin-top:12px;padding:12px;background:#f5f5f4;border-radius:8px">${esc(r.referral)}</p>` : ""}`;
   return { subject: `Your receipt from ${r.businessName} (#${r.number})`, html: shell(r, r.businessName, body) };
 }

@@ -33,6 +33,8 @@ async function audit(tx: TenantDb, businessId: string, actorUserId: string, acti
 
 /** The tax rate for a sale: its location's own rate when set, else the business default passed in. */
 async function taxRateForSale(tx: TenantDb, saleId: string, businessDefaultBps: number): Promise<number> {
+  const [flag] = await tx.select({ exempt: schema.sales.taxExempt }).from(schema.sales).where(eq(schema.sales.id, saleId));
+  if (flag?.exempt) return 0;
   const [row] = await tx
     .select({ bps: schema.locations.taxRateBps })
     .from(schema.sales)
@@ -239,7 +241,7 @@ export async function getSale(businessId: string, saleId: string) {
       sale.clientId ? tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) }) : Promise.resolve(null),
       tx.select().from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)),
       tx
-        .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, trackStock: schema.products.trackStock, priceCents: schema.products.priceCents, taxable: schema.products.taxable, category: schema.productCategories.name })
+        .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, trackStock: schema.products.trackStock, priceCents: schema.products.priceCents, taxable: schema.products.taxable, imageUrl: schema.products.imageUrl, category: schema.productCategories.name })
         .from(schema.products)
         .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
         .where(and(eq(schema.products.active, true), eq(schema.products.kind, "retail")))
@@ -381,10 +383,12 @@ export async function setTips(input: { businessId: string; saleId: string; tips:
     if (!sale) throw new SaleError("Sale not found.");
     assertOpen(sale);
     await tx.delete(schema.saleLines).where(and(eq(schema.saleLines.saleId, sale.id), eq(schema.saleLines.kind, "tip")));
-    const serviceLines = await tx
+    // An unassigned tip follows service revenue; on a ticket with only products it follows whoever is credited for them.
+    const creditable = await tx
       .select()
       .from(schema.saleLines)
-      .where(and(eq(schema.saleLines.saleId, sale.id), eq(schema.saleLines.kind, "service")));
+      .where(and(eq(schema.saleLines.saleId, sale.id), sql`${schema.saleLines.kind} in ('service','product')`));
+    const serviceLines = creditable.some((l) => l.kind === "service") ? creditable.filter((l) => l.kind === "service") : creditable;
     const byStaff = new Map<string, number>();
     for (const t of input.tips) {
       if (t.amountCents <= 0) continue;
@@ -415,6 +419,42 @@ export async function setTips(input: { businessId: string; saleId: string; tips:
       );
     }
     await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
+  });
+}
+
+/** A private note on the ticket (open or closed): never printed on the receipt. */
+export async function setSaleNotes(input: { businessId: string; saleId: string; notes: string | null; actorUserId: string }) {
+  await withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+    if (!sale) throw new SaleError("Sale not found.");
+    await tx.update(schema.sales).set({ notes: input.notes?.trim() || null }).where(eq(schema.sales.id, sale.id));
+    await audit(tx, input.businessId, input.actorUserId, "sale.note", sale.id);
+  });
+}
+
+/** Charge no sales tax on this ticket (an exempt client, a resale). Recomputes the totals. */
+export async function setTaxExempt(input: { businessId: string; saleId: string; exempt: boolean; actorUserId: string; taxRateBps: number }) {
+  await withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+    if (!sale) throw new SaleError("Sale not found.");
+    assertOpen(sale);
+    await tx.update(schema.sales).set({ taxExempt: input.exempt }).where(eq(schema.sales.id, sale.id));
+    await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
+    await audit(tx, input.businessId, input.actorUserId, input.exempt ? "sale.tax_exempt" : "sale.taxable", sale.id);
+  });
+}
+
+/** Close a ticket whose total is nothing (a comp, a visit fully covered by a package or a 100% discount) without a payment row. */
+export async function completeNoCharge(input: { businessId: string; saleId: string; actorUserId: string; taxRateBps: number }) {
+  await withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+    if (!sale) throw new SaleError("Sale not found.");
+    assertOpen(sale);
+    const t = await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
+    if (t.totalCents > t.paidCents) throw new SaleError("There is still an amount due.");
+    const [n] = await tx.select({ n: sql<number>`count(*)::int` }).from(schema.saleLines).where(and(eq(schema.saleLines.saleId, sale.id), sql`${schema.saleLines.kind} <> 'tip'`));
+    if (!n?.n) throw new SaleError("Add something to the ticket first.");
+    await closeIfPaid(tx, sale.id, input.taxRateBps, input.actorUserId, input.businessId);
   });
 }
 
@@ -614,6 +654,8 @@ export async function createCardPaymentIntent(input: {
   amountCents: number;
   saveCard: boolean;
   actorUserId: string;
+  /** The card is tapped, dipped or swiped on a reader rather than typed in. */
+  terminal?: boolean;
 }) {
   return withTenant(input.businessId, async (tx) => {
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
@@ -631,7 +673,7 @@ export async function createCardPaymentIntent(input: {
       .values({
         businessId: input.businessId,
         saleId: sale.id,
-        method: "card",
+        method: input.terminal ? "terminal" : "card",
         status: "pending",
         amountCents: amount,
         tipCents: tipShare(sale, amount),
@@ -645,7 +687,7 @@ export async function createCardPaymentIntent(input: {
         currency: sale.currency,
         customer: customerId,
         description: `Sale #${sale.number}`,
-        automatic_payment_methods: { enabled: true },
+        ...(input.terminal ? { payment_method_types: ["card_present"], capture_method: "automatic" as const } : { automatic_payment_methods: { enabled: true } }),
         ...(input.saveCard && customerId ? { setup_future_usage: "off_session" as const } : {}),
         metadata: { businessId: input.businessId, saleId: sale.id, paymentId: pending!.id },
         ...(fee > 0 ? { application_fee_amount: fee } : {}),

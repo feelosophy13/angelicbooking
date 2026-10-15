@@ -79,7 +79,7 @@ export default async function AppLayout({ children, params }: { children: React.
   return (
     <div className="flex min-h-screen">
       <NavHistory />
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:flex">
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:flex print:hidden">
         <div className="px-4 pb-3 pt-4">
           <Link href="/" aria-label="Home"><Wordmark /></Link>
           <p className="mt-2 truncate text-xs font-medium text-stone-500">{business.name} · {roleName}</p>

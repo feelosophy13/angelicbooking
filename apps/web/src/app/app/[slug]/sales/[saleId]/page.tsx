@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, addProductByCode, putBackOnShelf, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, deleteLine, editLine, emailReceipt, payManual, payWithGiftCard, payWithPoints, payWithSavedCard, payWithStoreCreditAction, refund, changeRefundReason, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, addProductByCode, putBackOnShelf, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, completeSale, deleteLine, editLine, payManual, saveSaleNote, sendReceipt, toggleTaxExempt, payWithGiftCard, payWithPoints, payWithSavedCard, payWithStoreCreditAction, refund, changeRefundReason, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
 import { ClientPicker } from "@/components/client-picker";
 import { Disclosure } from "@/components/disclosure";
 import { ActivityTrail } from "@/components/activity-trail";
@@ -31,17 +31,19 @@ import { ServicePicker } from "@/components/service-picker";
 import { schema, withTenant } from "@angelic/db";
 import { asc, eq } from "drizzle-orm";
 import { instantToISODate } from "@angelic/core";
-import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, RefundReasonEditor, SavedCardForm, StoreCreditPayForm, TipsForm } from "./forms";
+import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, RefundReasonEditor, SaleNoteForm, SavedCardForm, SendReceiptForm, StoreCreditPayForm, TipsForm } from "./forms";
+import { SaleProductPicker } from "@/components/sale-product-picker";
 import { pointsBalance } from "@/server/loyalty";
 import { storeCreditBalance } from "@/server/store-credit";
 import { listRefundReasons } from "@/server/refund-reasons";
 import { CardPayment } from "./card-payment";
+import { TerminalPayment } from "./terminal-payment";
 import { saleStockLocation, saleStockState, stockLevels } from "@/server/inventory";
 import { productLabel } from "@/lib/inventory";
 
 export default async function SalePage({ params }: { params: Promise<{ slug: string; saleId: string }> }) {
   const { slug, saleId } = await params;
-  const { business, permissions } = await requireAction(slug, "checkout.take");
+  const { business, permissions, staffId: myStaffId } = await requireAction(slug, "checkout.take");
   const data = await getSale(business.id, saleId);
   if (!data) notFound();
   const { sale, lines, payments, refunds, credits: creditLedger, client, staff, products } = data;
@@ -57,13 +59,17 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
     .map((id) => staff.find((s) => s.id === id))
     .filter((s): s is NonNullable<typeof s> => !!s)
     .map((s) => ({ id: s.id, name: s.displayName }));
+  // Who a tip can go to: whoever is credited on the ticket (services first, else the products they sold).
+  const creditedIds = [...new Set(lines.filter((l) => l.kind === "service" && l.staffId).map((l) => l.staffId!))];
+  const creditedAny = creditedIds.length ? creditedIds : [...new Set(lines.filter((l) => l.kind === "product" && l.staffId).map((l) => l.staffId!))];
+  const tipStaff = creditedAny.map((id) => staff.find((x) => x.id === id)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => ({ id: x.id, name: x.displayName }));
   const currentTips = Object.fromEntries(lines.filter((l) => l.kind === "tip" && l.staffId).map((l) => [l.staffId!, l.amountCents]));
   const goods = lines.filter((l) => l.kind !== "tip");
   const catalog = open ? await getOffersCatalog(business.id) : null;
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
   const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
   const storeCredit = open && client ? await withTenant(business.id, (tx) => storeCreditBalance(tx, client.id)) : 0;
-  const canRefund = can(permissions, "reports.view");
+  const canRefund = can(permissions, "reports.view") || can(permissions, "checkout.refund");
   // Stock at this sale's location, for the "only N in stock" notes on an open ticket; what was taken off and what has come back, for a closed one.
   const trackedIds = new Set(products.filter((p) => p.trackStock).map((p) => p.id));
   const stockHere = open && trackedIds.size ? await withTenant(business.id, async (tx) => stockLevels(tx, await saleStockLocation(tx, sale), [...trackedIds])) : new Map<string, number>();
@@ -95,17 +101,10 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           <Link href={`/app/${slug}/appointments/new?clientId=${client.id}${rebookLine.serviceId ? `&serviceId=${rebookLine.serviceId}` : ""}${rebookLine.staffId ? `&staffId=${rebookLine.staffId}` : ""}&date=${shiftISODate(instantToISODate(sale.closedAt ?? new Date(), business.timezone), 28)}${multiLocation && pay.location ? `&location=${pay.location.id}` : ""}`} className="text-sm text-brand-700 underline" title="Book the next visit: same service and provider, four weeks out">Rebook</Link>
         ) : null}
         <Link href={`/app/${slug}/sales/${sale.id}/receipt`} className="text-sm text-brand-700 underline">Receipt</Link>
-        {!open && client?.email ? (
-          <form action={emailReceipt}>
-            <input type="hidden" name="slug" value={slug} />
-            <input type="hidden" name="saleId" value={sale.id} />
-            <Button type="submit" size="sm" variant="secondary">Email receipt</Button>
-          </form>
-        ) : null}
       </PageHeader>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
-        <div className="space-y-6">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
+        <div className="min-w-0 space-y-6">
           <Card className="p-4">
             <div className="mb-2 flex items-center justify-between">
               <div>
@@ -176,6 +175,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 <tr><td className="pt-3 text-stone-500">Subtotal</td><td className="pt-3 text-right">{money(sale.subtotalCents)}</td><td /></tr>
                 {sale.discountCents > 0 ? <tr><td className="text-stone-500">Discount{sale.discountNote ? ` (${sale.discountNote})` : ""}</td><td className="text-right">−{money(sale.discountCents)}</td><td /></tr> : null}
                 {sale.taxCents > 0 ? <tr><td className="text-stone-500">Tax ({(pay.taxRateBps / 100).toFixed(2)}%)</td><td className="text-right">{money(sale.taxCents)}</td><td /></tr> : null}
+                {sale.taxExempt ? <tr><td className="text-stone-500">Tax exempt</td><td className="text-right text-stone-500">no tax charged</td><td /></tr> : null}
                 {sale.tipCents > 0 ? <tr><td className="text-stone-500">Tips</td><td className="text-right">{money(sale.tipCents)}</td><td /></tr> : null}
                 <tr className="text-base font-semibold"><td className="pt-2">Total</td><td className="pt-2 text-right">{money(sale.totalCents)}</td><td /></tr>
                 {sale.paidCents > 0 ? <tr><td className="text-stone-500">Paid</td><td className="text-right">{money(sale.paidCents)}</td><td /></tr> : null}
@@ -183,12 +183,19 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 {open ? <tr className="font-semibold text-brand-700"><td>Due</td><td className="text-right">{money(due)}</td><td /></tr> : null}
               </tfoot>
             </table>
+            {open && (goods.some((l) => l.taxable) || sale.taxExempt) ? (
+              <form action={toggleTaxExempt} className="mt-3 border-t border-stone-100 pt-2">
+                <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />
+                <input type="hidden" name="exempt" value={sale.taxExempt ? "0" : "1"} />
+                <button type="submit" className="text-xs text-stone-500 underline hover:text-stone-800">{sale.taxExempt ? "Charge sales tax on this ticket" : "Tax exempt: don't charge sales tax on this ticket"}</button>
+              </form>
+            ) : null}
           </Card>
 
           {open ? (
             <div className="space-y-3">
-              <Disclosure title="Add to this ticket" hint="product, retail or an extra service">
-                <div className="grid gap-6 md:grid-cols-2">
+              <Disclosure title="Add to this ticket" hint="product, retail or an extra service" defaultOpen={goods.length === 0}>
+                <div className="space-y-6">
                   <div>
                     <h3 className="mb-2 text-sm font-medium text-stone-700">Product</h3>
                     {products.length === 0 ? (
@@ -197,21 +204,18 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       <form action={addProduct} className="space-y-2">
                         <input type="hidden" name="slug" value={slug} />
                         <input type="hidden" name="saleId" value={sale.id} />
-                        <Select name="productId">
-                          {[...new Set(products.map((p) => p.category ?? "Other"))].map((cat) => (
-                            <optgroup key={cat} label={cat}>
-                              {products.filter((p) => (p.category ?? "Other") === cat).map((p) => <option key={p.id} value={p.id}>{productLabel(p)} · {money(p.priceCents)}{p.trackStock ? ((stockHere.get(p.id) ?? 0) <= 0 ? " · none in stock" : ` · ${stockHere.get(p.id)} in stock`) : ""}</option>)}
-                            </optgroup>
-                          ))}
-                        </Select>
+                        <SaleProductPicker
+                          autoFocus={goods.length === 0}
+                          products={products.map((p) => ({ id: p.id, label: productLabel(p), category: p.category ?? "Other", priceLabel: money(p.priceCents), stock: p.trackStock ? ((stockHere.get(p.id) ?? 0) <= 0 ? "none in stock" : `${stockHere.get(p.id)} in stock`) : null, out: !!p.trackStock && (stockHere.get(p.id) ?? 0) <= 0, imageUrl: p.imageUrl }))}
+                        />
                         <div className="grid grid-cols-[5rem_1fr] gap-2">
                           <input name="quantity" type="number" min={1} max={99} defaultValue={1} className="h-10 rounded-lg border border-stone-300 px-3 text-sm" aria-label="Quantity" />
-                          <Select name="staffId" defaultValue={staffOnTicket[0]?.id ?? ""}>
+                          <Select name="staffId" defaultValue={staffOnTicket[0]?.id ?? myStaffId ?? ""} aria-label="Who gets credit">
                             <option value="">No staff credit</option>
                             {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
                           </Select>
                         </div>
-                        <Button type="submit" size="sm" variant="secondary">Add product</Button>
+                        <p className="text-xs text-stone-500">Tap a product to add it with this quantity and staff credit.</p>
                       </form>
                     )}
                     {products.length > 0 ? (
@@ -272,10 +276,10 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                   </form>
                 </div>
               </Disclosure>
-              {staffOnTicket.length > 0 ? (
+              {goods.length > 0 ? (
                 <Card className="p-4">
                   <h2 className="mb-2 font-medium">Tips</h2>
-                  <TipsForm key={JSON.stringify(currentTips)} action={applyTips} slug={slug} saleId={sale.id} staff={staffOnTicket} current={currentTips} />
+                  <TipsForm key={JSON.stringify(currentTips)} action={applyTips} slug={slug} saleId={sale.id} staff={tipStaff} current={currentTips} baseCents={Math.max(0, sale.subtotalCents - sale.discountCents)} currency={cur} choices={tipStaff.length ? [] : staff.map((x) => ({ id: x.id, name: x.displayName }))} />
                 </Card>
               ) : null}
             </div>
@@ -322,17 +326,27 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           <ActivityTrail summary={activity.summary} events={activity.events} timeZone={business.timezone} mode="sale" />
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           {open ? (
             <>
               <Card className="p-4">
                 <h2 className="mb-1 font-medium">Take payment</h2>
                 <p className="mb-3 text-2xl font-semibold">{money(due)} <span className="text-sm font-normal text-stone-500">due</span></p>
-                {due <= 0 ? <p className="text-sm text-stone-500">Nothing due.</p> : (
+                {due <= 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-stone-500">Nothing due.</p>
+                    {goods.length > 0 ? (
+                      <form action={completeSale}>
+                        <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />
+                        <Button type="submit" size="sm">Complete sale</Button>
+                      </form>
+                    ) : null}
+                  </div>
+                ) : (
                   <div className="space-y-5">
                     <div>
                       <h3 className="mb-1 text-sm font-medium text-stone-700">Cash / other</h3>
-                      <ManualPayForm key={due} action={payManual} slug={slug} saleId={sale.id} dueCents={due} />
+                      <ManualPayForm key={due} currency={cur} action={payManual} slug={slug} saleId={sale.id} dueCents={due} />
                     </div>
                     <div className="border-t border-stone-200 pt-4">
                       <h3 className="mb-1 text-sm font-medium text-stone-700">Gift card</h3>
@@ -361,12 +375,23 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                           {savedCards.length > 0 ? (
                             <SavedCardForm key={due} action={payWithSavedCard} slug={slug} saleId={sale.id} dueCents={due} cards={savedCards} />
                           ) : null}
+                          <div>
+                            <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-500">Card reader</h4>
+                            <TerminalPayment slug={slug} saleId={sale.id} dueCents={due} test={(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "").startsWith("pk_test")} />
+                          </div>
+                          <div className="border-t border-stone-100 pt-3">
+                            <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-500">Type in a card</h4>
+                          </div>
                           <CardPayment slug={slug} saleId={sale.id} dueCents={due} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? null} hasClient={!!client} />
                         </div>
                       )}
                     </div>
                   </div>
                 )}
+                <div className="mt-4 border-t border-stone-200 pt-3 text-sm">
+                  <Link href={`/app/${slug}/sales?tab=open`} className="text-brand-700 underline">Save for later</Link>
+                  <span className="text-stone-500"> · the ticket stays open under Sales → Open, and the amount due shows on the client&apos;s history.</span>
+                </div>
               </Card>
             </>
           ) : (
@@ -375,6 +400,18 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               {sale.closedAt ? <p className="text-sm text-stone-500">{fmt.format(sale.closedAt)}</p> : null}
             </Card>
           )}
+          {!open && sale.status !== "void" ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-2 font-medium">Send receipt</h2>
+              <SendReceiptForm action={sendReceipt} slug={slug} saleId={sale.id} email={client?.email ?? null} phone={client?.phone ?? null} />
+            </Card>
+          ) : null}
+          {open || sale.notes ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-2 font-medium">Note</h2>
+              <SaleNoteForm action={saveSaleNote} slug={slug} saleId={sale.id} notes={sale.notes} />
+            </Card>
+          ) : null}
           {canStock && [...stockState.entries()].some(([, v]) => v.sold > 0) ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-1 font-medium">Goods back on the shelf</h2>

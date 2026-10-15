@@ -6,9 +6,10 @@ import { platformFeeBpsFor } from "@/server/price-book";
 import type { Metadata } from "next";
 import { BackLink, Button, Card, Input, Notice, PageHeader } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
+import { Textarea } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Payments" };
-import { connectStripe, disconnectStripe, refreshStripe, saveTax } from "./actions";
+import { connectStripe, disconnectStripe, refreshStripe, saveReceiptFooter, saveTax } from "./actions";
 
 export default async function PaymentsSettingsPage({
   params,
@@ -132,6 +133,18 @@ export default async function PaymentsSettingsPage({
             <input type="hidden" name="slug" value={slug} />
             <Field label="Rate (%)" name="taxPct">
               <Input name="taxPct" type="number" step="0.01" min={0} max={30} defaultValue={(business.taxRateBps / 100).toFixed(2)} className="w-32" />
+            </Field>
+            <SubmitButton variant="secondary" pendingText="Saving…">Save</SubmitButton>
+          </ActionForm>
+        </Card>
+
+        <Card className="p-4">
+          <h2 className="mb-1 font-medium">Receipt footer</h2>
+          <p className="mb-3 text-sm text-stone-600">A line at the bottom of printed, emailed and texted receipts: your return policy, a tax number, a thank-you.</p>
+          <ActionForm action={saveReceiptFooter} className="space-y-2">
+            <input type="hidden" name="slug" value={slug} />
+            <Field label="Footer" name="footer">
+              <Textarea name="footer" rows={3} maxLength={400} defaultValue={business.receiptFooter ?? ""} placeholder="Returns within 14 days with receipt." />
             </Field>
             <SubmitButton variant="secondary" pendingText="Saving…">Save</SubmitButton>
           </ActionForm>

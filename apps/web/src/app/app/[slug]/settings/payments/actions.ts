@@ -49,3 +49,10 @@ export const saveTax = formAction(z.object({ slug: z.string(), taxPct: f.num(0, 
   revalidatePath(`/app/${d.slug}/settings/payments`);
   return "Tax rate saved";
 });
+
+export const saveReceiptFooter = formAction(z.object({ slug: z.string(), footer: z.string().max(400).optional() }), async (d) => {
+  const { business } = await requireAction(d.slug, "business.manage");
+  await db.update(schema.businesses).set({ receiptFooter: d.footer?.trim() || null }).where(eq(schema.businesses.id, business.id));
+  revalidatePath(`/app/${d.slug}/settings/payments`);
+  return "Receipt footer saved";
+});

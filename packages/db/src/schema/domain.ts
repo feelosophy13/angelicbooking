@@ -78,6 +78,8 @@ export const businesses = pgTable("businesses", {
   bookingOrder: text("booking_order").notNull().default("provider"),
   // What "Any available provider" does when several people are free: "choose" (the client sees who), "first" (salon order), "lowest_price", "fewest_bookings" (lightest day).
   anyProviderMode: text("any_provider_mode").notNull().default("choose"),
+  // A line at the bottom of printed and emailed receipts (return policy, thanks, tax number).
+  receiptFooter: text("receipt_footer"),
   cancelWindowHours: integer("cancel_window_hours").notNull().default(24),
     // Late cancellation (inside the window): none, a flat amount (cents) or a percent of the booked services (bps).
     lateCancelFeeType: text("late_cancel_fee_type").notNull().default("none"), // none | flat | percent

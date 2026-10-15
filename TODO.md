@@ -384,6 +384,19 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `ContactFields` for the free and paid forms, with promo/referral codes behind "Have a code?"; paid form labelled
       Step 1/2 and 2/2 and uses the shared `Button`; waitlist pre-fills for signed-in clients; dead ends link to another
       service or a tel: link. Not yet walked live: the details form and the Stripe payment steps.
+- [x] 2026-10-15: checkout review (migration 0090: `sales.notes`, `sales.tax_exempt`, `businesses.receipt_footer`). Sidebar entry is "Sales & checkout"
+      with + Appointment / + Sale buttons (also in the phone menu). An empty ticket opens "Add to this ticket" with a searchable product
+      list (`sale-product-picker.tsx`, pictures, stock, Enter adds a single match; staff credit defaults to the person at the desk). Cash shows
+      "cash received" shortcuts and the change due (kept on the payment note and printed on the receipt). Tips: 15/20/25% presets, and they work
+      on a products-only ticket (an unassigned tip follows who is credited on the products; with nobody credited you pick the person).
+      A ticket with nothing due closes with "Complete sale"; "Save for later" explains open tickets are the pay-later route. Private note per
+      sale; "Tax exempt" per ticket (`taxRateForSale` returns 0). Receipts: "Send receipt" by email or text to the client's details or any
+      address/number (paid sales, walk-ins too), receipt footer under Settings → Payments, address/tax rate/staff on the printed receipt, the
+      app sidebar no longer prints. New "Refund payments" permission (`checkout.refund`; `reports.view` still allows refunds too).
+      Card reader: `terminal-payment.tsx` + `server/stripe-terminal.ts` (Stripe Terminal JS loaded from js.stripe.com, internet readers or the
+      simulated reader in test mode; card-present PaymentIntent, recorded by the same `finishCardPayment`). NOT tested against Stripe or a
+      real reader (no keys locally): try the simulated reader in test mode first. Not built on purpose: voiding a ticket after a payment
+      (refund instead: loyalty points, gift cards issued and stock have already moved). Test: `server/__tests__/sales-checkout.test.ts`.
 - [x] 2026-10-13: public booking page. Header: the logo straddles the cover with the name below it (it was painted
       over by the photo); once a client starts choosing, the cover collapses to a slim bar with a small logo
       and name so the choices sit near the top. Category tiles: description clamp no longer shows a sliver of

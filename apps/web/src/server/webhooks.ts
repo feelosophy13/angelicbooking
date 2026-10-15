@@ -47,7 +47,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<"processed
         const pi = event.data.object;
         if (business) {
           const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
-          const card = charge?.payment_method_details?.card;
+          const card = charge?.payment_method_details?.card ?? charge?.payment_method_details?.card_present;
           await markCardPaymentSucceeded({
             businessId: business.id,
             paymentIntentId: pi.id,

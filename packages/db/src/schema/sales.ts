@@ -258,6 +258,10 @@ export const sales = pgTable(
     paidCents: integer("paid_cents").notNull().default(0),
     refundedCents: integer("refunded_cents").notNull().default(0),
     discountNote: text("discount_note"),
+    // Private note on the ticket ("gift for Maria", "price matched"); never printed on the receipt.
+    notes: text("notes"),
+    // No sales tax on this ticket (resale or exempt client); decided at the desk, per ticket.
+    taxExempt: boolean("tax_exempt").notNull().default(false),
     // The discount as entered ("percent" 10 or "amount" 500), so it re-applies when lines change.
     discountType: text("discount_type"), // amount | percent
     discountValue: integer("discount_value"),
