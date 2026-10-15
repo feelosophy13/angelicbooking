@@ -350,6 +350,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (public, series, add/move service). New appointment lists each stylist's price/length when they differ.
       `server/stylist-pricing.ts`. Not changed: deposits stay per service; packages and memberships still cover a
       line whatever its price; classes use the service's price per seat.
+- [x] 2026-10-15: pick time first or provider first. Clients switch with a link on either step ("Pick a day and time first" /
+      "Choose a provider first"); `?order=time` in the URL. Time first: service, then a calendar across everyone, then only
+      the providers free at that time (price quoted for them), then details. Default stays provider first. The choice is
+      not remembered between visits and there is no per-salon setting yet.
 - [x] 2026-10-15: booking flow navigation and provider order. A "Back" button on every booking step (goes to the fixed
       previous step, keeps the chosen day). Staff page has up/down arrows: that order is the provider order on the
       booking page (`moveStaffAction`, numbers active staff 0,10,20…); the staff list now shows active people first.
