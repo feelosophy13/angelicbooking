@@ -39,7 +39,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       it(`${base}/gift-cards`, "Gift cards", "Gift"),
     ] },
     { title: "Money", items: [
-      ...(ok("checkout.take") ? [it(`${base}/sales`, "Sales", "Receipt")] : []),
+      ...(ok("checkout.take") ? [it(`${base}/sales`, "Sales & checkout", "Receipt")] : []),
       ...(ok("reports.view") ? [it(`${base}/reports`, "Reports", "BarChart3")] : []),
       ...(ok("payroll.view") ? [it(`${base}/payroll`, "Payroll", "Wallet")] : []),
     ] },

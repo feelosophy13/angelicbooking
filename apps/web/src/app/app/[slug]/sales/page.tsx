@@ -14,7 +14,7 @@ import { ClientPicker } from "@/components/client-picker";
 import { quickCreateClient } from "../clients/actions";
 import { newSale } from "./actions";
 
-export const metadata: Metadata = { title: "Sales" };
+export const metadata: Metadata = { title: "Sales & checkout" };
 
 type SP = { tab?: string; q?: string; page?: string };
 
@@ -34,7 +34,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
   const pages = Math.max(1, Math.ceil(total / pageSize));
   return (
     <>
-      <PageHeader title="Sales">
+      <PageHeader title="Sales & checkout">
         {can(permissions, "reports.view") ? <Link href={`/app/${slug}/reports?from=${today}&to=${today}`} className="text-sm text-brand-700 underline">Today&apos;s report</Link> : null}
       </PageHeader>
       <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_360px]">
@@ -55,8 +55,8 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
         <Card className="p-3">
           <form action={newSale} className="space-y-2">
             <input type="hidden" name="slug" value={slug} />
-            <p className="text-sm font-medium">New sale (no appointment)</p>
-            <ClientPicker slug={slug} initial={null} canCreate={can(permissions, "clients.write")} createClient={quickCreateClient} placeholder="Client (optional)" />
+            <p className="text-sm font-medium">Sell a product or gift card</p>
+            <ClientPicker slug={slug} initial={null} canCreate={can(permissions, "clients.write")} createClient={quickCreateClient} placeholder="Client (optional, blank for a walk-in)" />
             {locations.length > 1 ? (
               <Select name="locationId" defaultValue={locations.find((l) => l.isDefault)?.id ?? ""}>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -67,7 +67,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
         </Card>
       </div>
       {rows.length === 0 ? (
-        <Empty title={tab === "open" ? "No open tickets" : "No sales found"} body={tab === "open" ? "Check out an appointment from the calendar, or start a sale above for retail and gift cards." : undefined} />
+        <Empty title={tab === "open" ? "No open tickets" : "No sales found"} body={tab === "open" ? "Check out an appointment from the calendar, or use Sell a product or gift card above." : undefined} />
       ) : (
         <Card>
           <div className="overflow-x-auto">

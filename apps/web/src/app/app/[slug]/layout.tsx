@@ -43,7 +43,7 @@ export default async function AppLayout({ children, params }: { children: React.
   const tabs: Item[] = [
     it(base, "Calendar", "CalendarDays", true),
     it(`${base}/clients`, "Clients", "Users"),
-    can(permissions, "checkout.take") ? it(`${base}/sales`, "Sales", "Receipt") : can(permissions, "reports.view") ? it(`${base}/reports`, "Reports", "BarChart3") : it(`${base}/time`, "Time", "Clock"),
+    can(permissions, "checkout.take") ? it(`${base}/sales`, "Checkout", "Receipt") : can(permissions, "reports.view") ? it(`${base}/reports`, "Reports", "BarChart3") : it(`${base}/time`, "Time", "Clock"),
     it(`${base}/staff`, "Staff", "UserCog"),
   ];
 
