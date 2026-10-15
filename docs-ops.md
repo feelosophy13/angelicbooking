@@ -348,6 +348,18 @@ What a new owner goes through, and what stops abuse:
   business. A welcome email goes out when a business is created. The admin Dashboard shows how many accounts have no business.
 - **Setup checklist** gained "Verify your email", "Add a card" (during the trial) and "Turn on two-factor sign-in".
 
+## Custom booking domains (added 2026-10-15)
+Owners connect `book.theirsalon.com` under Settings → Custom domain. Saving it registers the hostname with the Render web service through the
+Render API (so a certificate is issued), shows the exact DNS record to add (a CNAME to the service's onrender.com address, or an A record for a bare
+domain), and rechecks every 5 minutes (the reminders job) until Render reports it verified: Not set → Waiting for your DNS → Active. "Check now"
+and "Remove" are on the page; the hostname must be unique, may not be an IP, a local or Render name, or anything under angelicbooking.com.
+- **Needs** `RENDER_API_KEY` and `RENDER_SERVICE_ID` on the web service. Render API keys cannot be limited to one service, so this key can change
+  anything in the Render account: treat the web service's environment as that sensitive. Calls are made only when `RENDER` is set (i.e. on Render),
+  never from a laptop. Without the key a saved hostname gets status "Being set up by us" and shows up under Needs attention in the admin app.
+- Optional `CUSTOM_DOMAIN_CNAME_TARGET` overrides the CNAME value (default: the service's own onrender.com host, asked of Render).
+- A custom domain's DNS must not be proxied by Cloudflare ("DNS only") until it is Active; the booking page itself works the same on the custom host.
+- Claiming a hostname first blocks anyone else from saving it. If a real owner finds theirs taken, remove the old claim in the database (`businesses.custom_domain`).
+
 ## Demo tenant
 
 Two fake businesses for walkthroughs and screenshots, built by `apps/web/scripts/seed-demo.ts` (it never touches any other

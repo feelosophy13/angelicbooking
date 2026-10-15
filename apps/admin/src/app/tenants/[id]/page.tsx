@@ -113,6 +113,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
                   ["Slug", t.slug],
                   ["Plan", <span key="p" className="capitalize">{t.plan}</span>],
                   ["Trial ends", date(t.trialEndsAt)],
+                  ["Custom domain", t.customDomain ? `${t.customDomain}: ${t.customDomainStatus}${t.customDomainError ? ` (${t.customDomainError})` : ""}` : "None"],
                   ["Owner email", t.ownerVerified ? "Verified" : t.publishRequiresVerified ? "Not verified: booking page closed, no messages" : "Not verified (older account, not required)"],
                   ["Terms accepted", t.termsAcceptedAt ? `${date(t.termsAcceptedAt)} (version ${t.termsVersion ?? "?"})` : "Before sign-up recorded terms"],
                   ["Current period ends", date(t.currentPeriodEnd)],

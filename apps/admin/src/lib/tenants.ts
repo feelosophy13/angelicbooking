@@ -34,6 +34,9 @@ export type TenantRow = {
   lastLoginAt: Date | null;
   services: number;
   onboarded: boolean;
+  customDomain: string | null;
+  customDomainStatus: string;
+  customDomainError: string | null;
   termsAcceptedAt: Date | null;
   termsVersion: string | null;
   ownerVerified: boolean;
@@ -68,6 +71,9 @@ const SELECT = sql`
          (select max(se.updated_at) from session se join member m2 on m2.user_id = se.user_id where m2.organization_id = b.id) as "lastLoginAt",
          (select count(*)::int from services sv where sv.business_id = b.id) as services,
          (select count(*) > 0 from services sv where sv.business_id = b.id) and (select count(*) > 0 from staff s2 where s2.business_id = b.id) as onboarded,
+         b.custom_domain as "customDomain",
+         b.custom_domain_status as "customDomainStatus",
+         b.custom_domain_error as "customDomainError",
          b.terms_accepted_at as "termsAcceptedAt",
          b.terms_version as "termsVersion",
          b.publish_requires_verified as "publishRequiresVerified",

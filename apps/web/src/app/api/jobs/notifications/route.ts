@@ -6,6 +6,7 @@ import { queueFormsNudges } from "@/server/forms";
 import { sendLowStockDigests } from "@/server/inventory";
 import { reconcileAllSubscriptions } from "@/server/billing";
 import { nudgeAbandonedSignups } from "@/server/onboarding-nudge";
+import { refreshPendingDomains } from "@/server/custom-domain";
 
 /**
  * Deliver due reminders. Called every 5 minutes by the Render cron job
@@ -31,11 +32,13 @@ export async function POST(req: Request) {
   const bill = now.getUTCHours() === 7 && now.getUTCMinutes() < 5 ? await reconcileAllSubscriptions().catch((e) => ({ checked: 0, changed: 0, failed: 1, error: (e as Error).message })) : null;
   // Once a day (the 15:00 UTC run), one reminder to people who signed up and never created a business.
   const nudge = now.getUTCHours() === 15 && now.getUTCMinutes() < 5 ? await nudgeAbandonedSignups().catch((e) => ({ checked: 0, sent: 0, error: (e as Error).message })) : null;
+  // Custom booking addresses still waiting for their owner's DNS: recheck (each at most every 4 minutes).
+  const domains = await refreshPendingDomains().catch((e) => ({ checked: 0, active: 0, error: (e as Error).message }));
   const r = await deliverDue();
   const v = await refreshPendingVerifications().catch((e) => ({ checked: 0, changed: 0, error: (e as Error).message }));
   const ms = Date.now() - started;
   console.log(`[jobs/notifications] processed=${r.processed} sent=${r.sent} failed=${r.failed} skipped=${r.skipped} workflowsStarted=${a.started} workflowsResumed=${w.resumed} formsNudges=${f.queued} lowStockEmails=${inv.sent} verifications=${v.checked}/${v.changed} in ${ms}ms`);
-  return NextResponse.json({ ...r, workflows: { ...a, ...w }, formsNudges: f, lowStock: inv, verifications: v, billing: bill, onboardingNudge: nudge, ms });
+  return NextResponse.json({ ...r, workflows: { ...a, ...w }, formsNudges: f, lowStock: inv, verifications: v, billing: bill, onboardingNudge: nudge, customDomains: domains, ms });
 }
 
 export const GET = POST;

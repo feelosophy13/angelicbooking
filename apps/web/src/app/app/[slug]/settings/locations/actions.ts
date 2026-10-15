@@ -73,12 +73,3 @@ export async function deleteLocation(formData: FormData) {
   await setFlash(ok ? "Location removed" : "The default location can't be removed.", ok ? "success" : "error");
   revalidatePath(`/app/${slug}/settings/locations`);
 }
-
-export const saveCustomDomain = formAction(z.object({ slug: z.string(), customDomain: z.string().trim() }), async (d) => {
-  const ctx = await requireAction(d.slug, "business.manage");
-  const raw = d.customDomain.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-  if (raw && !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(raw)) throw new FormError("Enter a hostname like book.yoursalon.com", "customDomain");
-  await db.update(schema.businesses).set({ customDomain: raw || null }).where(eq(schema.businesses.id, ctx.business.id));
-  revalidatePath(`/app/${d.slug}/settings/domain`);
-  return raw ? "Custom domain saved" : "Custom domain removed";
-});

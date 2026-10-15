@@ -24,6 +24,14 @@ export function needsAttention(tenants: TenantWithBill[], now = Date.now()): Att
       if (trial < now) { out.push({ tenant: t, reason: `Trial ended ${days(now - trial)} day${days(now - trial) === 1 ? "" : "s"} ago, no subscription`, tone: "warn", severity: 2 }); continue; }
       if (trial - now <= 7 * DAY) { out.push({ tenant: t, reason: `Trial ends in ${Math.max(1, days(trial - now))} day${days(trial - now) <= 1 ? "" : "s"}`, tone: "info", severity: 3 }); continue; }
     }
+    if (t.customDomain && t.customDomainStatus === "manual") {
+      out.push({ tenant: t, reason: `Wants ${t.customDomain}: add it to the hosting service by hand`, tone: "warn", severity: 4 });
+      continue;
+    }
+    if (t.customDomain && t.customDomainStatus === "problem") {
+      out.push({ tenant: t, reason: `Custom address ${t.customDomain} has a problem`, tone: "warn", severity: 4 });
+      continue;
+    }
     if (!t.onboarded && age > 3 * DAY) {
       out.push({ tenant: t, reason: `Signed up ${days(age)} days ago and never finished setting up`, tone: "warn", severity: 4 });
       continue;

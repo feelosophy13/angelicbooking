@@ -110,6 +110,11 @@ export const businesses = pgTable("businesses", {
   smsTemplates: jsonb("sms_templates").$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),
   // Optional custom hostname for the public booking page (e.g. book.angelicbeauty.com).
   customDomain: text("custom_domain").unique(),
+  // Where the custom domain stands: none | pending (waiting for their DNS) | active | problem | manual (needs the platform team).
+  customDomainStatus: text("custom_domain_status").notNull().default("none"),
+  customDomainRenderId: text("custom_domain_render_id"),
+  customDomainError: text("custom_domain_error"),
+  customDomainCheckedAt: timestamp("custom_domain_checked_at", { withTimezone: true }),
   // Public profile / branding shown on the booking page and in messages.
   logoUrl: text("logo_url"),
   coverUrl: text("cover_url"),
