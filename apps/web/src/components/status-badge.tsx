@@ -10,6 +10,7 @@ const TONE: Record<string, string> = {
   paid: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   succeeded: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   sent: "bg-emerald-50 text-emerald-800 ring-emerald-200",
+  delivered: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   active: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   finalized: "bg-emerald-50 text-emerald-800 ring-emerald-200",
   open: "bg-brand-50 text-brand-700 ring-brand-200",

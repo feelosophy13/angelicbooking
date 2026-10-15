@@ -6,12 +6,11 @@ import { requireAction } from "@/lib/tenant";
 import { emailConfigured, smsConfigured } from "@/lib/notify/providers";
 import { Button, Card, Empty, Notice, PageHeader } from "@/components/ui";
 import { StatusBadge } from "@/components/status-badge";
-import { listInbox } from "@/server/inbound";
 import { resendMessage } from "./actions";
 
 export const metadata: Metadata = { title: "Messages" };
 
-/** Texts and emails sent to clients (every one, with its delivery status), and replies from clients. Wording is in settings. */
+/** Texts and emails sent to clients, every one with its delivery status. Replies from clients are in the Inbox; wording is in settings. */
 export default async function MessagesPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business } = await requireAction(slug, "business.manage");
@@ -24,11 +23,11 @@ export default async function MessagesPage({ params }: { params: Promise<{ slug:
       .orderBy(desc(schema.notifications.createdAt))
       .limit(200),
   );
-  const inbox = await listInbox(business.id, 50);
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: business.timezone });
   return (
     <>
       <PageHeader title="Messages">
+        <Link href={`/app/${slug}/inbox`} className="text-sm text-brand-700 underline">Replies are in the Inbox</Link>
         <Link href={`/app/${slug}/settings/notifications`} className="text-sm text-brand-700 underline">Text wording</Link>
       </PageHeader>
       {!emailConfigured() || !smsConfigured() ? (
@@ -40,24 +39,6 @@ export default async function MessagesPage({ params }: { params: Promise<{ slug:
           </Notice>
         </div>
       ) : null}
-      <div className="mb-6 grid gap-6 lg:grid-cols-2">
-        <Card>
-          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Replies from clients</h2>
-          {inbox.length === 0 ? <p className="p-4 text-sm text-stone-500">No replies yet. Texts clients send to your number land here and on their client page.</p> : (
-            <ul className="max-h-96 divide-y divide-stone-100 overflow-y-auto text-sm">
-              {inbox.map(({ m, firstName, lastName }) => (
-                <li key={m.id} className="px-4 py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    {m.clientId ? <Link href={`/app/${slug}/clients/${m.clientId}`} className="font-medium hover:underline">{firstName} {lastName}</Link> : <span className="font-medium">{m.fromNumber}</span>}
-                    <span className="text-xs text-stone-500">{fmt.format(m.receivedAt)}</span>
-                  </div>
-                  <p className="text-stone-700">{m.body}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
       {rows.length === 0 ? <Empty title="No messages yet" body="Confirmations, reminders and cancellations will appear here." /> : (
         <Card>
           <div className="overflow-x-auto"><table className="w-full text-sm">
@@ -71,7 +52,7 @@ export default async function MessagesPage({ params }: { params: Promise<{ slug:
                   <td className="px-4 py-2">{n.recipient}</td>
                   <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmt.format(n.scheduledAt)}</td>
                   <td className="px-4 py-2">
-                    <StatusBadge status={n.status} />
+                    <StatusBadge status={n.status === "sent" && n.deliveryStatus === "delivered" ? "delivered" : n.status} />
                     {n.error ? <span className="block text-xs text-stone-500">{n.error}</span> : null}
                     {n.status === "failed" || n.status === "skipped" ? (
                       <form action={resendMessage} className="mt-1">

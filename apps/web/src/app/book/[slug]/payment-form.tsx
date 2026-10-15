@@ -14,6 +14,8 @@ type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"
  * Stripe account; the appointment is created only after Stripe confirms.
  */
 export function PaidBookingForm(props: {
+  /** The full price of the visit, shown above the button. */
+  priceLabel?: string;
   slug: string;
   serviceId: string;
   staffId: string;
@@ -74,6 +76,7 @@ export function PaidBookingForm(props: {
         <p className="text-xs font-medium uppercase tracking-wide text-stone-400">Step 1 of 2 · Your details</p>
         <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} />
         {error ? <Notice>{error}</Notice> : null}
+        {props.priceLabel ? <p className="text-sm font-medium text-stone-800">Price of this visit: {props.priceLabel}</p> : null}
         <Button type="submit" disabled={pending} className="w-full" style={{ background: props.brand }}>
           {pending ? "One moment…" : props.mode === "deposit" ? props.full ? `Continue to pay ${props.amountLabel}` : `Continue to pay ${props.amountLabel} deposit` : "Continue to add a card"}
         </Button>

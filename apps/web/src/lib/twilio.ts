@@ -196,12 +196,13 @@ export async function fetchTollfreeVerification(sid: string): Promise<TollfreeVe
 // Messages
 // ---------------------------------------------------------------------------
 
-export async function sendMessage(input: { to: string; body: string; from?: string; messagingServiceSid?: string }): Promise<{ sid: string }> {
+export async function sendMessage(input: { to: string; body: string; from?: string; messagingServiceSid?: string; statusCallback?: string }): Promise<{ sid: string }> {
   const r = await request<{ sid: string }>("POST", `${account()}/Messages.json`, {
     To: input.to,
     Body: input.body,
     From: input.messagingServiceSid ? undefined : input.from,
     MessagingServiceSid: input.messagingServiceSid,
+    StatusCallback: input.statusCallback,
   });
   return { sid: r.sid };
 }

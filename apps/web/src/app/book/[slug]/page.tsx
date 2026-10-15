@@ -154,6 +154,12 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const termsFor = (staffId: string) => termsOf(service, overrides.get(staffId));
   const provTerms = providers.map((p) => ({ id: p.id, ...termsFor(p.id) }));
   const priceVaries = new Set(provTerms.map((t) => t.priceCents)).size > 1;
+  const lowestPrice = provTerms.length ? Math.min(...provTerms.map((t) => t.priceCents)) : service.priceCents;
+  // Said out loud when the chosen provider costs more than the "from" price the client saw earlier.
+  const pricierNote = (staffId: string, name: string) => {
+    const cents = termsFor(staffId).priceCents;
+    return priceVaries && cents > lowestPrice ? <p className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{name}&apos;s price for this service is {money(cents)}, higher than the {money(lowestPrice)} starting price.</p> : null;
+  };
   const durationVaries = new Set(provTerms.map((t) => t.durationMin)).size > 1;
   const scope = staffChoice && staffChoice !== "any" ? provTerms.filter((t) => t.id === staffChoice) : provTerms;
   const scopePrices = scope.length ? scope.map((t) => t.priceCents) : [service.priceCents];
@@ -219,9 +225,9 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(sessionDate)} at ${formatTime(chosen.startAt, tz)}`, href: q({ session: undefined }) }, { label: "With", value: chosen.staffName }, { label: "Per person", value: formatMoney(service.priceCents, business.currency) }, { label: "Seats left", value: String(chosen.seatsLeft) }]} />
         {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">{req.full ? `Payment of ${formatMoney(req.amountCents, business.currency)} in full is due now.` : `A ${formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.`}</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
         {req.mode === "none" ? (
-          <BookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+          <BookingForm priceLabel={money(service.priceCents)} slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         ) : (
-          <PaidBookingForm slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} mode={req.mode} full={req.full} amountLabel={formatMoney(req.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+          <PaidBookingForm priceLabel={money(service.priceCents)} slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} mode={req.mode} full={req.full} amountLabel={formatMoney(req.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         )}
       </>
     );
@@ -296,6 +302,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <Steps labels={stepLabels} current={3} hrefs={stepHrefs(2)} />
         <StepTitle title="Pick a time" />
         <Summary imageUrl={service.imageUrl} title={service.name} rows={summaryRows([{ label: "Price", value: priceText }, ...depositRow])} />
+        {staffChoice !== "any" ? pricierNote(staffChoice, providerName ?? "This provider") : null}
         <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <MonthCalendar
             monthStart={monthStart}
@@ -360,11 +367,13 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
       <StepTitle title="Your details" subtitle="Almost done. Tell us who you are and we'll hold this time." />
       <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: q({ time: undefined }) }, { label: "With", value: slot.staffName, href: onlyProvider ? undefined : q({ staff: undefined, date: undefined, time: undefined }) }, { label: "Duration", value: spanOf(termsFor(slot.staffId).durationMin) }, { label: "Price", value: money(termsFor(slot.staffId).priceCents) }]} />
+      {pricierNote(slot.staffId, slot.staffName)}
       {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">{req.full ? `Payment of ${formatMoney(req.amountCents, business.currency)} in full is due now.` : `A ${formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.`}</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
       {req.mode === "none" ? (
-        <BookingForm slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={termsFor(slot.staffId).priceCents} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+        <BookingForm priceLabel={money(termsFor(slot.staffId).priceCents)} slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={termsFor(slot.staffId).priceCents} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
       ) : (
         <PaidBookingForm
+          priceLabel={money(termsFor(slot.staffId).priceCents)}
           slug={slug}
           serviceId={service.id}
           staffId={slot.staffId}

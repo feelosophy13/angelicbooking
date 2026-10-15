@@ -1,5 +1,6 @@
 /** Thin fetch-based clients for Resend (email) and Twilio (SMS). No SDKs needed. */
 import { sendMessage, twilioConfigured } from "@/lib/twilio";
+import { appUrl } from "@/lib/stripe";
 
 export function emailConfigured(): boolean {
   const k = process.env.RESEND_API_KEY;
@@ -39,6 +40,7 @@ export async function sendEmail(input: { to: string; subject: string; html: stri
 export type SmsSender = { from?: string; messagingServiceSid?: string };
 
 export async function sendSms(input: { to: string; body: string; sender: SmsSender }): Promise<{ id: string }> {
-  const r = await sendMessage({ to: input.to, body: input.body, ...input.sender });
+  // The callback reports carrier delivery (delivered / undelivered) to /api/twilio/status.
+  const r = await sendMessage({ to: input.to, body: input.body, ...input.sender, statusCallback: appUrl("/api/twilio/status") });
   return { id: r.sid };
 }

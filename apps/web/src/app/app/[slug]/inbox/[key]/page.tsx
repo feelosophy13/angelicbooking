@@ -7,6 +7,7 @@ import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { BackLink, Card, PageHeader } from "@/components/ui";
 import { clientThread, numberThread, unreadFor } from "@/server/inbound";
+import { AddClient } from "./add-client";
 import { MarkRead } from "./mark-read";
 import { ReplyBox } from "./reply-box";
 
@@ -36,15 +37,21 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
           <ul className="space-y-2">
             {thread.map((m) => (
               <li key={`${m.dir}${m.id}`} className={m.dir === "in" ? "mr-12" : "ml-12 text-right"}>
-                <span className={`inline-block whitespace-pre-wrap rounded-lg px-3 py-2 text-left text-sm ${m.dir === "in" ? "bg-stone-100 text-stone-800" : "bg-brand-50 text-brand-900"}`}>{m.body}</span>
-                <span className="block text-xs text-stone-400">{fmt.format(m.at)}{m.dir === "out" ? ` · ${m.status}` : ""}</span>
+                {m.body ? <span className={`inline-block whitespace-pre-wrap rounded-lg px-3 py-2 text-left text-sm ${m.dir === "in" ? "bg-stone-100 text-stone-800" : "bg-brand-50 text-brand-900"}`}>{m.body}</span> : null}
+                {m.media.map((a) => (
+                  <a key={a.url} href={a.url} target="_blank" rel="noopener noreferrer" className="mt-1 block">
+                    {a.type.startsWith("image/") ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={a.url} alt="Picture sent by the client" className="max-h-64 rounded-lg" /> : <span className="text-sm text-brand-700 underline">Open attachment ({a.type || "file"})</span>}
+                  </a>
+                ))}
+                <span className="block text-xs text-stone-400">{fmt.format(m.at)}{m.dir === "out" ? ` · ${m.status === "failed" ? "not delivered" : m.status}` : ""}</span>
               </li>
             ))}
           </ul>
         )}
         <div className="mt-4 border-t border-stone-100 pt-4">
           {client && write && client.phone ? <ReplyBox slug={slug} clientId={client.id} optedOut={!client.smsOptIn} />
-            : <p className="text-sm text-stone-500">{!client ? "This number is not on a client record, so you can't reply from here. Add them as a client to text back." : write ? "This client has no mobile number." : "You can read texts but not send them."}</p>}
+            : !client ? (write ? <AddClient slug={slug} number={key.slice(4)} /> : <p className="text-sm text-stone-500">This number is not on a client record.</p>)
+            : <p className="text-sm text-stone-500">{write ? "This client has no mobile number." : "You can read texts but not send them."}</p>}
         </div>
       </Card>
     </>
