@@ -18,7 +18,9 @@ export const metadata: Metadata = { title: "Billing" };
 export default async function BillingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ session_id?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  let { business } = await requireAction(slug, "business.manage");
+  const ctx = await requireAction(slug, "business.manage");
+  let { business } = ctx;
+  const plan = ctx.plan;
   let justSubscribed = false;
   if (sp.session_id) {
     await completeCheckout(business, sp.session_id).catch((e) => console.error("[billing] checkout sync failed", (e as Error).message));
@@ -53,6 +55,8 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Billing" />
       {justSubscribed && state.subscribed ? <div className="mb-4"><Notice kind="success">Billing is set up. Thank you!</Notice></div> : null}
+      {plan.state === "expired" ? <div className="mb-4"><Notice>Your free trial has ended. Start your subscription below to reopen your calendar and booking page. Your data is safe.</Notice></div> : null}
+      {plan.state === "trial" ? <div className="mb-4"><Notice>Free trial: {plan.daysLeft} day{plan.daysLeft === 1 ? "" : "s"} left. Add a card now and you won&apos;t be charged until the trial ends.</Notice></div> : null}
       {state.smsPausedReason ? <div className="mb-4"><Notice>{state.smsPausedReason} Until then no texts are sent to your clients; emails still go out.</Notice></div> : null}
       {state.delinquent ? (
         <div className="mb-4"><Notice>Your last payment failed. Update your card to keep text messaging and add-ons running.</Notice></div>

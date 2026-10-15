@@ -1,10 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 import { Button, Card, Field, Input, Notice } from "@/components/ui";
 import { Wordmark } from "@/components/brand";
+import { Turnstile } from "@/components/turnstile";
 
 /** Only ever send people to a path on this site after signing in (never to another host). */
 function safeNext(raw: string | null): string {
@@ -24,6 +25,10 @@ export function AuthForm({ mode, googleEnabled = false }: { mode: "sign-in" | "s
   });
   const [busy, setBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+  const needCheck = mode === "sign-up" && !!siteKey;
+  const [checkToken, setCheckToken] = useState<string | null>(null);
+  const onCheck = useCallback((t: string | null) => setCheckToken(t), []);
 
   async function withGoogle() {
     setError(null);
@@ -45,7 +50,7 @@ export function AuthForm({ mode, googleEnabled = false }: { mode: "sign-in" | "s
     const password = String(fd.get("password"));
     const res =
       mode === "sign-up"
-        ? await authClient.signUp.email({ email, password, name: String(fd.get("name")) })
+        ? await authClient.signUp.email({ email, password, name: String(fd.get("name")), fetchOptions: { headers: checkToken ? { "x-turnstile-token": checkToken } : {} } })
         : await authClient.signIn.email({ email, password });
     setBusy(false);
     if (res.error) {
@@ -87,8 +92,10 @@ export function AuthForm({ mode, googleEnabled = false }: { mode: "sign-in" | "s
             <Input name="password" type="password" required minLength={8} autoComplete={mode === "sign-up" ? "new-password" : "current-password"} />
           </Field>
           {mode === "sign-in" ? <div className="-mt-2 text-right"><Link href="/forgot-password" className="text-xs text-brand-700 underline">Forgot password?</Link></div> : null}
+          {mode === "sign-up" ? <p className="text-xs text-stone-500">By creating an account you agree to the <Link href="/terms" className="underline">Terms</Link> and <Link href="/privacy" className="underline">Privacy Policy</Link>.</p> : null}
+          {needCheck ? <Turnstile siteKey={siteKey!} onToken={onCheck} /> : null}
           {error ? <Notice>{error}</Notice> : null}
-          <Button type="submit" className="w-full" disabled={busy}>
+          <Button type="submit" className="w-full" disabled={busy || (needCheck && !checkToken)}>
             {busy ? "…" : mode === "sign-up" ? "Create account" : "Sign in"}
           </Button>
         </form>

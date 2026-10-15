@@ -34,6 +34,10 @@ export type TenantRow = {
   lastLoginAt: Date | null;
   services: number;
   onboarded: boolean;
+  termsAcceptedAt: Date | null;
+  termsVersion: string | null;
+  ownerVerified: boolean;
+  publishRequiresVerified: boolean;
 };
 
 export type TenantWithBill = TenantRow & { bill: Bill; price: PriceBook; hasOverrides: boolean };
@@ -63,11 +67,15 @@ const SELECT = sql`
          b.stripe_subscription_id as "stripeSubscriptionId",
          (select max(se.updated_at) from session se join member m2 on m2.user_id = se.user_id where m2.organization_id = b.id) as "lastLoginAt",
          (select count(*)::int from services sv where sv.business_id = b.id) as services,
-         (select count(*) > 0 from services sv where sv.business_id = b.id) and (select count(*) > 0 from staff s2 where s2.business_id = b.id) as onboarded
+         (select count(*) > 0 from services sv where sv.business_id = b.id) and (select count(*) > 0 from staff s2 where s2.business_id = b.id) as onboarded,
+         b.terms_accepted_at as "termsAcceptedAt",
+         b.terms_version as "termsVersion",
+         b.publish_requires_verified as "publishRequiresVerified",
+         exists (select 1 from member mv join "user" uv on uv.id = mv.user_id where mv.organization_id = b.id and mv.role = 'owner' and uv.email_verified) as "ownerVerified"
   from businesses b
 `;
 
-const TENANT_DATES = ["trialEndsAt", "currentPeriodEnd", "createdAt", "lastAppointmentAt", "suspendedAt", "lastLoginAt"] as const;
+const TENANT_DATES = ["trialEndsAt", "currentPeriodEnd", "createdAt", "lastAppointmentAt", "suspendedAt", "lastLoginAt", "termsAcceptedAt"] as const;
 
 export async function listTenants(): Promise<TenantRow[]> {
   await requireAdmin();

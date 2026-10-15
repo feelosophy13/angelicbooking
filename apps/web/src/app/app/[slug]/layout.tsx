@@ -9,6 +9,8 @@ import { permissionsForRole, listRoles } from "@/server/roles";
 import { appUrl } from "@/lib/stripe";
 import { Wordmark } from "@/components/brand";
 import { UserMenu } from "@/components/user-menu";
+import { ResendVerification } from "@/components/resend-verification";
+import { ownerEmailVerified } from "@/server/access";
 import { DevViewAs } from "@/components/dev-view-as";
 import { viewAsEnabled } from "@/lib/dev-view-as";
 import { CommandPalette } from "@/components/command-palette";
@@ -22,7 +24,7 @@ const ICON: Record<string, React.ComponentType<{ className?: string }>> = { Cale
 
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, user, role, permissions, viewingAs, realRole, staffId } = await requireBusiness(slug);
+  const { business, user, role, permissions, viewingAs, realRole, staffId, plan } = await requireBusiness(slug);
   const [mine, roles, locations] = await Promise.all([listMyBusinesses(user.id), listRoles(business.id), withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations).orderBy(desc(schema.locations.isDefault), asc(schema.locations.name)))]);
   void permissionsForRole;
   const lowCount = can(permissions, "inventory.manage") ? await lowStockCount(business.id) : 0;
@@ -43,6 +45,20 @@ export default async function AppLayout({ children, params }: { children: React.
     it(`${base}/staff`, "Staff", "UserCog"),
   ];
 
+  // Trial over, no subscription: no sidebar, just the page they are allowed to open (billing, or the locked notice).
+  if (plan.state === "expired") {
+    return (
+      <div className="min-h-screen">
+        <header className="flex items-center justify-between border-b border-stone-200 bg-white px-4 py-3">
+          <Link href="/" aria-label="Home"><Wordmark /></Link>
+          <div className="w-56"><UserMenu user={user} businesses={mine} currentSlug={slug} /></div>
+        </header>
+        <main className="p-4 md:p-8">{children}</main>
+      </div>
+    );
+  }
+  const owner = can(permissions, "business.manage");
+  const awaitingVerification = owner && business.publishRequiresVerified && !(await ownerEmailVerified(business.id));
   return (
     <div className="flex min-h-screen">
       <NavHistory />
@@ -92,6 +108,17 @@ export default async function AppLayout({ children, params }: { children: React.
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
               Your last payment failed.{" "}
               {can(permissions, "business.manage") ? <Link href={`${base}/settings/billing`} className="underline">Update your card</Link> : "Ask the owner to update the card"} to keep text messaging running.
+            </div>
+          ) : null}
+          {awaitingVerification ? (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+              Verify your email to publish your booking page and send messages. We emailed {user.email}.{" "}
+              <ResendVerification email={user.email} callbackURL={`/app/${slug}`} />
+            </div>
+          ) : null}
+          {plan.state === "trial" && owner ? (
+            <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${plan.daysLeft <= 3 ? "border-amber-200 bg-amber-50 text-amber-900" : "border-brand-100 bg-brand-50/60 text-brand-900"}`}>
+              Free trial: {plan.daysLeft} day{plan.daysLeft === 1 ? "" : "s"} left. <Link href={`${base}/settings/billing`} className="underline">Add a card</Link> so nothing stops when it ends; you won&apos;t be charged until then.
             </div>
           ) : null}
           {children}

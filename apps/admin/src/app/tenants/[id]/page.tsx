@@ -113,6 +113,8 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
                   ["Slug", t.slug],
                   ["Plan", <span key="p" className="capitalize">{t.plan}</span>],
                   ["Trial ends", date(t.trialEndsAt)],
+                  ["Owner email", t.ownerVerified ? "Verified" : t.publishRequiresVerified ? "Not verified: booking page closed, no messages" : "Not verified (older account, not required)"],
+                  ["Terms accepted", t.termsAcceptedAt ? `${date(t.termsAcceptedAt)} (version ${t.termsVersion ?? "?"})` : "Before sign-up recorded terms"],
                   ["Current period ends", date(t.currentPeriodEnd)],
                   ["Stripe customer", t.stripeCustomerId ?? "—"],
                   ["Signed up", dateTime(t.createdAt)],

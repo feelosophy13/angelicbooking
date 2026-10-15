@@ -4,7 +4,7 @@ import { Shell } from "@/components";
 import { needsAttention } from "@/lib/attention";
 import { actionLabel, listAudit } from "@/lib/audit";
 import { platformHealth } from "@/lib/health";
-import { platformWeekly, weekLabel } from "@/lib/metrics";
+import { accountsWithoutBusiness, platformWeekly, weekLabel } from "@/lib/metrics";
 import { priceBookIsSet } from "@/lib/pricing";
 import { money } from "@/lib/price-form";
 import { listTenantsWithBills } from "@/lib/tenants";
@@ -15,7 +15,7 @@ import { Avatar, Badge, Card, Empty, PageHeader, Stat, relativeDay } from "@/ui/
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
-  const [{ tenants }, weekly, audit, health, priceSet] = await Promise.all([listTenantsWithBills(), platformWeekly(), listAudit({ limit: 6 }), platformHealth(), priceBookIsSet()]);
+  const [{ tenants }, weekly, audit, health, priceSet, noBiz] = await Promise.all([listTenantsWithBills(), platformWeekly(), listAudit({ limit: 6 }), platformHealth(), priceBookIsSet(), accountsWithoutBusiness()]);
   const now = Date.now();
   const live = tenants.filter((t) => !t.suspendedAt);
   const paying = live.filter((t) => t.subscriptionStatus === "active").length;
@@ -104,6 +104,11 @@ export default async function Dashboard() {
               <div className="flex justify-between"><dt className="text-ink-2">Failed (24h)</dt><dd className="tabular-nums">{health.failed24h.reduce((s, r) => s + r.n, 0)}</dd></div>
               <div className="flex justify-between"><dt className="text-ink-2">Stuck webhooks</dt><dd className="tabular-nums">{health.webhookUnprocessed}</dd></div>
             </dl>
+          </Card>
+
+          <Card title="Signed up, no business yet">
+            <div className="text-3xl font-semibold tabular-nums">{noBiz.last30Days}</div>
+            <div className="mt-1 text-xs text-ink-2">Accounts in the last 30 days that never created a business ({noBiz.verified} verified their email and get one reminder). {noBiz.total} ever.</div>
           </Card>
 
           <Card title="Newest businesses" pad={false}>

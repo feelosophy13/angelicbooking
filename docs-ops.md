@@ -326,6 +326,28 @@ built from it (base + extra locations + extra staff + metered texts); the 07:00 
 line with each business's locations and active staff. Platform-wide price changes do not re-price existing subscribers; a business
 with its own pricing deal is re-priced. Comped businesses are never charged.
 
+## New-business guardrails (added 2026-10-15)
+What a new owner goes through, and what stops abuse:
+- **Sign-up** has a Cloudflare Turnstile bot check (widget "Angelic Booking sign-up"; `NEXT_PUBLIC_TURNSTILE_SITE_KEY` is baked in at build time,
+  `TURNSTILE_SECRET_KEY` is read at runtime; both must be set on Render before a deploy; with no secret the check is skipped, as in CI).
+  Running Playwright locally with the keys in `.env` needs them blanked, or the test cannot pass the check.
+- **Creating a business** needs the Terms / Privacy / texting-rules checkbox (stored as `businesses.terms_accepted_at` and `terms_version`; the
+  version is `TERMS_VERSION` in `lib/terms.ts`, bump it when the documents change), and refuses reserved addresses (`admin`, `api`, `demo-…` and
+  other platform paths; the list is in `lib/access.ts`). The same checks run in a Better Auth hook, so calling the API directly cannot skip them.
+- **Free trial.** A new business gets `trial_ends_at = now + price-book trial days`. While in trial a banner counts the days down; adding a card
+  early carries the remaining trial onto the Stripe subscription (no charge until it ends, if 48 h or more remain). When the trial ends with no
+  subscription the staff app closes (everything redirects to `/app/<slug>/locked`; only Settings → Billing opens), the booking page returns 404
+  and no messages go out. Cancelled or unpaid subscriptions are locked the same way. Never locked: comped businesses, businesses with an active or
+  trialing (or past_due) subscription, a platform without Stripe billing, a platform whose base plan is $0, and **older businesses with no trial
+  date (grandfathered)**. Use the admin app's Extend trial or Comp to change one. The rule is `accessState` in `lib/access.ts`.
+- **Verified email.** A new business (`publish_requires_verified`) stays off the public web and sends no messages until an owner has verified their email.
+  Older businesses are exempt. A banner in the app offers to resend the link.
+- **Free-account limits.** Until a subscription exists: texts are paused, emails are capped per day (price book "Emails per day before subscribing", default 100,
+  0 = no limit) and at most 2 API keys. Not limited yet: photo/file storage (only per-file size limits apply).
+- **Nudges.** One reminder email (15:00 UTC run of the reminders job) to people who verified their email, signed up 1–7 days ago and still have no
+  business. A welcome email goes out when a business is created. The admin Dashboard shows how many accounts have no business.
+- **Setup checklist** gained "Verify your email", "Add a card" (during the trial) and "Turn on two-factor sign-in".
+
 ## Demo tenant
 
 Two fake businesses for walkthroughs and screenshots, built by `apps/web/scripts/seed-demo.ts` (it never touches any other

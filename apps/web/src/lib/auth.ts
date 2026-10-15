@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
+import { verifyTurnstile } from "./turnstile";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, organization, twoFactor } from "better-auth/plugins";
 import { googleEnabled } from "./auth-providers";
@@ -91,6 +92,14 @@ export const auth = betterAuth({
   session: {
     cookieCache: { enabled: true, maxAge: 5 * 60 },
   },
+  hooks: {
+    // Bot check on email sign-up (Cloudflare Turnstile). The browser sends the token in a header.
+    before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-up/email") return;
+      const ip = ctx.headers?.get("cf-connecting-ip") ?? ctx.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+      if (!(await verifyTurnstile(ctx.headers?.get("x-turnstile-token"), ip))) throw new APIError("BAD_REQUEST", { message: "Please complete the check below to create your account." });
+    }),
+  },
   plugins: [
     organization({
       ac,
@@ -101,6 +110,14 @@ export const auth = betterAuth({
       dynamicAccessControl: { enabled: true, maximumRolesPerOrganization: 30 },
       invitationExpiresIn: 60 * 60 * 24 * 7,
       organizationHooks: {
+        // Every business starts the same way, whichever endpoint created it: agreed terms, a usable address.
+        beforeCreateOrganization: async ({ organization: org }) => {
+          const { TERMS_VERSION } = await import("./terms");
+          const { isReservedSlug } = await import("./access");
+          const meta = safeParse(org.metadata);
+          if (meta.termsVersion !== TERMS_VERSION) throw new APIError("BAD_REQUEST", { message: "Please agree to the Terms and Privacy Policy to continue." });
+          if (isReservedSlug(org.slug ?? "")) throw new APIError("BAD_REQUEST", { message: "That business address is reserved. Please choose another name." });
+        },
         // Member management is governed by our roles table (Settings → Roles), not by
         // Better Auth's static role map, so an edited built-in role is honoured here too.
         beforeCreateInvitation: async ({ invitation, inviter }) => {
@@ -146,12 +163,21 @@ export const auth = betterAuth({
         },
         afterCreateOrganization: async ({ organization: org, user }) => {
           const meta = safeParse(org.metadata);
+          const { platformPriceBook } = await import("@/server/price-book");
+          const trialDays = (await platformPriceBook()).trialDays;
           await db.transaction(async (tx) => {
             await tx.insert(schema.businesses).values({
               id: org.id,
               name: org.name,
               slug: org.slug,
               timezone: typeof meta.timezone === "string" ? meta.timezone : "America/New_York",
+              phone: typeof meta.phone === "string" && meta.phone ? meta.phone : null,
+              termsAcceptedAt: new Date(),
+              termsVersion: typeof meta.termsVersion === "string" ? meta.termsVersion : null,
+              // New businesses wait for a verified owner email before going public or sending anything.
+              publishRequiresVerified: true,
+              // The free trial starts now; its length is in the price book (Pricing page).
+              trialEndsAt: new Date(Date.now() + trialDays * 86_400_000),
             });
             // Tenant rows: set RLS context inside this transaction.
             await tx.execute(sql`select set_config('app.business_id', ${org.id}, true)`);
@@ -182,6 +208,8 @@ export const auth = betterAuth({
               })),
             );
           });
+          // A short welcome with the three things to do first (best effort: never blocks creating the business).
+          void sendWelcome({ to: user.email, name: user.name, business: org.name, slug: org.slug, trialDays }).catch((e) => console.error("[welcome] failed", (e as Error).message));
         },
       },
     }),
@@ -190,6 +218,17 @@ export const auth = betterAuth({
     nextCookies(), // must be last
   ],
 });
+
+async function sendWelcome(o: { to: string; name: string; business: string; slug: string; trialDays: number }) {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL ?? "http://localhost:3001";
+  await sendAuthEmail({
+    to: o.to,
+    subject: `${o.business} is set up on Angelic Booking`,
+    heading: `Welcome, ${o.name.split(" ")[0]}`,
+    body: `${o.business} is ready. To get your booking page live: confirm your email (we sent a separate message), add your services and your team${o.trialDays > 0 ? `, and add a card before your ${o.trialDays}-day free trial ends so nothing is interrupted` : ""}.`,
+    cta: { label: "Open your calendar", url: `${base}/app/${o.slug}` },
+  });
+}
 
 function safeParse(s: unknown): Record<string, unknown> {
   if (typeof s !== "string") return (s as Record<string, unknown>) ?? {};

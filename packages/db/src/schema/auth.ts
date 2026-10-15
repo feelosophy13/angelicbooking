@@ -9,6 +9,8 @@ export const user = pgTable("user", {
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
   twoFactorEnabled: boolean("two_factor_enabled").default(false),
+  // When we emailed this person about finishing setup (once), if they signed up and never created a business.
+  onboardingNudgedAt: timestamp("onboarding_nudged_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

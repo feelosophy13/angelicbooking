@@ -24,6 +24,8 @@ export interface PriceBook {
   trialDays: number;
   /** Share of each card payment the business takes from its clients that the platform keeps, in basis points (100 = 1%). */
   platformFeeBps: number;
+  /** Emails per day a business may send until it has a subscription (0 = no limit). */
+  trialEmailCap: number;
 }
 
 export const PRICE_FIELDS = [
@@ -37,6 +39,7 @@ export const PRICE_FIELDS = [
   "smsUsageCents",
   "trialDays",
   "platformFeeBps",
+  "trialEmailCap",
 ] as const satisfies readonly (keyof PriceBook)[];
 
 export const DEFAULT_PRICE_BOOK: PriceBook = {
@@ -50,6 +53,7 @@ export const DEFAULT_PRICE_BOOK: PriceBook = {
   smsUsageCents: 0,
   trialDays: 0,
   platformFeeBps: 0,
+  trialEmailCap: 100,
 };
 
 /** The default price book with any per-business overrides applied (null/undefined = use the default). */

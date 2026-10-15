@@ -11,6 +11,7 @@ import { appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify
 import { triggerWorkflows } from "@/server/workflows";
 import { staffAlertEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
+import { businessAccess, publishBlockedReason } from "./access";
 import { formatMoney, shiftISODate } from "@/lib/utils";
 import { overridesForService, priceForStaff } from "./stylist-pricing";
 import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt, tzFor } from "./locations";
@@ -20,7 +21,11 @@ export type PublicBusiness = typeof schema.businesses.$inferSelect;
 /** Unscoped lookup for the public page. Returns null if booking is off. */
 export async function getPublicBusiness(slug: string): Promise<PublicBusiness | null> {
   const b = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, slug) });
-  return b && b.onlineBookingEnabled && !b.suspendedAt ? b : null;
+  if (!b || !b.onlineBookingEnabled || b.suspendedAt) return null;
+  // Closed too: trial over with no subscription, or the owner has not verified their email yet (new businesses only).
+  if ((await businessAccess(b)).state === "expired") return null;
+  if (await publishBlockedReason(b)) return null;
+  return b;
 }
 
 /** Average rating and count of submitted reviews, for the booking page header. */

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { getSql } from "@angelic/db";
 
 /**
  * End-to-end smoke: a brand-new business signs up, adds a service, books a
@@ -18,9 +19,12 @@ test("sign up → onboard → service → book → checkout → public page", as
 
   await page.waitForURL("**/onboarding");
   await page.getByLabel(/^Business name/).fill(bizName);
+  await page.getByLabel(/I agree to the/).check();
   await page.getByRole("button", { name: "Create business" }).click();
   await page.waitForURL(/\/app\/[^/]+$/);
   const slug = new URL(page.url()).pathname.split("/")[2]!;
+  // A new business stays off the public web until its owner verifies their email; the test has no inbox, so do what the link does.
+  await getSql()`update "user" set email_verified = true where email = ${email}`;
 
   // Service
   await page.goto(`/app/${slug}/services/new`);

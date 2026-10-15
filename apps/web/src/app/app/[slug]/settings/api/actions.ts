@@ -8,6 +8,8 @@ import { isApiScope } from "@/lib/api-scopes";
 import type { FormState } from "@/lib/form";
 
 const MAX_ACTIVE_KEYS = 20;
+/** Until a business has a subscription it gets a couple of keys to try the API. */
+const TRIAL_MAX_KEYS = 2;
 
 /** Create a key. The secret comes back once in `values.key`; only its hash is stored, so it can never be shown again. */
 export async function createApiKey(_prev: FormState | undefined, fd: FormData): Promise<FormState> {
@@ -27,7 +29,7 @@ export async function createApiKey(_prev: FormState | undefined, fd: FormData): 
   const k = generateKey();
   const full = await withTenant(businessId, async (tx) => {
     const [n] = await tx.select({ n: sql<number>`count(*)` }).from(schema.apiKeys).where(and(eq(schema.apiKeys.businessId, businessId), isNull(schema.apiKeys.revokedAt)));
-    if (Number(n?.n ?? 0) >= MAX_ACTIVE_KEYS) return true;
+    if (Number(n?.n ?? 0) >= (ctx.plan.state === "trial" ? TRIAL_MAX_KEYS : MAX_ACTIVE_KEYS)) return true;
     const [row] = await tx
       .insert(schema.apiKeys)
       .values({ businessId, name, prefix: k.prefix, keyHash: k.hash, scopes, createdByUserId: ctx.user.id, expiresAt: days ? new Date(Date.now() + days * 86_400_000) : null })
@@ -39,7 +41,7 @@ export async function createApiKey(_prev: FormState | undefined, fd: FormData): 
     }
     return false;
   });
-  if (full) return { error: `You can have up to ${MAX_ACTIVE_KEYS} active keys. Revoke one you no longer use.` };
+  if (full) return { error: ctx.plan.state === "trial" ? `During your free trial you can have up to ${TRIAL_MAX_KEYS} active keys. Revoke one, or subscribe for more.` : `You can have up to ${MAX_ACTIVE_KEYS} active keys. Revoke one you no longer use.` };
   revalidatePath(`/app/${slug}/settings/api`);
   return { ok: true, values: { key: k.key, name } };
 }

@@ -133,6 +133,11 @@ export const businesses = pgTable("businesses", {
   suspendedReason: text("suspended_reason"),
   // Comped: the platform never charges this business (free for friends, partners, our own demo).
   comped: boolean("comped").notNull().default(false),
+  // Agreed to the Terms, Privacy Policy and texting rules when creating the business (see lib/terms.ts for the version).
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  termsVersion: text("terms_version"),
+  // New businesses stay off the public web and send no messages until the owner has verified their email. Older ones are exempt.
+  publishRequiresVerified: boolean("publish_requires_verified").notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

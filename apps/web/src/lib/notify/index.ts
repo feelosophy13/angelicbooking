@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { after } from "next/server";
 import { db, schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone, lateCancelFeeLabel, policyFeeCheck } from "@angelic/core";
@@ -11,6 +11,8 @@ import { platformSmsSender } from "@/lib/twilio";
 import { listNumbers } from "@/server/messaging";
 import { addressOf, tzFor } from "@/server/locations";
 import { billingEnabled, reportSmsUsage } from "@/server/billing";
+import { businessAccess, publishBlockedReason } from "@/server/access";
+import { emailDailyCap } from "@/lib/access";
 import { smsPausedReason } from "@/lib/billing-config";
 import { priceBookIn } from "@/server/price-book";
 import { templates, type ApptContext, type TemplateName } from "./templates";
@@ -189,7 +191,7 @@ const retryDelayMs = (attempt: number) => 5 * 60_000 * 2 ** Math.max(0, attempt 
  * stale "sending" rows. The UPDATE is the lock, so two concurrent runs (cron +
  * after-response delivery, or overlapping deploys) can never both send a row.
  */
-type Claimed = { row: Row; sender: SmsSender | null; email: { fromName: string; replyTo?: string; demo: boolean; suspended: boolean; smsPausedReason: string | null } | null };
+type Claimed = { row: Row; sender: SmsSender | null; email: { fromName: string; replyTo?: string; demo: boolean; suspended: boolean; smsPausedReason: string | null; blocked: string | null; emailBudget: { left: number } | null } | null };
 
 /**
  * The sender a message texts from: the verified number of the location it is
@@ -218,7 +220,26 @@ async function claimWithSender(tx: TenantDb, opts: { ids?: string[]; limit: numb
   const smsPausedWhy = biz && rows.some((r) => r.channel === "sms")
     ? smsPausedReason({ billingEnabled: billingEnabled(), comped: biz.comped, status: biz.subscriptionStatus, smsUsageCents: (await priceBookIn(tx, rows[0]!.businessId)).smsUsageCents })
     : null;
-  const email = biz ? { fromName: biz.name, replyTo: biz.email ?? undefined, demo: isDemoSlug(biz.slug), suspended: !!biz.suspendedAt, smsPausedReason: smsPausedWhy } : null;
+  // Nothing at all goes out while the trial is over with no subscription, or before a new owner has verified their email; and
+  // until there is a subscription, emails are capped per day (the cap is in the price book).
+  let blocked: string | null = null;
+  let emailBudget: { left: number } | null = null;
+  if (biz && !biz.suspendedAt) {
+    const full = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, rows[0]!.businessId) });
+    if (full) {
+      if ((await businessAccess(full)).state === "expired") blocked = "Free trial ended: add a card under Settings → Billing to resume messages.";
+      else blocked = await publishBlockedReason(full);
+      const cap = emailDailyCap({ comped: full.comped, status: full.subscriptionStatus, cap: (await priceBookIn(tx, full.id)).trialEmailCap });
+      if (cap !== null && rows.some((r) => r.channel === "email")) {
+        const [sent] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(schema.notifications)
+          .where(and(eq(schema.notifications.channel, "email"), eq(schema.notifications.status, "sent"), gte(schema.notifications.sentAt, new Date(Date.now() - 86_400_000))));
+        emailBudget = { left: Math.max(0, cap - Number(sent?.n ?? 0)) };
+      }
+    }
+  }
+  const email = biz ? { fromName: biz.name, replyTo: biz.email ?? undefined, demo: isDemoSlug(biz.slug), suspended: !!biz.suspendedAt, smsPausedReason: smsPausedWhy, blocked, emailBudget } : null;
   return rows.map((row) => ({ row, sender: row.channel === "sms" ? (senders.get(row.locationId) ?? null) : null, email }));
 }
 
@@ -247,6 +268,11 @@ async function send({ row: n, sender, email }: Claimed): Promise<Outcome> {
   // Demo businesses have fake clients: log the message but never email or text anyone.
   if (email?.demo) return { id: n.id, status: "skipped", error: "Demo business: nothing is sent" };
   if (email?.suspended) return { id: n.id, status: "skipped", error: "Business is suspended: nothing is sent" };
+  if (email?.blocked) return { id: n.id, status: "skipped", error: email.blocked };
+  if (n.channel === "email" && email?.emailBudget) {
+    if (email.emailBudget.left <= 0) return { id: n.id, status: "skipped", error: "Daily email limit for accounts without a subscription: add a card under Settings → Billing." };
+    email.emailBudget.left--;
+  }
   if (n.channel === "sms" && email?.smsPausedReason) return { id: n.id, status: "skipped", error: email.smsPausedReason };
   const configured = n.channel === "email" ? emailConfigured() : smsConfigured();
   if (!configured) return { id: n.id, status: "skipped", error: `${n.channel} provider not configured` };

@@ -50,3 +50,15 @@ export async function tenantIndex(): Promise<TenantIndexRow[]> {
 }
 
 export const weekLabel = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+/** People who made an account but never created a business: the funnel's first leak. */
+export async function accountsWithoutBusiness(): Promise<{ last30Days: number; verified: number; total: number }> {
+  await requireAdmin();
+  const rows = (await adminDb().execute(sql`
+    select count(*) filter (where u.created_at > now() - interval '30 days')::int as "last30Days",
+           count(*) filter (where u.created_at > now() - interval '30 days' and u.email_verified)::int as verified,
+           count(*)::int as total
+    from "user" u where not exists (select 1 from member m where m.user_id = u.id)
+  `)) as unknown as { last30Days: number; verified: number; total: number }[];
+  return rows[0] ?? { last30Days: 0, verified: 0, total: 0 };
+}

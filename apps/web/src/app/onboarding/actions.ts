@@ -4,21 +4,25 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { requireSession } from "@/lib/session";
+import { safeSlugBase } from "@/lib/access";
+import { TERMS_VERSION } from "@/lib/terms";
 import { slugify, TIMEZONES } from "@/lib/utils";
 
 const schema = z.object({
   name: z.string().trim().min(2).max(80),
   timezone: z.string().refine((t) => TIMEZONES.includes(t), "Pick a timezone"),
+  phone: z.string().trim().max(30).optional(),
+  terms: z.literal("on", { message: "Please agree to the Terms and Privacy Policy to continue." }),
 });
 
 export type OnboardingState = { error?: string } | undefined;
 
 export async function createBusiness(_prev: OnboardingState, formData: FormData): Promise<OnboardingState> {
   await requireSession();
-  const parsed = schema.safeParse({ name: formData.get("name"), timezone: formData.get("timezone") });
+  const parsed = schema.safeParse({ name: formData.get("name"), timezone: formData.get("timezone"), phone: formData.get("phone") || undefined, terms: formData.get("terms") ?? undefined });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
 
-  const base = slugify(parsed.data.name) || "business";
+  const base = safeSlugBase(slugify(parsed.data.name));
   const h = await headers();
   let slug = base;
   for (let i = 0; i < 5; i++) {
@@ -30,7 +34,7 @@ export async function createBusiness(_prev: OnboardingState, formData: FormData)
   try {
     const org = await auth.api.createOrganization({
       headers: h,
-      body: { name: parsed.data.name, slug, metadata: { timezone: parsed.data.timezone } },
+      body: { name: parsed.data.name, slug, metadata: { timezone: parsed.data.timezone, phone: parsed.data.phone, termsVersion: TERMS_VERSION } },
     });
     if (!org) return { error: "Could not create business" };
     await auth.api.setActiveOrganization({ headers: h, body: { organizationId: org.id } });

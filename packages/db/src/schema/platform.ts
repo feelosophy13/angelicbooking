@@ -16,6 +16,8 @@ const priceColumns = {
   trialDays: integer("trial_days"),
   // Platform fee on each card payment the business takes, in basis points (100 = 1%).
   platformFeeBps: integer("platform_fee_bps"),
+  // Emails per day a business may send before it has a subscription (0 = no limit).
+  trialEmailCap: integer("trial_email_cap"),
 };
 
 /** The default price book. A single row, id = 'default'; every column is filled in. */

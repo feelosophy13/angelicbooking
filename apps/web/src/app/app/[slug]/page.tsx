@@ -20,8 +20,8 @@ import { LocationPills } from "./location-pills";
 import { money } from "@/lib/format";
 import { sql } from "drizzle-orm";
 import { can } from "@angelic/core";
-import { asc } from "drizzle-orm";
-import { schema, withTenant } from "@angelic/db";
+import { asc, eq } from "drizzle-orm";
+import { db, schema, withTenant } from "@angelic/db";
 import { buildTip, type CalTip, type TipItem } from "@/lib/calendar-tip";
 import { blockingAccess, bookingAccess, seesNoCalendar, seesOwnOnly } from "@/lib/appointment-access";
 
@@ -40,7 +40,7 @@ export default async function CalendarPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions, user, staffId } = await requireBusiness(slug);
+  const { business, permissions, user, staffId, plan } = await requireBusiness(slug);
   // A Provider's calendar is their own: their column and their appointments. A role with no calendar permission at all sees none.
   const ownOnly = seesOwnOnly(permissions);
   // New appointments: for anyone (front desk, manager), or on their own calendar if the role has that permission.
@@ -158,7 +158,9 @@ export default async function CalendarPage({
       const [sms] = await tx.select({ n: sql<number>`count(*)` }).from(schema.messagingNumbers).where(sql`released_at is null`);
       return { services: Number(svc?.n ?? 0), staff: Number(st?.n ?? 0), appointments: Number(ap?.n ?? 0), clients: Number(cl?.n ?? 0), smsNumber: Number(sms?.n ?? 0) > 0 };
     });
+    const me = await db.query.user.findFirst({ where: eq(schema.user.id, user.id), columns: { emailVerified: true, twoFactorEnabled: true } });
     setup = [
+      ...(business.publishRequiresVerified ? [{ key: "verify", label: "Verify your email", href: `/account`, done: !!me?.emailVerified, hint: "Until then your booking page stays closed and no messages go out." }] : []),
       { key: "services", label: "Add your services", href: `/app/${slug}/services/new`, done: counts.services > 0, hint: "What clients can book." },
       { key: "staff", label: "Add your team", href: `/app/${slug}/staff/new`, done: counts.staff > 1, hint: "Everyone gets a calendar column." },
       { key: "profile", label: "Brand your booking page", href: `/app/${slug}/settings/profile`, done: !!(business.tagline || business.logoUrl || business.brandColor), hint: "Logo, colour and hours." },
@@ -166,6 +168,8 @@ export default async function CalendarPage({
       { key: "sms", label: "Get a text number", href: `/app/${slug}/settings/messaging`, done: counts.smsNumber, hint: "Reminders by SMS from your own number." },
       { key: "clients", label: "Import clients from Vagaro", href: `/app/${slug}/settings/import`, done: counts.clients > 3, hint: "CSV or Excel export." },
       { key: "booking", label: "Share your booking link", href: `/app/${slug}/settings/booking`, done: counts.appointments > 0 && business.onlineBookingEnabled, hint: "Put it on Instagram and Google." },
+      ...(plan.state === "trial" ? [{ key: "plan", label: "Add a card", href: `/app/${slug}/settings/billing`, done: false, hint: `Your trial ends in ${plan.daysLeft} day${plan.daysLeft === 1 ? "" : "s"}; nothing is charged until then.` }] : []),
+      { key: "2fa", label: "Turn on two-factor sign-in", href: `/account`, done: !!me?.twoFactorEnabled, hint: "An extra code at sign-in protects your clients and your money." },
     ];
   }
   const nav = (d: string) => `?view=${view}&date=${d}${staffParam ? `&staff=${staffParam}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${formsFilter ? "&forms=missing" : ""}`;

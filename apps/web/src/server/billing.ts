@@ -15,6 +15,7 @@ import { appUrl, isStripeConfigured, stripe } from "@/lib/stripe";
 import { and, inArray, sql } from "drizzle-orm";
 import type { PriceBook } from "@angelic/core/platform-pricing";
 import { canBuyNumber, configFromBook, isDelinquent, isSubscribed, lookupKeys, NUMBER_KEY_PREFIX, SMS_METER_EVENT, smsPausedReason, type BillingConfig } from "@/lib/billing-config";
+import { checkoutTrial } from "@/lib/access";
 import { desiredItems, pauseAction, planChanges, priceKey, SUSPEND_PAUSE_MARKER, type ManagedKind } from "@/lib/billing-plan";
 import { platformPriceBook, priceBookFor } from "@/server/price-book";
 
@@ -201,7 +202,7 @@ export async function startBilling(business: Business, slug: string): Promise<st
     allow_promotion_codes: true,
     subscription_data: {
       metadata: { businessId: business.id, slug },
-      ...(catalog.config.trialDays > 0 ? { trial_period_days: catalog.config.trialDays } : {}),
+      ...checkoutTrial(business.trialEndsAt, catalog.config.trialDays),
     },
     success_url: appUrl(`/app/${slug}/settings/billing?session_id={CHECKOUT_SESSION_ID}`),
     cancel_url: appUrl(`/app/${slug}/settings/billing`),
