@@ -85,7 +85,7 @@ Environment). Saving in the dashboard offers "Save, rebuild, and deploy"; take i
 2. Settings → Connect → Get started and fill in the platform profile. The app creates connected accounts with the
    **Accounts v2** API in the SaaS configuration (`dashboard: full`, Stripe collects fees and carries losses, merchant
    `card_payments`); that is the v2 equivalent of a Standard account, and Stripe rejects v1 `type: standard` creation
-   for new integrations. Direct charges with an optional platform (application) fee are unchanged; set the fee in the admin Price book (per business on its Billing tab), `PLATFORM_FEE_BPS` is only the starting value.
+   for new integrations. Direct charges with an optional platform (application) fee are unchanged; set the fee in the admin Pricing page (per business on its Billing tab), `PLATFORM_FEE_BPS` is only the starting value.
 3. Developers → API keys (live mode): copy the secret key and the publishable key.
 4. Developers → Webhooks → Add endpoint. Tick **"Listen to events on Connected accounts"** (not
    "your account"). URL `https://app.angelicbooking.com/api/stripe/webhook`. Events:
@@ -283,7 +283,7 @@ With the dev server running, a small amber "Dev · View as" selector sits at the
 
 ## Platform admin app (added 2026-10-14)
 `apps/admin` is a separate Next.js app (port 3002 locally: `pnpm dev:admin`) for you, not for salons. It lists every
-business with usage metrics, edits the price book and per-business pricing, suspends / comps businesses, extends
+business with usage metrics, edits default and per-business pricing, suspends / comps businesses, extends
 trials, exports CSV and shows platform health and an audit log. It never shares a process or credentials with `apps/web`.
 
 **Database role.** It connects as `angelic_admin` (`packages/db/sql/admin-role.sql`): bypasses row-level security, read-only
@@ -317,7 +317,7 @@ authenticator code on top). Cloudflare Access still sits in front of everything.
 feeds, the clock-in kiosk and the mobile API, and skips outgoing texts and emails. Data is kept. The daily billing sweep also pauses
 invoice collection on the business's Stripe subscription (invoices are voided) and resumes it after reactivation.
 
-**What the price book does.** Defaults to the old `BILLING_*` / `SMS_*` env amounts until an admin saves one. New subscriptions are
+**What the Pricing page does.** (Code still calls it the "price book".) Defaults to the old `BILLING_*` / `SMS_*` env amounts until an admin saves one. New subscriptions are
 built from it (base + extra locations + extra staff + metered texts); the 07:00 UTC run of the reminders job keeps quantities in
 line with each business's locations and active staff. Platform-wide price changes do not re-price existing subscribers; a business
 with its own pricing deal is re-priced. Comped businesses are never charged.

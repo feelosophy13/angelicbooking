@@ -7,7 +7,7 @@ import { listTenantsWithBills } from "@/lib/tenants";
 import { Icon } from "@/ui/icons";
 import { Avatar, Badge, BTN, Empty, INPUT, PageHeader, SELECT, StatusBadge, relativeDay } from "@/ui/kit";
 
-export const metadata: Metadata = { title: "Tenants" };
+export const metadata: Metadata = { title: "Businesses" };
 export const dynamic = "force-dynamic";
 
 const PAGE = 25;
@@ -45,7 +45,7 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
   return (
     <Shell>
       <PageHeader
-        title="Tenants"
+        title="Businesses"
         subtitle={`${all.length} businesses`}
         actions={<a href={exportHref} className={BTN}><Icon name="download" /> Export CSV</a>}
       />

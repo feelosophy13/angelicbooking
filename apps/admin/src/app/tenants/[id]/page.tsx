@@ -13,7 +13,7 @@ import { Bars, Meter, Sparkline } from "@/ui/chart";
 import { Icon } from "@/ui/icons";
 import { Avatar, Badge, Card, Empty, PageHeader, Stat, StatusBadge, relativeDay } from "@/ui/kit";
 
-export const metadata: Metadata = { title: "Tenant" };
+export const metadata: Metadata = { title: "Business" };
 export const dynamic = "force-dynamic";
 
 const WEB_URL = process.env.WEB_APP_URL ?? "https://app.angelicbooking.com";
@@ -40,7 +40,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
   return (
     <Shell>
       <PageHeader
-        back={{ href: "/tenants", label: "All tenants" }}
+        back={{ href: "/tenants", label: "All businesses" }}
         title={
           <span className="flex items-center gap-3">
             <Avatar name={t.name} size={44} />
@@ -126,7 +126,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
           <div className="space-y-6">
             <Card title="Estimated monthly bill" aside={<Link href={`/tenants/${id}?tab=billing`} className="text-brand hover:underline">Details</Link>}>
               <div className="text-3xl font-semibold tabular-nums">{money(t.bill.totalCents)}</div>
-              <div className="mt-1 text-xs text-ink-2">{t.comped ? "Comped: never charged" : "From the price book and what they use"}</div>
+              <div className="mt-1 text-xs text-ink-2">{t.comped ? "Comped: never charged" : "From the pricing and what they use"}</div>
             </Card>
             <Card title="Controls">
               <TenantControls id={t.id} name={t.name} suspended={!!t.suspendedAt} comped={t.comped} hasSubscription={!!t.stripeSubscriptionId} />
@@ -194,7 +194,7 @@ export default async function TenantPage({ params, searchParams }: { params: Pro
           </Card>
         </div>
         <Card title="Pricing for this business">
-          <p className="mb-4 text-sm text-ink-2">Leave a box empty to use the <Link href="/pricing" className="underline">price book</Link> (shown greyed in the box).</p>
+          <p className="mb-4 text-sm text-ink-2">Leave a box empty to use the <Link href="/pricing" className="underline">default price</Link> (shown greyed in the box).</p>
           <OverridesForm businessId={id} values={overrides} defaults={defaults} note={note} />
         </Card>
       </div>

@@ -1,18 +1,18 @@
 import type { PriceBook } from "@angelic/core/platform-pricing";
 
-export type FieldDef = { key: keyof PriceBook; label: string; kind: "money" | "count" | "percent"; help: string };
+export type FieldDef = { key: keyof PriceBook; label: string; kind: "money" | "count" | "percent"; help: string; group: string };
 
 export const FIELDS: FieldDef[] = [
-  { key: "baseCents", label: "Base plan", kind: "money", help: "Per business, per month" },
-  { key: "includedLocations", label: "Locations included", kind: "count", help: "Covered by the base plan" },
-  { key: "perLocationCents", label: "Per extra location", kind: "money", help: "Per month" },
-  { key: "includedStaff", label: "Active staff included", kind: "count", help: "Covered by the base plan" },
-  { key: "perStaffCents", label: "Per extra staff member", kind: "money", help: "Per month" },
-  { key: "numberCents", label: "Dedicated text number", kind: "money", help: "Per month, while they hold one" },
-  { key: "smsIncluded", label: "Texts included", kind: "count", help: "Per month" },
-  { key: "smsUsageCents", label: "Per extra text", kind: "money", help: "Whole cents; 0.02 = 2¢" },
-  { key: "trialDays", label: "Free trial", kind: "count", help: "Days, for new businesses" },
-  { key: "platformFeeBps", label: "Platform fee", kind: "percent", help: "% of each card payment the business takes from clients; 0 = none" },
+  { key: "baseCents", label: "Base plan", kind: "money", help: "Per business, per month", group: "Plan" },
+  { key: "includedLocations", label: "Locations included", kind: "count", help: "Covered by the base plan", group: "Locations and staff" },
+  { key: "perLocationCents", label: "Per extra location", kind: "money", help: "Per month", group: "Locations and staff" },
+  { key: "includedStaff", label: "Active staff included", kind: "count", help: "Covered by the base plan", group: "Locations and staff" },
+  { key: "perStaffCents", label: "Per extra staff member", kind: "money", help: "Per month", group: "Locations and staff" },
+  { key: "numberCents", label: "Dedicated text number", kind: "money", help: "Per month, while they hold one", group: "Texts" },
+  { key: "smsIncluded", label: "Texts included", kind: "count", help: "Per month", group: "Texts" },
+  { key: "smsUsageCents", label: "Per extra text", kind: "money", help: "Whole cents; 0.02 = 2¢", group: "Texts" },
+  { key: "trialDays", label: "Free trial", kind: "count", help: "Days, for new businesses", group: "Plan" },
+  { key: "platformFeeBps", label: "Platform fee", kind: "percent", help: "% of each card payment the business takes from clients; 0 = none", group: "Card payments" },
 ];
 
 export function money(cents: number): string {

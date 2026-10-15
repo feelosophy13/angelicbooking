@@ -39,7 +39,7 @@ export function TenantControls(props: { id: string; name: string; suspended: boo
         <Msg s={suspendState} />
       </Row>
       <Row title="Billing">
-        <p className="mt-0.5 text-ink-2">{comped ? "Comped: never charged." : "Charged from the price book."}</p>
+        <p className="mt-0.5 text-ink-2">{comped ? "Comped: never charged." : "Charged at its listed price."}</p>
         <div className="mt-2"><button className={BTN} disabled={pending} onClick={() => start(async () => void (await compAction(id, !comped)))}>{comped ? "Remove comp" : "Comp this business"}</button></div>
       </Row>
       <Row title="Free trial">

@@ -7,7 +7,7 @@ import { Icon } from "./icons";
 
 const ITEMS = [
   { href: "/", label: "Dashboard", icon: "home", exact: true },
-  { href: "/tenants", label: "Tenants", icon: "building" },
+  { href: "/tenants", label: "Businesses", icon: "building" },
   { href: "/pricing", label: "Pricing", icon: "tag" },
   { href: "/health", label: "Health", icon: "pulse" },
   { href: "/activity", label: "Activity", icon: "list" },

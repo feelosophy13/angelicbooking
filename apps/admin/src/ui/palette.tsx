@@ -8,7 +8,7 @@ export type PaletteTenant = { id: string; name: string; slug: string; owner: str
 
 const PAGES = [
   { label: "Dashboard", href: "/" },
-  { label: "Tenants", href: "/tenants" },
+  { label: "Businesses", href: "/tenants" },
   { label: "Pricing", href: "/pricing" },
   { label: "Health", href: "/health" },
   { label: "Activity", href: "/activity" },

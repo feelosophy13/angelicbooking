@@ -36,12 +36,12 @@ export default async function Dashboard() {
       <PageHeader
         title="Dashboard"
         subtitle={`${tenants.length} businesses · ${new Date(now).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}`}
-        actions={<Link href="/tenants" className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium hover:bg-surface-2">All tenants <Icon name="arrow" /></Link>}
+        actions={<Link href="/tenants" className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium hover:bg-surface-2">All businesses <Icon name="arrow" /></Link>}
       />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat label="Businesses" value={tenants.length} hint={`${thisWeek?.signups ?? 0} new this week · ${sum("signups")} in 12 weeks`} spark={spark("signups", "New businesses per week")} href="/tenants" />
-        <Stat label="Est. monthly revenue" value={money(estimated)} hint={`If every business paid the price book${comped ? ` · ${comped} comped` : ""}`} href="/pricing" />
+        <Stat label="Est. monthly revenue" value={money(estimated)} hint={`If every business paid its listed price${comped ? ` · ${comped} comped` : ""}`} href="/pricing" />
         <Stat label="Bookings made" value={sum("bookings").toLocaleString()} hint="Last 12 weeks, all businesses" spark={spark("bookings", "Bookings per week")} />
         <Stat label="Texts sent" value={sum("sms").toLocaleString()} hint="Last 12 weeks" spark={spark("sms", "Texts per week")} />
       </div>
@@ -65,7 +65,7 @@ export default async function Dashboard() {
                 ))}
               </ul>
             )}
-            {attention.length > 8 && <div className="border-t border-line px-4 py-2.5 text-sm"><Link href="/tenants" className="text-brand hover:underline">See all {attention.length} in Tenants</Link></div>}
+            {attention.length > 8 && <div className="border-t border-line px-4 py-2.5 text-sm"><Link href="/tenants" className="text-brand hover:underline">See all {attention.length} in Businesses</Link></div>}
           </Card>
 
           <Card title="Bookings made per week" aside="Last 12 weeks, all businesses">

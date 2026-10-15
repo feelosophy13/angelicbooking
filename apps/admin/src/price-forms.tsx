@@ -20,7 +20,7 @@ export function DefaultsForm({ values }: { values: PriceBook }) {
     <form action={action} className="space-y-4">
       <PriceInputs values={values} />
       <Result state={state} />
-      <button disabled={pending} className={BUTTON}>{pending ? "Saving…" : "Save price book"}</button>
+      <button disabled={pending} className={BUTTON}>{pending ? "Saving…" : "Save default prices"}</button>
     </form>
   );
 }
