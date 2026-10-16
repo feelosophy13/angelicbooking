@@ -82,7 +82,7 @@ export interface BookAppointmentInput {
   /** Standing-appointment series this occurrence belongs to. */
   seriesId?: string | null;
   /** Deposit already collected online (PaymentIntent on the business's Stripe account). */
-  deposit?: { paymentIntentId: string; cents: number; cardLabel: string | null } | null;
+  deposit?: { paymentIntentId: string; cents: number; cardLabel: string | null; accountId?: string | null } | null;
   /** SetupIntent that saved a card on file at booking. */
   cardSetupIntentId?: string | null;
   /** Book a seat in this class session instead of a one-to-one slot. */
@@ -133,7 +133,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
           createdByUserId: input.createdByUserId,
           seriesId: input.seriesId ?? null,
           ...(input.deposit
-            ? { depositCents: input.deposit.cents, depositStatus: "paid" as const, depositPaymentIntentId: input.deposit.paymentIntentId, depositCardLabel: input.deposit.cardLabel }
+            ? { depositCents: input.deposit.cents, depositStatus: "paid" as const, depositPaymentIntentId: input.deposit.paymentIntentId, depositStripeAccountId: input.deposit.accountId ?? null, depositCardLabel: input.deposit.cardLabel }
             : {}),
           cardSetupIntentId: input.cardSetupIntentId ?? null,
           promoCodeId: input.promoCodeId ?? null,

@@ -329,6 +329,8 @@ export const payments = pgTable(
     tipCents: integer("tip_cents").notNull().default(0),
     refundedCents: integer("refunded_cents").notNull().default(0),
     stripePaymentIntentId: text("stripe_payment_intent_id"),
+    /** The Stripe account that took it (a location's own or the main one): refunds go back through this account. */
+    stripeAccountId: text("stripe_account_id"),
     stripeChargeId: text("stripe_charge_id"),
     giftCardId: text("gift_card_id"), // method = gift_card
     cardBrand: text("card_brand"),
@@ -535,6 +537,8 @@ export const membershipPlans = pgTable(
     active: boolean("active").notNull().default(true),
     // Stripe price on the BUSINESS's connected account, created on first auto-renew setup.
     stripePriceId: text("stripe_price_id"),
+    /** The plan's recurring price on each Stripe account that sells it (a price belongs to one account). */
+    stripePriceIds: jsonb("stripe_price_ids").$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),
     createdAt: createdAt(),
   },
   (t) => [index("membership_plans_business_idx").on(t.businessId)],
@@ -566,6 +570,8 @@ export const clientMemberships = pgTable(
     // Sold at: the renewal subscription lives on this location's Stripe account.
     locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     stripeSubscriptionId: text("stripe_subscription_id"),
+    /** The Stripe account the subscription lives on. */
+    stripeAccountId: text("stripe_account_id"),
     autoRenew: boolean("auto_renew").notNull().default(false),
     lastInvoiceId: text("last_invoice_id"),
     paymentFailedAt: timestamp("payment_failed_at", { withTimezone: true }),

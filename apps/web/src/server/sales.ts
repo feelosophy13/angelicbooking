@@ -135,6 +135,7 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
         amountCents: appt.depositCents,
         tipCents: 0,
         stripePaymentIntentId: appt.depositPaymentIntentId,
+        stripeAccountId: appt.depositStripeAccountId,
         cardBrand: m?.[1]?.toLowerCase() ?? null,
         cardLast4: m?.[2] ?? null,
         note: "Deposit paid online",
@@ -583,7 +584,7 @@ export async function addTipAfterPayment(input: {
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) });
     if (!client) throw new SaleError("Client not found.");
     const fee = Math.round((input.amountCents * (await platformFeeBpsFor(input.businessId, tx))) / 10_000);
-    const [row] = await tx.insert(schema.payments).values({ businessId: input.businessId, saleId: sale.id, method: "card_on_file", status: "pending", amountCents: input.amountCents, tipCents: input.amountCents, note: LATE_TIP_NOTE, createdByUserId: input.actorUserId }).returning({ id: schema.payments.id });
+    const [row] = await tx.insert(schema.payments).values({ businessId: input.businessId, saleId: sale.id, method: "card_on_file", status: "pending", amountCents: input.amountCents, tipCents: input.amountCents, note: LATE_TIP_NOTE, stripeAccountId: input.accountId, createdByUserId: input.actorUserId }).returning({ id: schema.payments.id });
     return { sale, client, fee, paymentId: row!.id };
   });
   if (!prep) return;
@@ -910,7 +911,7 @@ export async function chargeCardOnFile(input: {
     const fee = Math.round((amount * (await platformFeeBpsFor(input.businessId, tx))) / 10_000);
     const [pending] = await tx
       .insert(schema.payments)
-      .values({ businessId: input.businessId, saleId: sale.id, method: "card_on_file", status: "pending", amountCents: amount, tipCents: tipShare(sale, amount), createdByUserId: input.actorUserId })
+      .values({ businessId: input.businessId, saleId: sale.id, method: "card_on_file", status: "pending", amountCents: amount, tipCents: tipShare(sale, amount), stripeAccountId: input.accountId, createdByUserId: input.actorUserId })
       .returning({ id: schema.payments.id });
     return { sale, client, amount, fee, paymentId: pending!.id };
   });
@@ -978,9 +979,10 @@ export async function createCardPaymentIntent(input: {
     for (const old of abandoned) {
       if (old.stripePaymentIntentId) {
         // Cancel it; if Stripe refuses, it is gone only when it is already cancelled (a payment that succeeded must stay).
-        const cancelled = await stripe().paymentIntents.cancel(old.stripePaymentIntentId, {}, { stripeAccount: input.accountId }).then(
+        const acct = old.stripeAccountId ?? input.accountId;
+        const cancelled = await stripe().paymentIntents.cancel(old.stripePaymentIntentId, {}, { stripeAccount: acct }).then(
           () => true,
-          async () => (await stripe().paymentIntents.retrieve(old.stripePaymentIntentId!, {}, { stripeAccount: input.accountId }).then((p) => p.status === "canceled", () => false)),
+          async () => (await stripe().paymentIntents.retrieve(old.stripePaymentIntentId!, {}, { stripeAccount: acct }).then((p) => p.status === "canceled", () => false)),
         );
         if (!cancelled) continue;
       }
@@ -1000,6 +1002,7 @@ export async function createCardPaymentIntent(input: {
         status: "pending",
         amountCents: amount,
         tipCents: tipShare(sale, amount),
+        stripeAccountId: input.accountId,
         createdByUserId: input.actorUserId,
       })
       .returning();
@@ -1073,6 +1076,10 @@ export async function refundPayment(input: {
   taxRateBps: number;
   /** The lines being refunded; the amount is then their sum. */
   items?: RefundItemInput[];
+  /** Already refunded in Stripe's dashboard (reported by the webhook): record it, don't refund again. */
+  externalRefundId?: string | null;
+  /** With externalRefundId: Stripe's total refunded on the payment. Only what we haven't recorded yet is booked (worked out under the lock). */
+  externalTotalCents?: number;
 }) {
   await withTenant(input.businessId, async (tx) => {
     // Locked: two refund clicks must not both give a gift card or store credit its balance back.
@@ -1085,16 +1092,20 @@ export async function refundPayment(input: {
     // With items, the ticket is locked too (two refunds from different payments must not both refund the same line) and checked first.
     const planned = input.items?.length ? await planRefundItems(tx, (await tx.select().from(schema.sales).where(eq(schema.sales.id, p.saleId)).for("update"))[0]!, input.items) : null;
     const refundable = p.amountCents - p.refundedCents - (await creditedAgainstPayment(tx, p.id));
-    const wanted = planned ? planned.reduce((n, x) => n + x.amountCents, 0) : input.amountCents;
+    // A Stripe-side refund we may have just recorded ourselves (our own refund's webhook can arrive while we commit): book only the gap.
+    if (input.externalRefundId && input.externalTotalCents !== undefined && input.externalTotalCents - p.refundedCents <= 0) return;
+    const wanted = planned ? planned.reduce((n, x) => n + x.amountCents, 0) : input.externalRefundId && input.externalTotalCents !== undefined ? input.externalTotalCents - p.refundedCents : input.amountCents;
     if (planned && wanted > refundable) throw new SaleError(`That's ${(wanted / 100).toFixed(2)}, more than the ${(refundable / 100).toFixed(2)} left on this payment. Refund some of it from another payment.`);
     const amount = Math.min(wanted, refundable);
     if (amount <= 0) throw new SaleError("Nothing left to refund.");
-    let stripeRefundId: string | null = null;
-    if (p.stripePaymentIntentId) {
-      if (!input.accountId) throw new SaleError("Stripe account not connected.");
+    let stripeRefundId: string | null = input.externalRefundId ?? null;
+    if (p.stripePaymentIntentId && !input.externalRefundId) {
+      // Back through the account that took it, even if the location now uses another one.
+      const account = p.stripeAccountId ?? input.accountId;
+      if (!account) throw new SaleError("Stripe account not connected.");
       const r = await stripe().refunds.create(
         { payment_intent: p.stripePaymentIntentId, amount, reason: "requested_by_customer", metadata: { paymentId: p.id } },
-        { stripeAccount: input.accountId, idempotencyKey: `rf_${p.id}_${p.refundedCents + amount}` },
+        { stripeAccount: account, idempotencyKey: `rf_${p.id}_${p.refundedCents + amount}` },
       );
       stripeRefundId = r.id;
     }
@@ -1107,7 +1118,7 @@ export async function refundPayment(input: {
         reason: input.reason,
         reasonId: input.reasonId ?? null,
         stripeRefundId,
-        createdByUserId: input.actorUserId,
+        createdByUserId: input.externalRefundId ? null : input.actorUserId,
       })
       .returning({ id: schema.refunds.id });
     const newRefunded = p.refundedCents + amount;
@@ -1139,6 +1150,29 @@ export async function refundPayment(input: {
       await unwindPaidSale(tx, input.businessId, sale, input.actorUserId);
     }
     await audit(tx, input.businessId, input.actorUserId, "payment.refund", sale.id, { paymentId: p.id, amount, items: planned?.map((x) => ({ line: x.line.name, cents: x.amountCents })) });
+  });
+}
+
+/**
+ * A refund made in Stripe's own dashboard (the webhook's charge.refunded): whatever Stripe says is refunded beyond what we recorded is
+ * booked here as a refund on that payment, so sales, reports and payroll agree with Stripe. Returns the cents recorded (0 when we already
+ * knew). A deposit not yet on a ticket is marked refunded on its appointment instead.
+ */
+export async function recordStripeSideRefund(input: { businessId: string; paymentIntentId: string; refundedTotalCents: number; refundId: string | null; taxRateBps: number }): Promise<number> {
+  const p = await withTenant(input.businessId, (tx) => tx.query.payments.findFirst({ where: eq(schema.payments.stripePaymentIntentId, input.paymentIntentId) }));
+  if (p) {
+    const missing = input.refundedTotalCents - p.refundedCents;
+    if (missing <= 0) return 0;
+    await refundPayment({ businessId: input.businessId, accountId: p.stripeAccountId, paymentId: p.id, amountCents: missing, reason: "Refunded in Stripe", actorUserId: "stripe", taxRateBps: input.taxRateBps, externalRefundId: input.refundId ?? `stripe:${input.paymentIntentId}:${input.refundedTotalCents}`, externalTotalCents: input.refundedTotalCents });
+    return missing;
+  }
+  return withTenant(input.businessId, async (tx) => {
+    const [appt] = await tx.select().from(schema.appointments).where(eq(schema.appointments.depositPaymentIntentId, input.paymentIntentId)).for("update");
+    if (!appt || appt.depositStatus !== "paid") return 0;
+    const kept = Math.max(0, appt.depositCents - input.refundedTotalCents);
+    await tx.update(schema.appointments).set(kept > 0 ? { depositCents: kept } : { depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
+    await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: null, action: "deposit.refund_in_stripe", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ refundedCents: input.refundedTotalCents }) });
+    return Math.min(appt.depositCents, input.refundedTotalCents);
   });
 }
 

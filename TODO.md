@@ -163,6 +163,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       price paid; "Receive stock" and scanned deliveries go in all-or-nothing; a $0 retail product can't be rung up or listed online, and a
       product group switched back from back-bar stays off the online store until priced; the same product on two cart lines counts once
       against stock; uploaded SVGs are drawn into WebP (no script on our image domain). Test: `catalog-fixes.test.ts`.
+- [x] Money, second batch, 2026-10-16 (migrations 0102–0103): payments, deposits and membership subscriptions remember the Stripe account
+      that took them (backfilled), so refunds and cancellations survive a location switching accounts; membership plan prices are kept per
+      account; refunds made in Stripe's dashboard are recorded from the webhook (once, even when our own refund's webhook races us) and
+      disputes are logged and emailed to the owner; the last package session or membership credit can't be spent twice, and a plan's credits
+      only cover its included service (checked on the server); points are earned on services and products only, not gift cards, packages,
+      fees or what was paid with points; points can be redeemed twice on one ticket. Test: `money-tail.test.ts`.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

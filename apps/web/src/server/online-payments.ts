@@ -103,7 +103,7 @@ export async function cancelOnlineIntent(business: PublicBusiness, pay: PaymentC
 }
 
 export type VerifiedIntent =
-  | { kind: "deposit"; paymentIntentId: string; cents: number; cardLabel: string | null; meta: IntentMeta }
+  | { kind: "deposit"; paymentIntentId: string; cents: number; cardLabel: string | null; meta: IntentMeta; accountId: string }
   | { kind: "card"; setupIntentId: string; meta: IntentMeta };
 
 /** Fetch the intent from Stripe and make sure it is ours, succeeded, and for the booking being made. */
@@ -124,7 +124,7 @@ export async function verifyOnlineIntent(business: PublicBusiness, pay: PaymentC
     // The sweep refunds a deposit whose booking never finished; a page that comes back after that must not book on refunded money.
     if (charge && (charge.refunded || charge.amount_refunded > 0)) throw new BookingError("This deposit was refunded because the booking wasn't finished in time. Please book again.");
     const card = charge?.payment_method_details?.card;
-    return { kind, paymentIntentId: pi.id, cents: pi.amount, cardLabel: card ? `${card.brand?.toUpperCase() ?? "CARD"} •••• ${card.last4 ?? ""}` : null, meta };
+    return { kind, accountId, paymentIntentId: pi.id, cents: pi.amount, cardLabel: card ? `${card.brand?.toUpperCase() ?? "CARD"} •••• ${card.last4 ?? ""}` : null, meta };
   }
   const si = await stripe().setupIntents.retrieve(intentId, {}, { stripeAccount: accountId });
   const meta = check(si.metadata ?? {});
@@ -157,9 +157,11 @@ export async function refundDeposit(input: { businessId: string; accountId: stri
       await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.store_credit", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: refundCents, kept: appt.depositCents - refundCents, reason: input.reason }) });
       return true;
     }
-    if (!input.accountId) throw new BookingError("Stripe account not connected.");
+    // Back through the account that took the deposit (the location may have switched accounts since).
+    const account = appt.depositStripeAccountId ?? input.accountId;
+    if (!account) throw new BookingError("Stripe account not connected.");
     // A partial refund names its amount (and carries it in the idempotency key); a full one lets Stripe refund what is left.
-    await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId, ...(partial ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: input.accountId, idempotencyKey: `deposit_refund_${appt.id}_${partial ? refundCents : "all"}` });
+    await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId, ...(partial ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: account, idempotencyKey: `deposit_refund_${appt.id}_${partial ? refundCents : "all"}` });
     // After a partial refund the deposit is what the salon kept; it stays "paid" so it can still be applied to the visit's bill or the fee.
     await tx.update(schema.appointments).set(partial ? { depositCents: appt.depositCents - refundCents } : { depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
     await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.refund", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: refundCents, kept: appt.depositCents - refundCents, reason: input.reason }) });

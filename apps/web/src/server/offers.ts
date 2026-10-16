@@ -162,7 +162,7 @@ export async function redeemCredit(input: { businessId: string; saleId: string; 
   await withTenant(input.businessId, async (tx) => {
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
     if (!sale || sale.status !== "open") throw new SaleError("Sale is not open.");
-    const line = await tx.query.saleLines.findFirst({ where: and(eq(schema.saleLines.id, input.lineId), eq(schema.saleLines.saleId, sale.id)) });
+    const [line] = await tx.select().from(schema.saleLines).where(and(eq(schema.saleLines.id, input.lineId), eq(schema.saleLines.saleId, sale.id))).for("update");
     if (!line || line.kind !== "service" || line.amountCents === 0) throw new SaleError("Pick a service line that hasn't been covered yet.");
     if (input.source === "package") {
       const cp = await tx.query.clientPackages.findFirst({ where: and(eq(schema.clientPackages.id, input.sourceId), eq(schema.clientPackages.clientId, sale.clientId ?? "")) });
@@ -171,14 +171,19 @@ export async function redeemCredit(input: { businessId: string; saleId: string; 
       if (cp.serviceId && line.serviceId && cp.serviceId !== line.serviceId) throw new SaleError("That package is for a different service.");
       const pkg = await tx.query.packages.findFirst({ where: eq(schema.packages.id, cp.packageId), columns: { validLocationIds: true } });
       if (!validAtLocation(pkg?.validLocationIds, sale.locationId)) throw new SaleError("That package isn't valid at this location.");
-      await tx.update(schema.clientPackages).set({ remaining: cp.remaining - 1 }).where(eq(schema.clientPackages.id, cp.id));
+      // Taken only if one is still there (two desks using the last session at once: one of them gets the error).
+      const [took] = await tx.update(schema.clientPackages).set({ remaining: sql`${schema.clientPackages.remaining} - 1` }).where(and(eq(schema.clientPackages.id, cp.id), sql`${schema.clientPackages.remaining} > 0`)).returning({ id: schema.clientPackages.id });
+      if (!took) throw new SaleError("No sessions left on that package.");
     } else {
       const m = await tx.query.clientMemberships.findFirst({ where: and(eq(schema.clientMemberships.id, input.sourceId), eq(schema.clientMemberships.clientId, sale.clientId ?? ""), eq(schema.clientMemberships.status, "active")) });
       if (!m || m.creditsRemaining <= 0) throw new SaleError("No membership credits left this period.");
       if (m.currentPeriodEnd < new Date()) throw new SaleError("That membership's current period has ended.");
-      const plan = await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, m.planId), columns: { validLocationIds: true } });
+      const plan = await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, m.planId), columns: { validLocationIds: true, includedServiceId: true } });
       if (!validAtLocation(plan?.validLocationIds, sale.locationId)) throw new SaleError("That membership isn't valid at this location.");
-      await tx.update(schema.clientMemberships).set({ creditsRemaining: m.creditsRemaining - 1 }).where(eq(schema.clientMemberships.id, m.id));
+      // A plan's credits cover the service it includes, checked here and not only in what the page offers.
+      if (plan?.includedServiceId && line.serviceId !== plan.includedServiceId) throw new SaleError("That membership's credits are for a different service.");
+      const [took] = await tx.update(schema.clientMemberships).set({ creditsRemaining: sql`${schema.clientMemberships.creditsRemaining} - 1` }).where(and(eq(schema.clientMemberships.id, m.id), sql`${schema.clientMemberships.creditsRemaining} > 0`)).returning({ id: schema.clientMemberships.id });
+      if (!took) throw new SaleError("No membership credits left this period.");
     }
     const delta = line.amountCents;
     await tx

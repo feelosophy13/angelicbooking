@@ -21,11 +21,21 @@ export class MembershipBillingError extends Error {}
 
 type Business = typeof schema.businesses.$inferSelect;
 
+/** The plan's recurring price on this Stripe account (a price only exists on the account that made it), created the first time. */
 async function ensurePlanPrice(accountId: string, businessId: string, plan: typeof schema.membershipPlans.$inferSelect, currency: string): Promise<string> {
-  if (plan.stripePriceId) return plan.stripePriceId;
+  const known = plan.stripePriceIds?.[accountId];
+  if (known) return known;
+  // The single price stored before prices were kept per account: reuse it only if it really is on this account.
+  if (plan.stripePriceId) {
+    const legacy = await stripe().prices.retrieve(plan.stripePriceId, {}, { stripeAccount: accountId }).then((p) => p.id, () => null);
+    if (legacy) {
+      await withTenant(businessId, (tx) => tx.update(schema.membershipPlans).set({ stripePriceIds: sql`${schema.membershipPlans.stripePriceIds} || ${JSON.stringify({ [accountId]: legacy })}::jsonb` }).where(eq(schema.membershipPlans.id, plan.id)));
+      return legacy;
+    }
+  }
   const product = await stripe().products.create({ name: `${plan.name} membership`, metadata: { planId: plan.id, businessId } }, { stripeAccount: accountId });
   const price = await stripe().prices.create({ product: product.id, currency, unit_amount: plan.priceCents, recurring: { interval: isMembershipInterval(plan.interval) ? plan.interval : "month", interval_count: Math.max(1, plan.intervalCount) }, metadata: { planId: plan.id } }, { stripeAccount: accountId });
-  await withTenant(businessId, (tx) => tx.update(schema.membershipPlans).set({ stripePriceId: price.id }).where(eq(schema.membershipPlans.id, plan.id)));
+  await withTenant(businessId, (tx) => tx.update(schema.membershipPlans).set({ stripePriceIds: sql`${schema.membershipPlans.stripePriceIds} || ${JSON.stringify({ [accountId]: price.id })}::jsonb` }).where(eq(schema.membershipPlans.id, plan.id)));
   return price.id;
 }
 
@@ -63,7 +73,7 @@ export async function enableAutoRenew(business: Business, membershipId: string, 
     { stripeAccount: accountId, idempotencyKey: `membership_sub_${m.id}` },
   );
   await withTenant(business.id, async (tx) => {
-    await tx.update(schema.clientMemberships).set({ stripeSubscriptionId: sub.id, autoRenew: true, status: "active", paymentFailedAt: null, locationId: m.locationId ?? pay.location?.id ?? null }).where(eq(schema.clientMemberships.id, m.id));
+    await tx.update(schema.clientMemberships).set({ stripeSubscriptionId: sub.id, stripeAccountId: accountId, autoRenew: true, status: "active", paymentFailedAt: null, locationId: m.locationId ?? pay.location?.id ?? null }).where(eq(schema.clientMemberships.id, m.id));
     await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "membership.autorenew_on", entity: "client_membership", entityId: m.id, diff: JSON.stringify({ subscription: sub.id }) });
   });
 }
@@ -71,10 +81,10 @@ export async function enableAutoRenew(business: Business, membershipId: string, 
 export async function disableAutoRenew(business: Business, membershipId: string, actorUserId: string, cancelMembership = false) {
   const m = await withTenant(business.id, (tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, membershipId) }));
   if (!m) throw new MembershipBillingError("Membership not found.");
-  const pay = await paymentContextFor(business, m.locationId);
-  if (m.stripeSubscriptionId && pay.accountId) {
+  const account = m.stripeAccountId ?? (await paymentContextFor(business, m.locationId)).accountId;
+  if (m.stripeSubscriptionId && account) {
     try {
-      await stripe().subscriptions.cancel(m.stripeSubscriptionId, {}, { stripeAccount: pay.accountId });
+      await stripe().subscriptions.cancel(m.stripeSubscriptionId, {}, { stripeAccount: account });
     } catch (e) {
       if ((e as Stripe.errors.StripeError).code !== "resource_missing") throw e;
     }
@@ -94,8 +104,8 @@ export async function freezeMembership(business: Business, membershipId: string,
   if (!m || m.status !== "active") throw new MembershipBillingError("Only an active membership can be frozen.");
   if (until.getTime() <= Date.now()) throw new MembershipBillingError("Pick a date in the future.");
   if (m.stripeSubscriptionId) {
-    const pay = await paymentContextFor(business, m.locationId);
-    if (pay.accountId) await stripe().subscriptions.update(m.stripeSubscriptionId, { pause_collection: { behavior: "void", resumes_at: Math.floor(until.getTime() / 1000) } }, { stripeAccount: pay.accountId });
+    const account = m.stripeAccountId ?? (await paymentContextFor(business, m.locationId)).accountId;
+    if (account) await stripe().subscriptions.update(m.stripeSubscriptionId, { pause_collection: { behavior: "void", resumes_at: Math.floor(until.getTime() / 1000) } }, { stripeAccount: account });
   }
   await withTenant(business.id, async (tx) => {
     await tx.update(schema.clientMemberships).set({ status: "paused", frozenAt: new Date(), frozenUntil: until }).where(eq(schema.clientMemberships.id, m.id));
@@ -109,9 +119,9 @@ export async function resumeMembership(business: Business, membershipId: string,
   if (!m || m.status !== "paused" || !m.frozenUntil) throw new MembershipBillingError("This membership isn't frozen.");
   let periodEnd = m.currentPeriodEnd;
   if (m.stripeSubscriptionId) {
-    const pay = await paymentContextFor(business, m.locationId);
-    if (pay.accountId) {
-      const sub = await stripe().subscriptions.update(m.stripeSubscriptionId, { pause_collection: "" }, { stripeAccount: pay.accountId });
+    const account = m.stripeAccountId ?? (await paymentContextFor(business, m.locationId)).accountId;
+    if (account) {
+      const sub = await stripe().subscriptions.update(m.stripeSubscriptionId, { pause_collection: "" }, { stripeAccount: account });
       const end = (sub as unknown as { current_period_end?: number }).current_period_end ?? (sub.items?.data?.[0] as unknown as { current_period_end?: number } | undefined)?.current_period_end;
       if (end) periodEnd = new Date(end * 1000);
     }
@@ -162,7 +172,7 @@ export async function handleRenewalInvoice(business: Business, invoice: Stripe.I
         .values({ businessId: business.id, number: Number(rows[0]?.n ?? 1001), clientId: fresh.clientId, locationId: fresh.locationId ?? locationId ?? (await locationOrDefault(tx, null))?.id ?? null, currency: invoice.currency, source: "membership", status: "paid", subtotalCents: amount, totalCents: amount, paidCents: amount, closedAt: new Date() })
         .returning();
       await tx.insert(schema.saleLines).values({ businessId: business.id, saleId: sale!.id, kind: "membership", productId: fresh.planId, name: `${plan?.name ?? "Membership"} renewal`, quantity: 1, unitCents: amount, amountCents: amount, taxable: false });
-      await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card_on_file", status: "succeeded", amountCents: amount, tipCents: 0, stripePaymentIntentId: piId, note: `Membership renewal · invoice ${invoice.number ?? invoice.id}` }).onConflictDoNothing();
+      await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card_on_file", status: "succeeded", amountCents: amount, tipCents: 0, stripePaymentIntentId: piId, stripeAccountId: accountId ?? fresh.stripeAccountId, note: `Membership renewal · invoice ${invoice.number ?? invoice.id}` }).onConflictDoNothing();
     }
   });
   return true;

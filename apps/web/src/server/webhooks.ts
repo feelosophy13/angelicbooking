@@ -3,7 +3,9 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
 import { syncConnectAccount } from "./stripe-connect";
 import { tenantForAccount } from "./locations";
-import { markCardPaymentFailed, markCardPaymentSucceeded } from "./sales";
+import { markCardPaymentFailed, markCardPaymentSucceeded, recordStripeSideRefund } from "./sales";
+import { withTenant } from "@angelic/db";
+import { queueOneOff } from "@/lib/notify";
 import { sendOrderEmailsOnce } from "./store";
 import { handleRenewalFailed, handleRenewalInvoice, handleSubscriptionDeleted } from "./membership-billing";
 
@@ -83,12 +85,31 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<"processed
         if (business) outcome = (await handleSubscriptionDeleted(business, event.data.object)) ? "processed" : "ignored";
         break;
       }
-      case "charge.refunded":
-      case "charge.dispute.created":
-        // Refunds we initiate are recorded synchronously; disputes surface in the
-        // business's own Stripe dashboard (Standard accounts). Logged for now.
-        outcome = "processed";
+      case "charge.refunded": {
+        // Refunds we make are recorded as we make them; one made in the Stripe dashboard is recorded here.
+        const charge = event.data.object;
+        const piId = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
+        if (business && piId) {
+          const refundId = charge.refunds?.data?.[0]?.id ?? null;
+          await recordStripeSideRefund({ businessId: business.id, paymentIntentId: piId, refundedTotalCents: charge.amount_refunded, refundId, taxRateBps: business.taxRateBps });
+          outcome = "processed";
+        }
         break;
+      }
+      case "charge.dispute.created": {
+        // A chargeback: the owner needs to answer it in Stripe before the deadline, so they hear about it now.
+        const dispute = event.data.object;
+        if (business) {
+          const piId = typeof dispute.payment_intent === "string" ? dispute.payment_intent : dispute.payment_intent?.id ?? null;
+          await withTenant(business.id, (tx) => tx.insert(schema.auditLog).values({ businessId: business!.id, actorUserId: null, action: "payment.disputed", entity: "payment_intent", entityId: piId, diff: JSON.stringify({ amountCents: dispute.amount, reason: dispute.reason, respondBy: dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000).toISOString() : null }) }));
+          if (business.email) {
+            const due = dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000).toDateString() : "soon";
+            await queueOneOff(business.id, { channel: "email", template: "dispute_alert", recipient: business.email, subject: `A client disputed a $${(dispute.amount / 100).toFixed(2)} charge`, body: `<p>A card payment of $${(dispute.amount / 100).toFixed(2)} was disputed (reason: ${dispute.reason.replace(/_/g, " ")}).</p><p>Respond with evidence in your Stripe dashboard by <b>${due}</b>, or the money goes back to the client. Signed forms, the booking and the cancellation policy they agreed to help.</p>` }).catch(() => undefined);
+          }
+          outcome = "processed";
+        }
+        break;
+      }
       default:
         outcome = "ignored";
     }

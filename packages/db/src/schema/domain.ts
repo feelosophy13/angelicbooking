@@ -697,7 +697,7 @@ export const loyaltyLedger = pgTable(
     createdByUserId: text("created_by_user_id"),
     createdAt: createdAt(),
   },
-  (t) => [index("loyalty_ledger_client_idx").on(t.businessId, t.clientId, t.createdAt), uniqueIndex("loyalty_ledger_sale_reason_uq").on(t.saleId, t.reason)],
+  (t) => [index("loyalty_ledger_client_idx").on(t.businessId, t.clientId, t.createdAt), uniqueIndex("loyalty_ledger_sale_reason_uq").on(t.saleId, t.reason).where(sql`${t.reason} in ('earn','referral','referral_friend','refund')`)],
 );
 
 // ---------------------------------------------------------------------------
@@ -794,6 +794,8 @@ export const appointments = pgTable(
     depositCents: integer("deposit_cents").notNull().default(0),
     depositStatus: depositStatus("deposit_status").notNull().default("none"),
     depositPaymentIntentId: text("deposit_payment_intent_id"),
+    /** The Stripe account that took the deposit, so a refund goes to the right one even after the location's account changes. */
+    depositStripeAccountId: text("deposit_stripe_account_id"),
     depositCardLabel: text("deposit_card_label"), // "VISA •••• 4242"
     // SetupIntent that saved a card on file at booking (no money moved).
     cardSetupIntentId: text("card_setup_intent_id"),

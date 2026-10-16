@@ -455,7 +455,7 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
       notes: input.notes,
       createdByUserId: null, // self-service: the activity log records "client" as the actor
       source: "online",
-      deposit: paid?.kind === "deposit" ? { paymentIntentId: paid.paymentIntentId, cents: paid.cents, cardLabel: paid.cardLabel } : null,
+      deposit: paid?.kind === "deposit" ? { paymentIntentId: paid.paymentIntentId, cents: paid.cents, cardLabel: paid.cardLabel, accountId: paid.accountId } : null,
       cardSetupIntentId: paid?.kind === "card" ? paid.setupIntentId : null,
       classSessionId: input.classSessionId ?? null,
       promoCodeId,

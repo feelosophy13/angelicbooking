@@ -26,11 +26,25 @@ export async function getClientLoyalty(businessId: string, clientId: string) {
   }));
 }
 
-/** Points earned for a paid sale: services + products after discount (no tips/tax), plus a per-visit bonus. */
-export function pointsForSale(business: Business, sale: { subtotalCents: number; discountCents: number; tipCents: number }): number {
+/** Points earned for a paid sale: services + products after discount (no tips/tax), plus a per-visit bonus when it was a visit. */
+export function pointsForSale(business: Business, sale: { subtotalCents: number; discountCents: number; tipCents: number }, opts: { visit?: boolean } = {}): number {
   if (!business.loyaltyEnabled) return 0;
   const spend = Math.max(0, sale.subtotalCents - sale.discountCents);
-  return Math.floor((spend / 100) * Math.max(0, business.loyaltyPointsPerDollar)) + Math.max(0, business.loyaltyPointsPerVisit);
+  return Math.floor((spend / 100) * Math.max(0, business.loyaltyPointsPerDollar)) + (opts.visit === false ? 0 : Math.max(0, business.loyaltyPointsPerVisit));
+}
+
+/**
+ * What a paid sale earns points on: its services and retail products after their share of the discount, less anything paid with points.
+ * Gift cards, packages and memberships are stored value (points come when they are spent on a service), and fees aren't spending.
+ */
+async function earnableSpend(tx: TenantDb, sale: typeof schema.sales.$inferSelect): Promise<{ cents: number; visit: boolean }> {
+  const lines = await tx.select({ kind: schema.saleLines.kind, amount: schema.saleLines.amountCents }).from(schema.saleLines).where(eq(schema.saleLines.saleId, sale.id));
+  const goods = lines.filter((l) => l.kind !== "tip");
+  const goodsTotal = goods.reduce((n, l) => n + l.amount, 0);
+  const earning = goods.filter((l) => l.kind === "service" || l.kind === "product").reduce((n, l) => n + l.amount, 0);
+  const discount = goodsTotal > 0 ? Math.round((sale.discountCents * earning) / goodsTotal) : 0;
+  const [pts] = await tx.select({ n: sql<number>`coalesce(sum(${schema.payments.amountCents} - ${schema.payments.refundedCents}), 0)::int` }).from(schema.payments).where(and(eq(schema.payments.saleId, sale.id), eq(schema.payments.method, "loyalty")));
+  return { cents: Math.max(0, earning - discount - Number(pts?.n ?? 0)), visit: lines.some((l) => l.kind === "service") };
 }
 
 /**
@@ -39,7 +53,8 @@ export function pointsForSale(business: Business, sale: { subtotalCents: number;
  */
 export async function awardPointsForSale(tx: TenantDb, business: Business, sale: typeof schema.sales.$inferSelect) {
   if (!business.loyaltyEnabled || !sale.clientId) return;
-  const points = pointsForSale(business, sale);
+  const spend = await earnableSpend(tx, sale);
+  const points = pointsForSale(business, { subtotalCents: spend.cents, discountCents: 0, tipCents: 0 }, { visit: spend.visit });
   if (points > 0) {
     await tx
       .insert(schema.loyaltyLedger)
