@@ -68,7 +68,7 @@ export default async function ReportsPage({
   ]);
   // Pay is not split by service, so it is left out while a service filter is on.
   const canPayroll = can(permissions, "payroll.view") && !scoped;
-  const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation, tipCashCents, tipCardCents }, prev, categories, pay, payBefore, payByLoc] = await Promise.all([
+  const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation }, prev, categories, pay, payBefore, payByLoc] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter, serviceIds),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter, serviceIds),
     listCategories(business.id, "service"),
@@ -96,11 +96,11 @@ export default async function ReportsPage({
   // By location: every site that had sales or pay in the range.
   type LocRow = { locationId: string | null; locationName: string | null; sales: number; tips: number; tax: number; refunded: number; count: number };
   const locRows: LocRow[] = (() => {
-    const rows: LocRow[] = byLocation.map((r) => ({ locationId: r.locationId, locationName: r.locationName, sales: Number(r.sales), tips: Number(r.tips), tax: Number(r.tax), refunded: Number(r.refunded), count: Number(r.count) }));
+    const rows: LocRow[] = byLocation.map((r) => ({ locationId: r.locationId, locationName: r.locationName, sales: Number(r.sales), tips: Number(r.tips), tax: Number(r.tax), refunded: refundsByLocation.get(r.locationId) ?? 0, count: Number(r.count) }));
     if (payByLoc) {
       for (const [id, p] of payByLoc) {
         if (rows.some((r) => r.locationId === id) || (p.totalCents === 0 && p.wageCents === 0)) continue;
-        rows.push({ locationId: id, locationName: id ? locName(id) : null, sales: 0, tips: 0, tax: 0, refunded: 0, count: 0 });
+        rows.push({ locationId: id, locationName: id ? locName(id) : null, sales: 0, tips: 0, tax: 0, refunded: refundsByLocation.get(id) ?? 0, count: 0 });
       }
     }
     return rows.sort((a, b) => (a.locationName === null ? 1 : b.locationName === null ? -1 : a.locationName.localeCompare(b.locationName)));
@@ -196,7 +196,7 @@ export default async function ReportsPage({
           </div>
         </details>
       </PageHeader>
-      <p className="mb-4 text-sm text-stone-600">{from === to ? formatDateLong(from) : `${formatDateLong(from)} – ${formatDateLong(to)}`}{locationFilter ? ` · ${locName(locationFilter)}` : ""}</p>
+      <p className="mb-4 text-sm text-stone-600">{from === to ? formatDateLong(from) : `${formatDateLong(from)} – ${formatDateLong(to)}`}{locationFilter ? ` · ${locName(locationFilter)}` : ""}<span className="ml-2 text-xs text-stone-500">Sales count on the day they were paid; refunds on the day they were made; staff revenue is after discounts.</span></p>
       {scoped ? (
         <p className="mb-4 rounded-lg bg-brand-50 px-3 py-2 text-sm text-stone-700">
           Showing sales that include <strong>{scopeLabel(scope, groups) ?? "this service"}</strong>; every line on those sales is counted. Pay, store credit, refund reasons, referrals and stock are not split by service, so they are hidden.{" "}
@@ -211,7 +211,7 @@ export default async function ReportsPage({
             ["Tips", sum("tipCents"), sum("tipCents", prev.sales), true],
             ["Discounts", sum("discountCents"), sum("discountCents", prev.sales), false],
             ["Tax collected", sum("taxCents"), sum("taxCents", prev.sales), true],
-            ["Refunds", sum("refundedCents"), sum("refundedCents", prev.sales), false],
+            ["Refunds", refundsCents, prev.refundsCents, false],
             ["Store credit issued", credit.issuedCents, creditBefore.issuedCents, false],
           ] as [string, number, number, boolean][]
         ).filter(([label]) => !(scoped && label === "Store credit issued")).map(([label, v, before, goodUp]) => {

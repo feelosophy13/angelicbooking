@@ -194,6 +194,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       gating breaks Google's rules and the FTC review rule); a membership's "% off other services" now prices the member's service lines
       automatically (shown on the ticket, removed if the client changes, a typed price overrides it, credit-covered lines credit full price);
       repricing a plan clears its per-account Stripe prices so renewals charge the new price. Test: `member-pricing.test.ts`.
+- [x] Reports, 2026-10-16: refunds are counted on the day they were made (total and per location), so a closed month no longer changes when
+      an old sale is refunded; staff revenue is after each line's share of the ticket discount; the page says which date each figure uses.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

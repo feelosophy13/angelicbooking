@@ -1295,8 +1295,9 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
         .select({
           staffId: schema.saleLines.staffId,
           staffName: schema.staff.displayName,
-          services: sql<number>`coalesce(sum(${schema.saleLines.amountCents}) filter (where ${schema.saleLines.kind} = 'service'), 0)`,
-          products: sql<number>`coalesce(sum(${schema.saleLines.amountCents}) filter (where ${schema.saleLines.kind} = 'product'), 0)`,
+          // Net of each line's share of the ticket discount, like payroll.
+          services: sql<number>`coalesce(round(sum(${schema.saleLines.amountCents} * (1 - ${schema.sales.discountCents}::numeric / nullif(${schema.sales.subtotalCents}, 0))) filter (where ${schema.saleLines.kind} = 'service')), 0)`,
+          products: sql<number>`coalesce(round(sum(${schema.saleLines.amountCents} * (1 - ${schema.sales.discountCents}::numeric / nullif(${schema.sales.subtotalCents}, 0))) filter (where ${schema.saleLines.kind} = 'product')), 0)`,
           tips: sql<number>`coalesce(sum(${schema.saleLines.amountCents}) filter (where ${schema.saleLines.kind} = 'tip'), 0)`,
         })
         .from(schema.saleLines)
@@ -1425,7 +1426,17 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
       for (const p of pays) tipByMethod.set(p.method, (tipByMethod.get(p.method) ?? 0) + (per[p.id] ?? 0));
     }
     const byMethodReal = byMethod.map((m) => ({ ...m, tips: tipByMethod.get(m.method) ?? 0 }));
-    return { sales, byStaff, byMethod: byMethodReal, byService, byCategory, appts, byLocation, crossLocation, tipCashCents, tipCardCents };
+    // Refunds by the day they were made (whenever the sale was), so a month that has closed doesn't change when an old sale is refunded.
+    const refundRows = await tx
+      .select({ locationId: schema.sales.locationId, cents: sql<number>`coalesce(sum(${schema.refunds.amountCents}), 0)::int` })
+      .from(schema.refunds)
+      .innerJoin(schema.payments, eq(schema.payments.id, schema.refunds.paymentId))
+      .innerJoin(schema.sales, eq(schema.sales.id, schema.payments.saleId))
+      .where(and(gte(schema.refunds.createdAt, from), lt(schema.refunds.createdAt, to), ...(hasService ? [hasService] : [])))
+      .groupBy(schema.sales.locationId);
+    const refundsByLocation = new Map(refundRows.map((r) => [r.locationId, Number(r.cents)]));
+    const refundsCents = refundRows.filter((r) => !locationId || r.locationId === locationId).reduce((n, r) => n + Number(r.cents), 0);
+    return { sales, byStaff, byMethod: byMethodReal, byService, byCategory, appts, byLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation };
   });
 }
 
