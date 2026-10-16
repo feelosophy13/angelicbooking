@@ -97,4 +97,23 @@ describe.skipIf(!up)("line-item refunds", () => {
     await refundPayment({ ...base(), accountId: null, paymentId: t.paymentId, amountCents: 0, reason: null, items: [{ saleLineId: t.lineOf("tip"), amountCents: 2000 }] });
     expect(await clawback(t.d.sale.number)).toEqual([[stylist, "Refund · Tip", -2000, -2000]]);
   });
+  it("refunding a renewal takes back that period; refunding the ticket that started a membership cancels it", async () => {
+    const plan = (await withTenant(kit.A, (tx) => tx.insert(schema.membershipPlans).values({ businessId: kit.A, name: "Blowout club", priceCents: 6000, includedSessions: 2 }).returning()))[0]!;
+    const sell = () => ticket((saleId) => addOfferLine({ businessId: kit.A, saleId, kind: "membership", refId: plan.id, amountCents: 6000 }).then(() => undefined), 6000);
+    const membership = async () => (await withTenant(kit.A, (tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.planId, plan.id) })))!;
+    const first = await sell();
+    const started = await membership();
+    expect([started.saleId, started.cyclesBilled, started.creditsRemaining]).toEqual([first.saleId, 1, 2]);
+    const renewal = await sell();
+    const renewed = await membership();
+    expect([renewed.cyclesBilled, renewed.creditsRemaining]).toEqual([2, 2]); // no rollover: credits reset
+    expect(renewed.currentPeriodEnd.getTime()).toBeGreaterThan(started.currentPeriodEnd.getTime());
+    await refundToStoreCredit({ businessId: kit.A, paymentId: renewal.paymentId, amountCents: 0, reason: null, actorUserId: userId, items: [{ saleLineId: renewal.lineOf("membership"), amountCents: 6000 }] });
+    const back = await membership();
+    expect([back.status, back.cyclesBilled, back.creditsRemaining, back.currentPeriodEnd.getTime()]).toEqual(["active", 1, 2, started.currentPeriodEnd.getTime()]);
+    // The whole first ticket, not itemized: the membership it started is cancelled.
+    await refundPayment({ ...base(), accountId: null, paymentId: first.paymentId, amountCents: 6000, reason: null });
+    const gone = await membership();
+    expect([gone.status, gone.creditsRemaining]).toEqual(["cancelled", 0]);
+  });
 });

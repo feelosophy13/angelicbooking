@@ -124,8 +124,10 @@ export async function fulfilOfferLines(tx: TenantDb, businessId: string, saleId:
         const base = lapsed ? new Date() : existing.currentPeriodEnd;
         const credits = lapsed ? plan.includedSessions : renewedCredits(existing.creditsRemaining, plan.includedSessions, plan.rolloverCap);
         await tx.update(schema.clientMemberships).set({ currentPeriodEnd: addMembershipPeriod(base, interval, plan.intervalCount), creditsRemaining: credits, cyclesBilled: existing.cyclesBilled + 1, status: "active", paymentFailedAt: null, frozenAt: null, frozenUntil: null }).where(eq(schema.clientMemberships.id, existing.id));
+        // What it looked like before, so refunding this ticket can put it back exactly.
+        await tx.insert(schema.auditLog).values({ businessId, actorUserId: null, action: "membership.renew", entity: "client_membership", entityId: existing.id, diff: JSON.stringify({ saleId, before: { currentPeriodEnd: existing.currentPeriodEnd, creditsRemaining: existing.creditsRemaining, cyclesBilled: existing.cyclesBilled, status: existing.status } }) });
       } else {
-        await tx.insert(schema.clientMemberships).values({ businessId, clientId: sale.clientId, planId: plan.id, currentPeriodEnd: addMembershipPeriod(new Date(), interval, plan.intervalCount), creditsRemaining: plan.includedSessions, cyclesBilled: 1, locationId: sale.locationId });
+        await tx.insert(schema.clientMemberships).values({ businessId, clientId: sale.clientId, planId: plan.id, currentPeriodEnd: addMembershipPeriod(new Date(), interval, plan.intervalCount), creditsRemaining: plan.includedSessions, cyclesBilled: 1, locationId: sale.locationId, saleId });
       }
     }
   }

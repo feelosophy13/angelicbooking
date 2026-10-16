@@ -106,8 +106,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
         of 50, so a large campaign can't be reclaimed and sent twice.
       - DB tests: `server/__tests__/consent.test.ts`.
 - [ ] Still open from consent: the booking form's new box wasn't clicked through in the browser (typechecked only); the Vagaro import maps
-      `text_valid` to appointment texts (fine) but there is no way to carry over marketing consent from Vagaro; Resend rate limit (concurrency 8 vs
-      ~2/s) and per-tenant fairness; a global suppression list across businesses was not added (per business only).
+      `text_valid` to appointment texts (fine) but there is no way to carry over marketing consent from Vagaro; a global suppression list across
+      businesses was not added (per business only). (Resend pacing and per-business fairness: done, see "Delivery" below.)
 - [x] Payroll batch, 2026-10-16:
       - Refunds are booked on the day they happen: a sale is credited in full on its own date and each refund (card, cash or store credit)
         adds negative "Refund ·" rows on the refund date, covering goods and tips in proportion. A refund after a period was paid comes off the
@@ -125,8 +125,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       off the whole ticket, spread in proportion. A refunded gift card loses that balance (never more than is left on it) and switches off at
       zero; a package refunded in full loses its unused sessions. Refunds and deposit refunds now need `checkout.refund` (no longer
       `reports.view`). Tests: `server/__tests__/refund-items.test.ts`; checked in the browser on demo sale #1518.
-- [ ] Still open from line-item refunds: memberships sold on a ticket aren't cancelled by refunding their line; returning a product to the
-      shelf is still the separate "put back on the shelf" box; reports don't yet break refunds down by item.
+- [ ] Still open from line-item refunds: returning a product to the shelf is still the separate "put back on the shelf" box; reports don't yet
+      break refunds down by item. (Memberships: done 2026-10-16, see "Delivery" below.)
 - [ ] Still open from payroll: a tip added to an old ticket after finalizing shows as drift rather than landing in the current period; overtime
       (workweek alignment, commission in the regular rate, daily OT) and the 14-hour auto-close are unchanged; no "my earnings" view or 1099 YTD.
 - [x] Scheduled automations, 2026-10-16 (migration 0099): "We miss you" (no visit) only reaches clients whose last visit was N to N+7 days
@@ -211,7 +211,15 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Settings → Custom domain) proving it's theirs; addresses already active stay active. A claim that never proved ownership can be taken
       over by whoever publishes the record, and a custom hostname only serves a booking page once it is active (no more squatting another
       salon's name).
-- [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
+- [x] Delivery and membership refunds, 2026-10-16 (migration 0106): emails are paced to Resend's limit (`RESEND_MAX_PER_SECOND`, default 2;
+      a 429 waits as asked and retries, and if still busy the message is requeued a minute later without using up one of its 3 tries). The
+      cron run takes turns between businesses (10 per business per round, at most 200 each, stops claiming after 3 minutes) and sends
+      appointment messages before marketing. Fixed a claim bug: the `LIMIT … FOR UPDATE SKIP LOCKED` subquery inside the UPDATE could claim
+      far more than the batch (a whole campaign); it now locks the ids first, then updates them. Refunding a membership line in full (or
+      the whole ticket) cancels a membership that ticket started (credits to 0, Stripe auto-renew cancelled after the commit); refunding a
+      renewal ticket puts the membership back as it was before that renewal (recorded in the audit log at renewal; older renewals take one
+      period and its credits off). Tests: `delivery-fairness.test.ts`, `refund-items.test.ts`.
+- [x] "Fix first" table from `REVIEW-2026-10-16.md` is done, including Resend pacing/per-tenant fairness, except the items listed as still open above.
       Next: the per-area lists in that file.
 
 ### Platform admin app (`apps/admin`, built 2026-10-14: tenant list with filters and CSV, usage metrics, price book and custom pricing, suspend / comp / extend trial, audit log, health page, TOTP login)

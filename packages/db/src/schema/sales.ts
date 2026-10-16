@@ -577,6 +577,8 @@ export const clientMemberships = pgTable(
     stripeAccountId: text("stripe_account_id"),
     autoRenew: boolean("auto_renew").notNull().default(false),
     lastInvoiceId: text("last_invoice_id"),
+    // The ticket that started it (refunding that line cancels the membership).
+    saleId: text("sale_id").references(() => sales.id, { onDelete: "set null" }),
     paymentFailedAt: timestamp("payment_failed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: createdAt(),

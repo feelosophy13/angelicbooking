@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, gte, lt, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
-import { CARD_FEE_METHODS, allocateProportionally, computeTotals, splitTips, tipsPerPayment, type Discount } from "@angelic/core";
+import { CARD_FEE_METHODS, allocateProportionally, computeTotals, isMembershipInterval, splitTips, subtractMembershipPeriod, tipsPerPayment, type Discount } from "@angelic/core";
 import { after } from "next/server";
 import { db } from "@angelic/db";
 import { stripe } from "@/lib/stripe";
@@ -837,7 +837,8 @@ async function planRefundItems(tx: TenantDb, sale: Sale, items: RefundItemInput[
  * Save which lines a refund was for, and undo what the refunded items gave the client: a refunded gift card loses that much balance
  * (and is switched off at zero); a package refunded in full loses its unused sessions (removed if none were used).
  */
-async function recordRefundItems(tx: TenantDb, businessId: string, sale: Sale, planned: PlannedItem[], link: { refundId?: string; creditLedgerId?: string }, actorUserId: string) {
+async function recordRefundItems(tx: TenantDb, businessId: string, sale: Sale, planned: PlannedItem[], link: { refundId?: string; creditLedgerId?: string }, actorUserId: string): Promise<string[]> {
+  const stopBilling: string[] = [];
   await tx.insert(schema.refundItems).values(
     planned.map((p) => ({ businessId, saleId: sale.id, saleLineId: p.line.id, refundId: link.refundId ?? null, creditLedgerId: link.creditLedgerId ?? null, amountCents: p.amountCents, taxCents: p.taxCents, quantity: p.quantity, createdByUserId: actorUserId })),
   );
@@ -860,7 +861,59 @@ async function recordRefundItems(tx: TenantDb, businessId: string, sale: Sale, p
         if (pack.remaining === pack.sessions) await tx.delete(schema.clientPackages).where(eq(schema.clientPackages.id, pack.id));
         else await tx.update(schema.clientPackages).set({ remaining: 0 }).where(eq(schema.clientPackages.id, pack.id));
       }
+    } else if (line.kind === "membership" && p.amountCents >= p.line.remainingCents) {
+      const stop = await undoMembershipLine(tx, businessId, sale, line, actorUserId);
+      if (stop) stopBilling.push(stop);
     }
+  }
+  return stopBilling;
+}
+
+/**
+ * A membership line refunded in full. The ticket that started the membership cancels it (credits gone, auto-renew stopped: the returned
+ * id is for the caller to stop its Stripe billing after the commit); a renewal ticket takes back the period and the credits it added.
+ */
+async function undoMembershipLine(tx: TenantDb, businessId: string, sale: Sale, line: typeof schema.saleLines.$inferSelect, actorUserId: string): Promise<string | null> {
+  if (!line.productId || !sale.clientId) return null;
+  const plan = await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, line.productId) });
+  const [m] = await tx
+    .select()
+    .from(schema.clientMemberships)
+    .where(and(eq(schema.clientMemberships.clientId, sale.clientId), eq(schema.clientMemberships.planId, line.productId), sql`${schema.clientMemberships.status} in ('active','paused')`))
+    .orderBy(desc(schema.clientMemberships.startedAt))
+    .limit(1)
+    .for("update");
+  if (!m || !plan) return null;
+  // Started by this ticket (or, before tickets were recorded, never renewed): cancel it.
+  if (m.saleId === sale.id || (!m.saleId && m.cyclesBilled <= 1)) {
+    await tx.update(schema.clientMemberships).set({ status: "cancelled", cancelledAt: new Date(), creditsRemaining: 0, autoRenew: false }).where(eq(schema.clientMemberships.id, m.id));
+    await tx.insert(schema.auditLog).values({ businessId, actorUserId, action: "membership.cancel_refund", entity: "client_membership", entityId: m.id, diff: JSON.stringify({ saleId: sale.id }) });
+    return m.stripeSubscriptionId ? m.id : null;
+  }
+  // A renewal: put back what it was before this ticket (recorded at renewal); older renewals take one period and its credits off.
+  const renew = await tx.query.auditLog.findFirst({ where: and(eq(schema.auditLog.action, "membership.renew"), eq(schema.auditLog.entityId, m.id), sql`${schema.auditLog.diff}::jsonb->>'saleId' = ${sale.id}`) });
+  const before = renew?.diff ? (JSON.parse(renew.diff) as { before: { currentPeriodEnd: string; creditsRemaining: number; cyclesBilled: number } }).before : null;
+  const interval = isMembershipInterval(plan.interval) ? plan.interval : "month";
+  await tx
+    .update(schema.clientMemberships)
+    .set(
+      before
+        ? { currentPeriodEnd: new Date(before.currentPeriodEnd), creditsRemaining: Math.min(before.creditsRemaining, m.creditsRemaining), cyclesBilled: before.cyclesBilled }
+        : { currentPeriodEnd: subtractMembershipPeriod(m.currentPeriodEnd, interval, plan.intervalCount), creditsRemaining: Math.max(0, m.creditsRemaining - plan.includedSessions), cyclesBilled: Math.max(1, m.cyclesBilled - 1) },
+    )
+    .where(eq(schema.clientMemberships.id, m.id));
+  await tx.insert(schema.auditLog).values({ businessId, actorUserId, action: "membership.renewal_refunded", entity: "client_membership", entityId: m.id, diff: JSON.stringify({ saleId: sale.id }) });
+  return null;
+}
+
+/** Stop the Stripe subscription of memberships cancelled by a refund (after the refund committed). A failure is logged, not thrown. */
+async function stopMembershipBilling(businessId: string, membershipIds: string[], actorUserId: string) {
+  if (!membershipIds.length) return;
+  const { disableAutoRenew } = await import("./membership-billing");
+  const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
+  if (!business) return;
+  for (const id of membershipIds) {
+    await disableAutoRenew(business, id, actorUserId, true).catch((e) => console.error("[refund] could not stop membership billing", id, (e as Error).message));
   }
 }
 
@@ -870,6 +923,7 @@ async function recordRefundItems(tx: TenantDb, businessId: string, sale: Sale, p
  * refund cannot double up.
  */
 export async function refundToStoreCredit(input: { businessId: string; paymentId: string; amountCents: number; reason: string | null; reasonId?: string | null; actorUserId: string; /** The lines being refunded; the amount is then their sum. */ items?: RefundItemInput[] }) {
+  const stopBilling: string[] = [];
   await withTenant(input.businessId, async (tx) => {
     const [p] = await tx.select().from(schema.payments).where(eq(schema.payments.id, input.paymentId)).for("update");
     if (!p) throw new SaleError("Payment not found.");
@@ -885,10 +939,11 @@ export async function refundToStoreCredit(input: { businessId: string; paymentId
     await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale!.clientId!, deltaCents: amount, reason: "refund", saleId: sale!.id, paymentId: p.id, refundReasonId: input.reasonId ?? null, note: input.reason, actorUserId: input.actorUserId });
     if (planned) {
       const [ledger] = await tx.select({ id: schema.storeCreditLedger.id }).from(schema.storeCreditLedger).where(and(eq(schema.storeCreditLedger.paymentId, p.id), eq(schema.storeCreditLedger.reason, "refund"))).orderBy(desc(schema.storeCreditLedger.createdAt)).limit(1);
-      await recordRefundItems(tx, input.businessId, sale!, planned, { creditLedgerId: ledger!.id }, input.actorUserId);
+      stopBilling.push(...(await recordRefundItems(tx, input.businessId, sale!, planned, { creditLedgerId: ledger!.id }, input.actorUserId)));
     }
     await audit(tx, input.businessId, input.actorUserId, "payment.refund_store_credit", sale!.id, { paymentId: p.id, amount, reasonId: input.reasonId ?? null, note: input.reason, items: planned?.map((x) => ({ line: x.line.name, cents: x.amountCents })) });
   });
+  await stopMembershipBilling(input.businessId, stopBilling, input.actorUserId);
 }
 
 /** Spend store credit on an open ticket. */
@@ -1117,6 +1172,7 @@ export async function refundPayment(input: {
   /** With externalRefundId: Stripe's total refunded on the payment. Only what we haven't recorded yet is booked (worked out under the lock). */
   externalTotalCents?: number;
 }) {
+  const stopBilling: string[] = [];
   await withTenant(input.businessId, async (tx) => {
     // Locked: two refund clicks must not both give a gift card or store credit its balance back.
     const [p] = await tx.select().from(schema.payments).where(eq(schema.payments.id, input.paymentId)).for("update");
@@ -1165,7 +1221,7 @@ export async function refundPayment(input: {
       .set({ refundedCents: newRefunded, tipCents: p.tipCents - tipRefund, status: newRefunded >= p.amountCents ? "refunded" : "partially_refunded" })
       .where(eq(schema.payments.id, p.id));
     const sale = (await tx.query.sales.findFirst({ where: eq(schema.sales.id, p.saleId) }))!;
-    if (planned) await recordRefundItems(tx, input.businessId, sale, planned, { refundId: refundRow!.id }, input.actorUserId);
+    if (planned) stopBilling.push(...(await recordRefundItems(tx, input.businessId, sale, planned, { refundId: refundRow!.id }, input.actorUserId)));
     // Refunding a points payment gives the points back.
     if (p.method === "loyalty" && sale.clientId) {
       const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { loyaltyPointValueCents: true } });
@@ -1183,10 +1239,11 @@ export async function refundPayment(input: {
     const t = await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
     if (t.refundedCents >= t.paidCents && t.paidCents > 0) {
       await tx.update(schema.sales).set({ status: "refunded" }).where(eq(schema.sales.id, sale.id));
-      await unwindPaidSale(tx, input.businessId, sale, input.actorUserId);
+      stopBilling.push(...(await unwindPaidSale(tx, input.businessId, sale, input.actorUserId)));
     }
     await audit(tx, input.businessId, input.actorUserId, "payment.refund", sale.id, { paymentId: p.id, amount, items: planned?.map((x) => ({ line: x.line.name, cents: x.amountCents })) });
   });
+  await stopMembershipBilling(input.businessId, stopBilling, input.actorUserId);
 }
 
 /**
@@ -1220,7 +1277,7 @@ export async function recordStripeSideRefund(input: { businessId: string; paymen
  * Goods are NOT put back on the shelf: a refund can be for "never arrived" or goodwill, and the product is gone either way.
  * When a client really brings something back, record it with returnToShelf (inventory).
  */
-async function unwindPaidSale(tx: TenantDb, businessId: string, sale: Sale, actorUserId: string) {
+async function unwindPaidSale(tx: TenantDb, businessId: string, sale: Sale, actorUserId: string): Promise<string[]> {
   if (sale.clientId) {
     const earned = await tx.query.loyaltyLedger.findFirst({ where: and(eq(schema.loyaltyLedger.saleId, sale.id), eq(schema.loyaltyLedger.reason, "earn")) });
     if (earned && earned.delta > 0) {
@@ -1237,6 +1294,16 @@ async function unwindPaidSale(tx: TenantDb, businessId: string, sale: Sale, acto
     .innerJoin(schema.packages, eq(schema.packages.id, schema.clientPackages.packageId))
     .where(and(eq(schema.clientPackages.saleId, sale.id), sql`${schema.clientPackages.remaining} = ${schema.packages.sessions}`));
   if (packs.length) await tx.delete(schema.clientPackages).where(sql`${schema.clientPackages.id} in ${packs.map((x) => x.id)}`);
+  // Memberships on the ticket, unless an itemized refund of that line already undid them.
+  const stopBilling: string[] = [];
+  const memberships = await tx.select().from(schema.saleLines).where(and(eq(schema.saleLines.saleId, sale.id), eq(schema.saleLines.kind, "membership")));
+  for (const line of memberships) {
+    const [done] = await tx.select({ n: sql<number>`count(*)` }).from(schema.refundItems).where(eq(schema.refundItems.saleLineId, line.id));
+    if (Number(done?.n ?? 0) > 0) continue;
+    const stop = await undoMembershipLine(tx, businessId, sale, line, actorUserId);
+    if (stop) stopBilling.push(stop);
+  }
+  return stopBilling;
 }
 
 export async function voidSale(input: { businessId: string; saleId: string; actorUserId: string }) {

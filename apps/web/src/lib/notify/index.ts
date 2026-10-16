@@ -6,7 +6,7 @@ import { appUrl } from "@/lib/stripe";
 import { formatMoney } from "@/lib/utils";
 import { formsForAppointment } from "@/server/forms";
 import { isDemoSlug } from "@/lib/demo";
-import { emailConfigured, sendEmail, sendSms, smsConfigured, type SmsSender } from "./providers";
+import { EmailRateLimitError, emailConfigured, emailTurn, sendEmail, sendSms, smsConfigured, type SmsSender } from "./providers";
 import { platformSmsSender, TwilioError } from "@/lib/twilio";
 import { phoneTail, suppressedTails, suppressSms } from "@/server/consent";
 import { oneClickUnsubscribeUrl } from "@/lib/unsubscribe";
@@ -178,7 +178,7 @@ export async function queueOneOff(businessId: string, input: { channel: "email" 
   if (row) after(() => deliverMany(businessId, [row.id]));
 }
 
-type Outcome = { id: string; status: "sent" | "failed" | "skipped"; providerId?: string; error?: string; /** The carrier says this number opted out: suppress it. */ suppress?: string };
+type Outcome = { id: string; status: "sent" | "failed" | "skipped"; providerId?: string; error?: string; /** The carrier says this number opted out: suppress it. */ suppress?: string; /** Throttled by the provider: try again soon without using up an attempt. */ throttled?: boolean };
 
 /** Rows left in "sending" longer than this are assumed orphaned (process died mid-run) and retried. */
 const STALE_CLAIM_MS = 10 * 60_000;
@@ -286,18 +286,24 @@ async function claim(tx: TenantDb, opts: { ids?: string[]; limit: number }): Pro
     and(eq(schema.notifications.status, "sending"), lte(schema.notifications.claimedAt, stale)),
   );
   const where = opts.ids ? and(due, inArray(schema.notifications.id, opts.ids)) : due;
-  const candidates = tx
+  // Lock the batch first, then update exactly those rows. As a subquery of the UPDATE, Postgres may re-run the LIMIT … SKIP LOCKED
+  // scan per row, skipping what it just claimed each time, and so claim far more than `limit` (a whole campaign).
+  const candidates = await tx
     .select({ id: schema.notifications.id })
     .from(schema.notifications)
     .where(where)
-    .orderBy(asc(schema.notifications.scheduledAt))
+    // Appointment messages before marketing, so a big campaign never holds up today's reminders.
+    .orderBy(asc(schema.notifications.marketing), asc(schema.notifications.scheduledAt))
     .limit(opts.limit)
     .for("update", { skipLocked: true });
-  return tx
+  if (!candidates.length) return [];
+  const rows = await tx
     .update(schema.notifications)
     .set({ status: "sending", claimedAt: new Date() })
-    .where(inArray(schema.notifications.id, candidates))
+    .where(inArray(schema.notifications.id, candidates.map((c) => c.id)))
     .returning();
+  const rank = new Map(candidates.map((c, i) => [c.id, i]));
+  return rows.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
 }
 
 async function send({ row: n, sender, email, consentBlock, unsubscribe }: Claimed): Promise<Outcome> {
@@ -316,12 +322,26 @@ async function send({ row: n, sender, email, consentBlock, unsubscribe }: Claime
   if (n.channel === "sms" && !sender) return { id: n.id, status: "skipped", error: "No verified text number yet (Settings → Text messaging)" };
   try {
     const headers = unsubscribe ? { "List-Unsubscribe": `<${unsubscribe}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } : undefined;
-    const r = n.channel === "email" ? await sendEmail({ to: n.recipient, subject: n.subject ?? "", html: n.body, fromName: email?.fromName, replyTo: email?.replyTo, headers }) : await sendSms({ to: n.recipient, body: n.body, sender: sender! });
+    const r = n.channel === "email" ? await sendEmailPaced({ to: n.recipient, subject: n.subject ?? "", html: n.body, fromName: email?.fromName, replyTo: email?.replyTo, headers }) : await sendSms({ to: n.recipient, body: n.body, sender: sender! });
     return { id: n.id, status: "sent", providerId: r.id };
   } catch (e) {
+    if (e instanceof EmailRateLimitError) return { id: n.id, status: "failed", error: "Email provider busy", throttled: true };
     // Twilio 21610: the person has opted out of this number. Not worth retrying; nothing more should go to them.
     if (e instanceof TwilioError && e.code === 21610) return { id: n.id, status: "skipped", error: "This person replied STOP to your number", suppress: n.recipient };
     return { id: n.id, status: "failed", error: (e as Error).message };
+  }
+}
+
+/** Send one email inside the Resend rate limit; when Resend still says "too many", wait as asked and try twice more. */
+async function sendEmailPaced(input: Parameters<typeof sendEmail>[0]) {
+  for (let tries = 0; ; tries++) {
+    await emailTurn();
+    try {
+      return await sendEmail(input);
+    } catch (e) {
+      if (!(e instanceof EmailRateLimitError) || tries >= 2) throw e;
+      await new Promise((r) => setTimeout(r, Math.min(e.retryAfterMs, 5000)));
+    }
   }
 }
 
@@ -360,7 +380,10 @@ async function deliverClaimed(claimed: Claimed[]): Promise<Summary> {
         const patch =
           o.status === "sent"
             ? { status: "sent" as const, sentAt: new Date(), providerId: o.providerId, error: null, attempts }
-            : o.status === "failed" && attempts < MAX_ATTEMPTS
+            : o.throttled
+              ? // The provider was only busy: back in the queue for the next run, and it doesn't count as a try.
+                { status: "queued" as const, error: `${o.error} (retrying)`, claimedAt: null, scheduledAt: new Date(Date.now() + 60_000) }
+              : o.status === "failed" && attempts < MAX_ATTEMPTS
               ? // A provider error (outage, rate limit) gets another go later; the error is kept visible meanwhile.
                 { status: "queued" as const, error: `${o.error} (retrying)`, attempts, claimedAt: null, scheduledAt: new Date(Date.now() + retryDelayMs(attempts)) }
               : { status: o.status, error: o.error, attempts };
@@ -412,23 +435,51 @@ const CLAIM_BATCH = 50;
  * Finding the work needs a cross-tenant read, which RLS only allows inside
  * `withJobs`; claiming and writing back stay tenant-scoped.
  */
-export async function deliverDue(limitPerBusiness = 200): Promise<Summary> {
+export async function deliverDue(opts: { perBusiness?: number; perRound?: number; budgetMs?: number; /** Only these businesses (tests). */ businessIds?: string[] } = {}): Promise<Summary> {
+  const perBusiness = opts.perBusiness ?? 200;
+  const perRound = opts.perRound ?? 10;
+  // Stop claiming well before the next run (every 5 minutes) and before a claim goes stale; what's left waits for that run.
+  const deadline = Date.now() + (opts.budgetMs ?? 3 * 60_000);
   const stale = new Date(Date.now() - STALE_CLAIM_MS);
   const due = await withJobs((tx) =>
     tx
       .selectDistinct({ businessId: schema.notifications.businessId })
       .from(schema.notifications)
       .where(
-        or(
-          and(eq(schema.notifications.status, "queued"), lte(schema.notifications.scheduledAt, new Date())),
-          and(eq(schema.notifications.status, "sending"), lte(schema.notifications.claimedAt, stale)),
+        and(
+          or(
+            and(eq(schema.notifications.status, "queued"), lte(schema.notifications.scheduledAt, new Date())),
+            and(eq(schema.notifications.status, "sending"), lte(schema.notifications.claimedAt, stale)),
+          ),
+          opts.businessIds ? inArray(schema.notifications.businessId, opts.businessIds) : undefined,
         ),
       )
       .limit(500),
   );
-  const claimed: Claimed[] = [];
-  for (const { businessId } of due) {
-    claimed.push(...(await withTenant(businessId, (tx) => claimWithSender(tx, { limit: limitPerBusiness }))));
+  // Round robin: a few messages from each business per round, so one business's campaign can't starve everyone else's reminders.
+  const total: Summary = { processed: 0, sent: 0, failed: 0, skipped: 0 };
+  const taken = new Map<string, number>();
+  let active = due.map((d) => d.businessId);
+  while (active.length && Date.now() < deadline) {
+    const round: Claimed[][] = [];
+    for (const businessId of active) {
+      const n = Math.min(perRound, perBusiness - (taken.get(businessId) ?? 0));
+      round.push(n > 0 ? await withTenant(businessId, (tx) => claimWithSender(tx, { limit: n })) : []);
+    }
+    const r = await deliverClaimed(interleave(round));
+    for (const k of Object.keys(total) as (keyof Summary)[]) total[k] += r[k];
+    active = active.filter((id, i) => {
+      taken.set(id, (taken.get(id) ?? 0) + round[i]!.length);
+      return round[i]!.length === perRound && taken.get(id)! < perBusiness;
+    });
   }
-  return deliverClaimed(claimed);
+  return total;
+}
+
+/** [[a1, a2], [b1]] → [a1, b1, a2]: sends alternate between businesses. */
+export function interleave<T>(lists: T[][]): T[] {
+  const out: T[] = [];
+  const longest = Math.max(0, ...lists.map((l) => l.length));
+  for (let i = 0; i < longest; i++) for (const l of lists) if (i < l.length) out.push(l[i]!);
+  return out;
 }

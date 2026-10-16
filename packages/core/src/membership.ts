@@ -41,6 +41,23 @@ export function addMembershipPeriod(from: Date, interval: MembershipInterval, co
   return d;
 }
 
+/** `from` minus one billing period (taking back a refunded renewal). */
+export function subtractMembershipPeriod(from: Date, interval: MembershipInterval, count = 1): Date {
+  const n = Math.max(1, count);
+  const d = new Date(from.getTime());
+  if (interval === "week") {
+    d.setUTCDate(d.getUTCDate() - 7 * n);
+    return d;
+  }
+  const months = interval === "year" ? 12 * n : n;
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() - months);
+  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, last));
+  return d;
+}
+
 /** "month", "2 weeks", "year" — for "$99 / month". */
 export function periodNoun(interval: MembershipInterval, count = 1): string {
   return count > 1 ? `${count} ${interval}s` : interval;
