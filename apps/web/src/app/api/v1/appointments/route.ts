@@ -6,7 +6,7 @@ import { schema, withTenant } from "@angelic/db";
 import { apiAudit, ApiErrors, list, pageParams, readBody, route } from "@/lib/api";
 import { getAppointmentApi, listAppointmentsApi } from "@/server/api-v1";
 import { bookAppointment } from "@/server/booking";
-import { notifyAppointment } from "@/lib/notify";
+import { notifyAppointment, scheduleReminderFor } from "@/lib/notify";
 
 const STATUSES = schema.appointmentStatus.enumValues as readonly string[];
 const when = (v: string | null) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v) : undefined);
@@ -29,6 +29,8 @@ const createBody = z.object({
   start_at: z.string().refine((s) => /(Z|[+-]\d{2}:\d{2})$/.test(s) && !Number.isNaN(Date.parse(s)), "Use an ISO 8601 time with an offset, e.g. 2026-11-02T14:00:00-05:00"),
   notes: z.string().max(2000).nullish(),
   notify: z.boolean().default(true),
+  /** Reminder automations (on by default, separately from the confirmation): false for visits that must get no messages at all. */
+  reminders: z.boolean().default(true),
 });
 
 /** POST /api/v1/appointments: book one service for a client with one staff member. 409 when the time is taken. */
@@ -49,5 +51,6 @@ export const POST = route("appointments:book", async (ctx, req) => {
   const { appointmentId } = await bookAppointment({ businessId, clientId: d.client_id, serviceId: d.service_id, staffId: d.staff_id, startAt: new Date(d.start_at), notes: d.notes ?? null, createdByUserId: null, source: "staff" });
   await apiAudit(ctx, "api.appointment.create", "appointment", appointmentId, { serviceId: d.service_id, staffId: d.staff_id, startAt: d.start_at });
   if (d.notify) after(() => notifyAppointment(ctx.business, appointmentId, "confirmation").catch((e) => console.error("[api/v1] notify failed", (e as Error).message)));
+  else if (d.reminders) after(() => scheduleReminderFor(ctx.business, appointmentId).catch((e) => console.error("[api/v1] reminders failed", (e as Error).message)));
   return NextResponse.json({ data: await getAppointmentApi(businessId, appointmentId) }, { status: 201 });
 });

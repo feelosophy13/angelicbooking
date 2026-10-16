@@ -141,6 +141,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Public links, 2026-10-16: manage, confirmation, forms, review, order and unsubscribe links work while online booking is off (or the
       trial has ended); the booking page itself says booking isn't available and gives the phone number. Online gift cards no longer need the
       store turned on, and the store no longer sells gift cards when online gift cards are off.
+- [x] Reminders and classes, 2026-10-16: unticking "Send confirmation" (desk, single or standing) no longer drops the reminders; the API
+      has `reminders` (default true) separate from `notify`. A visit booked inside the reminder window skips the reminder (the confirmation
+      covers it). Moving a visit restarts only flows timed from the visit (fresh each move, so moving back still reminds) and no longer
+      re-sends "booked" messages like the new-booking alert. Online class seats must match their session's service (no free-service id
+      carrying a paid seat) and the booking window; cancelling a class refunds every seat's deposit (failures flagged and logged). Tests:
+      `reminder-timing.test.ts`, `classes-money.test.ts`.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

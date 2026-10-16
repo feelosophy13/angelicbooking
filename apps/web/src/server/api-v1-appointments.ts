@@ -48,6 +48,8 @@ export const seriesCreate = z.object({
   notes: z.string().trim().max(2000).nullish(),
   location_id: id.nullish(),
   notify: z.boolean().default(true),
+  /** Reminder automations, separately from the confirmation (on by default). */
+  reminders: z.boolean().default(true),
 }).strict();
 
 export const cancelSeriesBody = z.object({ reason: z.string().trim().max(500).nullish(), notify: z.boolean().default(true) }).strict();

@@ -48,9 +48,10 @@ export const addToClass = formAction(
 export async function cancelClass(formData: FormData) {
   const d = z.object({ slug: z.string(), sessionId: z.string().min(1), reason: z.string().optional() }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "appointments.write.any");
-  const ids = await cancelSession({ businessId: ctx.business.id, sessionId: d.sessionId, actorUserId: ctx.user.id, reason: d.reason?.trim() || null });
+  const { ids, refundFailures } = await cancelSession({ businessId: ctx.business.id, sessionId: d.sessionId, actorUserId: ctx.user.id, reason: d.reason?.trim() || null });
   for (const id of ids) await notifyAppointment(ctx.business, id, "cancellation");
-  await setFlash(ids.length ? `Class cancelled; ${ids.length} client${ids.length === 1 ? "" : "s"} notified` : "Class cancelled");
+  if (refundFailures) await setFlash(`Class cancelled, but ${refundFailures} deposit refund${refundFailures === 1 ? "" : "s"} didn't go through. Refund ${refundFailures === 1 ? "it" : "them"} from the appointment page.`, "error");
+  else await setFlash(ids.length ? `Class cancelled; ${ids.length} client${ids.length === 1 ? "" : "s"} notified and any deposits refunded` : "Class cancelled");
   revalidatePath(`/app/${d.slug}/classes`);
   revalidatePath(`/app/${d.slug}`);
   redirect(`/app/${d.slug}/classes`);

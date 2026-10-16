@@ -14,8 +14,8 @@ export const POST = route<{ id: string }>("classes:write", async (ctx, req, { id
   const s = await withTenant(b, (tx) => tx.query.classSessions.findFirst({ where: and(eq(schema.classSessions.id, id), eq(schema.classSessions.businessId, b)), columns: { status: true } }));
   if (!s) return ApiErrors.notFound("class");
   if (s.status === "cancelled") return ApiErrors.conflict("That class is already cancelled.");
-  const ids = await cancelSession({ businessId: b, sessionId: id, actorUserId: ctx.actor, reason: body.data.reason || null });
-  await apiAudit(ctx, "api.class.cancel", "class_session", id, { seats: ids.length, reason: body.data.reason ?? null });
+  const { ids, refundFailures } = await cancelSession({ businessId: b, sessionId: id, actorUserId: ctx.actor, reason: body.data.reason || null });
+  await apiAudit(ctx, "api.class.cancel", "class_session", id, { seats: ids.length, reason: body.data.reason ?? null, refundFailures });
   if (body.data.notify) {
     after(async () => {
       for (const apptId of ids) await notifyAppointment(ctx.business, apptId, "cancellation").catch((e) => console.error("[api/v1] notify failed", (e as Error).message));

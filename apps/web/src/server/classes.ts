@@ -6,11 +6,13 @@
  * with a row lock on the session.
  */
 import { and, asc, count, eq, gte, inArray, lt, sql } from "drizzle-orm";
-import { schema, withTenant, type TenantDb } from "@angelic/db";
+import { db, schema, withTenant, type TenantDb } from "@angelic/db";
 import { onlineBookingWindow } from "@angelic/core";
 import { getStaffAvailability, timingFor } from "./availability";
 import { BookingError, setAppointmentStatus } from "./booking";
 import type { PublicBusiness } from "./public-booking";
+import { refundDeposit } from "./online-payments";
+import { paymentContextForAppointment } from "./locations";
 
 export const LIVE = ["booked", "confirmed", "checked_in", "in_progress", "completed"] as const;
 
@@ -169,17 +171,32 @@ export async function enrolClient(input: { businessId: string; sessionId: string
   return withTenant(input.businessId, (tx) => insertSeat(tx, { ...input, source: "staff", createdByUserId: input.actorUserId }));
 }
 
-/** Cancel a session and every seat in it. Returns the cancelled appointment ids (for notifications). */
-export async function cancelSession(input: { businessId: string; sessionId: string; actorUserId: string; reason: string | null }) {
+/**
+ * Cancel a session and every seat in it. The salon cancelled, so every deposit paid for a seat goes back (to the card, or as store credit
+ * under that policy). Returns the cancelled appointment ids (for notifications) and how many refunds didn't go through.
+ */
+export async function cancelSession(input: { businessId: string; sessionId: string; actorUserId: string; reason: string | null }): Promise<{ ids: string[]; refundFailures: number }> {
   const s = await getSession(input.businessId, input.sessionId);
   if (!s) throw new BookingError("Class not found.");
   const ids = s.roster.filter((r) => r.status === "booked" || r.status === "confirmed" || r.status === "checked_in").map((r) => r.appointmentId);
-  for (const id of ids) await setAppointmentStatus(input.businessId, id, "cancelled", input.actorUserId, input.reason ?? "Class cancelled");
+  const business = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId) }))!;
+  let refundFailures = 0;
+  for (const id of ids) {
+    await setAppointmentStatus(input.businessId, id, "cancelled", input.actorUserId, input.reason ?? "Class cancelled");
+    try {
+      const pay = await paymentContextForAppointment(business, id);
+      await refundDeposit({ businessId: input.businessId, accountId: pay.accountId, appointmentId: id, actorUserId: input.actorUserId, reason: "Class cancelled by the salon" });
+    } catch (e) {
+      refundFailures++;
+      console.error("[classes] deposit refund failed", id, (e as Error).message);
+      await withTenant(input.businessId, (tx) => tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.refund_failed", entity: "appointment", entityId: id, diff: JSON.stringify({ error: (e as Error).message }) }));
+    }
+  }
   await withTenant(input.businessId, async (tx) => {
     await tx.update(schema.classSessions).set({ status: "cancelled" }).where(eq(schema.classSessions.id, input.sessionId));
-    await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "class.cancel", entity: "class_session", entityId: input.sessionId, diff: JSON.stringify({ seats: ids.length, reason: input.reason }) });
+    await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "class.cancel", entity: "class_session", entityId: input.sessionId, diff: JSON.stringify({ seats: ids.length, reason: input.reason, refundFailures }) });
   });
-  return ids;
+  return { ids, refundFailures };
 }
 
 /** Group services for pickers. */

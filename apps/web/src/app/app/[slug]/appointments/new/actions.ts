@@ -74,7 +74,9 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
       });
       for (const c of r.created) await appendServices(ctx.business.id, c.appointmentId, extraServiceIds, d.staffId, ctx.user.id);
       // One confirmation (for the first visit) rather than one per occurrence; reminders for all.
+      // Unticking "Send confirmation" skips the confirmation, not the reminders.
       if (d.sendConfirmation) await notifyAppointment(ctx.business, r.created[0]!.appointmentId, "confirmation");
+      else await scheduleReminderFor(ctx.business, r.created[0]!.appointmentId);
       for (const c of r.created.slice(1)) await scheduleReminderFor(ctx.business, c.appointmentId);
       const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: ctx.business.timezone });
       const skipped = r.skipped.length ? ` ${r.skipped.length} skipped (${r.skipped.map((s) => `${fmt.format(s.startAt)}: ${s.reason}`).join("; ")}).` : "";
@@ -91,7 +93,9 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
         locationId: d.locationId,
       });
       await appendServices(ctx.business.id, appointmentId, extraServiceIds, d.staffId, ctx.user.id);
+      // Unticking "Send confirmation" skips the confirmation, not the reminders.
       if (d.sendConfirmation) await notifyAppointment(ctx.business, appointmentId, "confirmation");
+      else await scheduleReminderFor(ctx.business, appointmentId);
     }
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };

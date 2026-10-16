@@ -392,7 +392,29 @@ export async function planExtras(
   return out;
 }
 
+/**
+ * A class seat booked online: the session is still on, is the service the deposit was worked out from (so a free service's id can't carry a
+ * paid class's seat), matches the time and instructor shown, is inside the online booking window, and has room.
+ */
+export async function assertClassSeatOpen(business: PublicBusiness, input: { classSessionId: string; serviceId: string; staffId: string; startAt: Date }, now = new Date()) {
+  const { getSession } = await import("./classes");
+  const s = await getSession(business.id, input.classSessionId);
+  if (!s || s.session.status !== "scheduled") throw new BookingError("That class is no longer scheduled.");
+  if (s.session.serviceId !== input.serviceId || s.session.staffId !== input.staffId || s.session.startAt.getTime() !== input.startAt.getTime()) throw new BookingError("That class has changed. Please reload and pick it again.");
+  if (!s.service?.bookableOnline || !s.service.active) throw new BookingError("That class can't be booked online.");
+  if (!isWithinBookingWindow(input.startAt, now, business)) throw new BookingError("That class can no longer be booked online.");
+  if (s.seatsLeft <= 0) throw new BookingError("This class is full.");
+}
+
 export async function createOnlineBooking(business: PublicBusiness, input: OnlineBookingInput, now = new Date(), paid?: VerifiedIntent) {
+  if (input.classSessionId) {
+    try {
+      await assertClassSeatOpen(business, { classSessionId: input.classSessionId, serviceId: input.serviceId, staffId: input.staffId, startAt: input.startAt }, now);
+    } catch (e) {
+      await undoPayment(business, paid);
+      throw e;
+    }
+  }
   if (!input.classSessionId) {
     try {
       await assertQuotedPrice(business, input);

@@ -22,10 +22,11 @@ export const POST = route("appointments:book", async (ctx, req) => {
     firstStartAt: new Date(d.start_at), intervalWeeks: d.interval_weeks, occurrences: d.occurrences, notes: d.notes || null, createdByUserId: NO_USER, locationId: d.location_id ?? null,
   });
   await apiAudit(ctx, "api.series.create", "appointment_series", r.seriesId, { serviceId: d.service_id, staffId: d.staff_id, intervalWeeks: d.interval_weeks, created: r.created.length, skipped: r.skipped.length });
-  if (d.notify) {
+  if (d.notify || d.reminders) {
     after(async () => {
       try {
-        await notifyAppointment(ctx.business, r.created[0]!.appointmentId, "confirmation");
+        if (d.notify) await notifyAppointment(ctx.business, r.created[0]!.appointmentId, "confirmation");
+        else await scheduleReminderFor(ctx.business, r.created[0]!.appointmentId);
         for (const c of r.created.slice(1)) await scheduleReminderFor(ctx.business, c.appointmentId);
       } catch (e) {
         console.error("[api/v1] notify failed", (e as Error).message);

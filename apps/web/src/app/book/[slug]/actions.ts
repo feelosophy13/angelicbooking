@@ -6,7 +6,7 @@ import { normalizePhone } from "@angelic/core";
 import { BookingError } from "@/server/booking";
 import { PromoError, validatePromo } from "@/server/promos";
 import { priceForStaff } from "@/server/stylist-pricing";
-import { assertQuotedPrice, assertSlotOpen, planExtras, type PublicBusiness, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
+import { assertClassSeatOpen, assertQuotedPrice, assertSlotOpen, planExtras, type PublicBusiness, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
 import { appointmentForIntent, cancelOnlineIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
 import { getSession } from "@/server/classes";
 import { paymentContextFor } from "@/server/locations";
@@ -119,7 +119,7 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
     }
   }
   try {
-    if (d.classSessionId) await assertSeatOpen(business.id, d.classSessionId, d.staffId, startAt);
+    if (d.classSessionId) await assertSeatOpen(business, d.classSessionId, d.serviceId, d.staffId, startAt);
     else await assertSlotOpen(business, d.serviceId, d.staffId, startAt, new Date(), d.locationId);
     const clientId = await findOrCreateClient(business.id, { ...d, startAt });
     const r = await startOnlinePayment(business, pay, req.mode, { businessId: business.id, clientId, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" }, req.amountCents);
@@ -197,10 +197,7 @@ export async function joinWaitlistAction(_prev: PublicState, formData: FormData)
   return { ok: true };
 }
 
-/** A class seat is still open and the hidden fields describe that session. */
-async function assertSeatOpen(businessId: string, sessionId: string, staffId: string, startAt: Date) {
-  const s = await getSession(businessId, sessionId);
-  if (!s || s.session.status !== "scheduled") throw new BookingError("That class is no longer scheduled.");
-  if (s.session.staffId !== staffId || s.session.startAt.getTime() !== startAt.getTime()) throw new BookingError("That class has changed. Please reload and pick it again.");
-  if (s.seatsLeft <= 0) throw new BookingError("This class is full.");
+/** A class seat is still open and the hidden fields describe that session (and its service, so the deposit is the class's). */
+async function assertSeatOpen(business: PublicBusiness, sessionId: string, serviceId: string, staffId: string, startAt: Date) {
+  await assertClassSeatOpen(business, { classSessionId: sessionId, serviceId, staffId, startAt });
 }

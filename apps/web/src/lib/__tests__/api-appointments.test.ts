@@ -48,7 +48,7 @@ const mkService = async (biz: string, over: Partial<typeof schema.services.$infe
 
 /** Book through the API (the existing endpoint) and return the appointment as the API shows it. */
 async function book(clientId: string, serviceId: string, staffId: string, start: Date) {
-  const r = await call(postAppt, kit.key, {}, send("POST", { client_id: clientId, service_id: serviceId, staff_id: staffId, start_at: start.toISOString(), notify: false }));
+  const r = await call(postAppt, kit.key, {}, send("POST", { client_id: clientId, service_id: serviceId, staff_id: staffId, start_at: start.toISOString(), notify: false, reminders: false }));
   expect(r.status).toBe(201);
   return (await r.json()).data as { id: string; status: string; items: { id: string; start_at: string; staff_id: string; status: string }[] };
 }
@@ -229,7 +229,7 @@ describe.skipIf(!up)("API: appointment extras", () => {
     it("books a series, reads it back, and cancels the rest of it", async () => {
       const staff = await mkStaff(A());
       const first = slot(20, 10);
-      const r = await call(postSeries, kit.key, {}, send("POST", { client_id: a("client"), service_id: a("service"), staff_id: staff, start_at: first.toISOString(), interval_weeks: 1, occurrences: 3, notes: "weekly", notify: false }));
+      const r = await call(postSeries, kit.key, {}, send("POST", { client_id: a("client"), service_id: a("service"), staff_id: staff, start_at: first.toISOString(), interval_weeks: 1, occurrences: 3, notes: "weekly", notify: false, reminders: false }));
       expect(r.status).toBe(201);
       const data = (await r.json()).data;
       expect(data).toMatchObject({ interval_weeks: 1, planned_occurrences: 3, notes: "weekly", client_id: a("client"), ended_at: null });
@@ -258,13 +258,13 @@ describe.skipIf(!up)("API: appointment extras", () => {
       // Block the second week's slot so only that date is skipped.
       const block = await call(postBlock, kit.key, {}, send("POST", { staff_id: staff, start_at: slot(37, 9).toISOString(), end_at: slot(37, 12).toISOString() }));
       expect(block.status).toBe(201);
-      const r = await call(postSeries, kit.key, {}, send("POST", { client_id: a("client"), service_id: a("service"), staff_id: staff, start_at: first.toISOString(), interval_weeks: 1, occurrences: 3, notify: false }));
+      const r = await call(postSeries, kit.key, {}, send("POST", { client_id: a("client"), service_id: a("service"), staff_id: staff, start_at: first.toISOString(), interval_weeks: 1, occurrences: 3, notify: false, reminders: false }));
       expect(r.status).toBe(201);
       const data = (await r.json()).data;
       expect(data.occurrences).toHaveLength(2);
       expect(data.skipped).toHaveLength(1);
       // Outside working hours every date is skipped.
-      const none = await call(postSeries, kit.key, {}, send("POST", { client_id: a("client"), service_id: a("service"), staff_id: staff, start_at: slot(40, 22).toISOString(), interval_weeks: 1, occurrences: 2, notify: false }));
+      const none = await call(postSeries, kit.key, {}, send("POST", { client_id: a("client"), service_id: a("service"), staff_id: staff, start_at: slot(40, 22).toISOString(), interval_weeks: 1, occurrences: 2, notify: false, reminders: false }));
       expect(none.status).toBe(409);
       expect(await withTenant(A(), (tx) => tx.select().from(schema.appointmentSeries).where(and(eq(schema.appointmentSeries.staffId, staff))))).toHaveLength(1);
     });

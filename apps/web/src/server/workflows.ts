@@ -242,6 +242,8 @@ export interface TriggerInput {
   dedupeKey: string;
   facts?: TriggerFacts;
   context?: WorkflowRunContext;
+  /** Start only these workflows (a reschedule restarts just the ones timed from the visit). */
+  onlyWorkflowIds?: string[];
 }
 
 /** Facts about an appointment for filters and vars (services, categories with ancestors, location, provider, first visit). */
@@ -278,6 +280,7 @@ export async function triggerWorkflows(business: Business, trigger: WorkflowTrig
     const notifIds: string[] = [];
     const now = new Date();
     for (const w of flows) {
+      if (input.onlyWorkflowIds && !input.onlyWorkflowIds.includes(w.id)) continue;
       if (!matchesFilters(w.filters, facts)) continue;
       const [run] = await tx
         .insert(schema.workflowRuns)
@@ -323,6 +326,7 @@ async function cancelRuns(tx: TenantDb, by: { workflowId?: string; appointmentId
  * Called from the same places that move / drop the standard reminder.
  */
 export async function resyncAppointmentRuns(business: Business, appointmentId: string, change: "rescheduled" | "cancelled") {
+  let timed: string[] = [];
   await withTenant(business.id, async (tx) => {
     if (change === "cancelled") {
       // Only "before the visit" flows (booked trigger) stop; follow-ups after a visit are unaffected.
@@ -333,15 +337,18 @@ export async function resyncAppointmentRuns(business: Business, appointmentId: s
       }
       return;
     }
-    // Moved: "booked" flows for the old time stop (queued messages dropped) and start again for the
-    // new time via triggerAppointmentWorkflows, so a reminder already sent is sent again for the new slot.
-    const runs = await tx.select({ id: schema.workflowRuns.id, workflowId: schema.workflowRuns.workflowId }).from(schema.workflowRuns).where(and(eq(schema.workflowRuns.appointmentId, appointmentId), eq(schema.workflowRuns.status, "active")));
-    for (const r of runs) {
-      const w = await tx.query.workflows.findFirst({ where: eq(schema.workflows.id, r.workflowId), columns: { trigger: true } });
-      if (w?.trigger === "appointment_booked") await cancelRuns(tx, { appointmentId, workflowId: r.workflowId }, "Appointment moved; restarted for the new time");
-    }
+    // Moved: only "booked" flows timed from the visit (a "before the appointment" wait, like the reminder) stop and start again for the new
+    // time, so a reminder already sent is sent again for the new slot. Flows that aren't about the visit's time (a thank-you for booking, a
+    // "new online booking" alert) don't run again.
+    const flows = await tx.select().from(schema.workflows).where(and(eq(schema.workflows.trigger, "appointment_booked"), eq(schema.workflows.enabled, true)));
+    timed = flows.filter((w) => w.steps.some((st) => st.type === "wait" && st.mode === "before_appointment")).map((w) => w.id);
+    for (const id of timed) await cancelRuns(tx, { appointmentId, workflowId: id }, "Appointment moved; restarted for the new time");
   });
-  await triggerAppointmentWorkflows(business, "appointment_booked", appointmentId);
+  if (!timed.length) return;
+  const [facts, times] = await withTenant(business.id, async (tx) => [await appointmentFacts(tx, appointmentId), await appointmentTimes(tx, appointmentId)] as const);
+  if (!facts?.clientId || !times) return;
+  // Each move is its own occasion (moving back to an earlier time must still remind).
+  await triggerWorkflows(business, "appointment_booked", { clientId: facts.clientId, appointmentId, dedupeKey: `${appointmentId}:${times.startAt.getTime()}:moved:${Date.now()}`, facts, context: { appointmentId, reason: "Appointment moved" }, onlyWorkflowIds: timed });
 }
 
 /** Stop "until they book again" runs for a client who just booked. */
@@ -416,6 +423,9 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
   let i = run.stepIndex;
   let vars: Awaited<ReturnType<typeof varsFor>> | null = null;
   const getVars = async () => (vars ??= await varsFor(tx, business, w, run, client));
+  // Set when a "before the appointment" wait was already past the first time it was reached (booked inside the reminder window): the
+  // message right after it is skipped, since the confirmation just went out; a run resuming after its wait is not affected.
+  let skipNextMessage = false;
   for (; i < w.steps.length; i++) {
     const step = w.steps[i]!;
     // Guards before every step.
@@ -431,6 +441,12 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       const times = run.appointmentId ? await appointmentTimes(tx, run.appointmentId) : null;
       const at = waitResumesAt(step, now, times);
       if (!at) { note(i, "skipped", "No appointment to time this wait from"); continue; }
+      const resuming = i === run.stepIndex && !!run.nextAt && run.nextAt <= now;
+      if (step.mode === "before_appointment" && at <= now && !resuming) {
+        skipNextMessage = true;
+        note(i, "skipped", "Booked inside this window: the confirmation covers it");
+        continue;
+      }
       if (at > now) {
         note(i, "waiting", `Resumes ${at.toISOString()}`);
         await tx.update(schema.workflowRuns).set({ stepIndex: i, nextAt: at, log }).where(eq(schema.workflowRuns.id, run.id));
@@ -439,6 +455,7 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       continue;
     }
     if (step.type === "sms" || step.type === "email") {
+      if (skipNextMessage) { skipNextMessage = false; note(i, "skipped", "Not sent: booked inside the reminder window"); continue; }
       const v = await getVars();
       const scheduledAt = marketing ? deferToDaytime(now, business.timezone) : now;
       const deferred = scheduledAt > now ? ` (held until ${scheduledAt.toISOString()}, quiet hours)` : "";
@@ -461,6 +478,7 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       continue;
     }
     if (step.type === "reminder") {
+      if (skipNextMessage) { skipNextMessage = false; note(i, "skipped", "Not sent: booked inside the reminder window"); continue; }
       if (!run.appointmentId) { note(i, "skipped", "No appointment to remind about"); continue; }
       const v = await getVars();
       if (!v.apptCtx) { note(i, "skipped", "Appointment no longer exists"); continue; }
