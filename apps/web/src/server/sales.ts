@@ -705,7 +705,7 @@ async function closeIfPaid(tx: TenantDb, saleId: string, taxRateBps: number, act
     await fulfilOfferLines(tx, businessId, saleId);
     await decrementStockForSale(tx, businessId, saleId);
     if (sale.promoCodeId) await countPromoUse(tx, sale.promoCodeId);
-    const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
+    const business = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
     if (business) {
       await awardPointsForSale(tx, business, { ...sale, ...t, status: "paid" });
       if (sale.appointmentId) {
@@ -1224,7 +1224,7 @@ export async function refundPayment(input: {
     if (planned) stopBilling.push(...(await recordRefundItems(tx, input.businessId, sale, planned, { refundId: refundRow!.id }, input.actorUserId)));
     // Refunding a points payment gives the points back.
     if (p.method === "loyalty" && sale.clientId) {
-      const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { loyaltyPointValueCents: true } });
+      const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { loyaltyPointValueCents: true } });
       const points = Math.round(amount / Math.max(1, biz?.loyaltyPointValueCents ?? 1));
       if (points > 0) await tx.insert(schema.loyaltyLedger).values({ businessId: input.businessId, clientId: sale.clientId, delta: points, reason: "adjust", saleId: sale.id, note: `Refund on sale #${sale.number}`, createdByUserId: input.actorUserId }).onConflictDoNothing();
     }

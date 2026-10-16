@@ -82,7 +82,7 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
     const itemIds = [...new Set(lines.map((l) => l.appointmentItemId).filter((x): x is string => !!x))];
     const [clients, users, items] = await Promise.all([
       clientIds.length ? tx.select({ id: schema.clients.id, first: schema.clients.firstName, last: schema.clients.lastName }).from(schema.clients).where(inArray(schema.clients.id, clientIds)) : [],
-      userIds.length ? db.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, userIds)) : [],
+      userIds.length ? tx.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, userIds)) : [],
       itemIds.length ? tx.select({ id: schema.appointmentItems.id, startAt: schema.appointmentItems.startAt }).from(schema.appointmentItems).where(inArray(schema.appointmentItems.id, itemIds)) : [],
     ]);
     const clientName = new Map(clients.map((c) => [c.id, `${c.first} ${c.last}`.trim()]));
