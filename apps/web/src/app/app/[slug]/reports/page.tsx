@@ -66,7 +66,7 @@ export default async function ReportsPage({
   ]);
   // Pay is not split by service, so it is left out while a service filter is on.
   const canPayroll = can(permissions, "payroll.view") && !scoped;
-  const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation }, prev, categories, pay, payBefore, payByLoc] = await Promise.all([
+  const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation, tipCashCents, tipCardCents }, prev, categories, pay, payBefore, payByLoc] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter, serviceIds),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter, serviceIds),
     listCategories(business.id, "service"),
@@ -219,6 +219,7 @@ export default async function ReportsPage({
             <Card key={label} className="p-4">
               <p className="text-xs uppercase tracking-wide text-stone-500">{label}</p>
               <p className="text-xl font-semibold">{money(v)}</p>
+              {label === "Tips" && v > 0 ? <p className="text-xs text-stone-500">cash {money(tipCashCents)} · card {money(tipCardCents)}</p> : null}
               {d ? (
                 <p className={`mt-1 text-xs ${positive ? "text-emerald-700" : "text-stone-500"}`} title={`${money(before)} in the ${periodLabel}`}>
                   {d.pct === null ? "new" : `${d.pct > 0 ? "+" : ""}${d.pct}%`} vs {periodLabel}

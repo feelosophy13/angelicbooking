@@ -6,6 +6,7 @@ import { PermissionError, requireAction, requireBusiness } from "@/lib/tenant";
 import { isStripeConfigured, StripeNotConfigured } from "@/lib/stripe";
 import {
   addProductLine,
+  addTipAfterPayment,
   chargeCardOnFile,
   completeNoCharge,
   setSaleNotes,
@@ -588,4 +589,27 @@ export async function editLine(formData: FormData) {
     else throw e;
   }
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+/** A tip that comes after the sale was paid: in cash, or on a card the client has on file. */
+export async function addLateTip(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
+  const d = base.extend({ staffId: z.string().min(1, "Choose who the tip is for."), amount: z.string(), paidIn: z.string().min(1) }).safeParse(Object.fromEntries(formData));
+  if (!d.success) return { error: d.error.issues[0]?.message ?? "Check the tip details." };
+  const ctx = await ctxFor(d.data.slug);
+  const cents = parseMoney(d.data.amount);
+  if (cents === null || cents <= 0) return { error: "Enter a tip amount like 5 or 7.50." };
+  try {
+    if (d.data.paidIn === "cash") {
+      await addTipAfterPayment({ businessId: ctx.business.id, saleId: d.data.saleId, staffId: d.data.staffId, amountCents: cents, method: "cash", actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    } else {
+      const pay = await paymentContextForSale(ctx.business, d.data.saleId);
+      if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments to charge a card." };
+      await addTipAfterPayment({ businessId: ctx.business.id, saleId: d.data.saleId, staffId: d.data.staffId, amountCents: cents, method: "card", paymentMethodId: d.data.paidIn, accountId: pay.accountId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    }
+  } catch (e) {
+    return friendly(e);
+  }
+  revalidatePath(`/app/${d.data.slug}/sales/${d.data.saleId}`);
+  revalidatePath(`/app/${d.data.slug}`);
+  return { ok: true };
 }

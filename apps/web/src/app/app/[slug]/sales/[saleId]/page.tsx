@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
-import { addOffer, addProduct, addProductByCode, putBackOnShelf, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, completeSale, deleteLine, editLine, payManual, saveSaleNote, sendReceipt, toggleTaxExempt, payWithGiftCard, payWithPoints, payWithSavedCard, payWithStoreCreditAction, refund, changeRefundReason, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
+import { addOffer, addProduct, addProductByCode, putBackOnShelf, addServiceToSale, applyDiscount, applyPromo, applyTips, attachClient, addLateTip, completeSale, deleteLine, editLine, payManual, saveSaleNote, sendReceipt, toggleTaxExempt, payWithGiftCard, payWithPoints, payWithSavedCard, payWithStoreCreditAction, refund, changeRefundReason, removePromo, setFulfillment, useCredit, voidOpenSale } from "./actions";
 import { ClientPicker } from "@/components/client-picker";
 import { Disclosure } from "@/components/disclosure";
 import { ActivityTrail } from "@/components/activity-trail";
@@ -31,7 +31,7 @@ import { ServicePicker } from "@/components/service-picker";
 import { schema, withTenant } from "@angelic/db";
 import { asc, eq } from "drizzle-orm";
 import { instantToISODate } from "@angelic/core";
-import { DiscountForm, GiftCardPayForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, RefundReasonEditor, SaleNoteForm, SavedCardForm, SendReceiptForm, StoreCreditPayForm, TipsForm } from "./forms";
+import { DiscountForm, GiftCardPayForm, LateTipForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, RefundReasonEditor, SaleNoteForm, SavedCardForm, SendReceiptForm, StoreCreditPayForm, TipsForm } from "./forms";
 import { SaleProductPicker } from "@/components/sale-product-picker";
 import { pointsBalance } from "@/server/loyalty";
 import { storeCreditBalance } from "@/server/store-credit";
@@ -407,6 +407,13 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               {sale.closedAt ? <p className="text-sm text-stone-500">{fmt.format(sale.closedAt)}</p> : null}
             </Card>
           )}
+          {sale.status === "paid" && goods.length > 0 ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Add a tip</h2>
+              <p className="mb-2 text-xs text-stone-500">For a tip that comes after the sale was paid. It is added to the sale and the stylist&apos;s pay.{savedCards.length === 0 ? " To charge it to a card, attach a client who has a card on file." : ""}</p>
+              <LateTipForm action={addLateTip} slug={slug} saleId={sale.id} staff={tipStaff.length ? tipStaff : staff.map((x) => ({ id: x.id, name: x.displayName }))} cards={savedCards.map((c) => ({ id: c.id, brand: c.brand, last4: c.last4 }))} />
+            </Card>
+          ) : null}
           {!open && sale.status !== "void" ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-2 font-medium">Send receipt</h2>

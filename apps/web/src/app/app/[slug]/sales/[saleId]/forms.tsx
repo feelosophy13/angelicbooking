@@ -344,3 +344,31 @@ export function SaleNoteForm({ action, slug, saleId, notes }: { action: Action; 
     </form>
   );
 }
+
+/** Add a tip to a sale that is already paid: cash, or a card the client has on file. */
+export function LateTipForm({ action, slug, saleId, staff, cards }: { action: Action; slug: string; saleId: string; staff: { id: string; name: string }[]; cards: { id: string; brand: string; last4: string }[] }) {
+  const [state, act, pending] = useActionState(action, undefined);
+  return (
+    <form action={act} className="space-y-2">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="saleId" value={saleId} />
+      <Field label="Tip for">
+        <Select name="staffId" defaultValue={staff[0]?.id ?? ""}>
+          {staff.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </Select>
+      </Field>
+      <div className="grid grid-cols-[1fr_1fr] gap-2">
+        <Field label="Amount"><MoneyInput name="amount" required /></Field>
+        <Field label="Paid in">
+          <Select name="paidIn" defaultValue="cash">
+            <option value="cash">Cash</option>
+            {cards.map((c) => <option key={c.id} value={c.id}>{c.brand.toUpperCase()} •••• {c.last4} (charged now)</option>)}
+          </Select>
+        </Field>
+      </div>
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+      {state?.ok ? <p className="text-xs text-emerald-700">Tip added.</p> : null}
+      <Button type="submit" size="sm" variant="secondary" disabled={pending}>Add tip</Button>
+    </form>
+  );
+}

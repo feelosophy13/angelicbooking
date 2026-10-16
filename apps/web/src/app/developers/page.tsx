@@ -201,7 +201,7 @@ export default function DevelopersPage() {
       <Group title="Sales" />
       <h2>Sales</h2>
       <Endpoint method="GET" path="/sales" scope="sales:read"><p>Sales, newest first. Query: <code>from</code>, <code>to</code>, <code>status</code> (<code>open</code>, <code>paid</code>, <code>refunded</code>, <code>void</code>), <code>client_id</code>. Includes <code>total</code>.</p></Endpoint>
-      <Endpoint method="GET" path="/sales/{id}" scope="sales:read"><p>One sale with its lines and payments. Card details beyond the amount are not included.</p></Endpoint>
+      <Endpoint method="GET" path="/sales/{id}" scope="sales:read"><p>One sale with its lines and payments. Card details beyond the amount are not included. Tips: each tip line has <code>tip_method</code> (<code>cash</code>, <code>card</code> or null when the desk did not say); the sale has <code>tip_cash_cents</code> and <code>tip_card_cents</code>; each payment&apos;s <code>tip_cents</code> is the tip that rode on it (a cash tip on the non-card payments, a card tip on the card payments, an unmarked tip across all by amount).</p></Endpoint>
 
 
       <Group title="Security and limits" />

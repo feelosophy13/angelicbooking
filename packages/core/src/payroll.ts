@@ -1,3 +1,4 @@
+import { allocateProportionally } from "./pricing";
 /**
  * Pure payroll math, reproducing the salon's existing pay sheets to the cent.
  *
@@ -145,6 +146,29 @@ export function splitTips(parts: TipPart[], noFeeShare: number): { cashCents: nu
   const share = Math.min(1, Math.max(0, noFeeShare));
   cash += Math.round(unspecified * share);
   return { cashCents: cash, cardCents: total - cash, totalCents: total };
+}
+
+/**
+ * How a sale's tips land on its payments, for reports and the API. A tip marked cash goes to the payments that were not by card (cash, other,
+ * gift card, store credit, points), a tip marked card to the card payments, and an unmarked one across every payment; each is shared in proportion to the
+ * payment amounts. When there is nothing of the right kind (a "card" tip on a cash-only sale) it falls back to all payments. Whole cents, adding back exactly.
+ */
+export function tipsPerPayment(parts: TipPart[], pays: { id: string; method: string; amountCents: number }[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const p of pays) out[p.id] = 0;
+  if (!pays.length) return out;
+  const card = pays.filter((p) => CARD_FEE_METHODS.has(p.method));
+  const noFee = pays.filter((p) => !CARD_FEE_METHODS.has(p.method));
+  const spread = (cents: number, group: typeof pays) => {
+    const g = group.length ? group : pays;
+    const shares = allocateProportionally(cents, g.map((p) => ({ key: p.id, weight: p.amountCents })));
+    for (const [id, v] of Object.entries(shares)) out[id] = (out[id] ?? 0) + v;
+  };
+  for (const part of parts) {
+    if (part.amountCents <= 0) continue;
+    spread(part.amountCents, part.method === "cash" ? noFee : part.method === "card" ? card : pays);
+  }
+  return out;
 }
 
 export const NON_REVENUE_POSITIONS = ["receptionist", "manager", "front desk", "admin"];

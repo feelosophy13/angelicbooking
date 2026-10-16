@@ -11,8 +11,6 @@ export interface PayrollPeriod {
 
 type Business = typeof schema.businesses.$inferSelect;
 
-const CASH_METHODS = new Set(["cash", "other"]);
-
 function localDate(at: Date, tz: string) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
 }
@@ -56,11 +54,11 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       const taxableTotal = goods.filter((l) => l.taxable).reduce((s, l) => s + l.amountCents, 0);
       const sp = pays.filter((p) => p.saleId === sale.id);
       const paidTotal = sp.reduce((s, p) => s + p.amountCents, 0);
-      const cashPaid = sp.filter((p) => CASH_METHODS.has(p.method)).reduce((s, p) => s + p.amountCents, 0);
-      const cashShare = paidTotal > 0 ? cashPaid / paidTotal : 0;
-      // Tips: the share of the sale that was not paid through a card (cash, other, gift card, store credit, points) carries no card fee.
+      // "Cash" on the sheet is money that did not go through a card (cash, other, a gift card, store credit, loyalty points); only a real card payment is "Credit Card"
+      // and bears the card fee on tips.
       const cardPaid = sp.filter((p) => CARD_FEE_METHODS.has(p.method)).reduce((s, p) => s + p.amountCents, 0);
-      const tipNoFeeShare = paidTotal > 0 ? 1 - cardPaid / paidTotal : 0;
+      const cashShare = paidTotal > 0 ? 1 - cardPaid / paidTotal : 0;
+      const tipNoFeeShare = cashShare;
       const fullyRefunded = sale.status === "refunded" || (sale.paidCents > 0 && sale.refundedCents >= sale.paidCents);
       // Partial refunds reduce goods proportionally; tips are left whole.
       const keep = fullyRefunded || sale.paidCents <= 0 ? 1 : Math.max(0, (sale.paidCents - sale.refundedCents) / sale.paidCents);

@@ -7,7 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { buildPayrollLines } from "@/server/payroll";
-import { addProductLine, completeNoCharge, getSale, openWalkInSale, recordManualPayment, removeLine, setSaleNotes, setTaxExempt, setTips } from "@/server/sales";
+import { getSaleApi } from "@/server/api-v1";
+import { addProductLine, addTipAfterPayment, completeNoCharge, getSale, openWalkInSale, recordManualPayment, removeLine, salesReport, setSaleNotes, setTaxExempt, setTips } from "@/server/sales";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
 
 const up = await reachable();
@@ -116,5 +117,34 @@ describe.skipIf(!up)("checkout: a products-only ticket", () => {
     expect(tipRows).toContainEqual([1000, 500]); // A: as marked
     expect(tipRows).toContainEqual([2000, 0]); // B: gift card, no card fee
     expect(tipRows).toContainEqual([0, 800]); // C: card
+  });
+
+  it("adds a tip after the sale is paid: the sale stays paid, a cash payment and a tip line are added, and reports and the API read it back", async () => {
+    const saleId = await open();
+    await addProductLine({ ...base(), saleId, productId, quantity: 1, staffId });
+    // Not paid yet: refused.
+    await expect(addTipAfterPayment({ ...base(), saleId, staffId, amountCents: 500, method: "cash" })).rejects.toThrow(/paid in full/);
+    await recordManualPayment({ ...base(), saleId, method: "cash", amountCents: 10_000, note: null });
+    let d = (await getSale(kit.A, saleId))!;
+    expect(d.sale.status).toBe("paid");
+    const before = d.sale.totalCents;
+    await addTipAfterPayment({ ...base(), saleId, staffId, amountCents: 700, method: "cash" });
+    d = (await getSale(kit.A, saleId))!;
+    expect([d.sale.status, d.sale.tipCents, d.sale.totalCents, d.sale.paidCents]).toEqual(["paid", 700, before + 700, before + 700]);
+    expect(d.lines.filter((l) => l.kind === "tip").map((l) => [l.tipMethod, l.amountCents, l.staffId])).toEqual([["cash", 700, staffId]]);
+    expect(d.payments.map((p) => [p.method, p.amountCents, p.tipCents]).sort()).toEqual([["cash", before, 0], ["cash", 700, 700]].sort());
+    // Errors: a card tip without a saved card, and no amount.
+    await expect(addTipAfterPayment({ ...base(), saleId, staffId, amountCents: 700, method: "card" })).rejects.toThrow(/saved card|cash/);
+    await expect(addTipAfterPayment({ ...base(), saleId, staffId, amountCents: 0, method: "cash" })).rejects.toThrow(/amount/);
+    // The API names the cash tip and puts it on the cash payment that carried it.
+    const api = (await getSaleApi(kit.A, saleId)) as unknown as { tip_cash_cents: number; tip_card_cents: number; lines: { kind: string; tip_method: string | null }[]; payments: { amount_cents: number; tip_cents: number }[] };
+    expect([api.tip_cash_cents, api.tip_card_cents]).toEqual([700, 0]);
+    expect(api.lines.filter((l) => l.kind === "tip").map((l) => l.tip_method)).toEqual(["cash"]);
+    expect(api.payments.reduce((n, p) => n + p.tip_cents, 0)).toBe(700);
+    // The report counts it as a cash tip.
+    const r = await salesReport(kit.A, new Date(Date.now() - 3_600_000), new Date(Date.now() + 3_600_000));
+    expect(r.tipCashCents).toBeGreaterThanOrEqual(700);
+    expect(r.tipCashCents + r.tipCardCents).toBe(r.sales.reduce((n, x) => n + x.tipCents, 0));
+    expect(r.byMethod.reduce((n, m) => n + Number(m.tips), 0)).toBe(r.tipCashCents + r.tipCardCents);
   });
 });

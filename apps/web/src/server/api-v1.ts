@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, lt, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
+import { CARD_FEE_METHODS, splitTips, tipsPerPayment } from "@angelic/core";
 
 /**
  * Data access for the public REST API. Every function takes the business id from the authenticated key and runs inside withTenant, so row-level
@@ -127,13 +128,23 @@ export async function listAppointmentsApi(businessId: string, opts: { from?: Dat
 }
 
 // ---- Sales (read only) ----
-export const serializeSale = (s: typeof schema.sales.$inferSelect, lines?: (typeof schema.saleLines.$inferSelect)[], pays?: (typeof schema.payments.$inferSelect)[]) => ({
+export const serializeSale = (s: typeof schema.sales.$inferSelect, lines?: (typeof schema.saleLines.$inferSelect)[], pays?: (typeof schema.payments.$inferSelect)[]) => {
+  // With the lines and payments both present, tips are described by how they were handed over: the sale's cash and card totals, and each payment's real share
+  // (a tip marked cash lands on the non-card payments, one marked card on the card payments, an unmarked one across all by amount).
+  const tipParts = (lines ?? []).filter((l) => l.kind === "tip").map((l) => ({ amountCents: l.amountCents, method: l.tipMethod === "cash" || l.tipMethod === "card" ? (l.tipMethod as "cash" | "card") : null }));
+  const live = (pays ?? []).filter((p) => p.status === "succeeded" || p.status === "partially_refunded" || p.status === "refunded");
+  const perPayment = lines && pays ? tipsPerPayment(tipParts, live) : null;
+  const paidTotal = live.reduce((n, p) => n + p.amountCents, 0);
+  const cardPaid = live.filter((p) => CARD_FEE_METHODS.has(p.method)).reduce((n, p) => n + p.amountCents, 0);
+  const split = lines && pays ? splitTips(tipParts, paidTotal > 0 ? 1 - cardPaid / paidTotal : 0) : null;
+  return ({
   id: s.id, number: s.number, status: s.status, client_id: s.clientId, appointment_id: s.appointmentId, location_id: s.locationId, currency: s.currency,
-  subtotal_cents: s.subtotalCents, discount_cents: s.discountCents, tax_cents: s.taxCents, tip_cents: s.tipCents, total_cents: s.totalCents, paid_cents: s.paidCents,
+  subtotal_cents: s.subtotalCents, discount_cents: s.discountCents, tax_cents: s.taxCents, tip_cents: s.tipCents, ...(split ? { tip_cash_cents: split.cashCents, tip_card_cents: split.cardCents } : {}), total_cents: s.totalCents, paid_cents: s.paidCents,
   refunded_cents: s.refundedCents, source: s.source, closed_at: iso(s.closedAt), created_at: iso(s.createdAt),
-  ...(lines ? { lines: lines.sort((a, b) => a.sortOrder - b.sortOrder).map((l) => ({ id: l.id, kind: l.kind, name: l.name, quantity: l.quantity, unit_cents: l.unitCents, amount_cents: l.amountCents, staff_id: l.staffId, service_id: l.serviceId, product_id: l.productId })) } : {}),
-  ...(pays ? { payments: pays.map((p) => ({ id: p.id, method: p.method, amount_cents: p.amountCents, tip_cents: p.tipCents, status: p.status, created_at: iso(p.createdAt) })) } : {}),
-});
+  ...(lines ? { lines: lines.sort((a, b) => a.sortOrder - b.sortOrder).map((l) => ({ id: l.id, kind: l.kind, name: l.name, quantity: l.quantity, unit_cents: l.unitCents, amount_cents: l.amountCents, tip_method: l.kind === "tip" ? (l.tipMethod === "cash" || l.tipMethod === "card" ? l.tipMethod : null) : null, staff_id: l.staffId, service_id: l.serviceId, product_id: l.productId })) } : {}),
+  ...(pays ? { payments: pays.map((p) => ({ id: p.id, method: p.method, amount_cents: p.amountCents, tip_cents: perPayment ? (perPayment[p.id] ?? 0) : p.tipCents, status: p.status, created_at: iso(p.createdAt) })) } : {}),
+  });
+};
 
 export async function listSalesApi(businessId: string, opts: { from?: Date; to?: Date; status?: string; clientId?: string; limit: number; offset: number }) {
   return withTenant(businessId, async (tx) => {

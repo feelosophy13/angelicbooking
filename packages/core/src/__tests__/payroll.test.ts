@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CARD_FEE_METHODS, computeHours, computePayroll, rateLabel, splitTips, type PayrollEmployee, type PayrollLine } from "../payroll";
+import { CARD_FEE_METHODS, computeHours, computePayroll, rateLabel, splitTips, tipsPerPayment, type PayrollEmployee, type PayrollLine } from "../payroll";
 
 const base = (over: Partial<PayrollEmployee>): PayrollEmployee => ({
   staffId: "s",
@@ -175,5 +175,26 @@ describe("splitTips", () => {
   it("charges the card fee only for real card payments, not gift cards, store credit, points or cash", () => {
     for (const m of ["card", "card_on_file", "terminal"]) expect(CARD_FEE_METHODS.has(m)).toBe(true);
     for (const m of ["cash", "other", "gift_card", "store_credit", "loyalty"]) expect(CARD_FEE_METHODS.has(m)).toBe(false);
+  });
+});
+
+describe("tipsPerPayment", () => {
+  const pays = [{ id: "card1", method: "card", amountCents: 8000 }, { id: "cash1", method: "cash", amountCents: 2000 }, { id: "gc1", method: "gift_card", amountCents: 2000 }];
+  const sum = (r: Record<string, number>) => Object.values(r).reduce((a, b) => a + b, 0);
+  it("puts a cash tip on the non-card payments and a card tip on the card payment", () => {
+    const r = tipsPerPayment([{ amountCents: 1000, method: "cash" }, { amountCents: 500, method: "card" }], pays);
+    expect(r.card1).toBe(500);
+    expect(r.cash1 + r.gc1).toBe(1000);
+    expect(r.cash1).toBe(500); // equal weights
+    expect(sum(r)).toBe(1500);
+  });
+  it("spreads an unmarked tip across every payment by amount, adding back exactly", () => {
+    const r = tipsPerPayment([{ amountCents: 1001, method: null }], pays);
+    expect(sum(r)).toBe(1001);
+    expect(r.card1).toBeGreaterThan(r.cash1);
+  });
+  it("falls back to all payments when none is of the right kind, and copes with no payments", () => {
+    expect(tipsPerPayment([{ amountCents: 700, method: "card" }], [{ id: "c", method: "cash", amountCents: 5000 }])).toEqual({ c: 700 });
+    expect(tipsPerPayment([{ amountCents: 700, method: "cash" }], [])).toEqual({});
   });
 });

@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, gte, lt, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
-import { allocateProportionally, computeTotals, type Discount } from "@angelic/core";
+import { CARD_FEE_METHODS, allocateProportionally, computeTotals, splitTips, tipsPerPayment, type Discount } from "@angelic/core";
 import { after } from "next/server";
 import { db } from "@angelic/db";
 import { stripe } from "@/lib/stripe";
@@ -463,6 +463,61 @@ export async function completeNoCharge(input: { businessId: string; saleId: stri
     const [n] = await tx.select({ n: sql<number>`count(*)::int` }).from(schema.saleLines).where(and(eq(schema.saleLines.saleId, sale.id), sql`${schema.saleLines.kind} <> 'tip'`));
     if (!n?.n) throw new SaleError("Add something to the ticket first.");
     await closeIfPaid(tx, sale.id, input.taxRateBps, input.actorUserId, input.businessId);
+  });
+}
+
+/**
+ * A tip that comes after the sale was paid (the client decides later, or leaves cash on the counter). The sale stays paid: it gets a tip line and a matching
+ * payment, so total, paid and refunds stay consistent and nothing that ran when the sale closed (points, stock, gift cards) runs again.
+ * `card` charges a card the client has on file; `cash` records the cash.
+ */
+export async function addTipAfterPayment(input: {
+  businessId: string;
+  saleId: string;
+  staffId: string;
+  amountCents: number;
+  method: "cash" | "card";
+  /** For `card`: the saved card to charge, and the Stripe account that takes it. */
+  paymentMethodId?: string;
+  accountId?: string | null;
+  actorUserId: string;
+  taxRateBps: number;
+}) {
+  if (!Number.isInteger(input.amountCents) || input.amountCents <= 0) throw new SaleError("Enter a tip amount.");
+  await withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+    if (!sale) throw new SaleError("Sale not found.");
+    if (sale.status !== "paid") throw new SaleError("A tip can be added to a sale once it is paid in full.");
+    const person = await tx.query.staff.findFirst({ where: eq(schema.staff.id, input.staffId), columns: { id: true } });
+    if (!person) throw new SaleError("Choose who the tip is for.");
+    let payment: typeof schema.payments.$inferInsert;
+    if (input.method === "cash") {
+      payment = { businessId: input.businessId, saleId: sale.id, method: "cash", status: "succeeded", amountCents: input.amountCents, tipCents: input.amountCents, note: "Tip added after payment", createdByUserId: input.actorUserId };
+    } else {
+      if (!input.paymentMethodId || !input.accountId) throw new SaleError("Choose a saved card, or record the tip as cash.");
+      if (!sale.clientId) throw new SaleError("Attach a client to use a saved card.");
+      if (input.amountCents < 50) throw new SaleError("A card tip must be at least $0.50.");
+      const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) });
+      if (!client) throw new SaleError("Client not found.");
+      const customerId = await ensureStripeCustomer({ accountId: input.accountId, businessId: input.businessId, client, tx });
+      const fee = Math.round((input.amountCents * (await platformFeeBpsFor(input.businessId, tx))) / 10_000);
+      let pi;
+      try {
+        pi = await stripe().paymentIntents.create(
+          { amount: input.amountCents, currency: sale.currency, customer: customerId, payment_method: input.paymentMethodId, off_session: true, confirm: true, description: `Tip · Sale #${sale.number}`, metadata: { businessId: input.businessId, saleId: sale.id, tipFor: input.staffId }, expand: ["latest_charge"], ...(fee > 0 ? { application_fee_amount: fee } : {}) },
+          { stripeAccount: input.accountId },
+        );
+      } catch (e) {
+        throw new SaleError(`Card declined: ${(e as Error).message}`);
+      }
+      if (pi.status !== "succeeded") throw new SaleError("The card needs the client to confirm it, so the tip was not charged.");
+      const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
+      payment = { businessId: input.businessId, saleId: sale.id, method: "card_on_file", status: "succeeded", amountCents: input.amountCents, tipCents: input.amountCents, stripePaymentIntentId: pi.id, stripeChargeId: charge?.id ?? (typeof pi.latest_charge === "string" ? pi.latest_charge : null), cardBrand: charge?.payment_method_details?.card?.brand ?? null, cardLast4: charge?.payment_method_details?.card?.last4 ?? null, note: "Tip added after payment", createdByUserId: input.actorUserId };
+    }
+    await tx.insert(schema.saleLines).values({ businessId: input.businessId, saleId: sale.id, kind: "tip", tipMethod: input.method, staffId: input.staffId, name: "Tip", quantity: 1, unitCents: input.amountCents, amountCents: input.amountCents, taxable: false, sortOrder: 900 });
+    await tx.insert(schema.payments).values(payment);
+    await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
+    await audit(tx, input.businessId, input.actorUserId, "sale.tip_after_payment", sale.id, { staffId: input.staffId, cents: input.amountCents, method: input.method });
   });
 }
 
@@ -1007,7 +1062,31 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
       ...crossGift.map((r) => ({ kind: "gift_card" as const, soldAt: r.soldAt, redeemedAt: r.redeemedAt, amount: Number(r.amount), count: Number(r.count) })),
       ...crossCredit.map((r) => ({ kind: r.kind, soldAt: r.soldAt, redeemedAt: r.redeemedAt, amount: Number(r.amount), count: Number(r.count) })),
     ];
-    return { sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation };
+    // Tips by how they were handed over, and what each payment method carried, worked out from the tip lines and the payments (not the stored proportional share).
+    const saleIds = sales.map((r) => r.id);
+    const [tipLines, payRows] = saleIds.length
+      ? await Promise.all([
+          tx.select({ saleId: schema.saleLines.saleId, amountCents: schema.saleLines.amountCents, method: schema.saleLines.tipMethod }).from(schema.saleLines).where(and(eq(schema.saleLines.kind, "tip"), sql`${schema.saleLines.saleId} in ${saleIds}`)),
+          tx.select({ id: schema.payments.id, saleId: schema.payments.saleId, method: schema.payments.method, amountCents: schema.payments.amountCents }).from(schema.payments).where(and(sql`${schema.payments.saleId} in ${saleIds}`, sql`${schema.payments.status} in ('succeeded','partially_refunded','refunded')`)),
+        ])
+      : [[], []];
+    let tipCashCents = 0;
+    let tipCardCents = 0;
+    const tipByMethod = new Map<string, number>();
+    for (const id of saleIds) {
+      const parts = tipLines.filter((t) => t.saleId === id).map((t) => ({ amountCents: t.amountCents, method: t.method === "cash" || t.method === "card" ? (t.method as "cash" | "card") : null }));
+      if (!parts.length) continue;
+      const pays = payRows.filter((p) => p.saleId === id);
+      const paid = pays.reduce((n, p) => n + p.amountCents, 0);
+      const cardPaid = pays.filter((p) => CARD_FEE_METHODS.has(p.method)).reduce((n, p) => n + p.amountCents, 0);
+      const split = splitTips(parts, paid > 0 ? 1 - cardPaid / paid : 0);
+      tipCashCents += split.cashCents;
+      tipCardCents += split.cardCents;
+      const per = tipsPerPayment(parts, pays);
+      for (const p of pays) tipByMethod.set(p.method, (tipByMethod.get(p.method) ?? 0) + (per[p.id] ?? 0));
+    }
+    const byMethodReal = byMethod.map((m) => ({ ...m, tips: tipByMethod.get(m.method) ?? 0 }));
+    return { sales, byStaff, byMethod: byMethodReal, byService, byCategory, appts, byLocation, crossLocation, tipCashCents, tipCardCents };
   });
 }
 
