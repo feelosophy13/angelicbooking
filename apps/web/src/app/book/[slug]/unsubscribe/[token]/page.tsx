@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getPublicBusiness } from "@/server/public-booking";
+import { getBusinessForLinks } from "@/server/public-booking";
 
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 import { verifyUnsubscribe } from "@/server/marketing";
@@ -8,7 +8,7 @@ import { UnsubscribeForm } from "./form";
 
 export default async function UnsubscribePage({ params }: { params: Promise<{ slug: string; token: string }> }) {
   const { slug, token } = await params;
-  const business = await getPublicBusiness(slug);
+  const business = await getBusinessForLinks(slug);
   if (!business) notFound();
   const valid = verifyUnsubscribe(business, token) !== null;
   return (

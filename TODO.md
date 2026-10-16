@@ -138,6 +138,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (credited on a line or rang it up) and can't move credit between staff; new permissions "Discounts and price changes" (discount, price
       edit, void; Manager and Front desk) and "Issue free gift cards" (Manager). Test: `server/__tests__/sales-scope.test.ts`. Note: the dev
       "View as" switch keeps your real user, so as the demo owner you still see tickets you rang up.
+- [x] Public links, 2026-10-16: manage, confirmation, forms, review, order and unsubscribe links work while online booking is off (or the
+      trial has ended); the booking page itself says booking isn't available and gives the phone number. Online gift cards no longer need the
+      store turned on, and the store no longer sells gift cards when online gift cards are off.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

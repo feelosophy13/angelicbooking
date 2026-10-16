@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ChevronDown, Gift, Globe, Instagram, MapPin, Phone, ShoppingBag, UserCircle } from "lucide-react";
-import { getPublicBusiness, getPublicLocations, getPublicRating } from "@/server/public-booking";
+import { getBusinessForLinks, getPublicBusiness, getPublicLocations, getPublicRating } from "@/server/public-booking";
 import { appUrl } from "@/lib/stripe";
 import { brandVars } from "@/lib/brand";
 import { describeHours } from "@/lib/hours";
@@ -27,7 +27,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function BookLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const business = await getPublicBusiness(slug);
+  // The frame (name, logo, address) only needs the business to exist and not be suspended: links in messages (manage, forms, review,
+  // order, unsubscribe) must keep working while online booking is off. Pages that book or sell check getPublicBusiness themselves.
+  const business = await getBusinessForLinks(slug);
   if (!business) notFound();
   const [locations, rating] = await Promise.all([getPublicLocations(business.id), getPublicRating(business.id)]);
   const withHours = locations.filter((l) => l.hours);
@@ -102,7 +104,7 @@ export default async function BookLayout({ children, params }: { children: React
                 {business.phone ? <p className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-stone-400" /><a href={`tel:${business.phone}`} className="hover:underline">{business.phone}</a></p> : null}
                 {business.website ? <p className="flex items-center gap-1.5"><Globe className="h-3.5 w-3.5 text-stone-400" /><a href={business.website} target="_blank" rel="noreferrer" className="hover:underline">{business.website.replace(/^https?:\/\//, "")}</a></p> : null}
                 {business.instagram ? <p className="flex items-center gap-1.5"><Instagram className="h-3.5 w-3.5 text-stone-400" /><a href={`https://instagram.com/${business.instagram}`} target="_blank" rel="noreferrer" className="hover:underline">@{business.instagram}</a></p> : null}
-                {business.giftCardsOnline || business.storeEnabled ? <p className="flex items-center gap-1.5"><Gift className="h-3.5 w-3.5 text-stone-400" /><Link href={`${base}/gift`} className="hover:underline">Gift cards</Link>{business.storeEnabled ? <> · <Link href={`${base}/shop`} className="hover:underline">Shop</Link></> : null}</p> : null}
+                {business.giftCardsOnline || business.storeEnabled ? <p className="flex items-center gap-1.5"><Gift className="h-3.5 w-3.5 text-stone-400" />{business.giftCardsOnline ? <Link href={`${base}/gift`} className="hover:underline">Gift cards</Link> : null}{business.giftCardsOnline && business.storeEnabled ? " · " : null}{business.storeEnabled ? <Link href={`${base}/shop`} className="hover:underline">Shop</Link> : null}</p> : null}
               </div>
             </div>
           </div>

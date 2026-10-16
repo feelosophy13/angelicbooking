@@ -24,7 +24,10 @@ export async function startOrderAction(input: {
   locationId?: string | null;
 }): Promise<StartOrderResult> {
   const business = await getPublicBusiness(input.slug);
-  if (!business || !business.storeEnabled) return { error: "The store isn't open right now." };
+  if (!business) return { error: "The store isn't open right now." };
+  // Products need the store; gift cards need online gift cards. Either can be on without the other.
+  if (input.items.length && !business.storeEnabled) return { error: "The store isn't open right now." };
+  if (input.giftCard && !business.giftCardsOnline) return { error: "Gift cards can't be bought online right now." };
   const b = buyer.safeParse(input.buyer);
   if (!b.success) return { error: b.error.issues[0]?.message ?? "Check your details" };
   if (b.data.phone && !normalizePhone(b.data.phone)) return { error: "Enter a valid mobile number." };

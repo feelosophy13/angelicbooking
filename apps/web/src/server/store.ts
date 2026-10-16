@@ -58,6 +58,8 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
   if (!(await storeReady(business, locationId))) throw new StoreError("Online payments aren't set up yet.");
   const pay = await paymentContextFor(business, locationId);
   if (!input.items.length && !input.giftCard) throw new StoreError("Your cart is empty.");
+  if (input.items.length && !business.storeEnabled) throw new StoreError("The store isn't open right now.");
+  if (input.giftCard && !business.giftCardsOnline) throw new StoreError("Gift cards can't be bought online right now.");
   if (input.giftCard && (input.giftCard.amountCents < 500 || input.giftCard.amountCents > 100000)) throw new StoreError("Gift cards are between $5 and $1,000.");
   if (input.fulfillment.method === "ship" && (!business.shippingFlatCents || !input.fulfillment.address)) throw new StoreError("Enter a shipping address.");
   const clientId = await findOrCreateClient(business.id, { ...input.buyer, phone: input.buyer.phone, notes: null, serviceId: "", staffId: "", startAt: new Date(), email: input.buyer.email });

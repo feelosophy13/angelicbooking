@@ -1,7 +1,7 @@
 "use server";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { getPublicBusiness } from "@/server/public-booking";
+import { getBusinessForLinks } from "@/server/public-booking";
 import { answersFromFormData, formsForManageToken, FormSubmitError, submitForm } from "@/server/forms";
 import { formIp } from "@/lib/rate-limit";
 
@@ -9,7 +9,7 @@ export type FormState = { error?: string; field?: string | null; ok?: boolean } 
 
 export async function submitPublicForm(_prev: FormState, formData: FormData): Promise<FormState> {
   const d = z.object({ slug: z.string(), token: z.string().min(10), formId: z.string().min(1), signatureName: z.string().trim().max(120).optional(), signatureImage: z.string().optional() }).parse(Object.fromEntries([...formData.entries()].filter(([, v]) => typeof v === "string")));
-  const business = await getPublicBusiness(d.slug);
+  const business = await getBusinessForLinks(d.slug);
   if (!business) return { error: "Not available." };
   const m = await formsForManageToken(business.id, d.token);
   if (!m || !m.client) return { error: "Appointment not found." };

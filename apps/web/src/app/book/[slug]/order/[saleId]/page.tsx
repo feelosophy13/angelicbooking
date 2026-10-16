@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getPublicBusiness } from "@/server/public-booking";
+import { getBusinessForLinks } from "@/server/public-booking";
 import { getOrder, verifyOrderKey } from "@/server/store";
 import { formatMoney } from "@/lib/utils";
 
@@ -10,7 +10,7 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 export default async function OrderPage({ params, searchParams }: { params: Promise<{ slug: string; saleId: string }>; searchParams: Promise<{ k?: string }> }) {
   const { slug, saleId } = await params;
   const { k } = await searchParams;
-  const business = await getPublicBusiness(slug);
+  const business = await getBusinessForLinks(slug);
   if (!business) notFound();
   // The page shows the buyer's details and any gift card code, so the sale id alone is not enough.
   if (!verifyOrderKey(business.id, saleId, k)) notFound();

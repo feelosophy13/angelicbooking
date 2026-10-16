@@ -1,7 +1,7 @@
 "use server";
 import { headers } from "next/headers";
 import { z } from "zod";
-import { getPublicBusiness, findOrCreateClient } from "@/server/public-booking";
+import { getBusinessForLinks, findOrCreateClient } from "@/server/public-booking";
 import { currentClient } from "@/server/client-auth";
 import { answersFromFormData, FormSubmitError, getForm, submitForm } from "@/server/forms";
 import { rateLimit } from "@/lib/rate-limit";
@@ -27,7 +27,7 @@ export async function submitSharedForm(_prev: SharedFormState, formData: FormDat
       signatureImage: z.string().optional(),
     })
     .parse(Object.fromEntries([...formData.entries()].filter(([, v]) => typeof v === "string")));
-  const business = await getPublicBusiness(d.slug);
+  const business = await getBusinessForLinks(d.slug);
   if (!business) return { error: "Not available." };
   const h = await headers();
   const ip = formIp(h);

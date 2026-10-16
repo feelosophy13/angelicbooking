@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { ChevronRight, MapPin } from "lucide-react";
 import { instantToISODate, weekdayOf, lateCancelFeeLabel, policyFeeCheck } from "@angelic/core";
-import { getAvailableDates, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots, lastProviderFor, nextOpenings, planExtras, providerRatings, publicProvidersFor, type PlannedExtra } from "@/server/public-booking";
+import { getAvailableDates, getBusinessForLinks, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots, lastProviderFor, nextOpenings, planExtras, providerRatings, publicProvidersFor, type PlannedExtra } from "@/server/public-booking";
 import { BookingError } from "@/server/booking";
 import { buildTree, pathTo, subtreeIds } from "@/server/categories";
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
@@ -30,7 +30,15 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const sp = await searchParams;
   // Rendered under /embed/<slug> inside an iframe on the business's own site: same flow, no chrome.
   const embed = ((await headers()).get("x-pathname") ?? "").startsWith("/embed/");
-  const business = (await getPublicBusiness(slug))!;
+  const business = await getPublicBusiness(slug);
+  if (!business) {
+    const b = await getBusinessForLinks(slug);
+    return (
+      <div className="rounded-xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-700">
+        Online booking isn&apos;t available right now.{b?.phone ? <> Call <a href={`tel:${b.phone}`} className="underline">{b.phone}</a> to book.</> : null}
+      </div>
+    );
+  }
   const locations = await getPublicLocations(business.id);
   const location = locations.length > 1 ? (locations.find((l) => l.id === sp.location) ?? null) : (locations[0] ?? null);
   // The salon decides the order: a stylist first (default), or a day and time first and then who is free.

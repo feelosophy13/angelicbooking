@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getPublicBusiness } from "@/server/public-booking";
+import { getBusinessForLinks } from "@/server/public-booking";
 import { getForm, latestAnswers, prefillFor } from "@/server/forms";
 import { withTenant } from "@angelic/db";
 import { currentClient } from "@/server/client-auth";
@@ -11,7 +11,7 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 /** Public, link-shareable form (QR at the desk, link on the website, in a text). */
 export default async function SharedFormPage({ params }: { params: Promise<{ slug: string; formId: string }> }) {
   const { slug, formId } = await params;
-  const business = await getPublicBusiness(slug);
+  const business = await getBusinessForLinks(slug);
   if (!business) notFound();
   const form = await getForm(business.id, formId);
   if (!form || !form.active) notFound();
