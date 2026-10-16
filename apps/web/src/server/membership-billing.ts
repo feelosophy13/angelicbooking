@@ -125,7 +125,7 @@ export async function resumeMembership(business: Business, membershipId: string,
 }
 
 /** Connect webhook: a renewal invoice was paid. Extends the period, resets credits, records the sale. Idempotent per invoice. */
-export async function handleRenewalInvoice(business: Business, invoice: Stripe.Invoice, locationId: string | null = null) {
+export async function handleRenewalInvoice(business: Business, invoice: Stripe.Invoice, locationId: string | null = null, accountId: string | null = null) {
   const subId = subscriptionIdOf(invoice);
   if (!subId) return false;
   const m = await withJobs((tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.stripeSubscriptionId, subId) }));
@@ -134,6 +134,8 @@ export async function handleRenewalInvoice(business: Business, invoice: Stripe.I
     // First invoice at creation is $0 (anchored, no proration); nothing to record.
     return true;
   }
+  // Fetched before the transaction: the renewal's PaymentIntent is what a later refund sends money back through.
+  const piId = (invoice.amount_paid ?? 0) > 0 ? await paymentIntentOfInvoice(invoice, accountId) : null;
   await withTenant(business.id, async (tx) => {
     const fresh = await tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, m.id) });
     if (!fresh || fresh.lastInvoiceId === invoice.id) return;
@@ -160,7 +162,6 @@ export async function handleRenewalInvoice(business: Business, invoice: Stripe.I
         .values({ businessId: business.id, number: Number(rows[0]?.n ?? 1001), clientId: fresh.clientId, locationId: fresh.locationId ?? locationId ?? (await locationOrDefault(tx, null))?.id ?? null, currency: invoice.currency, source: "membership", status: "paid", subtotalCents: amount, totalCents: amount, paidCents: amount, closedAt: new Date() })
         .returning();
       await tx.insert(schema.saleLines).values({ businessId: business.id, saleId: sale!.id, kind: "membership", productId: fresh.planId, name: `${plan?.name ?? "Membership"} renewal`, quantity: 1, unitCents: amount, amountCents: amount, taxable: false });
-      const piId = typeof (invoice as unknown as { payment_intent?: string | { id: string } }).payment_intent === "string" ? ((invoice as unknown as { payment_intent: string }).payment_intent) : ((invoice as unknown as { payment_intent?: { id: string } }).payment_intent?.id ?? null);
       await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card_on_file", status: "succeeded", amountCents: amount, tipCents: 0, stripePaymentIntentId: piId, note: `Membership renewal · invoice ${invoice.number ?? invoice.id}` }).onConflictDoNothing();
     }
   });
@@ -182,6 +183,28 @@ export async function handleSubscriptionDeleted(business: Business, sub: Stripe.
   if (!m || m.businessId !== business.id) return false;
   await withTenant(business.id, (tx) => tx.update(schema.clientMemberships).set({ stripeSubscriptionId: null, autoRenew: false }).where(eq(schema.clientMemberships.id, m.id)));
   return true;
+}
+
+/**
+ * The PaymentIntent that paid an invoice. Older API versions put it on the invoice (`payment_intent`); the pinned one lists it under the
+ * invoice's payments, which the event doesn't include, so they are fetched. Null when it can't be found (the refund then refuses rather
+ * than recording money going back that didn't).
+ */
+async function paymentIntentOfInvoice(invoice: Stripe.Invoice, accountId: string | null): Promise<string | null> {
+  const idOf = (x: unknown) => (typeof x === "string" ? x : x && typeof x === "object" && "id" in x ? String((x as { id: string }).id) : null);
+  const legacy = idOf((invoice as unknown as { payment_intent?: unknown }).payment_intent);
+  if (legacy) return legacy;
+  const embedded = (invoice as unknown as { payments?: { data?: { status?: string; payment?: { payment_intent?: unknown } }[] } }).payments?.data ?? [];
+  const fromEvent = embedded.filter((p) => p.status === "paid").map((p) => idOf(p.payment?.payment_intent)).find(Boolean);
+  if (fromEvent) return fromEvent;
+  if (!accountId || !invoice.id) return null;
+  try {
+    const list = await stripe().invoicePayments.list({ invoice: invoice.id, status: "paid", limit: 5 }, { stripeAccount: accountId });
+    return list.data.map((p) => idOf(p.payment.payment_intent)).find(Boolean) ?? null;
+  } catch (e) {
+    console.error("[membership] could not look up the invoice's payment", invoice.id, (e as Error).message);
+    return null;
+  }
 }
 
 function subscriptionIdOf(invoice: Stripe.Invoice): string | null {

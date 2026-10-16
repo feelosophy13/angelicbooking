@@ -4,6 +4,7 @@ import { db, schema } from "@angelic/db";
 import { syncConnectAccount } from "./stripe-connect";
 import { tenantForAccount } from "./locations";
 import { markCardPaymentFailed, markCardPaymentSucceeded } from "./sales";
+import { sendOrderEmailsOnce } from "./store";
 import { handleRenewalFailed, handleRenewalInvoice, handleSubscriptionDeleted } from "./membership-billing";
 
 /**
@@ -54,7 +55,10 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<"processed
             chargeId: charge?.id ?? (typeof pi.latest_charge === "string" ? pi.latest_charge : null),
             card: { brand: card?.brand ?? null, last4: card?.last4 ?? null },
             taxRateBps: business.taxRateBps,
+            metadata: pi.metadata,
           });
+          // An online order paid while the buyer's page was closed still gets its receipt and gift card emails (sent once).
+          if (pi.metadata?.kind === "order" && pi.metadata.saleId && pi.metadata.businessId === business.id) await sendOrderEmailsOnce(business.id, pi.metadata.saleId);
           outcome = "processed";
         }
         break;
@@ -68,7 +72,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<"processed
         break;
       }
       case "invoice.paid": {
-        if (business) outcome = (await handleRenewalInvoice(business, event.data.object, locationId)) ? "processed" : "ignored";
+        if (business) outcome = (await handleRenewalInvoice(business, event.data.object, locationId, accountId)) ? "processed" : "ignored";
         break;
       }
       case "invoice.payment_failed": {

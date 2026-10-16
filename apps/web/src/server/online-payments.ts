@@ -8,7 +8,7 @@
  * the meantime the deposit is refunded automatically.
  */
 import type Stripe from "stripe";
-import { eq, or } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { changeStoreCredit } from "./store-credit";
 import { stripe } from "@/lib/stripe";
@@ -121,6 +121,8 @@ export async function verifyOnlineIntent(business: PublicBusiness, pay: PaymentC
     const meta = check(pi.metadata);
     if (pi.status !== "succeeded") throw new BookingError(`Your card was not charged (${pi.status.replace(/_/g, " ")}). Please try again.`);
     const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
+    // The sweep refunds a deposit whose booking never finished; a page that comes back after that must not book on refunded money.
+    if (charge && (charge.refunded || charge.amount_refunded > 0)) throw new BookingError("This deposit was refunded because the booking wasn't finished in time. Please book again.");
     const card = charge?.payment_method_details?.card;
     return { kind, paymentIntentId: pi.id, cents: pi.amount, cardLabel: card ? `${card.brand?.toUpperCase() ?? "CARD"} •••• ${card.last4 ?? ""}` : null, meta };
   }
@@ -168,4 +170,54 @@ export async function refundDeposit(input: { businessId: string; accountId: stri
 /** Refund a PaymentIntent that never became an appointment (slot taken after the charge). */
 export async function refundOrphanIntent(accountId: string, paymentIntentId: string) {
   await stripe().refunds.create({ payment_intent: paymentIntentId, metadata: { reason: "booking_failed" } }, { stripeAccount: accountId, idempotencyKey: `orphan_refund_${paymentIntentId}` });
+}
+
+/**
+ * Deposits that were charged but never became an appointment: the client's phone lost signal or the tab closed between Stripe confirming
+ * the card and the booking being saved. Each deposit PaymentIntent that succeeded (from the webhook ledger) is checked once it is 20
+ * minutes old; with no appointment holding it, it is refunded in full and the business's activity log says so. Run by the 5-minute job.
+ */
+export async function sweepOrphanDeposits(): Promise<{ checked: number; refunded: number; failed: number }> {
+  const rows = (await db.execute(sql`
+    select id, account_id as "accountId",
+      payload->'data'->'object'->>'id' as "paymentIntentId",
+      payload->'data'->'object'->>'amount' as "amount",
+      payload->'data'->'object'->'metadata'->>'businessId' as "businessId"
+    from webhook_events
+    where type = 'payment_intent.succeeded' and followed_up_at is null
+      and payload->'data'->'object'->'metadata'->>'kind' = 'deposit'
+      and received_at < now() - interval '20 minutes' and received_at > now() - interval '7 days'
+    order by received_at
+    limit 50
+  `)) as unknown as { id: string; accountId: string | null; paymentIntentId: string | null; amount: string | null; businessId: string | null }[];
+  let refunded = 0;
+  let failed = 0;
+  for (const r of rows) {
+    const done = () => db.update(schema.webhookEvents).set({ followedUpAt: new Date() }).where(eq(schema.webhookEvents.id, r.id));
+    if (!r.businessId || !r.accountId || !r.paymentIntentId) {
+      await done();
+      continue;
+    }
+    const appt = await appointmentForIntent(r.businessId, r.paymentIntentId);
+    if (appt) {
+      await done();
+      continue;
+    }
+    try {
+      await refundOrphanIntent(r.accountId, r.paymentIntentId);
+    } catch (e) {
+      // Already refunded (the booking step refunded it itself when the slot was gone): nothing left to do.
+      if ((e as { code?: string }).code !== "charge_already_refunded") {
+        failed++;
+        console.error("[deposits] orphan refund failed", r.paymentIntentId, (e as Error).message);
+        continue;
+      }
+    }
+    await withTenant(r.businessId, (tx) =>
+      tx.insert(schema.auditLog).values({ businessId: r.businessId!, actorUserId: null, action: "deposit.orphan_refund", entity: "payment_intent", entityId: r.paymentIntentId, diff: JSON.stringify({ cents: Number(r.amount ?? 0), why: "The card was charged but the booking was never completed, so the deposit was refunded." }) }),
+    );
+    await done();
+    refunded++;
+  }
+  return { checked: rows.length, refunded, failed };
 }

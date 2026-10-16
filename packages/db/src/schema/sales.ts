@@ -279,7 +279,8 @@ export const sales = pgTable(
     index("sales_business_created_idx").on(t.businessId, t.createdAt),
     index("sales_business_location_idx").on(t.businessId, t.locationId),
     uniqueIndex("sales_business_number_uq").on(t.businessId, t.number),
-    uniqueIndex("sales_appointment_uq").on(t.appointmentId),
+    // One live ticket per appointment; a voided one is history and the visit can be rung up again.
+    uniqueIndex("sales_appointment_uq").on(t.appointmentId).where(sql`${t.status} <> 'void'`),
   ],
 );
 
@@ -407,6 +408,8 @@ export const webhookEvents = pgTable(
     receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
     processedAt: timestamp("processed_at", { withTimezone: true }),
     error: text("error"),
+    /** When the sweep finished with this event (a paid deposit that never became an appointment was refunded, or turned out fine). */
+    followedUpAt: timestamp("followed_up_at", { withTimezone: true }),
   },
   (t) => [index("webhook_events_type_idx").on(t.type, t.receivedAt)],
 );

@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { chargeCardOnFile, openSaleForAppointment, SaleError } from "@/server/sales";
+import { chargeCardOnFile, openFeeSaleForAppointment, openSaleForAppointment, SaleError } from "@/server/sales";
 import { refundDeposit } from "@/server/online-payments";
 import { paymentContextForAppointment } from "@/server/locations";
 import { cancelSeriesFrom } from "@/server/series";
@@ -9,7 +9,7 @@ import { formsForAppointment } from "@/server/forms";
 import { triggerAppointmentWorkflows } from "@/server/workflows";
 import { cancelQueuedReminders, notifyAppointment } from "@/lib/notify";
 import { can, isInsideCancelWindow, lateCancelFee, parseMoney } from "@angelic/core";
-import { schema as dbSchema, withTenant } from "@angelic/db";
+import { withTenant } from "@angelic/db";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { setFlash } from "@/lib/flash";
@@ -158,15 +158,8 @@ export async function cancelAppointment(_prev: ActionState, formData: FormData):
       if (fee.chargeCents <= 0) return { error: "Nothing to charge: the deposit covers the fee." };
       const pay = await paymentContextForAppointment(ctx.business, d.appointmentId);
       if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
-      const saleId = await openSaleForAppointment({ businessId: ctx.business.id, appointmentId: d.appointmentId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, currency: ctx.business.currency });
-      await withTenant(ctx.business.id, async (tx) => {
-        const sale = await tx.query.sales.findFirst({ where: eq(dbSchema.sales.id, saleId) });
-        if (!sale || sale.status !== "open" || sale.paidCents > 0) throw new SaleError("This appointment already has a sale in progress.");
-        await tx.delete(dbSchema.saleLines).where(eq(dbSchema.saleLines.saleId, saleId));
-        await tx.insert(dbSchema.saleLines).values({ businessId: ctx.business.id, saleId, kind: "fee", name: "Late cancellation fee", quantity: 1, unitCents: fee.chargeCents, amountCents: fee.chargeCents, taxable: false });
-        await tx.update(dbSchema.sales).set({ subtotalCents: fee.chargeCents, discountCents: 0, taxCents: 0, tipCents: 0, totalCents: fee.chargeCents }).where(eq(dbSchema.sales.id, saleId));
-        await tx.insert(dbSchema.auditLog).values({ businessId: ctx.business.id, actorUserId: ctx.user.id, action: "appointment.late_fee", entity: "appointment", entityId: d.appointmentId, diff: JSON.stringify({ feeCents: fee.feeCents, depositCoversCents: fee.depositCoversCents, chargeCents: fee.chargeCents }) });
-      });
+      // A fee-only ticket: the deposit stays on the appointment (kept or refunded below), the visit is not marked completed.
+      const saleId = await openFeeSaleForAppointment({ businessId: ctx.business.id, appointmentId: d.appointmentId, name: "Late cancellation fee", feeCents: fee.chargeCents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, currency: ctx.business.currency, auditAction: "appointment.late_fee", auditDiff: { feeCents: fee.feeCents, depositCoversCents: fee.depositCoversCents, chargeCents: fee.chargeCents } });
       await chargeCardOnFile({ businessId: ctx.business.id, accountId: pay.accountId, saleId, paymentMethodId: d.paymentMethodId, amountCents: fee.chargeCents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
     }
     // The refund amount is worked out here, not taken from the form: all of it, or what is left after the late fee the deposit covers.
@@ -219,15 +212,8 @@ export async function chargeNoShowFee(_prev: ActionState, formData: FormData): P
   const pay = await paymentContextForAppointment(ctx.business, d.appointmentId);
   if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
   try {
-    const saleId = await openSaleForAppointment({ businessId: ctx.business.id, appointmentId: d.appointmentId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, currency: ctx.business.currency });
-    // Replace the service lines with a single fee line so the ticket reflects what was charged.
-    await withTenant(ctx.business.id, async (tx) => {
-      const sale = await tx.query.sales.findFirst({ where: eq(dbSchema.sales.id, saleId) });
-      if (!sale || sale.status !== "open" || sale.paidCents > 0) throw new SaleError("This appointment already has a sale in progress.");
-      await tx.delete(dbSchema.saleLines).where(eq(dbSchema.saleLines.saleId, saleId));
-      await tx.insert(dbSchema.saleLines).values({ businessId: ctx.business.id, saleId, kind: "fee", name: "No-show fee", quantity: 1, unitCents: cents, amountCents: cents, taxable: false });
-      await tx.update(dbSchema.sales).set({ subtotalCents: cents, discountCents: 0, taxCents: 0, tipCents: 0, totalCents: cents }).where(eq(dbSchema.sales.id, saleId));
-    });
+    // A fee-only ticket: closing it doesn't mark the visit completed or award points; a paid deposit stays on the appointment.
+    const saleId = await openFeeSaleForAppointment({ businessId: ctx.business.id, appointmentId: d.appointmentId, name: "No-show fee", feeCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, currency: ctx.business.currency, auditAction: "appointment.no_show_fee", auditDiff: { cents } });
     await chargeCardOnFile({ businessId: ctx.business.id, accountId: pay.accountId, saleId, paymentMethodId: d.paymentMethodId, amountCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
     await setAppointmentStatus(ctx.business.id, d.appointmentId, "no_show", ctx.user.id, "No-show fee charged");
   } catch (e) {

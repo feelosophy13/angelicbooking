@@ -8,7 +8,7 @@ import { after } from "next/server";
 import { browserStripe } from "@/lib/stripe-demo";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
-import { schema, withTenant } from "@angelic/db";
+import { db, schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { stripe, appUrl } from "@/lib/stripe";
 import { platformFeeBpsFor } from "./price-book";
@@ -137,7 +137,7 @@ export async function finishOrder(business: PublicBusiness, saleId: string, paym
   if (pi.status !== "succeeded") throw new StoreError(`Payment ${pi.status.replace(/_/g, " ")}.`);
   const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
   await markCardPaymentSucceeded({ businessId: business.id, paymentIntentId: pi.id, chargeId: charge?.id ?? null, card: { brand: charge?.payment_method_details?.card?.brand ?? null, last4: charge?.payment_method_details?.card?.last4 ?? null }, taxRateBps: business.taxRateBps });
-  after(() => sendOrderEmails(business, saleId).catch((e) => console.error("[store] order emails failed", saleId, (e as Error).message)));
+  after(() => sendOrderEmailsOnce(business.id, saleId).catch((e) => console.error("[store] order emails failed", saleId, (e as Error).message)));
   return getOrder(business.id, saleId);
 }
 
@@ -160,6 +160,23 @@ export async function getOrder(businessId: string, saleId: string) {
     const cards = await tx.select().from(schema.giftCards).where(eq(schema.giftCards.saleId, saleId));
     return { sale, lines, giftCards: cards };
   });
+}
+
+/**
+ * Email the receipt (and any gift card) for a paid online order, once. Both the buyer's return to the page and the Stripe webhook call this,
+ * so it still happens when the buyer closed the page before it came back; the first caller to stamp the order sends.
+ */
+export async function sendOrderEmailsOnce(businessId: string, saleId: string) {
+  const claimed = await withTenant(businessId, (tx) =>
+    tx
+      .update(schema.sales)
+      .set({ fulfillment: sql`coalesce(${schema.sales.fulfillment}, '{}'::jsonb) || jsonb_build_object('emailsSentAt', now())` })
+      .where(and(eq(schema.sales.id, saleId), eq(schema.sales.status, "paid"), sql`not (coalesce(${schema.sales.fulfillment}, '{}'::jsonb) ? 'emailsSentAt')`))
+      .returning({ id: schema.sales.id }),
+  );
+  if (!claimed.length) return;
+  const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
+  if (business) await sendOrderEmails(business, saleId);
 }
 
 async function sendOrderEmails(business: PublicBusiness, saleId: string) {

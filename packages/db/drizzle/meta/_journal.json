@@ -673,6 +673,13 @@
       "when": 1793600000000,
       "tag": "0095_revoke_admin_users",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1793700000000,
+      "tag": "0096_money_fixes",
+      "breakpoints": true
     }
   ]
 }

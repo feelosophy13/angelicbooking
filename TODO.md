@@ -73,8 +73,26 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Still open from the security batch: Turnstile on booking/waitlist/OTP/shared forms; Better Auth's own in-memory limiter still keys on the
       first X-Forwarded-For entry (our proxy limit covers `/api/auth`); `requireEmailVerification` + `revokeSessionsOnPasswordReset`;
       trial-expired not enforced on mobile/API; dev origins in `trustedOrigins`; providers seeing every sale (scope Sales for own-calendar roles).
-- [ ] Next from the "Fix first" table: money flows (deposit vs no-show fee, fee tickets, void re-ring, Stripe calls inside transactions,
-      membership renewal refunds, orphan deposits), then consent/opt-out (TCPA), payroll snapshots, campaign sending.
+- [x] Money batch, 2026-10-16 (migration 0096):
+      - No-show and late-cancel fees go on a fee-only ticket (`openFeeSaleForAppointment`): a paid deposit stays on the appointment (kept or
+        refunded by the cancel choice), an open visit ticket that had taken the deposit is rebuilt with the deposit put back and package
+        sessions/credits returned. Paying a fee ticket no longer marks the visit completed, starts review/rebook automations or awards points.
+      - A voided ticket no longer blocks ringing the visit up again (`sales_appointment_uq` is now partial, `status <> 'void'`).
+      - Card on file and late card tips: the sale is locked and a pending row committed before Stripe is called, a second click while one is in
+        flight is refused, and the webhook can settle a charge by the payment id in its metadata if the app died after charging. Refunds lock
+        the payment row (no double gift-card/store-credit give-back) and refuse card payments with no Stripe reference.
+      - Membership renewals record their PaymentIntent again (looked up from the invoice's payments on the pinned API version), so refunding one
+        sends the money back.
+      - Deposits charged for a booking that never saved are refunded by the 5-minute job after 20 minutes (`sweepOrphanDeposits`, logged in
+        Activity as `deposit.orphan_refund`); a page that returns after that is told to book again. Online order receipts and gift-card codes are
+        emailed from the webhook too, once (`sendOrderEmailsOnce`).
+      - Verified against the demo Stripe sandbox with `apps/web/scripts/money-smoke.ts`; DB tests in `server/__tests__/money-fixes.test.ts`.
+- [ ] Still open from the money batch: refunds and deposit refunds still call Stripe inside their transaction (safe to retry thanks to the
+      idempotency key, but a crash after Stripe leaves the refund unrecorded); Stripe-side refunds and disputes are still ignored by the webhook;
+      payments don't store which Stripe account took them; partial refunds don't deactivate a sold gift card/package; loyalty earns on gift
+      cards and packages.
+- [ ] Next from the "Fix first" table: consent/opt-out (TCPA), payroll snapshots and refund clawback, campaign sending (double send, Resend
+      rate), "We miss you" window.
 
 ### Platform admin app (`apps/admin`, built 2026-10-14: tenant list with filters and CSV, usage metrics, price book and custom pricing, suspend / comp / extend trial, audit log, health page, TOTP login)
 - [x] Deployed 2026-10-14 as Render service `angelic-admin` (srv-db7vr98n74is73d85io0, starter) at https://admin.angelicbooking.com
