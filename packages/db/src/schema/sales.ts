@@ -346,6 +346,34 @@ export const payments = pgTable(
   ],
 );
 
+/**
+ * Which ticket lines a refund was for ("refund the shampoo", not "$30 off the ticket"). A refund with items claws back exactly those lines
+ * from the stylist's pay; one without (a goodwill amount off the whole ticket) is spread over the ticket in proportion. Exactly one of
+ * refundId (money back to a payment) and creditLedgerId (given as store credit) is set.
+ */
+export const refundItems = pgTable(
+  "refund_items",
+  {
+    id: id(),
+    businessId: businessId(),
+    saleId: text("sale_id")
+      .notNull()
+      .references(() => sales.id, { onDelete: "cascade" }),
+    saleLineId: text("sale_line_id")
+      .notNull()
+      .references(() => saleLines.id, { onDelete: "cascade" }),
+    refundId: text("refund_id").references(() => refunds.id, { onDelete: "cascade" }),
+    creditLedgerId: text("credit_ledger_id"),
+    /** What the client got back for this line: its price after its share of the discount, plus its tax. */
+    amountCents: integer("amount_cents").notNull(),
+    taxCents: integer("tax_cents").notNull().default(0),
+    quantity: integer("quantity").notNull().default(1),
+    createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("refund_items_sale_idx").on(t.saleId), index("refund_items_refund_idx").on(t.refundId), index("refund_items_business_created_idx").on(t.businessId, t.createdAt), check("refund_items_amount_ck", sql`${t.amountCents} > 0`)],
+);
+
 /** Why refunds happen, managed per business under Settings → Payments (seeded with defaults). */
 export const refundReasons = pgTable(
   "refund_reasons",

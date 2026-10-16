@@ -119,8 +119,15 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       - Pay settings (Staff → Pay) need `payroll.view`, not `members.manage`.
       - `buildPayrollLines` now loads only the clients, visits and users its sales need (it used to load every row, and every user on the platform).
       - DB tests: `server/__tests__/payroll-clawback.test.ts`.
-- [ ] Still open from payroll: refunds are by amount, so refunding just a product still reduces service commission in proportion (needs
-      line-item refunds); a tip added to an old ticket after finalizing shows as drift rather than landing in the current period; overtime
+- [x] Line-item refunds, 2026-10-16 (migration 0098): the refund form lists the ticket's items with what is left on each; ticking items
+      refunds exactly those (quantity for multi-unit products, editable amount for a partial refund) to the payment or as store credit, and
+      payroll takes back exactly those lines from whoever was credited on them (`refund_items`). Leaving all unticked still refunds an amount
+      off the whole ticket, spread in proportion. A refunded gift card loses that balance (never more than is left on it) and switches off at
+      zero; a package refunded in full loses its unused sessions. Refunds and deposit refunds now need `checkout.refund` (no longer
+      `reports.view`). Tests: `server/__tests__/refund-items.test.ts`; checked in the browser on demo sale #1518.
+- [ ] Still open from line-item refunds: memberships sold on a ticket aren't cancelled by refunding their line; returning a product to the
+      shelf is still the separate "put back on the shelf" box; reports don't yet break refunds down by item.
+- [ ] Still open from payroll: a tip added to an old ticket after finalizing shows as drift rather than landing in the current period; overtime
       (workweek alignment, commission in the regular rate, daily OT) and the 14-hour auto-close are unchanged; no "my earnings" view or 1099 YTD.
 - [ ] Next from the "Fix first" table: "We miss you" window and scan cost; then the per-area lists in `REVIEW-2026-10-16.md`.
 

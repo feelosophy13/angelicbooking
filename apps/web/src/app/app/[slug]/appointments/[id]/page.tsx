@@ -112,7 +112,7 @@ export default async function AppointmentPage({
   const depositPaid = appointment.depositStatus === "paid" ? appointment.depositCents : 0;
   const insideWindow = !!first && isInsideCancelWindow(first.startAt, business.cancelWindowHours);
   const depositExcess = lateFee && latePolicy.deposit === "toward" ? depositPaid - lateFee.depositCoversCents : 0;
-  const canRefundDeposit = can(permissions, "reports.view") || can(permissions, "checkout.refund");
+  const canRefundDeposit = can(permissions, "checkout.refund");
   const depositChoice = depositPaid > 0 && !locked && appointment.kind !== "block"
     ? {
         totalLabel: formatMoney(depositPaid, business.currency),
@@ -443,7 +443,7 @@ export default async function AppointmentPage({
                 </p>
               ) : null}
               {appointment.cardSetupIntentId ? <p className="text-stone-600">Card saved on file at booking.</p> : null}
-              {appointment.depositStatus === "paid" && !existingSale && can(permissions, "reports.view") ? (
+              {appointment.depositStatus === "paid" && !existingSale && can(permissions, "checkout.refund") ? (
                 <form action={refundDepositAction} className="mt-2">
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="appointmentId" value={id} />

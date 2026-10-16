@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useActionState } from "react";
 import { Button, Field, Input, Notice, Select, MoneyInput } from "@/components/ui";
 import { ConfirmSubmit, SubmitButton } from "@/components/form";
@@ -174,15 +174,61 @@ export function SavedCardForm({ action, slug, saleId, dueCents, cards }: { actio
  */
 export type ReasonOption = { id: string; name: string };
 
-export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons, goods = [] }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[]; /** Products this sale took off the shelf that haven't come back, so a returned item can go back on it. */ goods?: { productId: string; name: string; left: number }[] }) {
+export type RefundLineOption = { id: string; name: string; kind: string; quantity: number; remainingCents: number };
+
+export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons, goods = [], items = [] }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[]; /** Products this sale took off the shelf that haven't come back, so a returned item can go back on it. */ goods?: { productId: string; name: string; left: number }[]; /** Ticket lines with money left to refund: choosing them refunds exactly those (and takes exactly them back from the stylist's pay). */ items?: RefundLineOption[] }) {
   const [state, act, pending] = useActionState(action, undefined);
   const [to, setTo] = useState<"original" | "store_credit">("original");
+  // lineId → amount typed (dollars) and how many; a line is chosen when it has an amount.
+  const [picked, setPicked] = useState<Record<string, { amount: string; qty: number }>>({});
+  // A form action resets the checkboxes in the page but not this state: redraw them from it after every reply.
+  const [drawn, setDrawn] = useState(0);
+  useEffect(() => setDrawn((n) => n + 1), [state]);
+  const chosen = Object.entries(picked).filter(([, v]) => v.amount.trim() !== "");
+  const totalCents = chosen.reduce((n, [, v]) => n + Math.round((Number(v.amount) || 0) * 100), 0);
+  const toggle = (l: RefundLineOption, on: boolean) =>
+    setPicked((cur) => {
+      const next = { ...cur };
+      if (on) next[l.id] = { amount: (l.remainingCents / 100).toFixed(2), qty: l.quantity };
+      else delete next[l.id];
+      return next;
+    });
   return (
     <form action={act} className="mt-2 flex flex-wrap items-end gap-2">
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
       <input type="hidden" name="paymentId" value={paymentId} />
-      <MoneyInput name="amount" defaultValue={(maxCents / 100).toFixed(2)} className="w-28" aria-label="Refund amount" />
+      {items.length ? (
+        <div key={drawn} className="basis-full space-y-1.5 rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm">
+          <p className="text-xs text-stone-500">What&apos;s being refunded? Pick the items so the right stylist&apos;s pay is adjusted. Leave all unticked to refund an amount off the whole ticket.</p>
+          {items.map((l) => {
+            const p = picked[l.id];
+            return (
+              <div key={l.id} className="space-y-1.5">
+                <label className="flex items-start gap-2">
+                  <input type="checkbox" className="mt-1" checked={!!p} onChange={(e) => toggle(l, e.target.checked)} />
+                  <span className="min-w-0 flex-1">{l.name} <span className="whitespace-nowrap text-xs text-stone-500">· up to ${(l.remainingCents / 100).toFixed(2)}</span></span>
+                </label>
+                {p ? (
+                  <div className="flex items-center gap-2 pl-6">
+                    {l.quantity > 1 ? (
+                      <Select name={`qty:${l.id}`} value={String(p.qty)} onChange={(e) => { const qty = Number(e.target.value); setPicked((c) => ({ ...c, [l.id]: { qty, amount: ((l.remainingCents * qty) / l.quantity / 100).toFixed(2) } })); }} className="w-24" aria-label={`How many ${l.name}`}>
+                        {Array.from({ length: l.quantity }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n} of {l.quantity}</option>)}
+                      </Select>
+                    ) : null}
+                    <MoneyInput name={`item:${l.id}`} value={p.amount} onChange={(e) => setPicked((c) => ({ ...c, [l.id]: { ...p, amount: e.target.value } }))} className="w-28" aria-label={`Refund for ${l.name}`} />
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {chosen.length ? (
+        <p className="py-2 text-sm font-medium">Refund ${(totalCents / 100).toFixed(2)}{totalCents > maxCents ? <span className="ml-2 font-normal text-red-700">more than the ${(maxCents / 100).toFixed(2)} left on this payment</span> : null}</p>
+      ) : (
+        <MoneyInput name="amount" defaultValue={(maxCents / 100).toFixed(2)} className="w-28" aria-label="Refund amount" />
+      )}
       <Select name="to" value={to} onChange={(e) => setTo(e.target.value as "original" | "store_credit")} className="w-44" aria-label="Refund to">
         <option value="original">To original payment</option>
         <option value="store_credit" disabled={!creditAllowed}>As store credit{creditAllowed ? "" : " (needs a client)"}</option>

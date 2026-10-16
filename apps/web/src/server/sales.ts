@@ -694,23 +694,139 @@ export async function recordManualPayment(input: {
   });
 }
 
+/** One ticket line that can be refunded: what the client paid for it (after its share of the discount, plus its tax) and what is left. */
+export interface RefundableLine {
+  id: string;
+  kind: Line["kind"];
+  name: string;
+  staffId: string | null;
+  quantity: number;
+  paidCents: number;
+  taxCents: number;
+  refundedCents: number;
+  remainingCents: number;
+  /** For a gift card: what is still on the card (money already spent can't be refunded). */
+  giftCardBalanceCents?: number;
+}
+
+export type RefundItemInput = { saleLineId: string; amountCents: number; quantity?: number };
+
+async function refundableLinesIn(tx: TenantDb, sale: Sale): Promise<RefundableLine[]> {
+  const lines = await tx.select().from(schema.saleLines).where(eq(schema.saleLines.saleId, sale.id)).orderBy(asc(schema.saleLines.sortOrder));
+  const done = await tx.select({ lineId: schema.refundItems.saleLineId, cents: sql<number>`sum(${schema.refundItems.amountCents})::int` }).from(schema.refundItems).where(eq(schema.refundItems.saleId, sale.id)).groupBy(schema.refundItems.saleLineId);
+  const refunded = new Map(done.map((d) => [d.lineId, Number(d.cents)]));
+  const goods = lines.filter((l) => l.kind !== "tip");
+  const goodsTotal = goods.reduce((n, l) => n + l.amountCents, 0);
+  const taxableTotal = goods.filter((l) => l.taxable).reduce((n, l) => n + l.amountCents, 0);
+  const cards = await tx.select().from(schema.giftCards).where(eq(schema.giftCards.saleId, sale.id));
+  const out: RefundableLine[] = [];
+  for (const l of lines) {
+    const disc = l.kind === "tip" || goodsTotal <= 0 ? 0 : Math.round((sale.discountCents * l.amountCents) / goodsTotal);
+    const tax = l.kind !== "tip" && l.taxable && taxableTotal > 0 ? Math.round((sale.taxCents * l.amountCents) / taxableTotal) : 0;
+    const paid = l.amountCents - disc + tax;
+    if (paid <= 0) continue; // covered by a package or membership credit: no money to give back
+    const already = refunded.get(l.id) ?? 0;
+    let remaining = Math.max(0, paid - already);
+    let giftCardBalanceCents: number | undefined;
+    if (l.kind === "gift_card") {
+      const card = cards.filter((c) => c.initialCents === l.amountCents && c.active).sort((a, b) => b.balanceCents - a.balanceCents)[0];
+      giftCardBalanceCents = card?.balanceCents ?? 0;
+      remaining = Math.min(remaining, giftCardBalanceCents);
+    }
+    out.push({ id: l.id, kind: l.kind, name: l.name, staffId: l.staffId, quantity: l.quantity, paidCents: paid, taxCents: tax, refundedCents: already, remainingCents: remaining, giftCardBalanceCents });
+  }
+  return out;
+}
+
+/** The ticket's lines with what can still be refunded on each, for the refund form. */
+export async function refundableLines(businessId: string, saleId: string): Promise<RefundableLine[]> {
+  return withTenant(businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, saleId) });
+    return sale ? refundableLinesIn(tx, sale) : [];
+  });
+}
+
+type PlannedItem = { line: RefundableLine; amountCents: number; taxCents: number; quantity: number };
+
+/** Check the chosen lines and amounts before any money moves. The refund is their sum. */
+async function planRefundItems(tx: TenantDb, sale: Sale, items: RefundItemInput[]): Promise<PlannedItem[]> {
+  const avail = new Map((await refundableLinesIn(tx, sale)).map((l) => [l.id, l]));
+  const seen = new Set<string>();
+  const planned: PlannedItem[] = [];
+  for (const it of items) {
+    if (!Number.isInteger(it.amountCents) || it.amountCents <= 0) continue;
+    if (seen.has(it.saleLineId)) throw new SaleError("Each item can be listed once.");
+    seen.add(it.saleLineId);
+    const line = avail.get(it.saleLineId);
+    if (!line) throw new SaleError("That item isn't on this ticket, or has nothing left to refund.");
+    if (line.remainingCents <= 0) throw new SaleError(line.kind === "gift_card" ? `${line.name}: nothing is left on the card to refund.` : `${line.name} has already been refunded.`);
+    if (it.amountCents > line.remainingCents) {
+      throw new SaleError(line.kind === "gift_card" && line.giftCardBalanceCents !== undefined && line.giftCardBalanceCents < line.paidCents - line.refundedCents
+        ? `Only ${(line.remainingCents / 100).toFixed(2)} is left on the gift card; what was spent can't be refunded.`
+        : `${line.name}: only ${(line.remainingCents / 100).toFixed(2)} is left to refund.`);
+    }
+    const quantity = Math.max(1, Math.min(line.quantity, it.quantity ?? line.quantity));
+    planned.push({ line, amountCents: it.amountCents, taxCents: line.paidCents > 0 ? Math.round((line.taxCents * it.amountCents) / line.paidCents) : 0, quantity });
+  }
+  if (!planned.length) throw new SaleError("Choose what is being refunded.");
+  return planned;
+}
+
+/**
+ * Save which lines a refund was for, and undo what the refunded items gave the client: a refunded gift card loses that much balance
+ * (and is switched off at zero); a package refunded in full loses its unused sessions (removed if none were used).
+ */
+async function recordRefundItems(tx: TenantDb, businessId: string, sale: Sale, planned: PlannedItem[], link: { refundId?: string; creditLedgerId?: string }, actorUserId: string) {
+  await tx.insert(schema.refundItems).values(
+    planned.map((p) => ({ businessId, saleId: sale.id, saleLineId: p.line.id, refundId: link.refundId ?? null, creditLedgerId: link.creditLedgerId ?? null, amountCents: p.amountCents, taxCents: p.taxCents, quantity: p.quantity, createdByUserId: actorUserId })),
+  );
+  for (const p of planned) {
+    const line = (await tx.query.saleLines.findFirst({ where: eq(schema.saleLines.id, p.line.id) }))!;
+    if (line.kind === "gift_card") {
+      const [card] = await tx.select().from(schema.giftCards).where(and(eq(schema.giftCards.saleId, sale.id), eq(schema.giftCards.initialCents, line.amountCents), eq(schema.giftCards.active, true))).orderBy(desc(schema.giftCards.balanceCents)).limit(1).for("update");
+      if (card) {
+        const left = Math.max(0, card.balanceCents - p.amountCents);
+        await tx.update(schema.giftCards).set({ balanceCents: left, active: left > 0 }).where(eq(schema.giftCards.id, card.id));
+      }
+    } else if (line.kind === "package" && line.productId && p.amountCents >= p.line.remainingCents) {
+      const [pack] = await tx
+        .select({ id: schema.clientPackages.id, remaining: schema.clientPackages.remaining, sessions: schema.packages.sessions })
+        .from(schema.clientPackages)
+        .innerJoin(schema.packages, eq(schema.packages.id, schema.clientPackages.packageId))
+        .where(and(eq(schema.clientPackages.saleId, sale.id), eq(schema.clientPackages.packageId, line.productId), gt(schema.clientPackages.remaining, 0)))
+        .limit(1);
+      if (pack) {
+        if (pack.remaining === pack.sessions) await tx.delete(schema.clientPackages).where(eq(schema.clientPackages.id, pack.id));
+        else await tx.update(schema.clientPackages).set({ remaining: 0 }).where(eq(schema.clientPackages.id, pack.id));
+      }
+    }
+  }
+}
+
 /**
  * Refund as store credit: the money stays in the till and the client gets a balance to spend later.
  * The payment is left as is (it really was collected); the ledger row points at it so a later card
  * refund cannot double up.
  */
-export async function refundToStoreCredit(input: { businessId: string; paymentId: string; amountCents: number; reason: string | null; reasonId?: string | null; actorUserId: string }) {
+export async function refundToStoreCredit(input: { businessId: string; paymentId: string; amountCents: number; reason: string | null; reasonId?: string | null; actorUserId: string; /** The lines being refunded; the amount is then their sum. */ items?: RefundItemInput[] }) {
   await withTenant(input.businessId, async (tx) => {
-    const p = await tx.query.payments.findFirst({ where: eq(schema.payments.id, input.paymentId) });
+    const [p] = await tx.select().from(schema.payments).where(eq(schema.payments.id, input.paymentId)).for("update");
     if (!p) throw new SaleError("Payment not found.");
     if (p.method === "store_credit") throw new SaleError("This was paid with store credit; refund it to the original payment instead.");
-    const sale = (await tx.query.sales.findFirst({ where: eq(schema.sales.id, p.saleId) }))!;
-    if (!sale.clientId) throw new SaleError("Store credit needs a client on the ticket.");
+    const [sale] = await tx.select().from(schema.sales).where(eq(schema.sales.id, p.saleId)).for("update");
+    if (!sale!.clientId) throw new SaleError("Store credit needs a client on the ticket.");
+    const planned = input.items?.length ? await planRefundItems(tx, sale!, input.items) : null;
     const refundable = p.amountCents - p.refundedCents - (await creditedAgainstPayment(tx, p.id));
-    const amount = Math.min(input.amountCents, refundable);
+    const wanted = planned ? planned.reduce((n, x) => n + x.amountCents, 0) : input.amountCents;
+    if (planned && wanted > refundable) throw new SaleError(`That's ${(wanted / 100).toFixed(2)}, more than the ${(refundable / 100).toFixed(2)} left on this payment. Refund some of it from another payment.`);
+    const amount = Math.min(wanted, refundable);
     if (amount <= 0) throw new SaleError("Nothing left to refund.");
-    await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale.clientId, deltaCents: amount, reason: "refund", saleId: sale.id, paymentId: p.id, refundReasonId: input.reasonId ?? null, note: input.reason, actorUserId: input.actorUserId });
-    await audit(tx, input.businessId, input.actorUserId, "payment.refund_store_credit", sale.id, { paymentId: p.id, amount, reasonId: input.reasonId ?? null, note: input.reason });
+    await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale!.clientId!, deltaCents: amount, reason: "refund", saleId: sale!.id, paymentId: p.id, refundReasonId: input.reasonId ?? null, note: input.reason, actorUserId: input.actorUserId });
+    if (planned) {
+      const [ledger] = await tx.select({ id: schema.storeCreditLedger.id }).from(schema.storeCreditLedger).where(and(eq(schema.storeCreditLedger.paymentId, p.id), eq(schema.storeCreditLedger.reason, "refund"))).orderBy(desc(schema.storeCreditLedger.createdAt)).limit(1);
+      await recordRefundItems(tx, input.businessId, sale!, planned, { creditLedgerId: ledger!.id }, input.actorUserId);
+    }
+    await audit(tx, input.businessId, input.actorUserId, "payment.refund_store_credit", sale!.id, { paymentId: p.id, amount, reasonId: input.reasonId ?? null, note: input.reason, items: planned?.map((x) => ({ line: x.line.name, cents: x.amountCents })) });
   });
 }
 
@@ -931,6 +1047,8 @@ export async function refundPayment(input: {
   reasonId?: string | null;
   actorUserId: string;
   taxRateBps: number;
+  /** The lines being refunded; the amount is then their sum. */
+  items?: RefundItemInput[];
 }) {
   await withTenant(input.businessId, async (tx) => {
     // Locked: two refund clicks must not both give a gift card or store credit its balance back.
@@ -940,8 +1058,12 @@ export async function refundPayment(input: {
     // A card payment with no Stripe reference (e.g. a renewal recorded before its PaymentIntent was known) can't be refunded from here:
     // recording it would say the money went back when it didn't.
     if (["card", "card_on_file", "terminal"].includes(p.method) && !p.stripePaymentIntentId) throw new SaleError("This card payment has no Stripe reference, so it can't be refunded here. Refund it in your Stripe dashboard.");
+    // With items, the ticket is locked too (two refunds from different payments must not both refund the same line) and checked first.
+    const planned = input.items?.length ? await planRefundItems(tx, (await tx.select().from(schema.sales).where(eq(schema.sales.id, p.saleId)).for("update"))[0]!, input.items) : null;
     const refundable = p.amountCents - p.refundedCents - (await creditedAgainstPayment(tx, p.id));
-    const amount = Math.min(input.amountCents, refundable);
+    const wanted = planned ? planned.reduce((n, x) => n + x.amountCents, 0) : input.amountCents;
+    if (planned && wanted > refundable) throw new SaleError(`That's ${(wanted / 100).toFixed(2)}, more than the ${(refundable / 100).toFixed(2)} left on this payment. Refund some of it from another payment.`);
+    const amount = Math.min(wanted, refundable);
     if (amount <= 0) throw new SaleError("Nothing left to refund.");
     let stripeRefundId: string | null = null;
     if (p.stripePaymentIntentId) {
@@ -952,15 +1074,18 @@ export async function refundPayment(input: {
       );
       stripeRefundId = r.id;
     }
-    await tx.insert(schema.refunds).values({
-      businessId: input.businessId,
-      paymentId: p.id,
-      amountCents: amount,
-      reason: input.reason,
-      reasonId: input.reasonId ?? null,
-      stripeRefundId,
-      createdByUserId: input.actorUserId,
-    });
+    const [refundRow] = await tx
+      .insert(schema.refunds)
+      .values({
+        businessId: input.businessId,
+        paymentId: p.id,
+        amountCents: amount,
+        reason: input.reason,
+        reasonId: input.reasonId ?? null,
+        stripeRefundId,
+        createdByUserId: input.actorUserId,
+      })
+      .returning({ id: schema.refunds.id });
     const newRefunded = p.refundedCents + amount;
     // The tip part of the payment shrinks in proportion, so tip reports and payroll follow the refund.
     const tipRefund = p.amountCents > 0 ? Math.min(p.tipCents, Math.round((p.tipCents * amount) / p.amountCents)) : 0;
@@ -969,6 +1094,7 @@ export async function refundPayment(input: {
       .set({ refundedCents: newRefunded, tipCents: p.tipCents - tipRefund, status: newRefunded >= p.amountCents ? "refunded" : "partially_refunded" })
       .where(eq(schema.payments.id, p.id));
     const sale = (await tx.query.sales.findFirst({ where: eq(schema.sales.id, p.saleId) }))!;
+    if (planned) await recordRefundItems(tx, input.businessId, sale, planned, { refundId: refundRow!.id }, input.actorUserId);
     // Refunding a points payment gives the points back.
     if (p.method === "loyalty" && sale.clientId) {
       const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { loyaltyPointValueCents: true } });
@@ -988,7 +1114,7 @@ export async function refundPayment(input: {
       await tx.update(schema.sales).set({ status: "refunded" }).where(eq(schema.sales.id, sale.id));
       await unwindPaidSale(tx, input.businessId, sale, input.actorUserId);
     }
-    await audit(tx, input.businessId, input.actorUserId, "payment.refund", sale.id, { paymentId: p.id, amount });
+    await audit(tx, input.businessId, input.actorUserId, "payment.refund", sale.id, { paymentId: p.id, amount, items: planned?.map((x) => ({ line: x.line.name, cents: x.amountCents })) });
   });
 }
 

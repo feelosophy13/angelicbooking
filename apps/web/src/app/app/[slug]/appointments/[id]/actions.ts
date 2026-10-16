@@ -142,7 +142,7 @@ export async function cancelAppointment(_prev: ActionState, formData: FormData):
   // What happens to a paid deposit is the salon's call when staff cancel: keep it, keep only the late fee, or give it all back. Giving money back needs the refund permission.
   if (!d.reasonId) return { error: "Choose why it is being cancelled." };
   const choice = d.deposit ?? "keep";
-  if (choice !== "keep" && !can(ctx.permissions, "reports.view") && !can(ctx.permissions, "checkout.refund")) throw new PermissionError();
+  if (choice !== "keep" && !can(ctx.permissions, "checkout.refund")) throw new PermissionError();
   const reason = d.reason || null;
   try {
     if (d.chargeFee === "on" && d.paymentMethodId) {
@@ -227,7 +227,7 @@ export async function chargeNoShowFee(_prev: ActionState, formData: FormData): P
 /** Give back a deposit paid at online booking (only while it has not been applied to a sale). */
 export async function refundDepositAction(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
-  const ctx = await requireAction(slug, "reports.view"); // same bar as other refunds
+  const ctx = await requireAction(slug, "checkout.refund"); // same bar as other refunds
   try {
     const pay = await paymentContextForAppointment(ctx.business, appointmentId);
     const done = await refundDeposit({ businessId: ctx.business.id, accountId: pay.accountId, appointmentId, actorUserId: ctx.user.id, reason: "Refunded by staff" });

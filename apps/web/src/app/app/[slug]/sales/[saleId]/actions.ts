@@ -28,7 +28,7 @@ import { LoyaltyError, redeemPoints, referralPitch, referralsEnabled } from "@/s
 import { StoreCreditError } from "@/server/store-credit";
 import { RefundReasonError, updateRefundReason } from "@/server/refund-reasons";
 import { PromoError } from "@/server/promos";
-import { addServiceLine, applyPromoToSale, payWithStoreCredit, refundToStoreCredit, removePromoFromSale, setSaleClient, updateLine } from "@/server/sales";
+import { addServiceLine, applyPromoToSale, payWithStoreCredit, refundToStoreCredit, removePromoFromSale, setSaleClient, updateLine, type RefundItemInput } from "@/server/sales";
 import { schema as dbSchema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { queueOneOff } from "@/lib/notify";
@@ -51,10 +51,10 @@ function friendly(e: unknown): SaleActionState {
   throw e;
 }
 
-/** Refunds: whoever can see the sales reports, or has the separate Refund permission. */
+/** Refunds need the Refund permission itself; being able to read reports doesn't let someone send money back. */
 async function requireRefund(slug: string) {
   const ctx = await requireBusiness(slug);
-  if (!can(ctx.permissions, "reports.view") && !can(ctx.permissions, "checkout.refund")) throw new PermissionError();
+  if (!can(ctx.permissions, "checkout.refund")) throw new PermissionError();
   return ctx;
 }
 
@@ -306,18 +306,29 @@ export async function finishCardPayment(input: { slug: string; saleId: string; p
 }
 
 export async function refund(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
-  const d = base.extend({ paymentId: z.string().min(1), amount: z.string(), reasonId: z.string().min(1, "Pick a reason."), note: z.string().optional(), to: z.enum(["original", "store_credit"]).optional() }).safeParse(Object.fromEntries(formData));
-  if (!d.success) return { error: "Pick a reason for the refund." };
-  const ctx = await requireRefund(d.data.slug); // reports.view or the Refund permission
-  const cents = parseMoney(d.data.amount);
+  const d = base.extend({ paymentId: z.string().min(1), amount: z.string().optional(), reasonId: z.string().min(1, "Pick a reason for the refund."), note: z.string().optional(), to: z.enum(["original", "store_credit"]).optional() }).safeParse(Object.fromEntries(formData));
+  if (!d.success) return { error: d.error.issues[0]?.message ?? "Check the refund details." };
+  const ctx = await requireRefund(d.data.slug);
+  // Items being refunded ("item:<line id>" = amount, "qty:<line id>" = how many); with none, the amount is a refund off the whole ticket.
+  const items: RefundItemInput[] = [];
+  for (const [key, v] of formData.entries()) {
+    if (!key.startsWith("item:") || !String(v).trim()) continue;
+    const c = parseMoney(String(v));
+    if (c === null || c < 0) return { error: "Enter amounts like 30.00 for the items being refunded." };
+    if (c === 0) continue;
+    const lineId = key.slice(5);
+    const qty = Number(formData.get(`qty:${lineId}`) ?? "");
+    items.push({ saleLineId: lineId, amountCents: c, quantity: Number.isInteger(qty) && qty > 0 ? qty : undefined });
+  }
+  const cents = items.length ? items.reduce((n, i) => n + i.amountCents, 0) : parseMoney(d.data.amount ?? "");
   if (cents === null || cents <= 0) return { error: "Enter a refund amount." };
   const note = d.data.note?.trim() || null;
   try {
     if (d.data.to === "store_credit") {
-      await refundToStoreCredit({ businessId: ctx.business.id, paymentId: d.data.paymentId, amountCents: cents, reason: note, reasonId: d.data.reasonId, actorUserId: ctx.user.id });
+      await refundToStoreCredit({ businessId: ctx.business.id, paymentId: d.data.paymentId, amountCents: cents, reason: note, reasonId: d.data.reasonId, actorUserId: ctx.user.id, items });
     } else {
       const pay = await paymentContextForSale(ctx.business, d.data.saleId);
-      await refundPayment({ businessId: ctx.business.id, accountId: pay.accountId, paymentId: d.data.paymentId, amountCents: cents, reason: note, reasonId: d.data.reasonId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+      await refundPayment({ businessId: ctx.business.id, accountId: pay.accountId, paymentId: d.data.paymentId, amountCents: cents, reason: note, reasonId: d.data.reasonId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, items });
     }
   } catch (e) {
     return friendly(e);

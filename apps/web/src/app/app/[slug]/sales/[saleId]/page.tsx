@@ -6,7 +6,7 @@ import { dateTime } from "@/lib/format";
 import { notFound } from "next/navigation";
 import { can, isMembershipInterval, periodNoun } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
-import { getSale } from "@/server/sales";
+import { getSale, refundableLines } from "@/server/sales";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForSale, validAtLocation } from "@/server/locations";
 import { MapPin } from "lucide-react";
@@ -76,7 +76,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
   const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
   const storeCredit = open && client ? await withTenant(business.id, (tx) => storeCreditBalance(tx, client.id)) : 0;
-  const canRefund = can(permissions, "reports.view") || can(permissions, "checkout.refund");
+  const canRefund = can(permissions, "checkout.refund");
   // Stock at this sale's location, for the "only N in stock" notes on an open ticket; what was taken off and what has come back, for a closed one.
   const trackedIds = new Set(products.filter((p) => p.trackStock).map((p) => p.id));
   const stockHere = open && trackedIds.size ? await withTenant(business.id, async (tx) => stockLevels(tx, await saleStockLocation(tx, sale), [...trackedIds])) : new Map<string, number>();
@@ -87,6 +87,8 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   // Active reasons for new refunds; every reason (retired too) so old refunds still show their name.
   const allReasons = canRefund ? await listRefundReasons(business.id, { includeRetired: true }) : [];
   const reasonOptions = allReasons.filter((r) => r.active).map((r) => ({ id: r.id, name: r.name }));
+  // Each line with what is left to refund on it, for "what's being refunded".
+  const refundLines = canRefund && !open ? (await refundableLines(business.id, sale.id)).filter((l) => l.remainingCents > 0).map((l) => ({ id: l.id, name: l.name, kind: l.kind, quantity: l.quantity, remainingCents: l.remainingCents })) : [];
   const reasonName = (id: string | null) => (id ? allReasons.find((r) => r.id === id)?.name ?? null : null);
   const reasonText = (id: string | null, note: string | null) => [reasonName(id), note].filter(Boolean).join(" · ");
   // Credit already given against a payment counts as refunded for what is left to refund.
@@ -326,7 +328,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         </div>
                       ))}
                       {p.status !== "pending" && p.status !== "failed" && refundable > 0 && canRefund ? (
-                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} reasons={reasonOptions} goods={[...stockState.entries()].filter(([, v]) => v.sold - v.returned > 0).map(([productId, v]) => ({ productId, name: lines.find((l) => l.productId === productId)?.name ?? "Product", left: v.sold - v.returned }))} />
+                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} reasons={reasonOptions} items={refundLines} goods={[...stockState.entries()].filter(([, v]) => v.sold - v.returned > 0).map(([productId, v]) => ({ productId, name: lines.find((l) => l.productId === productId)?.name ?? "Product", left: v.sold - v.returned }))} />
                       ) : null}
                     </li>
                   );

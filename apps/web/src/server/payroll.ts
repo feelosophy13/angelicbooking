@@ -36,21 +36,30 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
   const refundFrom = zonedToInstant(shiftISODate(period.start, -1), "00:00", tz);
   const refundTo = zonedToInstant(shiftISODate(period.end, 2), "00:00", tz);
   return withTenant(business.id, async (tx) => {
-    const [cardRefunds, creditRefunds] = await Promise.all([
+    // Refunds that name their items claw back exactly those lines (itemEvents); the rest are spread over the ticket (refundEvents).
+    const itemized = sql`exists (select 1 from refund_items ri where ri.refund_id = ${schema.refunds.id})`;
+    const itemizedCredit = sql`exists (select 1 from refund_items ri where ri.credit_ledger_id = ${schema.storeCreditLedger.id})`;
+    const [cardRefunds, creditRefunds, refundedItems] = await Promise.all([
       tx
         .select({ saleId: schema.payments.saleId, cents: schema.refunds.amountCents, at: schema.refunds.createdAt })
         .from(schema.refunds)
         .innerJoin(schema.payments, eq(schema.payments.id, schema.refunds.paymentId))
-        .where(and(gte(schema.refunds.createdAt, refundFrom), lte(schema.refunds.createdAt, refundTo))),
+        .where(and(gte(schema.refunds.createdAt, refundFrom), lte(schema.refunds.createdAt, refundTo), sql`not ${itemized}`)),
       tx
         .select({ saleId: schema.storeCreditLedger.saleId, cents: schema.storeCreditLedger.deltaCents, at: schema.storeCreditLedger.createdAt })
         .from(schema.storeCreditLedger)
-        .where(and(eq(schema.storeCreditLedger.reason, "refund"), sql`${schema.storeCreditLedger.saleId} is not null`, gte(schema.storeCreditLedger.createdAt, refundFrom), lte(schema.storeCreditLedger.createdAt, refundTo))),
+        .where(and(eq(schema.storeCreditLedger.reason, "refund"), sql`${schema.storeCreditLedger.saleId} is not null`, gte(schema.storeCreditLedger.createdAt, refundFrom), lte(schema.storeCreditLedger.createdAt, refundTo), sql`not ${itemizedCredit}`)),
+      tx
+        .select({ saleId: schema.refundItems.saleId, lineId: schema.refundItems.saleLineId, cents: schema.refundItems.amountCents, at: schema.refundItems.createdAt })
+        .from(schema.refundItems)
+        .where(and(gte(schema.refundItems.createdAt, refundFrom), lte(schema.refundItems.createdAt, refundTo))),
     ]);
+    const inPeriod = (date: string) => date >= period.start && date <= period.end;
     const refundEvents = [...cardRefunds, ...creditRefunds]
       .map((r) => ({ saleId: r.saleId!, cents: r.cents, date: localDate(r.at, tz) }))
-      .filter((r) => r.cents > 0 && r.date >= period.start && r.date <= period.end);
-    const refundSaleIds = [...new Set(refundEvents.map((r) => r.saleId))];
+      .filter((r) => r.cents > 0 && inPeriod(r.date));
+    const itemEvents = refundedItems.map((r) => ({ saleId: r.saleId, lineId: r.lineId, cents: r.cents, date: localDate(r.at, tz) })).filter((r) => inPeriod(r.date));
+    const refundSaleIds = [...new Set([...refundEvents, ...itemEvents].map((r) => r.saleId))];
     const sales = await tx
       .select()
       .from(schema.sales)
@@ -103,6 +112,7 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       for (const t of tips) if (t.staffId) tipByStaff.set(t.staffId, [...(tipByStaff.get(t.staffId) ?? []), { amountCents: t.amountCents, method: t.tipMethod === "cash" || t.tipMethod === "card" ? t.tipMethod : null }]);
 
       const base: PayrollLine[] = [];
+      const baseByLine = new Map<string, PayrollLine>();
       const seenStaffTip = new Set<string>();
       for (const l of goods) {
         if (!l.staffId) continue;
@@ -126,7 +136,7 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         // A package or membership sold at the desk is its own sale-line kind (not a product named "package"), so map it directly; gift cards and fees are not commissionable.
         const kind: PayrollLine["kind"] = l.kind === "service" ? "service" : l.kind === "package" ? "package" : l.kind === "membership" ? "membership" : l.kind === "product" ? (/package/i.test(l.name) ? "package" : /membership/i.test(l.name) ? "membership" : "product") : "fee";
         const start = l.appointmentItemId ? itemStart.get(l.appointmentItemId) : null;
-        base.push({
+        const row: PayrollLine = {
           staffId: l.staffId,
           kind,
           refunded: false,
@@ -142,7 +152,9 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
           discountCents: disc,
           amtPaidCents: net + tip,
           locationId: sale.locationId,
-        });
+        };
+        base.push(row);
+        baseByLine.set(l.id, row);
       }
       // Tips for staff with no goods line on this sale (rare) → standalone row.
       for (const [staffId, parts] of tipByStaff) {
@@ -151,6 +163,21 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         base.push({ staffId, kind: "service", refunded: false, date: checkoutDate, customer, name: "Tip", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: split.cashCents, cardTipCents: split.cardCents, discountCents: 0, amtPaidCents: split.totalCents, locationId: sale.locationId });
       }
       out.push(...base);
+      // An itemized refund takes back exactly the line refunded, from whoever was credited on it, on the day it was refunded.
+      for (const r of itemEvents.filter((e) => e.saleId === sale.id)) {
+        const line = sl.find((x) => x.id === r.lineId);
+        if (!line) continue;
+        if (line.kind === "tip") {
+          if (!line.staffId) continue;
+          const split = splitTips([{ amountCents: r.cents, method: line.tipMethod === "cash" || line.tipMethod === "card" ? line.tipMethod : null }], tipNoFeeShare);
+          out.push({ staffId: line.staffId, kind: "service", refunded: false, date: r.date, customer, name: "Refund · Tip", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: -split.cashCents, cardTipCents: -split.cardCents, discountCents: 0, amtPaidCents: -split.totalCents, locationId: sale.locationId });
+          continue;
+        }
+        const b = baseByLine.get(line.id);
+        if (!b) continue; // nobody credited on it (a gift card with no stylist): no pay to take back
+        const cash = Math.round(r.cents * cashShare);
+        out.push({ ...b, date: r.date, name: `Refund · ${b.name}`, cashCents: -cash, cardCents: -(r.cents - cash), cashTipCents: 0, cardTipCents: 0, discountCents: 0, amtPaidCents: -r.cents });
+      }
       // Each refund of this sale in the period takes back its share of every row, on the day it was refunded.
       if (paidTotal > 0) {
         for (const r of refundEvents.filter((e) => e.saleId === sale.id)) {
