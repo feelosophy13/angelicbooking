@@ -388,8 +388,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       actor all use the table; the session cookie names the admin and `requireAdmin()` rechecks they still exist and are enabled. New Admins page
       (add by email with an emailed set-password link, disable/enable; not yourself, not the last one). `pnpm --filter @angelic/admin create-admin
       <email>` makes the first account (replaces `hash-password`). `ADMIN_EMAIL` / `ADMIN_PASSWORD_HASH` / `ADMIN_GOOGLE_EMAILS` are gone; until the
-      first account exists the old pair still signs in once and creates it. **Production rollout (not done yet):** deploy, run `admin-role.sql` as the
-      DB owner (grants `admin_users`), sign in once, then delete `ADMIN_EMAIL` and `ADMIN_PASSWORD_HASH` from the `angelic-admin` Render service.
+      first account exists the old pair still signs in once and creates it. **Production rollout done 2026-10-16:** deployed (b47c501), granted `admin_users` to `angelic_admin` (SELECT/INSERT/UPDATE),
+      signed in with Google, deleted `ADMIN_EMAIL` and `ADMIN_PASSWORD_HASH` from the `angelic-admin` Render service and redeployed it. Production had one
+      admin row, copied from `admin_credentials` by the migration.
       Existing sessions end at deploy (old cookies name nobody). `admin_credentials` is now unused (row copied by the migration).
 - [x] 2026-10-15: checkout review (migration 0090: `sales.notes`, `sales.tax_exempt`, `businesses.receipt_footer`). Sidebar entry is "Sales & checkout"
       with + Appointment / + Sale buttons (also in the phone menu). An empty ticket opens "Add to this ticket" with a searchable product
