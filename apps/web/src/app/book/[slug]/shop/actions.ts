@@ -1,4 +1,5 @@
 "use server";
+import { publicBotCheck } from "@/lib/turnstile";
 import { z } from "zod";
 import { normalizePhone } from "@angelic/core";
 import { getPublicBusiness } from "@/server/public-booking";
@@ -22,7 +23,11 @@ export async function startOrderAction(input: {
   method: "pickup" | "ship";
   address: string;
   locationId?: string | null;
+  /** The bot check's token from the checkout form. */
+  botToken?: string | null;
 }): Promise<StartOrderResult> {
+  const bot = await publicBotCheck(input.botToken);
+  if (bot) return { error: bot };
   const business = await getPublicBusiness(input.slug);
   if (!business) return { error: "The store isn't open right now." };
   // Products need the store; gift cards need online gift cards. Either can be on without the other.

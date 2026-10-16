@@ -1,4 +1,5 @@
 "use client";
+import { PublicBotCheck } from "@/components/turnstile";
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { FormAnswer, FormFieldDef } from "@angelic/db";
@@ -16,7 +17,7 @@ type Action = (prev: FillState, formData: FormData) => Promise<FillState>;
  * previous answers prefill, files attach, and the signature is typed and drawn.
  * A failed submit shows the message under the question it is about.
  */
-export function FormFill({ action, hidden, form, defaults, clientName, submitLabel, staffMode = false, before, next, preview = false }: {
+export function FormFill({ action, hidden, form, defaults, clientName, submitLabel, staffMode = false, before, next, preview = false, botCheck = false }: {
   action: Action;
   hidden: Record<string, string>;
   /** Extra inputs rendered above the questions (e.g. who is filling in a shared form). */
@@ -30,6 +31,8 @@ export function FormFill({ action, hidden, form, defaults, clientName, submitLab
   next?: { href: string; label: string } | null;
   /** Builder preview: looks real, submits nowhere. */
   preview?: boolean;
+  /** Public link anyone can open: add the bot check. */
+  botCheck?: boolean;
 }) {
   const [state, act] = useActionState<FillState, FormData>(action, undefined);
   const [answers, setAnswers] = useState<Record<string, FormAnswer | undefined>>(() => Object.fromEntries(form.fields.map((f) => [f.id, defaults?.[f.id]])));
@@ -173,7 +176,10 @@ export function FormFill({ action, hidden, form, defaults, clientName, submitLab
       {preview ? (
         <button type="button" disabled className="w-full rounded-lg px-4 py-2 text-sm font-medium text-white opacity-80" style={{ background: "var(--brand)" }}>{submitLabel ?? (form.requireSignature ? "Sign and submit" : "Submit")}</button>
       ) : (
-        <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Saving…">{submitLabel ?? (form.requireSignature ? "Sign and submit" : "Submit")}</SubmitButton>
+        <>
+          {botCheck ? <PublicBotCheck resetKey={state} /> : null}
+          <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Saving…">{submitLabel ?? (form.requireSignature ? "Sign and submit" : "Submit")}</SubmitButton>
+        </>
       )}
     </Wrap>
   );

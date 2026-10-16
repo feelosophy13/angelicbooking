@@ -1,4 +1,5 @@
 "use client";
+import { PublicBotCheck } from "@/components/turnstile";
 import { useActionState } from "react";
 import { bookOnline, joinWaitlistAction, type PublicState } from "./actions";
 import { Field, Input, Notice, Textarea, Checkbox } from "@/components/ui";
@@ -23,6 +24,7 @@ export function BookingForm(props: { extraServiceIds?: string[]; /** The price b
       {props.quotedPriceCents !== undefined ? <input type="hidden" name="quotedPriceCents" value={props.quotedPriceCents} /> : null}
       <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
+      <PublicBotCheck resetKey={state} />
       <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Booking…">Confirm booking{props.priceLabel ? ` · ${props.priceLabel}` : ""}</SubmitButton>
       <p className="text-xs text-stone-500">You can cancel or reschedule online up to {props.cancelWindowHours} hours before.{props.lateFee ? ` Cancellations inside that window carry a fee of ${props.lateFee}.` : ""}{props.policy ? ` ${props.policy}` : ""}</p>
     </form>
@@ -80,6 +82,7 @@ export function WaitlistForm(props: { slug: string; serviceId: string; staffId: 
       {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
       <Field label="Preferred times"><Input name="notes" placeholder="Afternoons, after 3pm…" /></Field>
       {state?.error ? <Notice>{state.error}</Notice> : null}
+      <PublicBotCheck resetKey={state} />
       <SubmitButton variant="secondary" className="w-full" pendingText="Joining…">Join waitlist</SubmitButton>
     </form>
   );

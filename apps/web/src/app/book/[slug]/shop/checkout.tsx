@@ -1,4 +1,5 @@
 "use client";
+import { PublicBotCheck } from "@/components/turnstile";
 import { useHydrated } from "@/lib/use-hydrated";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -130,8 +131,9 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
       onSubmit={(e) => {
         e.preventDefault();
         setError(null);
+        const botToken = new FormData(e.currentTarget).get("cf-turnstile-response");
         start(async () => {
-          const r = await startOrderAction({ slug: props.slug, items, giftCard: isGift ? { amountCents: giftCents, ...gift } : null, buyer, method: canShip ? method : "pickup", address, locationId: props.locationId ?? null });
+          const r = await startOrderAction({ botToken: typeof botToken === "string" ? botToken : null, slug: props.slug, items, giftCard: isGift ? { amountCents: giftCents, ...gift } : null, buyer, method: canShip ? method : "pickup", address, locationId: props.locationId ?? null });
           if ("error" in r) setError(r.error);
           else setStarted(r);
         });
@@ -189,6 +191,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
           <Field label="Mobile (optional)"><Input type="tel" value={buyer.phone} onChange={(e) => setBuyer({ ...buyer, phone: e.target.value })} /></Field>
           <p className="text-sm">Subtotal {money(subtotal, props.currency)}{shipping ? ` + shipping ${money(shipping, props.currency)}` : ""}{!isGift ? " · tax added at checkout where applicable" : ""}</p>
           {error ? <Notice>{error}</Notice> : null}
+          <PublicBotCheck resetKey={error} />
           <button type="submit" disabled={!hydrated || pending || (isGift ? !(giftCents >= 500) : items.length === 0)} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: props.brand }}>{pending ? "One moment…" : "Continue to payment"}</button>
         </div>
       ) : null}

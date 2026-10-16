@@ -1,4 +1,5 @@
 "use server";
+import { publicBotCheck } from "@/lib/turnstile";
 import { headers } from "next/headers";
 import { z } from "zod";
 import { getBusinessForLinks, findOrCreateClient } from "@/server/public-booking";
@@ -27,6 +28,8 @@ export async function submitSharedForm(_prev: SharedFormState, formData: FormDat
       signatureImage: z.string().optional(),
     })
     .parse(Object.fromEntries([...formData.entries()].filter(([, v]) => typeof v === "string")));
+  const bot = await publicBotCheck(formData.get("cf-turnstile-response"));
+  if (bot) return { error: bot };
   const business = await getBusinessForLinks(d.slug);
   if (!business) return { error: "Not available." };
   const h = await headers();

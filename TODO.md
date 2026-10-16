@@ -70,7 +70,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
         R2 and won't go to the public bucket once R2 is on. `migrate-files` moves them too.
       - Mobile API follows the web calendar rules (own-calendar roles see and change only their own appointments), cancel needs a reason
         (the app shows the list instead of cancelling on one tap), a cancelled visit can't be revived there, a repeat status is a no-op.
-- [ ] Still open from the security batch: Turnstile on booking/waitlist/OTP/shared forms; Better Auth's own in-memory limiter still keys on the
+- [x] Turnstile on the public forms, 2026-10-16: online booking (and the payment step, before anything is charged), waitlist, client
+      login codes, shared forms and the store checkout. It shows nothing unless Cloudflare wants a tick, and the server refuses a form
+      without a passing token. Off when the keys aren't set, and off on hosts not registered on the widget (`NEXT_PUBLIC_TURNSTILE_HOSTNAMES`,
+      default app.angelicbooking.com and localhost): a business's own booking domain has no bot check yet (add the domain to the widget in
+      Cloudflare and to that variable, or leave it to the rate limits). Tests: `lib/__tests__/turnstile.test.ts`.
+- [ ] Still open from the security batch: Better Auth's own in-memory limiter still keys on the
       first X-Forwarded-For entry (our proxy limit covers `/api/auth`); `requireEmailVerification` + `revokeSessionsOnPasswordReset`;
       trial-expired not enforced on mobile/API; dev origins in `trustedOrigins`; providers seeing every sale (scope Sales for own-calendar roles).
 - [x] Money batch, 2026-10-16 (migration 0096):

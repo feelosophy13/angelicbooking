@@ -1,4 +1,5 @@
 "use server";
+import { publicBotCheck } from "@/lib/turnstile";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { normalizePhone } from "@angelic/core";
@@ -11,6 +12,9 @@ export type AccountState = { error?: string; ok?: boolean; sent?: "email" | "sms
 export async function requestCode(_prev: AccountState, formData: FormData): Promise<AccountState> {
   const d = z.object({ slug: z.string(), destination: z.string().trim().min(3).max(120) }).safeParse(Object.fromEntries(formData));
   if (!d.success) return { error: "Enter the email or mobile number you book with." };
+  // Each code is an email or a text we pay for: bots don't get to send them.
+  const bot = await publicBotCheck(formData.get("cf-turnstile-response"));
+  if (bot) return { error: bot };
   const business = await getPublicBusiness(d.data.slug);
   if (!business || !business.clientAccountsEnabled) return { error: "Accounts aren't available." };
   try {

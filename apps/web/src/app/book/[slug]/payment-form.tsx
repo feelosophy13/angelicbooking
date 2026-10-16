@@ -1,4 +1,5 @@
 "use client";
+import { PublicBotCheck } from "@/components/turnstile";
 import { useMemo, useState, useTransition } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
@@ -83,6 +84,7 @@ export function PaidBookingForm(props: {
         <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} />
         {error ? <Notice>{error}</Notice> : null}
         {props.priceLabel ? <p className="text-sm font-medium text-stone-800">Price of this visit: {props.priceLabel}</p> : null}
+        <PublicBotCheck resetKey={error} />
         <Button type="submit" disabled={pending || !hydrated} className="w-full" style={{ background: props.brand }}>
           {pending ? "One moment…" : props.mode === "deposit" ? props.full ? `Continue to pay ${props.amountLabel}` : `Continue to pay ${props.amountLabel} deposit` : "Continue to add a card"}
         </Button>

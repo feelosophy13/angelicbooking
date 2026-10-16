@@ -20,5 +20,5 @@ export function SharedForm({ slug, form, me, defaults }: { slug: string; form: {
       <p className="text-xs text-stone-500">We use your number or email to attach this form to your client record.</p>
     </fieldset>
   );
-  return <FormFill action={submitSharedForm} hidden={{ slug, formId: form.id }} form={form} clientName={me ? `${me.firstName} ${me.lastName}`.trim() : ""} before={who} defaults={defaults} />;
+  return <FormFill action={submitSharedForm} hidden={{ slug, formId: form.id }} form={form} clientName={me ? `${me.firstName} ${me.lastName}`.trim() : ""} before={who} defaults={defaults} botCheck />;
 }

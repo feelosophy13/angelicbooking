@@ -1,4 +1,5 @@
 "use client";
+import { PublicBotCheck } from "@/components/turnstile";
 import { useActionState } from "react";
 import { Field, Input, Notice, Checkbox } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
@@ -27,6 +28,7 @@ export function SignInForm({ slug }: { slug: string }) {
       <input type="hidden" name="slug" value={slug} />
       <Field label="Email or mobile number"><Input name="destination" autoComplete="username" autoFocus /></Field>
       {state?.error ? <Notice>{state.error}</Notice> : null}
+      <PublicBotCheck resetKey={state} />
       <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Sending…">Send me a code</SubmitButton>
       <p className="text-xs text-stone-500">No password needed. We&apos;ll send a one-time code to the contact details you book with.</p>
     </form>

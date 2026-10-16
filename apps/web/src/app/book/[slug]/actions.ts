@@ -1,4 +1,5 @@
 "use server";
+import { publicBotCheck } from "@/lib/turnstile";
 import { redirect } from "next/navigation";
 import { browserStripe } from "@/lib/stripe-demo";
 import { z } from "zod";
@@ -52,6 +53,8 @@ async function priceFor(business: PublicBusiness, service: { id: string; priceCe
 export async function bookOnline(_prev: PublicState, formData: FormData): Promise<PublicState> {
   const p = parseBooking(Object.fromEntries(formData));
   if ("error" in p) return { error: p.error };
+  const bot = await publicBotCheck(formData.get("cf-turnstile-response"));
+  if (bot) return { error: bot };
   const d = p.d;
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
@@ -87,6 +90,9 @@ export type StartPaymentResult = { clientSecret: string; intentId: string; kind:
 export async function startOnlinePaymentAction(raw: Record<string, string>): Promise<StartPaymentResult> {
   const p = parseBooking(raw);
   if ("error" in p) return { error: p.error };
+  // Checked before anything is charged or held; the finish step needs no second check (Stripe has confirmed the card by then).
+  const bot = await publicBotCheck(raw["cf-turnstile-response"]);
+  if (bot) return { error: bot };
   const d = p.d;
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
@@ -194,6 +200,8 @@ export async function joinWaitlistAction(_prev: PublicState, formData: FormData)
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form" };
   const d = parsed.data;
   if (!d.phone) return { error: "Enter your mobile number so we can reach you." };
+  const bot = await publicBotCheck(formData.get("cf-turnstile-response"));
+  if (bot) return { error: bot };
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
   try {
