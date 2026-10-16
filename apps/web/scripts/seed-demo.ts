@@ -87,13 +87,23 @@ const today = isoDate(new Date());
 // Placeholder images: a soft gradient tile with an emoji, stored like any upload.
 // ---------------------------------------------------------------------------
 const PALETTES = [["#f5d0fe", "#a21caf"], ["#fde68a", "#b45309"], ["#bbf7d0", "#15803d"], ["#bfdbfe", "#1d4ed8"], ["#fecaca", "#b91c1c"], ["#ddd6fe", "#6d28d9"], ["#fbcfe8", "#be185d"], ["#99f6e4", "#0f766e"], ["#fed7aa", "#c2410c"], ["#e7e5e4", "#44403c"]];
-async function tile(businessId: string, kind: "category" | "service" | "package", label: string, emoji: string, i: number): Promise<string> {
+async function tile(businessId: string, kind: "category" | "service" | "package" | "product", label: string, emoji: string, i: number): Promise<string> {
   const [a, b] = PALETTES[i % PALETTES.length]!;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="500" height="300" viewBox="0 0 500 300"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="500" height="300" fill="url(#g)"/><circle cx="420" cy="60" r="90" fill="#fff" fill-opacity="0.12"/><circle cx="60" cy="260" r="70" fill="#fff" fill-opacity="0.1"/><text x="250" y="165" font-size="110" text-anchor="middle" dominant-baseline="middle">${emoji}</text><text x="250" y="262" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="22" font-weight="600" fill="#fff" fill-opacity="0.9" text-anchor="middle">${label.replace(/&/g, "&amp;")}</text></svg>`;
   const data = Buffer.from(svg, "utf8");
   const [row] = await db.insert(schema.files).values({ businessId, kind, contentType: "image/svg+xml", size: data.length, data }).returning({ id: schema.files.id });
   return appUrl(`/api/files/${row!.id}`);
 }
+
+/** A stylist's portrait stand-in: their initials on a soft circle in their calendar colour. */
+async function portrait(businessId: string, name: string, color: string): Promise<string> {
+  const initials = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400"><rect width="400" height="400" fill="${color}" fill-opacity="0.18"/><circle cx="200" cy="200" r="150" fill="${color}"/><circle cx="200" cy="165" r="55" fill="#fff" fill-opacity="0.85"/><path d="M95 330a105 95 0 0 1 210 0z" fill="#fff" fill-opacity="0.85"/><text x="200" y="372" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="30" font-weight="700" fill="${color}" text-anchor="middle">${initials}</text></svg>`;
+  const data = Buffer.from(svg, "utf8");
+  const [row] = await db.insert(schema.files).values({ businessId, kind: "staff", contentType: "image/svg+xml", size: data.length, data }).returning({ id: schema.files.id });
+  return appUrl(`/api/files/${row!.id}`);
+}
+const PRODUCT_CAT_EMOJI: Record<string, string> = { "Back-bar": "🧴", "Brow care": "🪮", "Lash care": "👁️", "Skin care": "🧖", "Tools & Gifts": "🎁" };
 
 // ---------------------------------------------------------------------------
 // Menu: Angelic Beauty's real menu (angelicbeautyva.com, 2026-10) with the studio's own photos.
@@ -333,9 +343,11 @@ async function main() {
   }
   const cookie = (signIn.headers.getSetCookie?.() ?? [signIn.headers.get("set-cookie") ?? ""]).map((c) => c.split(";")[0]).filter(Boolean).join("; ");
   const h = new Headers({ cookie });
-  const org = await auth.api.createOrganization({ headers: h, body: { name: NAME, slug: SLUG, metadata: { timezone: TZ } } });
+  const org = await auth.api.createOrganization({ headers: h, body: { name: NAME, slug: `seed-${SLUG.replace(/^demo-/, "")}`, metadata: { timezone: TZ, termsVersion: (await import("../src/lib/terms")).TERMS_VERSION } } });
   if (!org) throw new Error("Could not create the demo organization");
   const businessId = org.id;
+  // New businesses can't register a "demo-" address (guardrail), so rename it straight in the table.
+  await db.update(schema.businesses).set({ slug: SLUG }).where(eq(schema.businesses.id, businessId));
   console.log(`Created ${NAME} (${businessId})`);
 
   // --- Business profile and settings
@@ -394,7 +406,7 @@ async function main() {
 
     // --- Staff (the owner row exists from the hook; make it a non-provider owner)
     const owner = (await tx.select().from(schema.staff))[0]!;
-    await tx.update(schema.staff).set({ displayName: "Demo Owner", takesAppointments: false, bookableOnline: false, position: "Owner", payType: "salary", color: "#0f172a" }).where(eq(schema.staff.id, owner.id));
+    await tx.update(schema.staff).set({ displayName: "Demo Owner", takesAppointments: false, bookableOnline: false, position: "Owner", payType: "salary", color: "#0f172a", photoUrl: await portrait(businessId, "Demo Owner", "#0f172a") }).where(eq(schema.staff.id, owner.id));
     await tx.delete(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, owner.id));
     type StaffRow = { id: string; name: string; skills: string[]; hours: Hours; homeSite: number; siteByDay: Record<number, number>; hourly: boolean; frontDesk: boolean; locationId: string };
     const staffRows: StaffRow[] = [];
@@ -402,7 +414,7 @@ async function main() {
       const staffLoc = locIds[PROFILE.staffLocation[i] ?? 0]!;
       const [row] = await tx.insert(schema.staff).values({
         businessId, displayName: s.name, email: s.email, color: s.color, locationId: staffLoc, position: s.position, payType: s.payType, mainCommissionBps: s.main ?? 0, productCommissionBps: s.product, ccTipFeeBps: 300,
-        hourlyRateCents: s.hourly ?? 0, salaryPerPeriodCents: s.salary ?? 0, takesAppointments: !s.frontDesk, bookableOnline: !s.frontDesk, sortOrder: i,
+        hourlyRateCents: s.hourly ?? 0, salaryPerPeriodCents: s.salary ?? 0, takesAppointments: !s.frontDesk, bookableOnline: !s.frontDesk, sortOrder: i, photoUrl: await portrait(businessId, s.name, s.color),
       }).returning({ id: schema.staff.id });
       const homeSite = PROFILE.staffLocation[i] ?? 0;
       const siteByDay: Record<number, number> = { ...(PROFILE.otherSite[i] ?? {}) };
@@ -602,7 +614,7 @@ async function main() {
     const prodCats = new Map<string, string>();
     let pc = 0;
     for (const name of [...new Set(PRODUCTS.map((p) => p.cat))]) {
-      const [row] = await tx.insert(schema.productCategories).values({ businessId, name, sortOrder: pc++ }).returning({ id: schema.productCategories.id });
+      const [row] = await tx.insert(schema.productCategories).values({ businessId, name, sortOrder: pc++, imageUrl: await tile(businessId, "product", name, PRODUCT_CAT_EMOJI[name] ?? "🛍️", pc) }).returning({ id: schema.productCategories.id });
       prodCats.set(name, row!.id);
     }
     // --- Inventory: suppliers, products (some sold in options, some back-bar) with a believable history, orders, and what services use up
@@ -632,7 +644,7 @@ async function main() {
         imageUrl = appUrl(`/api/files/${file!.id}`);
       }
       if (!prodCats.has(p.cat)) {
-        const [row] = await tx.insert(schema.productCategories).values({ businessId, name: p.cat, sortOrder: prodCats.size }).returning({ id: schema.productCategories.id });
+        const [row] = await tx.insert(schema.productCategories).values({ businessId, name: p.cat, sortOrder: prodCats.size, imageUrl: await tile(businessId, "product", p.cat, PRODUCT_CAT_EMOJI[p.cat] ?? "🛍️", prodCats.size) }).returning({ id: schema.productCategories.id });
         prodCats.set(p.cat, row!.id);
       }
       let groupId: string | null = null;
