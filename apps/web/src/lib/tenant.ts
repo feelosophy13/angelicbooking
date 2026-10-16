@@ -62,7 +62,8 @@ const resolveBusiness = cache(async (slug: string, allowLocked: boolean): Promis
   const myStaff = await withTenant(business.id, (tx) => tx.query.staff.findFirst({ where: eq(schema.staff.userId, session.user.id), columns: { id: true } }));
   // Development only: act as another role (optionally as a particular staff member: "provider:<staffId>"), so every page and permission check
   // shows what that person gets.
-  if (viewAsEnabled()) {
+  // Only an owner can view as someone else, so a dev environment that's reachable doesn't hand any member every role.
+  if (viewAsEnabled() && membership.role === "owner") {
     const [as, asStaff] = ((await cookies()).get(VIEW_AS_COOKIE)?.value ?? "").split(":");
     if (as && (as !== membership.role || asStaff) && (await listRoles(business.id)).some((r) => r.key === as)) {
       return { business, role: as, permissions: await permissionsForRole(business.id, as), user: session.user, viewingAs: as, realRole: membership.role, staffId: asStaff || myStaff?.id || null, plan: access };

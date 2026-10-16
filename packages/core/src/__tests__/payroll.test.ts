@@ -198,3 +198,17 @@ describe("tipsPerPayment", () => {
     expect(tipsPerPayment([{ amountCents: 700, method: "cash" }], [])).toEqual({});
   });
 });
+
+describe("overtime across a pay-period boundary", () => {
+  it("counts the start of the workweek toward 40 hours without paying it twice", async () => {
+    const { computeHours } = await import("../payroll");
+    // Mon 2026-10-12 … Thu: 8 h a day in the previous period; Fri and Sat (the new period starts Fri the 16th): 8 h each.
+    const days = ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16", "2026-10-17"];
+    const entries = days.map((date) => ({ staffId: "s", date, minutes: 480 }));
+    const h = computeHours(entries, 1, true, 40 * 60, "2026-10-16");
+    expect(h.byDate.map((d) => d.date)).toEqual(["2026-10-16", "2026-10-17"]);
+    expect([h.totalMinutes, h.regularMinutes, h.overtimeMinutes]).toEqual([960, 480, 480]);
+    // Without the earlier days the same two shifts would look like 16 h with no overtime.
+    expect(computeHours(entries.slice(4), 1, true).overtimeMinutes).toBe(0);
+  });
+});

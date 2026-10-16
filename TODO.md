@@ -179,6 +179,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       details matches only a single client of that name), so families sharing a phone stay separate; imported birthdays go into the birthday
       field (MM/DD, two-digit years, impossible dates refused) instead of notes; automation texts are prefixed with the business name once;
       a rating link can be used once. Tests: `import-clients.test.ts`, `forms-logic.test.ts` (parseBirthday).
+- [x] Staff and time clock, 2026-10-16: overtime counts the whole Monday–Sunday workweek even when it straddles two pay periods (the
+      earlier days count toward 40 h but aren't paid twice); shifts closed automatically after 14 h are flagged on Payroll and highlighted
+      on Time clock; time entries can be edited (hours, note) and every add/edit/remove is audited; web clock-ins record the person's site;
+      kiosk PINs are keyed with the server secret (old ones upgrade on use) and wrong PINs are limited per kiosk; the dev "View as" switch
+      only works for owners. Test: core `payroll.test.ts` (split week).
+- [ ] Still open in payroll: overtime premium doesn't include commission in the regular rate (FLSA); no daily overtime (CA); overtime is
+      still ticked per run rather than defaulting on for hourly staff; salary is flat per run.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

@@ -13,6 +13,8 @@ import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice, Checkbox } 
 import { deleteAdjustment, finalize } from "./actions";
 import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
+import { and, gte, ilike, lte } from "drizzle-orm";
+import { schema, withTenant } from "@angelic/db";
 
 export default async function PayrollPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ start?: string; end?: string; overtime?: string; location?: string }> }) {
   const { slug } = await params;
@@ -32,6 +34,13 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   const active = result.employees.filter((e) => e.hasActivity);
   const unconfigured = result.employees.filter((e) => e.hasActivity && e.employee.payType === "commission" && e.employee.mainCommissionBps === 0 && e.mainRevenueCents > 0);
   const qs = `start=${start}&end=${end}&overtime=${overtime ? 1 : 0}${locationFilter ? `&location=${locationFilter}` : ""}`;
+  // Shifts the clock closed by itself (no clock-out for 14 hours) are paid at the cap until someone corrects them.
+  const autoClosed = await withTenant(business.id, (tx) =>
+    tx
+      .select({ staffId: schema.timeEntries.staffId, date: schema.timeEntries.date })
+      .from(schema.timeEntries)
+      .where(and(gte(schema.timeEntries.date, start), lte(schema.timeEntries.date, end), ilike(schema.timeEntries.note, "%Auto clock-out%"))),
+  );
   // A finalized period should not change; if it does (a tip added to an old ticket, an edit made before periods were locked), say who and by how much.
   const drift = finalized && !locationFilter && finalized.overtime === overtime ? driftFromSnapshot(finalized.snapshot, result) : [];
   const totals = active.reduce((t, e) => ({ total: t.total + e.totalCents, tips: t.tips + e.cashTipsCents + e.cardTipsCents, rev: t.rev + e.serviceRevenueCents }), { total: 0, tips: 0, rev: 0 });
@@ -64,6 +73,11 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
       ) : null}
       {finalized && !locationFilter && finalized.overtime !== overtime ? (
         <div className="mb-4"><Notice>This period was finalized with overtime {finalized.overtime ? "on" : "off"}; these figures have it {overtime ? "on" : "off"}.</Notice></div>
+      ) : null}
+      {autoClosed.length ? (
+        <div className="mb-4"><Notice>
+          {autoClosed.length === 1 ? "One shift was" : `${autoClosed.length} shifts were`} closed automatically after 14 hours because nobody clocked out ({autoClosed.map((a) => `${result.employees.find((e) => e.employee.staffId === a.staffId)?.employee.name ?? "staff"} ${dateShort(a.date)}`).join(", ")}). Check the hours under <Link href={`/app/${slug}/time?from=${start}&to=${end}`} className="underline">Time clock</Link> before paying.
+        </Notice></div>
       ) : null}
       {drift.length ? (
         <div className="mb-4"><Notice>

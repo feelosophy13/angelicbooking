@@ -10,7 +10,7 @@ import { ConfirmSubmit } from "@/components/form";
 import { dateShort, hours as fmtHours } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Time clock" };
-import { clockToggle, deleteTimeEntry, rotateClockToken } from "./actions";
+import { clockToggle, deleteTimeEntry, editTimeEntry, rotateClockToken } from "./actions";
 import { listLocations } from "@/server/locations";
 import { ensureClockToken } from "@/server/time-clock";
 import { appUrl } from "@/lib/stripe";
@@ -110,22 +110,33 @@ export default async function TimePage({ params, searchParams }: { params: Promi
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">{formatDateLong(from)} – {formatDateLong(to)}</h2>
             {data.entries.length === 0 ? <div className="p-4"><Empty title="No hours recorded" /></div> : (
               <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-2">Date</th><th className="px-4 py-2">Staff</th><th className="px-4 py-2">In / out</th>{multiLocation ? <th className="px-4 py-2">Where</th> : null}<th className="px-4 py-2 text-right">Hours</th><th className="px-4 py-2">Note</th><th /></tr></thead>
+                <thead className="text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-2">Date</th><th className="px-4 py-2">Staff</th><th className="px-4 py-2">In / out</th>{multiLocation ? <th className="px-4 py-2">Where</th> : null}<th className="px-4 py-2 text-right">Hours</th><th className="px-4 py-2">Note</th><th /><th /></tr></thead>
                 <tbody className="divide-y divide-stone-100">
                   {data.entries.map((e) => (
-                    <tr key={e.id}>
+                    <tr key={e.id} className={e.note?.includes("Auto clock-out") ? "bg-amber-50" : ""}>
                       <td className="px-4 py-2">{dateShort(e.date)}</td>
                       <td className="px-4 py-2">{name.get(e.staffId)}</td>
                       <td className="px-4 py-2 text-stone-600">{e.clockInAt ? `${formatTime(e.clockInAt, tz)} – ${e.clockOutAt ? formatTime(e.clockOutAt, tz) : "…"}` : "manual"}</td>
                       {multiLocation ? <td className="px-4 py-2 text-stone-600">{locName(e.locationId) ?? ""}</td> : null}
                       <td className="px-4 py-2 text-right">{fmtHours(e.minutes)}</td>
                       <td className="px-4 py-2 text-stone-600">{e.note ?? ""}</td>
+                      <td className="px-2 py-2 text-right">{manage ? (
+                        <details className="inline-block text-left">
+                          <summary className="cursor-pointer text-xs text-stone-500 hover:text-stone-800">Edit</summary>
+                          <form action={editTimeEntry} className="mt-1 flex w-52 flex-col gap-1">
+                            <input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={e.id} />
+                            <Input name="hours" type="number" step="0.25" min={0} max={24} defaultValue={(e.minutes / 60).toFixed(2)} aria-label="Hours" />
+                            <Input name="note" defaultValue={e.note ?? ""} placeholder="Note" aria-label="Note" />
+                            <Button type="submit" size="sm" variant="secondary">Save</Button>
+                          </form>
+                        </details>
+                      ) : null}</td>
                       <td className="px-2 py-2 text-right">{manage ? <form action={deleteTimeEntry}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={e.id} /><ConfirmSubmit title="Remove this time entry?" body="Payroll for this period will no longer include these hours." confirmLabel="Remove" variant="ghost" className="text-stone-500 hover:text-red-600">Remove</ConfirmSubmit></form> : null}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot className="border-t-2 border-stone-200 bg-stone-50 text-sm">
-                  <tr><td colSpan={multiLocation ? 7 : 6} className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-500">Hours by staff</td></tr>
+                  <tr><td colSpan={multiLocation ? 8 : 7} className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-500">Hours by staff</td></tr>
                   {[...totals.entries()].sort((x, y) => y[1] - x[1]).map(([sid, min]) => (
                     <tr key={sid}>
                       <td className="px-4 py-1" />
@@ -133,7 +144,7 @@ export default async function TimePage({ params, searchParams }: { params: Promi
                       <td />
                       {multiLocation ? <td /> : null}
                       <td className="px-4 py-1 text-right tabular-nums">{fmtHours(min)}</td>
-                      <td colSpan={2} />
+                      <td colSpan={3} />
                     </tr>
                   ))}
                   <tr className="border-t border-stone-200 font-semibold">
@@ -142,7 +153,7 @@ export default async function TimePage({ params, searchParams }: { params: Promi
                     <td />
                     {multiLocation ? <td /> : null}
                     <td className="px-4 py-2 text-right tabular-nums">{fmtHours([...totals.values()].reduce((a, b) => a + b, 0))}</td>
-                    <td colSpan={2} />
+                    <td colSpan={3} />
                   </tr>
                 </tfoot>
               </table></div>

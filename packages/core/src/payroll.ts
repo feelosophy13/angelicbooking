@@ -75,6 +75,8 @@ export interface PayrollInput {
   overtime: boolean;
   /** 0 = Sunday … 6 = Saturday. Default Monday. */
   weekStart?: number;
+  /** First day of the pay period: hours before it (the start of its first workweek) count toward overtime but aren't paid. */
+  countFrom?: string;
 }
 
 export interface WeekHours {
@@ -194,7 +196,7 @@ export function looksLikeMembership(name: string): boolean {
   return /membership/i.test(name);
 }
 
-function weekStartOf(date: string, weekStart: number): string {
+export function weekStartOf(date: string, weekStart: number): string {
   const [y, m, d] = date.split("-").map(Number);
   const dt = new Date(Date.UTC(y!, m! - 1, d!));
   const diff = (dt.getUTCDay() - weekStart + 7) % 7;
@@ -202,7 +204,12 @@ function weekStartOf(date: string, weekStart: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
-export function computeHours(entries: HoursEntry[], weekStart: number, applyOvertime: boolean, thresholdMinutes = 40 * 60): {
+/**
+ * Hours by day and by workweek, with overtime past `thresholdMinutes` a week. Overtime is counted day by day in order, so the hours that
+ * cross the line are the overtime ones. With `countFrom`, earlier days (the start of a workweek that began in the previous pay period)
+ * count toward the weekly line but aren't paid again here.
+ */
+export function computeHours(entries: HoursEntry[], weekStart: number, applyOvertime: boolean, thresholdMinutes = 40 * 60, countFrom?: string): {
   byDate: { date: string; minutes: number }[];
   weeks: WeekHours[];
   totalMinutes: number;
@@ -211,18 +218,26 @@ export function computeHours(entries: HoursEntry[], weekStart: number, applyOver
 } {
   const byDateMap = new Map<string, number>();
   for (const e of entries) byDateMap.set(e.date, (byDateMap.get(e.date) ?? 0) + Math.max(0, e.minutes));
-  const byDate = [...byDateMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, minutes]) => ({ date, minutes }));
-  const weekMap = new Map<string, number>();
-  for (const { date, minutes } of byDate) {
+  const days = [...byDateMap.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const paid = (d: string) => !countFrom || d >= countFrom;
+  const weekMap = new Map<string, { minutes: number; regular: number; overtime: number; running: number }>();
+  for (const [date, minutes] of days) {
     const w = weekStartOf(date, weekStart);
-    weekMap.set(w, (weekMap.get(w) ?? 0) + minutes);
+    const wk = weekMap.get(w) ?? { minutes: 0, regular: 0, overtime: 0, running: 0 };
+    const regular = applyOvertime ? Math.min(minutes, Math.max(0, thresholdMinutes - wk.running)) : minutes;
+    wk.running += minutes;
+    if (paid(date)) {
+      wk.minutes += minutes;
+      wk.regular += regular;
+      wk.overtime += minutes - regular;
+    }
+    weekMap.set(w, wk);
   }
   const weeks: WeekHours[] = [...weekMap.entries()]
+    .filter(([, w]) => w.minutes > 0)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([ws, minutes]) => {
-      const ot = applyOvertime ? Math.max(0, minutes - thresholdMinutes) : 0;
-      return { weekStart: ws, minutes, regularMinutes: minutes - ot, overtimeMinutes: ot };
-    });
+    .map(([ws, w]) => ({ weekStart: ws, minutes: w.minutes, regularMinutes: w.regular, overtimeMinutes: w.overtime }));
+  const byDate = days.filter(([d]) => paid(d)).map(([date, minutes]) => ({ date, minutes }));
   const totalMinutes = weeks.reduce((s, w) => s + w.minutes, 0);
   const overtimeMinutes = weeks.reduce((s, w) => s + w.overtimeMinutes, 0);
   return { byDate, weeks, totalMinutes, regularMinutes: totalMinutes - overtimeMinutes, overtimeMinutes };
@@ -255,7 +270,7 @@ export function computePayroll(input: PayrollInput): PayrollResult {
     // overtime only ever applies to hourly pay. Salary is a flat amount per run.
     const applyOt = emp.overtimeOverride ?? input.overtime;
     const paysHourly = emp.hourlyRateCents > 0 && (emp.payType === "hourly" || emp.payType === "commission");
-    const hrs = computeHours(input.hours.filter((h) => h.staffId === emp.staffId), weekStart, applyOt && paysHourly);
+    const hrs = computeHours(input.hours.filter((h) => h.staffId === emp.staffId), weekStart, applyOt && paysHourly, 40 * 60, input.countFrom);
     let wageCents = 0;
     if (paysHourly) wageCents += roundCents((hrs.regularMinutes / 60) * emp.hourlyRateCents + (hrs.overtimeMinutes / 60) * emp.hourlyRateCents * 1.5);
     if (emp.payType === "salary") wageCents += emp.salaryPerPeriodCents;

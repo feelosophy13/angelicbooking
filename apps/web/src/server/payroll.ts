@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
-import { CARD_FEE_METHODS, computePayroll, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type PayrollEmployee, type PayrollLine, type PayrollResult, type TipPart } from "@angelic/core";
+import { CARD_FEE_METHODS, computePayroll, weekStartOf, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type PayrollEmployee, type PayrollLine, type PayrollResult, type TipPart } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
 import { ratesForPeriod, syncCurrentRates } from "@/server/pay-rates";
 
@@ -210,7 +210,8 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
         tx
           .select({ staffId: schema.timeEntries.staffId, date: schema.timeEntries.date, minutes: schema.timeEntries.minutes, locationId: schema.timeEntries.locationId })
           .from(schema.timeEntries)
-          .where(and(gte(schema.timeEntries.date, period.start), lte(schema.timeEntries.date, period.end))),
+          // From the start of the first workweek, so overtime counts the week's earlier days (they aren't paid twice: see countFrom).
+          .where(and(gte(schema.timeEntries.date, weekStartOf(period.start, 1)), lte(schema.timeEntries.date, period.end))),
         tx
           .select()
           .from(schema.payrollAdjustments)
@@ -259,7 +260,7 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
 /** `locationId` limits sales (commission, tips) to one site; hours and adjustments are per person and stay whole. */
 export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean, locationId?: string | null, opts: { split?: boolean } = {}): Promise<PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[]; rateChanges: { staffId: string; name: string; effectiveFrom: string }[] }> {
   const inputs = await getPayrollInputs(business, period, locationId, opts);
-  const result = computePayroll({ employees: inputs.employees, lines: inputs.lines, hours: inputs.hours, adjustments: inputs.adjustments, overtime, weekStart: 1 });
+  const result = computePayroll({ employees: inputs.employees, lines: inputs.lines, hours: inputs.hours, adjustments: inputs.adjustments, overtime, weekStart: 1, countFrom: period.start });
   return { ...result, adjustmentRows: inputs.adjustmentRows, rateChanges: inputs.rateChanges };
 }
 
@@ -288,6 +289,7 @@ export async function payrollByLocation(business: Business, period: PayrollPerio
       adjustments: [],
       overtime: false,
       weekStart: 1,
+      countFrom: period.start,
     });
     const sum = (k: keyof LocationPay) => result.employees.reduce((n, e) => n + e[k], 0);
     out.set(key, { mainCommissionCents: sum("mainCommissionCents"), productCommissionCents: sum("productCommissionCents"), wageCents: sum("wageCents"), totalCents: sum("totalCents"), serviceRevenueCents: sum("serviceRevenueCents") });

@@ -4,15 +4,24 @@
  * desk staff and providers without an app account can use a shared phone or
  * tablet. PINs are stored hashed per business; the kiosk is rate limited.
  */
-import { createHash, randomBytes } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { db, schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { instantToISODate } from "@angelic/core";
 import { tzFor } from "./locations";
+import { sharedRateLimit } from "@/lib/shared-rate-limit";
 
 export class ClockError extends Error {}
 
+/**
+ * A PIN's stored form: keyed with the server's secret, so a copy of the database alone can't be used to work out 4-digit PINs. Older
+ * PINs were a plain hash; they still match (legacyPinHash) and are upgraded the next time they are used.
+ */
 export function hashPin(businessId: string, pin: string): string {
+  return createHmac("sha256", process.env.BETTER_AUTH_SECRET ?? "dev").update(`pin:${businessId}:${pin.trim()}`).digest("hex");
+}
+
+function legacyPinHash(businessId: string, pin: string): string {
   return createHash("sha256").update(`${businessId}:${pin.trim()}`).digest("hex");
 }
 
@@ -24,7 +33,7 @@ export async function setClockPin(businessId: string, staffId: string, pin: stri
   const hash = pin === null ? null : hashPin(businessId, pin);
   await withTenant(businessId, async (tx) => {
     if (hash) {
-      const clash = await tx.query.staff.findFirst({ where: and(eq(schema.staff.clockPinHash, hash), eq(schema.staff.active, true)) });
+      const clash = await tx.query.staff.findFirst({ where: and(or(eq(schema.staff.clockPinHash, hash), eq(schema.staff.clockPinHash, legacyPinHash(businessId, pin!))), eq(schema.staff.active, true)) });
       if (clash && clash.id !== staffId) throw new ClockError("That PIN is already in use by someone else. Pick another.");
     }
     await tx.update(schema.staff).set({ clockPinHash: hash }).where(eq(schema.staff.id, staffId));
@@ -91,9 +100,21 @@ export async function punchWithPin(token: string, pin: string): Promise<Punch> {
   const hash = hashPin(business.id, pin);
   const now = new Date();
   const tz = tzFor(business, location);
+  // Wrong PINs are counted per kiosk as well as per address, so a 4-digit PIN can't be guessed from many addresses.
+  const tooMany = async () => !(await sharedRateLimit(`clock-miss:${token}`, 20, 10 * 60_000)).ok;
   return withTenant(business.id, async (tx) => {
-    const person = await tx.query.staff.findFirst({ where: and(eq(schema.staff.clockPinHash, hash), eq(schema.staff.active, true)) });
-    if (!person) throw new ClockError("PIN not recognised.");
+    let person = await tx.query.staff.findFirst({ where: and(eq(schema.staff.clockPinHash, hash), eq(schema.staff.active, true)) });
+    if (!person) {
+      const old = await tx.query.staff.findFirst({ where: and(eq(schema.staff.clockPinHash, legacyPinHash(business.id, pin)), eq(schema.staff.active, true)) });
+      if (old) {
+        await tx.update(schema.staff).set({ clockPinHash: hash }).where(eq(schema.staff.id, old.id));
+        person = old;
+      }
+    }
+    if (!person) {
+      if (await tooMany()) throw new ClockError("Too many wrong PINs on this clock. Wait ten minutes, or ask a manager.");
+      throw new ClockError("PIN not recognised.");
+    }
     const open = await openEntryFor(tx, person.id, now);
     if (open?.clockInAt) {
       const minutes = Math.max(1, Math.round((now.getTime() - open.clockInAt.getTime()) / 60_000));
