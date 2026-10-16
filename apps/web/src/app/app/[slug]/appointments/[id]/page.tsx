@@ -106,6 +106,20 @@ export default async function AppointmentPage({
   const lateFee = first && latePolicy.feeType !== "none" && !locked && appointment.kind !== "block" && isInsideCancelWindow(first.startAt, business.cancelWindowHours) ? lateCancelFee(latePolicy, total, appointment.depositStatus === "paid" ? appointment.depositCents : 0) : null;
   const lateCancel = lateFee && lateFee.feeCents > 0 ? { feeLabel: formatMoney(lateFee.feeCents, business.currency), depositCoversLabel: lateFee.depositCoversCents > 0 ? formatMoney(lateFee.depositCoversCents, business.currency) : null, chargeLabel: lateFee.chargeCents > 0 ? formatMoney(lateFee.chargeCents, business.currency) : null, chargeCents: lateFee.chargeCents } : null;
 
+  // A paid deposit: when staff cancel, what to do with it. Inside the window the fee the deposit covers can be kept and the rest returned; outside it (or when the salon cancels) all of it goes back.
+  const depositPaid = appointment.depositStatus === "paid" ? appointment.depositCents : 0;
+  const insideWindow = !!first && isInsideCancelWindow(first.startAt, business.cancelWindowHours);
+  const depositExcess = lateFee && latePolicy.deposit === "toward" ? depositPaid - lateFee.depositCoversCents : 0;
+  const canRefundDeposit = can(permissions, "reports.view") || can(permissions, "checkout.refund");
+  const depositChoice = depositPaid > 0 && !locked && appointment.kind !== "block"
+    ? {
+        totalLabel: formatMoney(depositPaid, business.currency),
+        feeOnly: depositExcess > 0 && lateFee ? { keepLabel: formatMoney(lateFee.depositCoversCents, business.currency), refundLabel: formatMoney(depositExcess, business.currency) } : null,
+        canRefund: canRefundDeposit,
+        defaultChoice: (!canRefundDeposit ? "keep" : !insideWindow ? "refund_all" : depositExcess > 0 ? "fee_only" : "keep") as "keep" | "fee_only" | "refund_all",
+      }
+    : null;
+
   // Group segments by service so colour + finish show as one line.
   const groups = new Map<string, typeof items>();
   for (const i of items) {
@@ -356,7 +370,7 @@ export default async function AppointmentPage({
             ) : canCancel ? (
               <details className="group mt-3 border-t border-stone-200 pt-3">
                 <summary className="cursor-pointer select-none text-sm text-stone-500 hover:text-stone-800 marker:content-none [&::-webkit-details-marker]:hidden">Cancel this appointment…</summary>
-                <CancelForm slug={slug} appointmentId={id} late={lateCancel} cards={savedCards} />
+                <CancelForm slug={slug} appointmentId={id} late={lateCancel} cards={savedCards} deposit={depositChoice} />
               </details>
             ) : null}
           </Card>

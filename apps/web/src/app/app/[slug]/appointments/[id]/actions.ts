@@ -137,8 +137,11 @@ export async function startCheckout(formData: FormData) {
  * charge what the deposit doesn't cover to a saved card; the fee lands on a ticket of its own.
  */
 export async function cancelAppointment(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const d = base.extend({ reason: z.string().trim().max(200).optional(), chargeFee: z.string().optional(), paymentMethodId: z.string().optional() }).parse(Object.fromEntries(formData));
+  const d = base.extend({ reason: z.string().trim().max(200).optional(), chargeFee: z.string().optional(), paymentMethodId: z.string().optional(), deposit: z.enum(["keep", "fee_only", "refund_all"]).optional() }).parse(Object.fromEntries(formData));
   const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "cancel");
+  // What happens to a paid deposit is the salon's call when staff cancel: keep it, keep only the late fee, or give it all back. Giving money back needs the refund permission.
+  const choice = d.deposit ?? "keep";
+  if (choice !== "keep" && !can(ctx.permissions, "reports.view") && !can(ctx.permissions, "checkout.refund")) throw new PermissionError();
   const reason = d.reason || null;
   try {
     if (d.chargeFee === "on" && d.paymentMethodId) {
@@ -165,8 +168,36 @@ export async function cancelAppointment(_prev: ActionState, formData: FormData):
       });
       await chargeCardOnFile({ businessId: ctx.business.id, accountId: pay.accountId, saleId, paymentMethodId: d.paymentMethodId, amountCents: fee.chargeCents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
     }
+    // The refund amount is worked out here, not taken from the form: all of it, or what is left after the late fee the deposit covers.
+    let refundCents: number | null = null;
+    if (choice !== "keep") {
+      const info = await withTenant(ctx.business.id, async (tx) => {
+        const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, d.appointmentId) });
+        const items = appt ? await tx.select({ priceCents: schema.appointmentItems.priceCents, startAt: schema.appointmentItems.startAt, status: schema.appointmentItems.status }).from(schema.appointmentItems).where(eq(schema.appointmentItems.appointmentId, d.appointmentId)) : [];
+        const live = items.filter((i) => i.status !== "cancelled");
+        return { appt, servicesCents: live.reduce((n, i) => n + i.priceCents, 0), startAt: live[0]?.startAt ?? null };
+      });
+      if (info.appt?.depositStatus === "paid" && info.appt.depositCents > 0) {
+        if (choice === "refund_all") refundCents = info.appt.depositCents;
+        else if (info.startAt && isInsideCancelWindow(info.startAt, ctx.business.cancelWindowHours)) {
+          const policy = { feeType: ctx.business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: ctx.business.lateCancelFeeValue, deposit: ctx.business.lateCancelDeposit as "toward" | "extra" };
+          const fee = lateCancelFee(policy, info.servicesCents, info.appt.depositCents);
+          const excess = info.appt.depositCents - (policy.deposit === "toward" ? fee.depositCoversCents : info.appt.depositCents);
+          if (excess > 0) refundCents = excess;
+        }
+      }
+    }
     await setAppointmentStatus(ctx.business.id, d.appointmentId, "cancelled", ctx.user.id, reason);
     await notifyAppointment(ctx.business, d.appointmentId, "cancellation");
+    if (refundCents) {
+      try {
+        const pay = await paymentContextForAppointment(ctx.business, d.appointmentId);
+        await refundDeposit({ businessId: ctx.business.id, accountId: pay.accountId, appointmentId: d.appointmentId, actorUserId: ctx.user.id, reason: choice === "refund_all" ? "Cancelled by the salon: deposit refunded" : "Cancelled late: deposit refunded except the fee", amountCents: refundCents });
+      } catch (e) {
+        revalidatePath(`/app/${d.slug}/appointments/${d.appointmentId}`);
+        return { error: `The appointment is cancelled, but the deposit refund did not go through${e instanceof BookingError ? `: ${e.message}` : ""}. Use "Refund deposit" on this page.` };
+      }
+    }
   } catch (e) {
     if (e instanceof SaleError || e instanceof BookingError) return { error: e.message };
     throw e;

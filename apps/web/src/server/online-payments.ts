@@ -140,23 +140,27 @@ export async function appointmentForIntent(businessId: string, intentId: string)
  * inside the policy window, staff courtesy refund, or a booking that failed after
  * the charge). Idempotent: does nothing unless the deposit is in "paid".
  */
-export async function refundDeposit(input: { businessId: string; accountId: string | null; appointmentId: string; actorUserId: string; reason: string; /** Override the business policy (staff choosing explicitly). */ as?: "original" | "store_credit" }) {
+export async function refundDeposit(input: { businessId: string; accountId: string | null; appointmentId: string; actorUserId: string; reason: string; /** Give back only part of the deposit (the rest stays as the late-cancel fee); default is all of it. */ amountCents?: number; /** Override the business policy (staff choosing explicitly). */ as?: "original" | "store_credit" }) {
   return withTenant(input.businessId, async (tx) => {
     const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, input.appointmentId) });
     if (!appt || appt.depositStatus !== "paid" || !appt.depositPaymentIntentId) return false;
     const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { depositRefundAs: true } });
+    const refundCents = Math.min(appt.depositCents, Math.max(1, Math.round(input.amountCents ?? appt.depositCents)));
+    const partial = refundCents < appt.depositCents;
     const as = input.as ?? (biz?.depositRefundAs === "store_credit" ? "store_credit" : "original");
     // Under a store-credit policy the money stays on the account and the client gets a balance instead.
     if (as === "store_credit" && appt.clientId) {
-      await changeStoreCredit(tx, { businessId: input.businessId, clientId: appt.clientId, deltaCents: appt.depositCents, reason: "deposit_refund", appointmentId: appt.id, note: input.reason, actorUserId: input.actorUserId });
-      await tx.update(schema.appointments).set({ depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
-      await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.store_credit", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: appt.depositCents, reason: input.reason }) });
+      await changeStoreCredit(tx, { businessId: input.businessId, clientId: appt.clientId, deltaCents: refundCents, reason: "deposit_refund", appointmentId: appt.id, note: input.reason, actorUserId: input.actorUserId });
+      await tx.update(schema.appointments).set(partial ? { depositCents: appt.depositCents - refundCents } : { depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
+      await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.store_credit", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: refundCents, kept: appt.depositCents - refundCents, reason: input.reason }) });
       return true;
     }
     if (!input.accountId) throw new BookingError("Stripe account not connected.");
-    await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId, metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: input.accountId, idempotencyKey: `deposit_refund_${appt.id}` });
-    await tx.update(schema.appointments).set({ depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
-    await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.refund", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: appt.depositCents, reason: input.reason }) });
+    // A partial refund names its amount (and carries it in the idempotency key); a full one lets Stripe refund what is left.
+    await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId, ...(partial ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: input.accountId, idempotencyKey: `deposit_refund_${appt.id}_${partial ? refundCents : "all"}` });
+    // After a partial refund the deposit is what the salon kept; it stays "paid" so it can still be applied to the visit's bill or the fee.
+    await tx.update(schema.appointments).set(partial ? { depositCents: appt.depositCents - refundCents } : { depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
+    await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.refund", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: refundCents, kept: appt.depositCents - refundCents, reason: input.reason }) });
     return true;
   });
 }
