@@ -392,7 +392,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `payment_method_types`, and card-reader PaymentIntents need `card_present`, so they are created with API version 2025-09-30.clover
       (`TERMINAL_API_VERSION` in `server/sales.ts`). Restart the web dev server after changing these vars. The Payments page's Refresh/Connect buttons
       do not work for the demo account (it is not a Connect account). Walked in the browser 2026-10-16 on demo-salon: product-only sale, simulated reader, paid in full (terminal · VISA), then a full
-      card refund ("Goodwill") through the demo account. Still untested: a real reader, the typed-card form and online booking deposits on the demo account.
+      card refund ("Goodwill") through the demo account. Typed card (2026-10-16): the Stripe card form loads with the demo keys and accepts a
+      test card number; a PaymentIntent confirmed with Stripe's test Visa through the API was recorded by the app and closed the sale (the UI
+      could not fill expiry/CVC/ZIP reliably through browser automation, so the click-through is not done). Fixed: every "Enter card" or reader
+      attempt used to leave a "Pending" payment row; starting a new attempt now cancels the old PaymentIntents and drops those rows (one that cannot be
+      cancelled, e.g. it just succeeded, is kept). Open: the desk's card form also offers Klarna, Affirm, Cash App Pay, Amazon Pay, bank and Link signup
+      (the account's dashboard payment-method list; `payment_method_types: ["card"]` needs the older API version, as for the reader). Still
+      untested: a real reader and online booking deposits on the demo account.
 - [x] 2026-10-15: platform admin accounts moved into the database (migration 0091 `admin_users`). Login, password reset, Google sign-in and the audit
       actor all use the table; the session cookie names the admin and `requireAdmin()` rechecks they still exist and are enabled. New Admins page
       (add by email with an emailed set-password link, disable/enable; not yourself, not the last one). `pnpm --filter @angelic/admin create-admin

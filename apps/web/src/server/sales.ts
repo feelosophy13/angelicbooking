@@ -666,6 +666,20 @@ export async function createCardPaymentIntent(input: {
     assertOpen(sale);
     const amount = Math.min(input.amountCents, balance(sale));
     if (amount < 50) throw new SaleError("Amount must be at least $0.50.");
+    // A card attempt that was abandoned (form closed, reader cancelled, page reloaded) must not pile up as "Pending" rows: cancel its PaymentIntent and
+    // drop the row. A row whose PaymentIntent can't be cancelled (it may have just succeeded) is left for the webhook / finish step to settle.
+    const abandoned = await tx.select().from(schema.payments).where(and(eq(schema.payments.saleId, sale.id), eq(schema.payments.status, "pending")));
+    for (const old of abandoned) {
+      if (old.stripePaymentIntentId) {
+        // Cancel it; if Stripe refuses, it is gone only when it is already cancelled (a payment that succeeded must stay).
+        const cancelled = await stripe().paymentIntents.cancel(old.stripePaymentIntentId, {}, { stripeAccount: input.accountId }).then(
+          () => true,
+          async () => (await stripe().paymentIntents.retrieve(old.stripePaymentIntentId!, {}, { stripeAccount: input.accountId }).then((p) => p.status === "canceled", () => false)),
+        );
+        if (!cancelled) continue;
+      }
+      await tx.delete(schema.payments).where(eq(schema.payments.id, old.id));
+    }
     let customerId: string | undefined;
     if (sale.clientId) {
       const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) });
