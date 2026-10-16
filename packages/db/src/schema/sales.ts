@@ -309,6 +309,9 @@ export const saleLines = pgTable(
     clientPackageId: text("client_package_id"),
     clientMembershipId: text("client_membership_id"),
     creditCents: integer("credit_cents").notNull().default(0),
+    /** A member's "% off services" applied to this line, and the price before it (so it can be taken off again if the client changes). */
+    memberDiscountBps: integer("member_discount_bps").notNull().default(0),
+    preMemberUnitCents: integer("pre_member_unit_cents"),
     // A tip line only: how it was handed over, "cash" or "card". Null = same as the payment (older tips, or the desk did not say); payroll splits those by the payment mix.
     tipMethod: text("tip_method"),
   },

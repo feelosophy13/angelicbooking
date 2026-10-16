@@ -12,14 +12,15 @@ export function ReviewForm({ slug, token, initialRating, googleReviewUrl, busine
     return (
       <div className="space-y-3 text-center">
         <p className="text-lg font-semibold">Thank you!</p>
-        {state.rating && state.rating >= 4 && googleReviewUrl ? (
+        <p className="text-sm text-stone-600">Your feedback goes straight to the team.</p>
+        {/* Offered after every rating, good or bad: showing it only to happy clients is review gating, which Google's rules and the FTC's
+            review rule forbid. */}
+        {googleReviewUrl ? (
           <>
-            <p className="text-sm text-stone-600">Would you share that on Google too? It helps {businessName} more than anything.</p>
+            <p className="text-sm text-stone-600">You&apos;re also welcome to post a review of {businessName} on Google.</p>
             <a href={googleReviewUrl} target="_blank" rel="noreferrer" className="inline-block rounded-lg px-4 py-2 text-sm font-medium text-white" style={{ background: "var(--brand)" }}>Leave a Google review</a>
           </>
-        ) : (
-          <p className="text-sm text-stone-600">Your feedback goes straight to the team.</p>
-        )}
+        ) : null}
       </div>
     );
   }

@@ -188,7 +188,7 @@ export async function redeemCredit(input: { businessId: string; saleId: string; 
     const delta = line.amountCents;
     await tx
       .update(schema.saleLines)
-      .set({ amountCents: 0, unitCents: 0, name: `${line.name} (${input.source} credit)`, creditCents: delta, ...(input.source === "package" ? { clientPackageId: input.sourceId } : { clientMembershipId: input.sourceId }) })
+      .set({ amountCents: 0, unitCents: 0, name: `${line.name} (${input.source} credit)`, creditCents: line.preMemberUnitCents ?? delta, memberDiscountBps: 0, preMemberUnitCents: null, ...(input.source === "package" ? { clientPackageId: input.sourceId } : { clientMembershipId: input.sourceId }) })
       .where(eq(schema.saleLines.id, line.id));
     await tx.update(schema.sales).set({ subtotalCents: sql`${schema.sales.subtotalCents} - ${delta}`, totalCents: sql`${schema.sales.totalCents} - ${delta}` }).where(eq(schema.sales.id, sale.id));
     await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: `credit.${input.source}`, entity: "sale", entityId: sale.id, diff: JSON.stringify({ lineId: line.id, delta }) });

@@ -91,7 +91,7 @@ export const updatePlan = formAction(
       const before = await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, d.id), columns: { priceCents: true, interval: true, intervalCount: true } });
       // A new price or cadence needs a new Stripe price; existing subscriptions keep the old one until set up again.
       const repriced = !!before && (before.priceCents !== d.price || before.interval !== cadence.interval || before.intervalCount !== cadence.count);
-      await tx.update(schema.membershipPlans).set({ name: d.name, priceCents: d.price, interval: cadence.interval, intervalCount: cadence.count, includedServiceId: d.includedServiceId || null, includedSessions: d.includedSessions, rolloverCap: d.rolloverCap, cycleCount: d.cycleCount || null, discountBps: Math.round(d.discountPct * 100), description: d.description, validLocationIds: await validAtFromForm(tx, raw), ...(repriced ? { stripePriceId: null } : {}) }).where(eq(schema.membershipPlans.id, d.id));
+      await tx.update(schema.membershipPlans).set({ name: d.name, priceCents: d.price, interval: cadence.interval, intervalCount: cadence.count, includedServiceId: d.includedServiceId || null, includedSessions: d.includedSessions, rolloverCap: d.rolloverCap, cycleCount: d.cycleCount || null, discountBps: Math.round(d.discountPct * 100), description: d.description, validLocationIds: await validAtFromForm(tx, raw), ...(repriced ? { stripePriceId: null, stripePriceIds: {} } : {}) }).where(eq(schema.membershipPlans.id, d.id));
     });
     revalidatePath(`/app/${d.slug}/memberships`);
     revalidatePath(`/app/${d.slug}/memberships/${d.id}`);

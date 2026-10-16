@@ -190,6 +190,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       already follow the payment's own Stripe account); `.xls` uploads and unreadable spreadsheets get a clear "save as .xlsx or CSV"
       message instead of an error page; imported appointments get a location and future ones get the salon's reminders. Test:
       `forms-logic.test.ts` (parseTable).
+- [x] Reviews and memberships, 2026-10-16 (migration 0104): the Google review link is offered after every rating, not only 4–5★ (review
+      gating breaks Google's rules and the FTC review rule); a membership's "% off other services" now prices the member's service lines
+      automatically (shown on the ticket, removed if the client changes, a typed price overrides it, credit-covered lines credit full price);
+      repricing a plan clears its per-account Stripe prices so renewals charge the new price. Test: `member-pricing.test.ts`.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

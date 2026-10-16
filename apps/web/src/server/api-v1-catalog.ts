@@ -397,7 +397,7 @@ export async function patchPlanApi(ctx: ApiContext, id: string, d: z.infer<typeo
       ...(d.included_sessions !== undefined ? { includedSessions: d.included_sessions } : {}), ...(d.rollover_cap !== undefined ? { rolloverCap: d.rollover_cap } : {}),
       ...(d.cycle_count !== undefined ? { cycleCount: d.cycle_count || null } : {}), ...(d.discount_bps !== undefined ? { discountBps: d.discount_bps } : {}),
       ...(d.description !== undefined ? { description: d.description } : {}), ...(validIds ? { validLocationIds: validIds } : {}), ...(d.active !== undefined ? { active: d.active } : {}),
-      ...(repriced ? { stripePriceId: null } : {}),
+      ...(repriced ? { stripePriceId: null, stripePriceIds: {} } : {}),
     };
     if (!Object.keys(set).length) return { row: cur };
     const [row] = await tx.update(schema.membershipPlans).set(set).where(and(eq(schema.membershipPlans.id, id), eq(schema.membershipPlans.businessId, b))).returning();

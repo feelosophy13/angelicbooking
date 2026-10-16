@@ -17,7 +17,7 @@ export default async function ReviewPage({ params, searchParams }: { params: Pro
   return (
     <div className="rounded-xl border border-stone-200 bg-white p-6">
       {r.review.submittedAt ? (
-        <p className="text-center text-sm text-stone-700">Thanks{r.client ? `, ${r.client.firstName}` : ""}! You already rated this visit {r.review.rating}/5.{r.review.rating && r.review.rating >= 4 && r.business.googleReviewUrl ? <> You can also <a href={r.business.googleReviewUrl} className="underline" style={{ color: "var(--brand)" }} target="_blank" rel="noreferrer">leave a Google review</a>.</> : null}</p>
+        <p className="text-center text-sm text-stone-700">Thanks{r.client ? `, ${r.client.firstName}` : ""}! You already rated this visit {r.review.rating}/5.{r.business.googleReviewUrl ? <> You can also <a href={r.business.googleReviewUrl} className="underline" style={{ color: "var(--brand)" }} target="_blank" rel="noreferrer">leave a Google review</a>.</> : null}</p>
       ) : (
         <>
           <h1 className="text-center text-xl font-semibold">How was your visit{r.client ? `, ${r.client.firstName}` : ""}?</h1>

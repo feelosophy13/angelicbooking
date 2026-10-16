@@ -137,7 +137,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 {goods.map((l) => (
                   <tr key={l.id}>
                     <td className="py-2">
-                      <p>{l.name}{l.quantity > 1 ? ` × ${l.quantity}` : ""}</p>
+                      <p>{l.name}{l.quantity > 1 ? ` × ${l.quantity}` : ""}{l.memberDiscountBps ? <span className="ml-1 text-xs text-emerald-700">member {l.memberDiscountBps / 100}% off</span> : null}</p>
                       <p className="text-xs text-stone-500">{[l.kind, staff.find((s) => s.id === l.staffId)?.displayName, l.taxable ? "taxable" : null].filter(Boolean).join(" · ")}</p>
                       {open && l.kind === "product" && l.productId && trackedIds.has(l.productId) && (stockHere.get(l.productId) ?? 0) < (wantedQty.get(l.productId) ?? 0) ? (
                         <p className="text-xs text-amber-700">{Math.max(0, stockHere.get(l.productId) ?? 0) === 0 ? "None in stock" : `Only ${stockHere.get(l.productId)} in stock`}{multiLocation ? " here" : ""}. You can still sell it; the count may be off.</p>

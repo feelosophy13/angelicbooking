@@ -76,6 +76,35 @@ async function recompute(tx: TenantDb, saleId: string, taxRateBps: number, disco
   return { ...t, paidCents, refundedCents };
 }
 
+/**
+ * Member pricing: when the ticket's client holds an active membership with "% off other services" that is valid at the ticket's location,
+ * each service line not paid with a credit gets that discount (the best one, if several). Lines already priced for a member are left
+ * alone; if the client changes or loses the membership, the discount comes off again. Call before recompute.
+ */
+async function applyMemberPricing(tx: TenantDb, saleId: string) {
+  const [sale] = await tx.select().from(schema.sales).where(eq(schema.sales.id, saleId));
+  if (!sale || sale.status !== "open") return;
+  let bps = 0;
+  if (sale.clientId) {
+    const plans = await tx
+      .select({ bps: schema.membershipPlans.discountBps, valid: schema.membershipPlans.validLocationIds })
+      .from(schema.clientMemberships)
+      .innerJoin(schema.membershipPlans, eq(schema.membershipPlans.id, schema.clientMemberships.planId))
+      .where(and(eq(schema.clientMemberships.clientId, sale.clientId), eq(schema.clientMemberships.status, "active"), gt(schema.clientMemberships.currentPeriodEnd, new Date()), gt(schema.membershipPlans.discountBps, 0)));
+    bps = Math.max(0, ...plans.filter((p) => !p.valid?.length || !sale.locationId || p.valid.includes(sale.locationId)).map((p) => Math.min(10_000, p.bps)));
+  }
+  const lines = await tx.select().from(schema.saleLines).where(and(eq(schema.saleLines.saleId, saleId), eq(schema.saleLines.kind, "service"), eq(schema.saleLines.creditCents, 0)));
+  for (const l of lines) {
+    if (l.memberDiscountBps === bps) continue;
+    const list = l.preMemberUnitCents ?? l.unitCents;
+    const unit = bps ? Math.round((list * (10_000 - bps)) / 10_000) : list;
+    await tx
+      .update(schema.saleLines)
+      .set({ unitCents: unit, amountCents: unit * l.quantity, memberDiscountBps: bps, preMemberUnitCents: bps ? list : null })
+      .where(eq(schema.saleLines.id, l.id));
+  }
+}
+
 /** Open (or return the existing) sale for an appointment, seeded with its live services. */
 export async function openSaleForAppointment(input: { businessId: string; appointmentId: string; actorUserId: string; taxRateBps: number; currency: string }) {
   return withTenant(input.businessId, async (tx) => {
@@ -157,6 +186,7 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
         }
       }
     }
+    await applyMemberPricing(tx, sale!.id);
     await recompute(tx, sale!.id, input.taxRateBps, discount);
     await audit(tx, input.businessId, input.actorUserId, "sale.open", sale!.id, { appointmentId: appt.id });
     return sale!.id;
@@ -242,6 +272,10 @@ export async function setSaleClient(input: { businessId: string; saleId: string;
       if (!c) throw new SaleError("Client not found.");
     }
     await tx.update(schema.sales).set({ clientId: input.clientId }).where(eq(schema.sales.id, sale.id));
+    // The new client's member pricing (or none) replaces the old one's.
+    await applyMemberPricing(tx, sale.id);
+    const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { taxRateBps: true } });
+    await recompute(tx, sale.id, biz?.taxRateBps ?? 0, await currentDiscount(tx, { ...sale, clientId: input.clientId }));
     await audit(tx, input.businessId, input.actorUserId, "sale.client", sale.id, { clientId: input.clientId });
   });
 }
@@ -374,6 +408,8 @@ export async function addServiceLine(input: { businessId: string; saleId: string
     const price = input.priceCents ?? override?.priceCentsOverride ?? service.priceCents;
     const [agg] = await tx.select({ max: sql<number>`coalesce(max(${schema.saleLines.sortOrder}), -1)` }).from(schema.saleLines).where(and(eq(schema.saleLines.saleId, sale.id), eq(schema.saleLines.kind, "service")));
     await tx.insert(schema.saleLines).values({ businessId: input.businessId, saleId: sale.id, kind: "service", staffId: input.staffId, serviceId: service.id, name: service.name, quantity: 1, unitCents: price, amountCents: price, taxable: false, sortOrder: Number(agg?.max ?? -1) + 1 });
+    // A price typed at the desk is the price; otherwise a member's discount applies.
+    if (input.priceCents == null) await applyMemberPricing(tx, sale.id);
     await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
     await audit(tx, input.businessId, input.actorUserId, "sale.add_service", sale.id, { serviceId: service.id, price });
   });
@@ -394,7 +430,7 @@ export async function updateLine(input: { businessId: string; saleId: string; li
     if (unit < 0) throw new SaleError("Price can't be negative.");
     await tx
       .update(schema.saleLines)
-      .set({ unitCents: unit, quantity: qty, amountCents: unit * qty, ...(input.staffId !== undefined ? { staffId: input.staffId } : {}) })
+      .set({ unitCents: unit, quantity: qty, amountCents: unit * qty, ...(input.unitCents != null && input.unitCents !== line.unitCents ? { memberDiscountBps: 0, preMemberUnitCents: null } : {}), ...(input.staffId !== undefined ? { staffId: input.staffId } : {}) })
       .where(eq(schema.saleLines.id, line.id));
     await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
     await audit(tx, input.businessId, input.actorUserId, "sale.edit_line", sale.id, { lineId: line.id, from: { unit: line.unitCents, qty: line.quantity, staffId: line.staffId }, to: { unit, qty, staffId: input.staffId ?? line.staffId } });

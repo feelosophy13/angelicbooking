@@ -19,7 +19,7 @@ export default async function ReviewSettingsPage({ params }: { params: Promise<{
           <ActionForm action={saveReviewSettings}>
             <input type="hidden" name="slug" value={slug} />
             <p className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm text-stone-700">Whether and when the rating request goes out is the <Link href={`/app/${slug}/marketing/automations`} className="text-brand-700 underline">“Ask for a rating” workflow</Link> under Automations in the sidebar (turn it on or off, change the delay, add a text or an email around it).</p>
-            <Field label="Google review link" name="googleReviewUrl" hint="Clients who give 4 or 5 stars are invited to post on Google too. Get the link from your Google Business Profile → Ask for reviews."><Input name="googleReviewUrl" defaultValue={business.googleReviewUrl ?? ""} placeholder="https://g.page/r/…/review" /></Field>
+            <Field label="Google review link" name="googleReviewUrl" hint="Every client who rates a visit is invited to post on Google too (asking only happy clients breaks Google's rules). Get the link from your Google Business Profile → Ask for reviews."><Input name="googleReviewUrl" defaultValue={business.googleReviewUrl ?? ""} placeholder="https://g.page/r/…/review" /></Field>
             <SubmitButton pendingText="Saving…">Save</SubmitButton>
           </ActionForm>
         </Card>
