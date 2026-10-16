@@ -110,6 +110,28 @@ export function parseDate(v: string | undefined): string | null {
   return null;
 }
 
+/**
+ * A birthday from an export: like parseDate, plus "MM/DD" with no year (stored with year 1900, which birthday messages ignore) and
+ * two-digit years read as the past ("4/5/85" is 1985). Null when it isn't a real date.
+ */
+export function parseBirthday(v: string | undefined, now = new Date()): string | null {
+  if (!v?.trim()) return null;
+  const s = v.trim();
+  const md = /^(\d{1,2})\/(\d{1,2})$/.exec(s);
+  const short = /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/.exec(s);
+  let out: string | null;
+  if (md) out = `1900-${md[1]!.padStart(2, "0")}-${md[2]!.padStart(2, "0")}`;
+  else if (short) {
+    const yy = Number(short[3]);
+    const y = yy > now.getUTCFullYear() % 100 ? 1900 + yy : 2000 + yy;
+    out = `${y}-${short[1]!.padStart(2, "0")}-${short[2]!.padStart(2, "0")}`;
+  } else out = parseDate(s);
+  if (!out) return null;
+  const [y, m, d] = out.split("-").map(Number) as [number, number, number];
+  const check = new Date(Date.UTC(y, m - 1, d));
+  return check.getUTCMonth() === m - 1 && check.getUTCDate() === d ? out : null;
+}
+
 /** "9:30 AM", "14:05", "2026-10-06T09:30:00" → "HH:mm" */
 export function parseTime(v: string | undefined): string | null {
   if (!v) return null;

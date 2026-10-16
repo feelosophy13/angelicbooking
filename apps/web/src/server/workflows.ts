@@ -463,7 +463,9 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
         const phone = normalizePhone(client.phone);
         if (!client.smsOptIn || !phone) { note(i, "skipped", "No text consent or number"); continue; }
         if (marketing && !client.smsMarketingOptIn) { note(i, "skipped", "No consent to marketing texts"); continue; }
-        const body = await smsWithStopNotice(tx, client, `${v.brand.businessName}: ${renderText(step.body, v.vars)}`, marketing);
+        // Texts start with the business's name; a template that already does (e.g. "{business}: ...") isn't prefixed twice.
+        const text = renderText(step.body, v.vars);
+        const body = await smsWithStopNotice(tx, client, text.startsWith(`${v.brand.businessName}:`) ? text : `${v.brand.businessName}: ${text}`, marketing);
         const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: `workflow_${w.templateKey ?? "custom"}`, recipient: phone, body, scheduledAt, workflowRunId: run.id, marketing }).returning({ id: schema.notifications.id });
         out.push(row!.id);
         note(i, "sent", `Text queued to ${phone}${deferred}`);

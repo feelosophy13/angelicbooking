@@ -175,6 +175,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       standing appointment skips that date and says so); moving a service to another provider takes their price (and length, for one-block
       services); a failed automatic deposit refund on an online cancel is logged, emailed to the salon and shown honestly to the client;
       desk bookings check the client and location belong to the business. Test: `status-rules.test.ts`.
+- [x] Clients, 2026-10-16: a CSV import merges a row into an existing client only when phone/email AND name match (a row without contact
+      details matches only a single client of that name), so families sharing a phone stay separate; imported birthdays go into the birthday
+      field (MM/DD, two-digit years, impossible dates refused) instead of notes; automation texts are prefixed with the business name once;
+      a rating link can be used once. Tests: `import-clients.test.ts`, `forms-logic.test.ts` (parseBirthday).
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

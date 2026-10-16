@@ -11,7 +11,8 @@ export async function submitReviewAction(_prev: ReviewState, formData: FormData)
   if (!d.success) return { error: "Pick a star rating." };
   const r = await getReviewByToken(d.data.slug, d.data.token);
   if (!r) return { error: "This link is no longer valid." };
-  await submitReview(r.business.id, d.data.token, d.data.rating, d.data.comment || null);
+  const saved = await submitReview(r.business.id, d.data.token, d.data.rating, d.data.comment || null);
+  if (!saved) return { error: "Thanks, your rating for this visit is already in." };
   return { ok: true, rating: d.data.rating };
 }
 

@@ -3,7 +3,7 @@
  * with a one-tap rating link. High ratings are nudged on to Google when the
  * business has a review URL; every rating is kept on the client's record.
  */
-import { and, asc, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
+import { and, isNull, asc, desc, eq, gte, isNotNull, lt, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { appointmentFacts, triggerWorkflows } from "@/server/workflows";
 
@@ -29,15 +29,18 @@ export async function submitReview(businessId: string, token: string, rating: nu
   const review = await withTenant(businessId, async (tx) => {
     const review = await tx.query.reviews.findFirst({ where: eq(schema.reviews.token, token) });
     if (!review) throw new Error("Review not found.");
-    await tx.update(schema.reviews).set({ rating, comment, submittedAt: new Date() }).where(eq(schema.reviews.id, review.id));
-    return review;
+    // A link rates one visit once: a second post (or a changed mind after the owner replied) doesn't overwrite it.
+    const [took] = await tx.update(schema.reviews).set({ rating, comment, submittedAt: new Date() }).where(and(eq(schema.reviews.id, review.id), isNull(schema.reviews.submittedAt))).returning({ id: schema.reviews.id });
+    return took ? review : null;
   });
+  if (!review) return false;
   // "Review received" workflows (e.g. low-rating alert to the owner).
   const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
   if (business && review.clientId) {
     const facts = review.appointmentId ? await withTenant(businessId, (tx) => appointmentFacts(tx, review.appointmentId!)) : null;
     await triggerWorkflows(business, "review_submitted", { clientId: review.clientId, appointmentId: review.appointmentId, dedupeKey: review.id, facts: { ...(facts ?? {}), rating, staffId: review.staffId, locationId: review.locationId }, context: { appointmentId: review.appointmentId, rating, staffId: review.staffId, locationId: review.locationId, reason: `Rated ${rating}/5` } }).catch((e) => console.error("[workflows] review_submitted failed", (e as Error).message));
   }
+  return true;
 }
 
 export type ReviewFilter = { locationId?: string | null; staffId?: string | null; from?: Date | null; to?: Date | null; /** Only this star rating (1–5). */ rating?: number | null };

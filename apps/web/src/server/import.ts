@@ -1,7 +1,8 @@
 import { and, eq, ilike, or, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { buildBookingSegments, normalizePhone, zonedToInstant } from "@angelic/core";
-import { parseBool, parseDate, parseDuration, parseTime, splitName, type ImportKind } from "@/lib/import/mapping";
+import { parseBirthday, parseBool, parseDate, parseDuration, parseTime, splitName, type ImportKind } from "@/lib/import/mapping";
+import { sameClientName } from "@/lib/client-match";
 import { timingFor } from "./availability";
 import { isSmsSuppressed } from "./consent";
 
@@ -61,16 +62,21 @@ export async function runImport(business: Business, kind: ImportKind, rows: Reco
 
 type Tx = Parameters<Parameters<typeof withTenant>[1]>[0];
 
+/**
+ * The existing client a row is, if any: the same phone or email AND the same name (family members sharing a phone, or two people with
+ * one email, stay separate people). A row with no phone or email matches by name only when exactly one client has that name.
+ */
 async function findClient(tx: Tx, first: string, last: string, phone: string | null, email: string | null) {
   const conds = [];
   if (phone) conds.push(eq(schema.clients.phone, phone));
   if (email) conds.push(sql`lower(${schema.clients.email}) = ${email.toLowerCase()}`);
   if (conds.length) {
-    const hit = await tx.query.clients.findFirst({ where: or(...conds) });
-    if (hit) return hit;
+    const hits = await tx.query.clients.findMany({ where: or(...conds), limit: 25 });
+    return hits.find((c) => sameClientName(c, { firstName: first, lastName: last })) ?? null;
   }
   if (first) {
-    return tx.query.clients.findFirst({ where: and(ilike(schema.clients.firstName, first), ilike(schema.clients.lastName, last || "")) });
+    const named = await tx.query.clients.findMany({ where: and(ilike(schema.clients.firstName, first), ilike(schema.clients.lastName, last || "")), limit: 2 });
+    return named.length === 1 ? named[0]! : null;
   }
   return null;
 }
@@ -90,7 +96,10 @@ async function importClients(tx: Tx, business: Business, rows: Record<string, st
       const emailRaw = get(row, mapping, "email");
       const email = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailRaw) ? emailRaw.toLowerCase() : null;
       const phone = normalizePhone(get(row, mapping, "phone")) ?? (get(row, mapping, "phone") || null);
-      const notesParts = [get(row, mapping, "notes"), get(row, mapping, "birthday") ? `Birthday: ${get(row, mapping, "birthday")}` : ""].filter(Boolean);
+      // A birthday that parses goes in the birthday field (birthday messages use it); anything else is kept in the notes.
+      const birthdayRaw = get(row, mapping, "birthday");
+      const birthday = parseBirthday(birthdayRaw);
+      const notesParts = [get(row, mapping, "notes"), birthdayRaw && !birthday ? `Birthday: ${birthdayRaw}` : ""].filter(Boolean);
       const smsOptIn = parseBool(get(row, mapping, "smsOptIn"));
       const emailOptIn = parseBool(get(row, mapping, "emailOptIn"));
       const existing = await findClient(tx, first, last, phone, email);
@@ -103,6 +112,7 @@ async function importClients(tx: Tx, business: Business, rows: Record<string, st
             email: existing.email ?? email,
             phone: existing.phone ?? phone,
             notes: existing.notes ?? (notesParts.join("\n") || null),
+            birthday: existing.birthday ?? birthday,
             ...(smsOptIn != null ? { smsOptIn: smsOptIn && !stopped } : {}),
             ...(emailOptIn != null ? { emailOptIn } : {}),
           })
@@ -116,6 +126,7 @@ async function importClients(tx: Tx, business: Business, rows: Record<string, st
           email,
           phone,
           notes: notesParts.join("\n") || null,
+          birthday,
           smsOptIn: (smsOptIn ?? true) && !stopped,
           emailOptIn: emailOptIn ?? true,
           tags: ["imported"],

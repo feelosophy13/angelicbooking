@@ -60,3 +60,17 @@ describe("yes/no drivers and hidden answers", () => {
     expect(clearHidden([q, dep], { preg: "Yes", weeks: "12" }).weeks).toBe("12");
   });
 });
+
+describe("parseBirthday", () => {
+  it("reads exports' birthday formats and refuses impossible dates", async () => {
+    const { parseBirthday } = await import("../import/mapping");
+    const now = new Date("2026-10-16T00:00:00Z");
+    expect(parseBirthday("1985-04-05", now)).toBe("1985-04-05");
+    expect(parseBirthday("4/5/1985", now)).toBe("1985-04-05");
+    expect(parseBirthday("4/5/85", now)).toBe("1985-04-05");
+    expect(parseBirthday("4/5/05", now)).toBe("2005-04-05");
+    expect(parseBirthday("12/25", now)).toBe("1900-12-25");
+    expect(parseBirthday("2/30/1990", now)).toBeNull();
+    expect(parseBirthday("", now)).toBeNull();
+  });
+});
