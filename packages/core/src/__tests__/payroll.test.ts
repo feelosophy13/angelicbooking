@@ -184,14 +184,14 @@ describe("tipsPerPayment", () => {
   it("puts a cash tip on the non-card payments and a card tip on the card payment", () => {
     const r = tipsPerPayment([{ amountCents: 1000, method: "cash" }, { amountCents: 500, method: "card" }], pays);
     expect(r.card1).toBe(500);
-    expect(r.cash1 + r.gc1).toBe(1000);
+    expect((r.cash1 ?? 0) + (r.gc1 ?? 0)).toBe(1000);
     expect(r.cash1).toBe(500); // equal weights
     expect(sum(r)).toBe(1500);
   });
   it("spreads an unmarked tip across every payment by amount, adding back exactly", () => {
     const r = tipsPerPayment([{ amountCents: 1001, method: null }], pays);
     expect(sum(r)).toBe(1001);
-    expect(r.card1).toBeGreaterThan(r.cash1);
+    expect(r.card1 ?? 0).toBeGreaterThan(r.cash1 ?? 0);
   });
   it("falls back to all payments when none is of the right kind, and copes with no payments", () => {
     expect(tipsPerPayment([{ amountCents: 700, method: "card" }], [{ id: "c", method: "cash", amountCents: 5000 }])).toEqual({ c: 700 });
