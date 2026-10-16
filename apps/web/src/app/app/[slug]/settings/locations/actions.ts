@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
@@ -64,12 +64,15 @@ export async function deleteLocation(formData: FormData) {
   const slug = String(formData.get("slug"));
   const id = String(formData.get("id"));
   const ctx = await requireAction(slug, "business.manage");
-  const ok = await withTenant(ctx.business.id, async (tx) => {
+  const outcome = await withTenant(ctx.business.id, async (tx) => {
     const l = await tx.query.locations.findFirst({ where: eq(schema.locations.id, id) });
-    if (!l || l.isDefault) return false;
+    if (!l || l.isDefault) return "The default location can't be removed.";
+    // A site with history stays: its sales, visits and hours are reported by location, and removing it would file them under "No location".
+    const [used] = await tx.execute<{ n: number }>(sql`select (select count(*) from sales where location_id = ${id}) + (select count(*) from appointments where location_id = ${id}) + (select count(*) from time_entries where location_id = ${id}) as n`);
+    if (Number(used?.n ?? 0) > 0) return "This location has sales, visits or hours on record, so it stays for your reports. Stop booking there by moving its staff and hours elsewhere.";
     await tx.delete(schema.locations).where(eq(schema.locations.id, id));
-    return true;
+    return null;
   });
-  await setFlash(ok ? "Location removed" : "The default location can't be removed.", ok ? "success" : "error");
+  await setFlash(outcome ?? "Location removed", outcome ? "error" : "success");
   revalidatePath(`/app/${slug}/settings/locations`);
 }

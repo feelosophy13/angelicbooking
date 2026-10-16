@@ -74,3 +74,13 @@ describe("parseBirthday", () => {
     expect(parseBirthday("", now)).toBeNull();
   });
 });
+
+describe("parseTable", () => {
+  it("explains what to do with an old .xls file instead of crashing", async () => {
+    const { parseTable, TableError } = await import("../import/parse");
+    await expect(parseTable({ name: "Clients.XLS", bytes: new ArrayBuffer(8) })).rejects.toBeInstanceOf(TableError);
+    await expect(parseTable({ name: "broken.xlsx", bytes: new TextEncoder().encode("not a zip").buffer as ArrayBuffer })).rejects.toThrow(/couldn't be read/);
+    const t = await parseTable({ name: "c.csv", bytes: new TextEncoder().encode("First,Last,Phone\nAna,Lee,5555550101\n").buffer as ArrayBuffer });
+    expect(t.rows).toEqual([{ First: "Ana", Last: "Lee", Phone: "5555550101" }]);
+  });
+});

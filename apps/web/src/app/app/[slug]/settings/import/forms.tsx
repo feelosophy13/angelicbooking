@@ -18,7 +18,7 @@ export function UploadForm({ slug }: { slug: string }) {
         </Select>
       </Field>
       <Field label="File" hint="CSV or Excel export from Vagaro. Title rows above the header are fine.">
-        <input type="file" name="file" accept=".csv,.xlsx,.xls,text/csv" required className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm" />
+        <input type="file" name="file" accept=".csv,.xlsx,text/csv" required className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-stone-100 file:px-3 file:py-2 file:text-sm" />
       </Field>
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton pendingText="Reading file…">Upload and preview</SubmitButton>

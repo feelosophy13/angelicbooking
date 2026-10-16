@@ -186,6 +186,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       only works for owners. Test: core `payroll.test.ts` (split week).
 - [ ] Still open in payroll: overtime premium doesn't include commission in the regular rate (FLSA); no daily overtime (CA); overtime is
       still ticked per run rather than defaulting on for hourly staff; salary is flat per run.
+- [x] Settings and imports, 2026-10-16: a location with sales, visits or hours can't be deleted (its history stays in reports; refunds
+      already follow the payment's own Stripe account); `.xls` uploads and unreadable spreadsheets get a clear "save as .xlsx or CSV"
+      message instead of an error page; imported appointments get a location and future ones get the salon's reminders. Test:
+      `forms-logic.test.ts` (parseTable).
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

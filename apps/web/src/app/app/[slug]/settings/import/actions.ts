@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { db, schema } from "@angelic/db";
 import { z } from "zod";
 import { requireAction } from "@/lib/tenant";
-import { parseTable } from "@/lib/import/parse";
+import { parseTable, TableError } from "@/lib/import/parse";
 import { autoMap, FIELDS, IMPORT_KINDS, type ImportKind } from "@/lib/import/mapping";
 import { runImport } from "@/server/import";
 
@@ -40,7 +40,13 @@ export async function uploadImport(_prev: UploadState, formData: FormData): Prom
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a CSV or Excel file." };
   if (file.size > 25 * 1024 * 1024) return { error: "File is too large (25 MB max)." };
-  const table = await parseTable({ name: file.name, bytes: await file.arrayBuffer() });
+  let table: Awaited<ReturnType<typeof parseTable>>;
+  try {
+    table = await parseTable({ name: file.name, bytes: await file.arrayBuffer() });
+  } catch (e) {
+    if (e instanceof TableError) return { error: e.message };
+    throw e;
+  }
   if (!table.rows.length) return { error: "No rows found in that file." };
   await db.delete(schema.files).where(and(eq(schema.files.businessId, ctx.business.id), eq(schema.files.kind, STAGE_KIND), lt(schema.files.createdAt, new Date(Date.now() - STAGE_TTL_MS))));
   const id = crypto.randomUUID();

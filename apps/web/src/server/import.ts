@@ -5,6 +5,7 @@ import { parseBirthday, parseBool, parseDate, parseDuration, parseTime, splitNam
 import { sameClientName } from "@/lib/client-match";
 import { timingFor } from "./availability";
 import { isSmsSuppressed } from "./consent";
+import { scheduleReminderFor } from "@/lib/notify";
 
 type Business = typeof schema.businesses.$inferSelect;
 export interface ImportResult {
@@ -39,10 +40,11 @@ const money = (v: string) => {
 
 export async function runImport(business: Business, kind: ImportKind, rows: Record<string, string>[], mapping: Record<string, string>, actorUserId: string | null, filename: string): Promise<ImportResult> {
   const r: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [] };
+  const upcoming: string[] = [];
   await withTenant(business.id, async (tx) => {
     if (kind === "clients") await importClients(tx, business, rows, mapping, r);
     else if (kind === "services") await importServices(tx, business, rows, mapping, r);
-    else await importAppointments(tx, business, rows, mapping, r, actorUserId);
+    else await importAppointments(tx, business, rows, mapping, r, actorUserId, upcoming);
     await tx.insert(schema.importJobs).values({
       businessId: business.id,
       kind,
@@ -57,6 +59,8 @@ export async function runImport(business: Business, kind: ImportKind, rows: Reco
     });
     await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: `import.${kind}`, entity: "import", entityId: filename, diff: JSON.stringify({ rows: rows.length, ...r, errors: r.errors.length }) });
   });
+  // Future visits get the salon's reminders like any booking made here (no confirmation: they were booked elsewhere already).
+  for (const id of upcoming) await scheduleReminderFor(business, id).catch((e) => console.error("[import] reminders failed", id, (e as Error).message));
   return r;
 }
 
@@ -189,7 +193,9 @@ async function importServices(tx: Tx, business: Business, rows: Record<string, s
   }
 }
 
-async function importAppointments(tx: Tx, business: Business, rows: Record<string, string>[], mapping: Record<string, string>, r: ImportResult, actorUserId: string | null) {
+async function importAppointments(tx: Tx, business: Business, rows: Record<string, string>[], mapping: Record<string, string>, r: ImportResult, actorUserId: string | null, upcoming: string[] = []) {
+  // Imported visits belong to a site like any other (the stylist's own, else the default), for reports, tax and the right Stripe account.
+  const defaultLocationId = (await tx.query.locations.findFirst({ where: eq(schema.locations.isDefault, true), columns: { id: true } }))?.id ?? null;
   const staffRows = await tx.select().from(schema.staff);
   const services = await tx.select().from(schema.services);
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
@@ -273,7 +279,7 @@ async function importAppointments(tx: Tx, business: Business, rows: Record<strin
       }
       const [appt] = await tx
         .insert(schema.appointments)
-        .values({ businessId: business.id, clientId: client.id, status, source: "import", notes: get(row, mapping, "notes") || null, createdByUserId: actorUserId })
+        .values({ businessId: business.id, clientId: client.id, status, source: "import", notes: get(row, mapping, "notes") || null, createdByUserId: actorUserId, locationId: staff.locationId ?? defaultLocationId })
         .returning({ id: schema.appointments.id });
       try {
         await tx.execute(sql`savepoint import_items`);
@@ -303,6 +309,7 @@ async function importAppointments(tx: Tx, business: Business, rows: Record<strin
         throw e;
       }
       r.created++;
+      if ((status === "booked" || status === "confirmed") && startAt > new Date()) upcoming.push(appt!.id);
       });
     } catch (e) {
       r.errors.push({ row: i + 2, message: (e as Error).message });

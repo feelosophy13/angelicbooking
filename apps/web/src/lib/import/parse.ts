@@ -76,8 +76,18 @@ function findHeaderRow(grid: string[][]): number {
   return 0;
 }
 
+/** A file we can't read, with what to do about it (shown to the person uploading). */
+export class TableError extends Error {}
+
 export async function parseTable(file: { name: string; bytes: ArrayBuffer }): Promise<Table> {
-  const grid = /\.xlsx?$/i.test(file.name) ? await xlsxToGrid(file.bytes) : parseCsv(new TextDecoder().decode(file.bytes));
+  // The old binary Excel format isn't something the spreadsheet reader understands (it crashed the upload before).
+  if (/\.xls$/i.test(file.name)) throw new TableError("Old Excel files (.xls) can't be read. In Excel, choose File → Save As and pick .xlsx or CSV, then upload that.");
+  let grid: string[][];
+  try {
+    grid = /\.xlsx$/i.test(file.name) ? await xlsxToGrid(file.bytes) : parseCsv(new TextDecoder().decode(file.bytes));
+  } catch {
+    throw new TableError("That file couldn't be read as a spreadsheet. Save it as .xlsx or CSV and try again.");
+  }
   if (!grid.length) return { headers: [], rows: [] };
   const h = findHeaderRow(grid);
   const headers = grid[h]!.map((x, i) => (x.trim() || `Column ${i + 1}`));
