@@ -8,7 +8,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "hash-password": "node scripts/hash-password.mjs",
+    "create-admin": "node scripts/create-admin.mjs",
     "totp-secret": "node scripts/totp-secret.mjs"
   },
   "dependencies": {

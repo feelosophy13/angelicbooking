@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { currentHash } from "@/lib/credentials";
-import { verifyResetToken } from "@/lib/reset-token";
+import { findAdminByEmail } from "@/lib/credentials";
+import { peekEmail, verifyResetToken } from "@/lib/reset-token";
 import { ResetForm } from "./reset-form";
 
 export const metadata: Metadata = { title: "Choose a new password" };
@@ -10,7 +10,9 @@ export const dynamic = "force-dynamic";
 export default async function ResetPage({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
   const token = (await searchParams).token ?? "";
   const secret = process.env.ADMIN_SESSION_SECRET;
-  const valid = !!secret && !!verifyResetToken(secret, token, await currentHash());
+  const peeked = peekEmail(token);
+  const user = peeked ? await findAdminByEmail(peeked) : null;
+  const valid = !!secret && !!user && !user.disabledAt && !!verifyResetToken(secret, token, user.passwordHash ?? "");
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
       {valid ? (

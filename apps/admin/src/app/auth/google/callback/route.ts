@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { baseUrl } from "@/lib/admin-session";
-import { GOOGLE_TOKEN, acceptedEmail, allowedGoogleEmails, decodeIdToken, googleEnabled } from "@/lib/google";
+import { activeAdminEmails, findAdminByEmail, recordLogin } from "@/lib/credentials";
+import { GOOGLE_TOKEN, acceptedEmail, decodeIdToken, googleEnabled } from "@/lib/google";
 import { COOKIE, clearFailures, createToken, recordFailure, sessionCookieOptions, throttled } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
     }
     const { id_token } = (await res.json()) as { id_token?: string };
     const claims = id_token ? decodeIdToken(id_token) : null;
-    const allowed = allowedGoogleEmails();
+    const allowed = await activeAdminEmails();
     const email = id_token ? acceptedEmail(claims, { clientId: process.env.GOOGLE_CLIENT_ID!, allowed }) : null;
     if (!email) {
       note("sign-in denied", {
@@ -75,11 +76,14 @@ export async function GET(req: NextRequest) {
       recordFailure(ip);
       return back("google_denied");
     }
+    const user = await findAdminByEmail(email);
+    if (!user || user.disabledAt) return back("google_denied");
     note("signed in", { email });
     clearFailures(ip);
+    await recordLogin(user.id);
     const ok = NextResponse.redirect(new URL("/", baseUrl()));
     // Set on this very response (not through next/headers) so the cookie is certainly on the redirect.
-    ok.cookies.set(COOKIE, createToken(), sessionCookieOptions(process.env.NODE_ENV === "production"));
+    ok.cookies.set(COOKIE, createToken(user.id), sessionCookieOptions(process.env.NODE_ENV === "production"));
     ok.cookies.delete({ name: "g_state", path: "/auth/google" });
     ok.cookies.delete({ name: "g_verifier", path: "/auth/google" });
     return ok;

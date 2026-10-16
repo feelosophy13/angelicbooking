@@ -11,6 +11,7 @@ const ITEMS = [
   { href: "/pricing", label: "Pricing", icon: "tag" },
   { href: "/health", label: "Health", icon: "pulse" },
   { href: "/activity", label: "Activity", icon: "list" },
+  { href: "/admins", label: "Admins", icon: "users" },
 ] as const;
 
 export function NavLinks({ onNavigate }: { onNavigate?: () => void }) {

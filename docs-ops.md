@@ -295,27 +295,38 @@ except `platform_pricing`, `business_pricing`, `admin_audit_log` and the columns
 `comped`, `trial_ends_at`, `updated_at` of `businesses`. Run the file as the DB owner after every migration that adds tables,
 and change the password before using it in production. `ADMIN_DATABASE_URL` goes on the admin service only.
 
-**Env (admin service).** `ADMIN_DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` (`pnpm --filter @angelic/admin hash-password '…'`),
-`ADMIN_SESSION_SECRET` (32+ random chars), optional `ADMIN_TOTP_SECRET` (`pnpm --filter @angelic/admin totp-secret`, then add the key to an
-authenticator app; login then needs the 6-digit code; off in production, where Cloudflare Access is the second factor), optional `STRIPE_SECRET_KEY` (restricted, read-only: shows what Stripe actually bills).
+**Admin accounts.** Operators are rows in the `admin_users` table (migration 0091): email, scrypt password hash, optional name, last sign-in,
+and a disabled flag. Nothing about who the admins are lives in environment variables. Make the first one with
+`pnpm --filter @angelic/admin create-admin you@example.com "Your Name"` (hidden password prompt; run it against the production database
+with `ADMIN_DATABASE_URL` set to the admin role's URL). After that, admins add each other under **Admins** in the app: the new person gets
+an emailed link (works once, 30 minutes) to choose a password, or signs in with Google. Disabling an admin signs them out on their next
+click; you can't disable yourself or the last enabled admin. Every change is recorded in Activity under the admin's email.
+
+**Env (admin service).** `ADMIN_DATABASE_URL`, `ADMIN_SESSION_SECRET` (32+ random chars; signs session cookies and reset links),
+optional `ADMIN_TOTP_SECRET` (`pnpm --filter @angelic/admin totp-secret`, then add the key to an
+authenticator app; login then needs the 6-digit code; off in production, where Cloudflare Access is the second factor), optional `STRIPE_SECRET_KEY` (restricted, read-only: shows what Stripe actually billed).
+
+**Moving off `ADMIN_EMAIL` / `ADMIN_PASSWORD_HASH`.** Until the first account exists, those two variables still let that one person sign in
+once, and the sign-in creates their account (so no one is locked out by the deploy). After that first sign-in, delete both variables from the
+service; they are never read again once any account exists. Re-run `admin-role.sql` as the DB owner after deploying (it grants the admin role
+access to `admin_users`). The old `admin_credentials` table is no longer read; migration 0091 copied its row into `admin_users`.
 
 **Deploy.** A second Render web service from the same repo: build `pnpm install && pnpm --filter @angelic/admin build`, start
 `pnpm --filter @angelic/admin start`, domain `admin.angelicbooking.com`, with a Cloudflare Access policy (your email only) in front.
 Sessions last 8 hours; logins are throttled to 5 failures per IP per 15 minutes per instance.
 
 **Forgot the password?** The login page has "Forgot your password?": it emails a link (valid 30 minutes, works once, dies the moment the
-password changes) to `ADMIN_EMAIL` through Resend (`RESEND_API_KEY` and `EMAIL_FROM` on the admin service). The new password is stored
-hashed in the `admin_credentials` table (migration 0079) and from then on wins over `ADMIN_PASSWORD_HASH`. The form always gives the same
-answer, so it can't be used to find out which email is the admin's. Needs `ADMIN_BASE_URL` (https://admin.angelicbooking.com) for the link.
+password changes) to the address entered, if that is an enabled admin, through Resend (`RESEND_API_KEY` and `EMAIL_FROM` on the admin service).
+The form always gives the same answer, so it can't be used to find out which emails are admins'. Needs `ADMIN_BASE_URL`
+(https://admin.angelicbooking.com) for the link.
 
 **Google sign-in.** "Continue with Google" appears when `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set on the admin service (the same
 OAuth client as the web app is fine). Add `<ADMIN_BASE_URL>/auth/google/callback` to that client's authorised redirect URIs (and
-`http://localhost:3002/auth/google/callback` for local). Only `ADMIN_EMAIL` (or the comma-separated `ADMIN_GOOGLE_EMAILS`) may get in, and the
+`http://localhost:3002/auth/google/callback` for local). Only enabled admins (matched on email) may get in, and the
 Google account's email must be verified. It uses authorization code + PKCE + a state cookie. Google sign-in counts as the full login (no
 authenticator code on top). Cloudflare Access still sits in front of everything.
 
-**Locked out completely?** Generate a new hash with the script above and set `ADMIN_PASSWORD_HASH`, and delete the row in `admin_credentials`
-(a saved reset password overrides the env var).
+**Locked out completely?** Run `create-admin` again with the same email: it sets a new password and re-enables the account.
 
 **What suspend does.** Closes the staff app (redirects to `/suspended`), the public booking page, client self-service links, calendar
 feeds, the clock-in kiosk and the mobile API, and skips outgoing texts and emails. Data is kept. The daily billing sweep also pauses

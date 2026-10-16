@@ -384,6 +384,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `ContactFields` for the free and paid forms, with promo/referral codes behind "Have a code?"; paid form labelled
       Step 1/2 and 2/2 and uses the shared `Button`; waitlist pre-fills for signed-in clients; dead ends link to another
       service or a tel: link. Not yet walked live: the details form and the Stripe payment steps.
+- [x] 2026-10-15: platform admin accounts moved into the database (migration 0091 `admin_users`). Login, password reset, Google sign-in and the audit
+      actor all use the table; the session cookie names the admin and `requireAdmin()` rechecks they still exist and are enabled. New Admins page
+      (add by email with an emailed set-password link, disable/enable; not yourself, not the last one). `pnpm --filter @angelic/admin create-admin
+      <email>` makes the first account (replaces `hash-password`). `ADMIN_EMAIL` / `ADMIN_PASSWORD_HASH` / `ADMIN_GOOGLE_EMAILS` are gone; until the
+      first account exists the old pair still signs in once and creates it. **Production rollout (not done yet):** deploy, run `admin-role.sql` as the
+      DB owner (grants `admin_users`), sign in once, then delete `ADMIN_EMAIL` and `ADMIN_PASSWORD_HASH` from the `angelic-admin` Render service.
+      Existing sessions end at deploy (old cookies name nobody). `admin_credentials` is now unused (row copied by the migration).
 - [x] 2026-10-15: checkout review (migration 0090: `sales.notes`, `sales.tax_exempt`, `businesses.receipt_footer`). Sidebar entry is "Sales & checkout"
       with + Appointment / + Sale buttons (also in the phone menu). An empty ticket opens "Add to this ticket" with a searchable product
       list (`sale-product-picker.tsx`, pictures, stock, Enter adds a single match; staff credit defaults to the person at the desk). Cash shows

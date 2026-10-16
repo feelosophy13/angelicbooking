@@ -26,6 +26,9 @@ const LABELS: Record<string, string> = {
   "tenant.uncomp": "Removed comp",
   "tenant.trial.extend": "Extended trial",
   "admin.password.reset": "Admin password reset",
+  "admin.add": "Added an admin",
+  "admin.disable": "Disabled an admin",
+  "admin.enable": "Enabled an admin",
 };
 
 export function actionLabel(action: string): string {

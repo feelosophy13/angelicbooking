@@ -2,13 +2,13 @@
 
 import { headers } from "next/headers";
 import { baseUrl } from "@/lib/admin-session";
-import { adminEmail, currentHash } from "@/lib/credentials";
+import { findAdminByEmail } from "@/lib/credentials";
 import { sendMail } from "@/lib/mailer";
 import { RESET_MINUTES, createResetToken, mayRequestReset, noteResetRequest } from "@/lib/reset-token";
 
 export type ForgotState = { done?: boolean; error?: string } | null;
 
-/** Always answers the same way, so nobody can use this form to learn which email is the admin's. */
+/** Always answers the same way, so nobody can use this form to learn which emails are admins'. */
 export async function requestReset(_prev: ForgotState, form: FormData): Promise<ForgotState> {
   const h = await headers();
   const ip = h.get("cf-connecting-ip") ?? h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
@@ -16,8 +16,9 @@ export async function requestReset(_prev: ForgotState, form: FormData): Promise<
   const email = String(form.get("email") ?? "").trim().toLowerCase();
   noteResetRequest(ip);
   const secret = process.env.ADMIN_SESSION_SECRET;
-  if (secret && email && email === adminEmail()) {
-    const token = createResetToken(secret, email, await currentHash());
+  const user = secret && email ? await findAdminByEmail(email) : null;
+  if (secret && user && !user.disabledAt) {
+    const token = createResetToken(secret, user.email, user.passwordHash ?? "");
     await sendMail({
       to: email,
       subject: "Reset your Angelic admin password",

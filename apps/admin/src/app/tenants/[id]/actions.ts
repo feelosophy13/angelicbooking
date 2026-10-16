@@ -6,14 +6,10 @@ import { ActionError, extendTrial, reactivateTenant, setComped, suspendTenant } 
 
 export type ActionState = { ok?: string; error?: string } | null;
 
-function actor() {
-  return process.env.ADMIN_EMAIL ?? "admin";
-}
-
-async function run(fn: () => Promise<string>): Promise<ActionState> {
-  await requireAdmin();
+async function run(fn: (actor: string) => Promise<string>): Promise<ActionState> {
+  const admin = await requireAdmin();
   try {
-    const ok = await fn();
+    const ok = await fn(admin.email);
     revalidatePath("/", "layout");
     return { ok };
   } catch (e) {
@@ -24,18 +20,18 @@ async function run(fn: () => Promise<string>): Promise<ActionState> {
 
 export async function suspendAction(id: string, _p: ActionState, form: FormData): Promise<ActionState> {
   const reason = String(form.get("reason") ?? "").trim().slice(0, 300);
-  return run(async () => (await suspendTenant(id, reason, actor()), "Suspended."));
+  return run(async (actor) => (await suspendTenant(id, reason, actor), "Suspended."));
 }
 
 export async function reactivateAction(id: string): Promise<ActionState> {
-  return run(async () => (await reactivateTenant(id, actor()), "Reactivated."));
+  return run(async (actor) => (await reactivateTenant(id, actor), "Reactivated."));
 }
 
 export async function compAction(id: string, comped: boolean): Promise<ActionState> {
-  return run(async () => (await setComped(id, comped, actor()), comped ? "Comped." : "Comp removed."));
+  return run(async (actor) => (await setComped(id, comped, actor), comped ? "Comped." : "Comp removed."));
 }
 
 export async function extendTrialAction(id: string, _p: ActionState, form: FormData): Promise<ActionState> {
   const days = Number(String(form.get("days") ?? "").trim());
-  return run(async () => `Trial now ends ${(await extendTrial(id, days, actor())).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.`);
+  return run(async (actor) => `Trial now ends ${(await extendTrial(id, days, actor)).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.`);
 }

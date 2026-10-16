@@ -7,12 +7,6 @@ export function googleEnabled(env: Record<string, string | undefined> = process.
   return !!env.GOOGLE_CLIENT_ID && !!env.GOOGLE_CLIENT_SECRET;
 }
 
-/** Who may sign in with Google: ADMIN_GOOGLE_EMAILS (comma separated) or, by default, the admin's own email. */
-export function allowedGoogleEmails(env: Record<string, string | undefined> = process.env): string[] {
-  const raw = env.ADMIN_GOOGLE_EMAILS?.trim() ? env.ADMIN_GOOGLE_EMAILS : (env.ADMIN_EMAIL ?? "");
-  return raw.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
-}
-
 export function pkcePair(): { verifier: string; challenge: string } {
   const verifier = randomBytes(32).toString("base64url");
   return { verifier, challenge: createHash("sha256").update(verifier).digest("base64url") };

@@ -22,24 +22,31 @@ function sign(payload: string, key = secret()): string {
   return createHmac("sha256", key).update(payload).digest("base64url");
 }
 
-export function createToken(now = Date.now(), key = secret()): string {
-  const payload = Buffer.from(JSON.stringify({ exp: now + SESSION_HOURS * 3600_000 })).toString("base64url");
+/** A signed, expiring cookie value naming who is signed in (`u`, an admin_users id). */
+export function createToken(userId: string, now = Date.now(), key = secret()): string {
+  const payload = Buffer.from(JSON.stringify({ exp: now + SESSION_HOURS * 3600_000, u: userId })).toString("base64url");
   return `${payload}.${sign(payload, key)}`;
 }
 
-export function verifyToken(token: string | undefined, now = Date.now(), key?: string): boolean {
-  if (!token) return false;
+/** Who a valid token belongs to, or null when it is forged, expired, malformed or from before accounts existed (no `u`). */
+export function tokenUserId(token: string | undefined, now = Date.now(), key?: string): string | null {
+  if (!token) return null;
   const [payload, mac, extra] = token.split(".");
-  if (!payload || !mac || extra !== undefined) return false;
+  if (!payload || !mac || extra !== undefined) return null;
   const expected = Buffer.from(sign(payload, key));
   const given = Buffer.from(mac);
-  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return false;
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
   try {
-    const { exp } = JSON.parse(Buffer.from(payload, "base64url").toString()) as { exp?: unknown };
-    return typeof exp === "number" && exp > now;
+    const { exp, u } = JSON.parse(Buffer.from(payload, "base64url").toString()) as { exp?: unknown; u?: unknown };
+    return typeof exp === "number" && exp > now && typeof u === "string" && u ? u : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** Signature and expiry only; the database check that the admin still exists and is enabled is requireAdmin(). */
+export function verifyToken(token: string | undefined, now = Date.now(), key?: string): boolean {
+  return tokenUserId(token, now, key) !== null;
 }
 
 /** `hash` is `scrypt:<saltHex>:<hashHex>` as printed by scripts/hash-password.mjs. */

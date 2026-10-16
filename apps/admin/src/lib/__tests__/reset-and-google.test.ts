@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { acceptedEmail, allowedGoogleEmails, decodeIdToken, googleEnabled, pkcePair } from "../google";
-import { createResetToken, fingerprint, mayRequestReset, noteResetRequest, verifyResetToken } from "../reset-token";
+import { acceptedEmail, decodeIdToken, googleEnabled, pkcePair } from "../google";
+import { createResetToken, fingerprint, mayRequestReset, noteResetRequest, peekEmail, verifyResetToken } from "../reset-token";
 import { checkPassword, hashPassword, sessionCookieOptions } from "../session";
 
 const SECRET = "s".repeat(40);
@@ -20,6 +20,14 @@ describe("password reset links", () => {
     expect(verifyResetToken(SECRET, `${p}.${m}.z`, HASH, now)).toBeNull();
     expect(verifyResetToken(SECRET, undefined, HASH, now)).toBeNull();
     expect(verifyResetToken(SECRET, "junk", HASH, now)).toBeNull();
+  });
+  it("names the email in a link (unverified) so the right account's hash can be fetched, and a link for a new admin works with no password yet", () => {
+    const t = createResetToken(SECRET, "new@x.com", "", now);
+    expect(peekEmail(t)).toBe("new@x.com");
+    expect(peekEmail("junk")).toBeNull();
+    expect(peekEmail(undefined)).toBeNull();
+    expect(verifyResetToken(SECRET, t, "", now + 60_000)).toEqual({ email: "new@x.com" });
+    expect(verifyResetToken(SECRET, t, "scrypt:aa:bb", now + 60_000)).toBeNull(); // single use: once a password is set the link is dead
   });
   it("limits how often a link can be requested", () => {
     const ip = "9.9.9.9";
@@ -62,9 +70,7 @@ describe("google sign-in", () => {
     expect(verifier.length).toBeGreaterThanOrEqual(43);
     expect(challenge).not.toBe(verifier);
   });
-  it("allows the admin email by default, or an explicit list; and needs both Google keys", () => {
-    expect(allowedGoogleEmails({ ADMIN_EMAIL: "Me@x.com" })).toEqual(["me@x.com"]);
-    expect(allowedGoogleEmails({ ADMIN_EMAIL: "me@x.com", ADMIN_GOOGLE_EMAILS: "a@x.com, B@x.com" })).toEqual(["a@x.com", "b@x.com"]);
+  it("needs both Google keys", () => {
     expect(googleEnabled({ GOOGLE_CLIENT_ID: "a" })).toBe(false);
     expect(googleEnabled({ GOOGLE_CLIENT_ID: "a", GOOGLE_CLIENT_SECRET: "b" })).toBe(true);
   });

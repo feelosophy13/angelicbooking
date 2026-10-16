@@ -16,6 +16,16 @@ export function createResetToken(secret: string, email: string, currentHash: str
   return `${payload}.${mac(payload, secret)}`;
 }
 
+/** The email named in a link, before it has been verified: only to look up whose password hash to verify it against. */
+export function peekEmail(token: string | undefined): string | null {
+  try {
+    const { e } = JSON.parse(Buffer.from((token ?? "").split(".")[0] ?? "", "base64url").toString()) as { e?: unknown };
+    return typeof e === "string" ? e : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The email the link was issued for, or null when it is forged, expired, or the password has changed since. */
 export function verifyResetToken(secret: string, token: string | undefined, currentHash: string, now = Date.now()): { email: string } | null {
   if (!token) return null;

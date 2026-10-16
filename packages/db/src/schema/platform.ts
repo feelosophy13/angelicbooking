@@ -1,7 +1,7 @@
 // Platform-level tables: what we charge businesses and what platform admins did.
 // Written only by apps/admin (role angelic_admin); apps/web may read pricing, never write it.
 import { sql } from "drizzle-orm";
-import { pgTable, text, integer, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { businesses } from "./domain";
 
 const priceColumns = {
@@ -51,16 +51,32 @@ export const adminAuditLog = pgTable(
   (t) => [index("admin_audit_log_at_idx").on(t.at), index("admin_audit_log_business_idx").on(t.businessId)],
 );
 
-/**
- * The platform admin's password once it has been reset from the admin app (one row, id = 'admin'). Until then the
- * login uses the ADMIN_PASSWORD_HASH environment variable. Only the admin app reads or writes it.
- */
+/** Superseded by admin_users (migration 0091); kept so old rows survive. Nothing reads it any more. */
 export const adminCredentials = pgTable("admin_credentials", {
   id: text("id").primaryKey().default("admin"),
   email: text("email").notNull(),
   passwordHash: text("password_hash").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * People who can sign in to the platform admin app. Passwords are hashed here (scrypt); `password_hash` is null until an invited admin
+ * sets one from the emailed link, and Google sign-in needs only the (verified) email. Disabled admins keep their row for the audit trail.
+ */
+export const adminUsers = pgTable(
+  "admin_users",
+  {
+    id: text("id").primaryKey().default(sql`gen_random_uuid()::text`),
+    email: text("email").notNull(),
+    name: text("name"),
+    passwordHash: text("password_hash"),
+    disabledAt: timestamp("disabled_at", { withTimezone: true }),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("admin_users_email_uq").on(sql`lower(${t.email})`)],
+);
 
 /**
  * Fixed-window request counters shared by every web instance (API keys, failed API logins). Not tenant data, so no RLS: the app writes
