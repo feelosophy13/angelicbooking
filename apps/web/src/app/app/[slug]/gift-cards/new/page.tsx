@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Issue gift card" };
 
 export default async function NewGiftCardPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "checkout.take");
+  const { business } = await requireAction(slug, "giftcards.issue");
   const locations = await listLocations(business.id);
   return (
     <FormPage title="Issue gift card" backHref={`/app/${slug}/gift-cards`} backLabel="Gift cards" width="max-w-md">

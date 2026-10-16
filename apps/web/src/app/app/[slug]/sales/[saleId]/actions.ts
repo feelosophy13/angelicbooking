@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { can, normalizePhone, parseMoney } from "@angelic/core";
 import { PermissionError, requireAction, requireBusiness } from "@/lib/tenant";
+import { seesOwnOnly } from "@/lib/appointment-access";
 import { isStripeConfigured, StripeNotConfigured } from "@/lib/stripe";
 import {
   addProductLine,
@@ -35,7 +36,7 @@ import { queueOneOff } from "@/lib/notify";
 import { receiptEmail } from "@/lib/notify/templates";
 import { setFlash } from "@/lib/flash";
 import { formatMoney } from "@/lib/utils";
-import { getSale } from "@/server/sales";
+import { getSale, isOwnSale } from "@/server/sales";
 import { paymentContextForSale } from "@/server/locations";
 import { browserStripe } from "@/lib/stripe-demo";
 import { TerminalError, terminalConnectionToken, terminalLocationFor } from "@/server/stripe-terminal";
@@ -58,8 +59,21 @@ async function requireRefund(slug: string) {
   return ctx;
 }
 
-async function ctxFor(slug: string) {
-  return requireAction(slug, "checkout.take");
+/**
+ * Anyone who takes payments, on a ticket they may see: a role that sees only its own calendar works only on tickets it is credited on or
+ * rang up (the same rule as the Sales list), so a stylist can't open, edit or tip themselves on a colleague's ticket.
+ */
+async function ctxFor(slug: string, saleId: string) {
+  const ctx = await requireAction(slug, "checkout.take");
+  if (seesOwnOnly(ctx.permissions) && !(await isOwnSale(ctx.business.id, saleId, { staffId: ctx.staffId, userId: ctx.user.id }))) throw new PermissionError();
+  return ctx;
+}
+
+/** Discounts, price changes and voids need their own permission. */
+async function discountCtx(slug: string, saleId: string) {
+  const ctx = await ctxFor(slug, saleId);
+  if (!can(ctx.permissions, "checkout.discount")) throw new PermissionError();
+  return ctx;
 }
 
 /** Who gets credit for a line: a chosen person, or "none" on purpose. There is no default, so a missing choice is an error, not a guess. */
@@ -70,7 +84,7 @@ function creditFrom(v: string | undefined): { ok: true; staffId: string | null }
 
 export async function addProduct(formData: FormData) {
   const d = base.extend({ productId: z.string().min(1), quantity: z.coerce.number().int().min(1).max(99).default(1), staffId: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const credit = creditFrom(d.staffId);
   if (!credit.ok) {
     await setFlash("Choose who gets credit for it first (or \"No staff credit\").", "error");
@@ -84,7 +98,7 @@ export async function addProduct(formData: FormData) {
 /** A scanner (or a typed SKU) adds one of that product to the ticket. */
 export async function addProductByCode(formData: FormData) {
   const d = base.extend({ code: z.string().trim().max(60), staffId: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   if (!d.code) {
     await setFlash("Scan a barcode or type a SKU first.", "error");
     revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
@@ -132,14 +146,14 @@ export async function putBackOnShelf(formData: FormData) {
 
 export async function deleteLine(formData: FormData) {
   const d = base.extend({ lineId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   await removeLine({ businessId: ctx.business.id, saleId: d.saleId, lineId: d.lineId, taxRateBps: ctx.business.taxRateBps });
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
 
 export async function applyDiscount(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ type: z.enum(["amount", "percent", "none"]), value: z.string().optional(), note: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await discountCtx(d.slug, d.saleId);
   try {
     let discount = null;
     if (d.type === "percent") {
@@ -161,7 +175,7 @@ export async function applyDiscount(_prev: SaleActionState, formData: FormData):
 
 export async function applyTips(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const tips: { staffId: string | null; amountCents: number; method: "cash" | "card" | null }[] = [];
   for (const [k, v] of formData.entries()) {
     if (!k.startsWith("tip_")) continue;
@@ -185,7 +199,7 @@ export async function applyTips(_prev: SaleActionState, formData: FormData): Pro
 
 export async function payManual(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ method: z.enum(["cash", "other"]), amount: z.string(), tendered: z.string().optional(), note: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter the amount received." };
   // Cash handed over beyond the amount: remember it and the change given back on the payment.
@@ -204,7 +218,7 @@ export async function payManual(_prev: SaleActionState, formData: FormData): Pro
 
 export async function payWithSavedCard(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ paymentMethodId: z.string().min(1), amount: z.string() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
   const pay = await paymentContextForSale(ctx.business, d.saleId);
@@ -222,7 +236,7 @@ export async function payWithSavedCard(_prev: SaleActionState, formData: FormDat
 /** Step 1 of a new-card payment: create the PaymentIntent and hand the client secret to the browser. */
 export async function startCardPayment(input: { slug: string; saleId: string; amount: string; saveCard: boolean }): Promise<{ clientSecret: string; accountId: string | null; publishableKey: string | null; amount: number } | { error: string }> {
   const d = base.extend({ amount: z.string(), saveCard: z.boolean() }).parse(input);
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
   if (!isStripeConfigured()) return { error: "Stripe is not configured on the server." };
@@ -241,7 +255,7 @@ export async function startCardPayment(input: { slug: string; saleId: string; am
 /** Card reader (Stripe Terminal): a connection token for the browser SDK. The SDK asks again whenever it needs a fresh one. */
 export async function terminalToken(input: { slug: string; saleId: string }): Promise<{ secret: string } | { error: string }> {
   const d = base.parse(input);
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const pay = await paymentContextForSale(ctx.business, d.saleId);
   if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
   try {
@@ -254,7 +268,7 @@ export async function terminalToken(input: { slug: string; saleId: string }): Pr
 /** The Terminal location to look for readers under, for the sale's salon location. */
 export async function terminalLocation(input: { slug: string; saleId: string }): Promise<{ locationId: string } | { error: string }> {
   const d = base.parse(input);
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const pay = await paymentContextForSale(ctx.business, d.saleId);
   if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
   try {
@@ -268,7 +282,7 @@ export async function terminalLocation(input: { slug: string; saleId: string }):
 /** Card reader step 1: a card-present PaymentIntent for the amount. The reader collects and processes it; finishCardPayment then records it. */
 export async function startTerminalPayment(input: { slug: string; saleId: string; amount: string; saveCard?: boolean }): Promise<{ clientSecret: string } | { error: string }> {
   const d = base.extend({ amount: z.string(), saveCard: z.boolean().optional() }).parse(input);
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
   if (!isStripeConfigured()) return { error: "Stripe is not configured on the server." };
@@ -286,7 +300,7 @@ export async function startTerminalPayment(input: { slug: string; saleId: string
 /** Step 2: the browser confirmed the PaymentIntent. Verify with Stripe and record it (webhook also does this). */
 export async function finishCardPayment(input: { slug: string; saleId: string; paymentIntentId: string }): Promise<SaleActionState> {
   const d = base.extend({ paymentIntentId: z.string().min(1) }).parse(input);
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const pay = await paymentContextForSale(ctx.business, d.saleId);
   if (!pay.accountId) return { error: "Stripe not connected." };
   const pi = await stripe().paymentIntents.retrieve(d.paymentIntentId, { expand: ["latest_charge"] }, { stripeAccount: pay.accountId });
@@ -368,7 +382,7 @@ export async function changeRefundReason(_prev: SaleActionState, formData: FormD
 
 export async function payWithStoreCreditAction(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ amount: z.string() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
   try {
@@ -383,14 +397,14 @@ export async function payWithStoreCreditAction(_prev: SaleActionState, formData:
 
 export async function voidOpenSale(formData: FormData) {
   const d = base.parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await discountCtx(d.slug, d.saleId);
   await voidSale({ businessId: ctx.business.id, saleId: d.saleId, actorUserId: ctx.user.id });
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
 
 export async function addOffer(formData: FormData) {
   const d = base.extend({ kind: z.enum(["gift_card", "package", "membership"]), refId: z.string().optional(), amount: z.string().optional(), recipientName: z.string().optional(), staffId: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   // A package earns its seller commission, so who sold it must be chosen (no default); gift cards and memberships earn none.
   const credit = d.kind === "package" ? creditFrom(d.staffId) : { ok: true as const, staffId: null };
   if (!credit.ok) {
@@ -413,14 +427,14 @@ export async function addOffer(formData: FormData) {
 
 export async function removePromo(formData: FormData) {
   const d = base.parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   await removePromoFromSale({ businessId: ctx.business.id, saleId: d.saleId, taxRateBps: ctx.business.taxRateBps, actorUserId: ctx.user.id });
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
 
 export async function payWithGiftCard(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ code: z.string().min(4), amount: z.string() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
   try {
@@ -436,7 +450,7 @@ export async function payWithGiftCard(_prev: SaleActionState, formData: FormData
 
 export async function useCredit(formData: FormData) {
   const d = base.extend({ lineId: z.string().min(1), source: z.enum(["package", "membership"]), sourceId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   await redeemCredit({ businessId: ctx.business.id, saleId: d.saleId, lineId: d.lineId, source: d.source, sourceId: d.sourceId, actorUserId: ctx.user.id });
   await settleIfPaid(ctx.business.id, d.saleId, ctx.user.id, ctx.business.taxRateBps);
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
@@ -445,7 +459,7 @@ export async function useCredit(formData: FormData) {
 /** Email or text a receipt for a closed sale: to the client on the ticket, or to any address or number typed at the desk. */
 export async function sendReceipt(formData: FormData) {
   const d = base.extend({ channel: z.enum(["email", "sms"]), to: z.string().trim().max(200) }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const back = () => revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
   const data = await getSale(ctx.business.id, d.saleId);
   if (!data || data.sale.status === "open") {
@@ -506,7 +520,7 @@ export async function sendReceipt(formData: FormData) {
 /** A private note on the ticket. */
 export async function saveSaleNote(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ notes: z.string().max(1000).optional() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   try {
     await setSaleNotes({ businessId: ctx.business.id, saleId: d.saleId, notes: d.notes?.trim() || null, actorUserId: ctx.user.id });
   } catch (e) {
@@ -518,7 +532,7 @@ export async function saveSaleNote(_prev: SaleActionState, formData: FormData): 
 
 export async function toggleTaxExempt(formData: FormData) {
   const d = base.extend({ exempt: z.enum(["1", "0"]) }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   await setTaxExempt({ businessId: ctx.business.id, saleId: d.saleId, exempt: d.exempt === "1", actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
@@ -526,7 +540,7 @@ export async function toggleTaxExempt(formData: FormData) {
 /** Close a ticket with nothing to pay (a comp, or fully covered by a package or discount). */
 export async function completeSale(formData: FormData) {
   const d = base.parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   try {
     await completeNoCharge({ businessId: ctx.business.id, saleId: d.saleId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
     await setFlash("Sale completed", "success");
@@ -541,7 +555,7 @@ export async function completeSale(formData: FormData) {
 export async function payWithPoints(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ points: z.coerce.number().int().min(1) }).safeParse(Object.fromEntries(formData));
   if (!d.success) return { error: "Enter how many points to redeem." };
-  const ctx = await ctxFor(d.data.slug);
+  const ctx = await ctxFor(d.data.slug, d.data.saleId);
   try {
     await redeemPoints({ business: ctx.business, saleId: d.data.saleId, points: d.data.points, actorUserId: ctx.user.id });
     await settleIfPaid(ctx.business.id, d.data.saleId, ctx.user.id, ctx.business.taxRateBps);
@@ -557,7 +571,7 @@ export async function payWithPoints(_prev: SaleActionState, formData: FormData):
 export async function applyPromo(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ code: z.string().trim().min(1, "Enter a code") }).safeParse(Object.fromEntries(formData));
   if (!d.success) return { error: "Enter a promo code." };
-  const ctx = await ctxFor(d.data.slug);
+  const ctx = await ctxFor(d.data.slug, d.data.saleId);
   try {
     await applyPromoToSale({ businessId: ctx.business.id, saleId: d.data.saleId, code: d.data.code, taxRateBps: ctx.business.taxRateBps, actorUserId: ctx.user.id });
   } catch (e) {
@@ -571,7 +585,7 @@ export async function applyPromo(_prev: SaleActionState, formData: FormData): Pr
 /** Online orders: move pickup/shipping status along. */
 export async function setFulfillment(formData: FormData) {
   const d = base.extend({ status: z.enum(["pending", "ready", "done"]) }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   await withTenant(ctx.business.id, async (tx) => {
     const sale = await tx.query.sales.findFirst({ where: eq(dbSchema.sales.id, d.saleId) });
     if (!sale?.fulfillment) return;
@@ -582,7 +596,7 @@ export async function setFulfillment(formData: FormData) {
 
 export async function attachClient(formData: FormData) {
   const d = base.extend({ clientId: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   try {
     await setSaleClient({ businessId: ctx.business.id, saleId: d.saleId, clientId: d.clientId || null, actorUserId: ctx.user.id });
   } catch (e) {
@@ -598,7 +612,7 @@ export async function attachClient(formData: FormData) {
 
 export async function addServiceToSale(formData: FormData) {
   const d = base.extend({ serviceId: z.string().min(1), staffId: z.string().optional(), price: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const credit = creditFrom(d.staffId);
   if (!credit.ok) {
     await setFlash("Choose who performed it first (or \"No staff credit\").", "error");
@@ -622,8 +636,21 @@ export async function addServiceToSale(formData: FormData) {
 
 export async function editLine(formData: FormData) {
   const d = base.extend({ lineId: z.string().min(1), price: z.string().optional(), quantity: z.string().optional(), staffId: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug);
+  const ctx = await ctxFor(d.slug, d.saleId);
   const unit = d.price?.trim() ? parseMoney(d.price) : null;
+  // Changing a price is a discount; moving credit to someone else is for those who see everyone's work.
+  const line = await withTenant(ctx.business.id, (tx) => tx.query.saleLines.findFirst({ where: eq(dbSchema.saleLines.id, d.lineId) }));
+  if (!line || line.saleId !== d.saleId) throw new PermissionError();
+  if (unit !== null && unit !== line.unitCents && !can(ctx.permissions, "checkout.discount")) {
+    await setFlash("Changing a price needs the discounts permission.", "error");
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    return;
+  }
+  if (d.staffId !== undefined && (d.staffId || null) !== line.staffId && seesOwnOnly(ctx.permissions)) {
+    await setFlash("Only someone who sees every calendar can move credit between staff.", "error");
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    return;
+  }
   if (d.price?.trim() && unit === null) {
     await setFlash("Enter a price like 65 or 65.50.", "error");
     revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
@@ -642,7 +669,7 @@ export async function editLine(formData: FormData) {
 export async function addLateTip(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ staffId: z.string().min(1, "Choose who the tip is for."), amount: z.string(), paidIn: z.string().min(1) }).safeParse(Object.fromEntries(formData));
   if (!d.success) return { error: d.error.issues[0]?.message ?? "Check the tip details." };
-  const ctx = await ctxFor(d.data.slug);
+  const ctx = await ctxFor(d.data.slug, d.data.saleId);
   const cents = parseMoney(d.data.amount);
   if (cents === null || cents <= 0) return { error: "Enter a tip amount like 5 or 7.50." };
   try {

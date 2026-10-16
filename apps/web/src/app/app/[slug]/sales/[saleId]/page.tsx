@@ -6,7 +6,8 @@ import { dateTime } from "@/lib/format";
 import { notFound } from "next/navigation";
 import { can, isMembershipInterval, periodNoun } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
-import { getSale, refundableLines } from "@/server/sales";
+import { getSale, isOwnSale, refundableLines } from "@/server/sales";
+import { seesOwnOnly } from "@/lib/appointment-access";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForSale, validAtLocation } from "@/server/locations";
 import { MapPin } from "lucide-react";
@@ -43,9 +44,12 @@ import { productLabel } from "@/lib/inventory";
 
 export default async function SalePage({ params }: { params: Promise<{ slug: string; saleId: string }> }) {
   const { slug, saleId } = await params;
-  const { business, permissions, staffId: myStaffId } = await requireAction(slug, "checkout.take");
+  const { business, permissions, staffId: myStaffId, user } = await requireAction(slug, "checkout.take");
+  if (seesOwnOnly(permissions) && !(await isOwnSale(business.id, saleId, { staffId: myStaffId, userId: user.id }))) notFound();
   const data = await getSale(business.id, saleId);
   if (!data) notFound();
+  const canDiscount = can(permissions, "checkout.discount");
+  const ownOnly = seesOwnOnly(permissions);
   const { sale, lines, payments, refunds, credits: creditLedger, client, staff, products } = data;
   const cur = business.currency;
   const money = (c: number) => formatMoney(c, cur);
@@ -120,7 +124,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 <p className="font-medium">{client ? `${client.firstName} ${client.lastName}`.trim() : "Walk-in"}</p>
                 <p className="flex items-center gap-2 text-xs text-stone-500">{dateTime(sale.createdAt, business.timezone)} <StatusBadge status={sale.status} /></p>
               </div>
-              {open && sale.paidCents === 0 ? (
+              {open && sale.paidCents === 0 && canDiscount ? (
                 <form action={voidOpenSale}>
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="saleId" value={sale.id} />
@@ -158,12 +162,14 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                           <summary className="cursor-pointer text-xs text-stone-500 hover:text-stone-800">Edit</summary>
                           <form action={editLine} className="mt-1 flex w-56 flex-col gap-1">
                             <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="lineId" value={l.id} />
-                            <MoneyInput name="price" defaultValue={(l.unitCents / 100).toFixed(2)} aria-label="Unit price" />
+                            {canDiscount ? <MoneyInput name="price" defaultValue={(l.unitCents / 100).toFixed(2)} aria-label="Unit price" /> : null}
                             {l.kind === "product" ? <Input name="quantity" type="number" min={1} max={99} defaultValue={l.quantity} aria-label="Quantity" /> : null}
-                            <Select name="staffId" defaultValue={l.staffId ?? ""} aria-label="Staff credit">
-                              <option value="">No staff credit</option>
-                              {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
-                            </Select>
+                            {ownOnly ? null : (
+                              <Select name="staffId" defaultValue={l.staffId ?? ""} aria-label="Staff credit">
+                                <option value="">No staff credit</option>
+                                {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                              </Select>
+                            )}
                             <Button type="submit" size="sm" variant="secondary">Save</Button>
                           </form>
                         </details>
@@ -256,7 +262,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 <div className="grid gap-6 md:grid-cols-2">
                   <div>
                     <h3 className="mb-2 text-sm font-medium text-stone-700">Discount</h3>
-                    <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}:${sale.promoCodeId ?? ""}`} action={applyDiscount} slug={slug} saleId={sale.id} currentCents={sale.promoCodeId ? 0 : sale.discountCents} current={typedDiscount} note={sale.promoCodeId ? null : sale.discountNote} />
+                    {canDiscount ? <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}:${sale.promoCodeId ?? ""}`} action={applyDiscount} slug={slug} saleId={sale.id} currentCents={sale.promoCodeId ? 0 : sale.discountCents} current={typedDiscount} note={sale.promoCodeId ? null : sale.discountNote} /> : null}
                   </div>
                   <div>
                     <h3 className="mb-2 text-sm font-medium text-stone-700">Promo code</h3>

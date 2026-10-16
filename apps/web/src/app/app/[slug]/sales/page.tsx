@@ -5,6 +5,7 @@ import { zonedToInstant, instantToISODate } from "@angelic/core";
 import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { listSales } from "@/server/sales";
+import { seesOwnOnly } from "@/lib/appointment-access";
 import { listLocations } from "@/server/locations";
 import { formatMoney, shiftISODate, cn } from "@/lib/utils";
 import { Button, Card, Empty, Input, PageHeader, Select } from "@/components/ui";
@@ -21,13 +22,14 @@ type SP = { tab?: string; q?: string; page?: string };
 export default async function SalesPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions } = await requireAction(slug, "checkout.take");
+  const { business, permissions, staffId, user } = await requireAction(slug, "checkout.take");
   const locations = await listLocations(business.id);
   const tab = sp.tab === "today" || sp.tab === "all" || sp.tab === "open" ? sp.tab : "open";
   const today = instantToISODate(new Date(), business.timezone);
   const filter = tab === "open" ? { status: "open" as const } : tab === "today" ? { status: "all" as const, from: zonedToInstant(today, "00:00", business.timezone), to: zonedToInstant(shiftISODate(today, 1), "00:00", business.timezone) } : { status: "all" as const };
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
-  const { rows, total, pageSize } = await listSales(business.id, { ...filter, q: sp.q, page });
+  // A role that sees only its own calendar sees only its own tickets.
+  const { rows, total, pageSize } = await listSales(business.id, { ...filter, q: sp.q, page, ...(seesOwnOnly(permissions) ? { own: { staffId, userId: user.id } } : {}) });
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
   const money = (c: number) => formatMoney(c, business.currency);
   const href = (t: string, p = 1) => `?tab=${t}${sp.q ? `&q=${encodeURIComponent(sp.q)}` : ""}${p > 1 ? `&page=${p}` : ""}`;

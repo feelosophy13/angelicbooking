@@ -245,7 +245,28 @@ export async function setSaleClient(input: { businessId: string; saleId: string;
   });
 }
 
-export type SalesListFilter = { status?: "open" | "closed" | "all"; q?: string; from?: Date; to?: Date; page?: number; pageSize?: number };
+export type SalesListFilter = {
+  status?: "open" | "closed" | "all";
+  q?: string;
+  from?: Date;
+  to?: Date;
+  page?: number;
+  pageSize?: number;
+  /** For a role that sees only its own calendar: only tickets this person is credited on or rang up. */
+  own?: { staffId?: string | null; userId: string };
+};
+
+/** A ticket this person may open when they see only their own work: credited on a line, or they rang it up. */
+function ownSaleCondition(own: { staffId?: string | null; userId: string }) {
+  return own.staffId
+    ? sql`(${schema.sales.createdByUserId} = ${own.userId} or exists (select 1 from sale_lines sl where sl.sale_id = ${schema.sales.id} and sl.staff_id = ${own.staffId}))`
+    : sql`${schema.sales.createdByUserId} = ${own.userId}`;
+}
+
+export async function isOwnSale(businessId: string, saleId: string, own: { staffId?: string | null; userId: string }): Promise<boolean> {
+  const [row] = await withTenant(businessId, (tx) => tx.select({ id: schema.sales.id }).from(schema.sales).where(and(eq(schema.sales.id, saleId), ownSaleCondition(own))).limit(1));
+  return Boolean(row);
+}
 
 /** Tickets for the Sales page: open ones first, searchable by number or client, newest first. */
 export async function listSales(businessId: string, f: SalesListFilter) {
@@ -258,6 +279,7 @@ export async function listSales(businessId: string, f: SalesListFilter) {
     if (f.status === "closed") conds.push(sql`${schema.sales.status} in ('paid','refunded','void')`);
     if (f.from) conds.push(gte(schema.sales.createdAt, f.from));
     if (f.to) conds.push(lt(schema.sales.createdAt, f.to));
+    if (f.own) conds.push(ownSaleCondition(f.own));
     if (q) {
       const n = Number(q.replace(/^#/, ""));
       const like = `%${q}%`;

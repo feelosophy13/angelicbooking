@@ -134,6 +134,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Birthday and no-visit workflows are scanned once a day (`workflows.last_scan_on`) with one query that skips clients already messaged,
       runs start in batches of 200 in one transaction and send together; suspended businesses are skipped; 29 February birthdays fire on the
       28th in other years. Tests: `server/__tests__/scheduled-workflows.test.ts`, `lib/__tests__/workflows-logic.test.ts`.
+- [x] Sales permissions, 2026-10-16 (migration 0100): roles that see only their own calendar see and work only on their own tickets
+      (credited on a line or rang it up) and can't move credit between staff; new permissions "Discounts and price changes" (discount, price
+      edit, void; Manager and Front desk) and "Issue free gift cards" (Manager). Test: `server/__tests__/sales-scope.test.ts`. Note: the dev
+      "View as" switch keeps your real user, so as the demo owner you still see tickets you rang up.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

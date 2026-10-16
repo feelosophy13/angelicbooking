@@ -110,7 +110,8 @@ export async function togglePlan(formData: FormData) {
 export const issueGiftCard = formAction(
   z.object({ slug: z.string(), amount: f.money("amount"), recipientName: f.optional(80) }),
   async (d, raw) => {
-    const ctx = await requireAction(d.slug, "checkout.take");
+    // A card nobody paid for is free money: it has its own permission (selling one at checkout only needs checkout.take).
+    const ctx = await requireAction(d.slug, "giftcards.issue");
     if (d.amount < 100) throw new FormError("Gift cards must be at least $1", "amount");
     const validLocationIds = await withTenant(ctx.business.id, (tx) => validAtFromForm(tx, raw));
     const card = await issueGiftCardManually({ businessId: ctx.business.id, amountCents: d.amount, recipientName: d.recipientName, actorUserId: ctx.user.id, validLocationIds });

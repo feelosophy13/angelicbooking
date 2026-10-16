@@ -19,8 +19,10 @@ export const ACTIONS = [
   "appointments.cancel.own",
   "appointments.block.own",
   "checkout.take",
+  "checkout.discount", // discounts, price changes and voids on a ticket (Manager and Front desk by default)
+  "giftcards.issue", // create a gift card nobody paid for (a comp or a correction); selling one at checkout is checkout.take
   "reports.view",
-  "checkout.refund", // refund a payment without being able to see sales reports (reports.view also allows refunds)
+  "checkout.refund", // send money back: refunds, store credit, deposit refunds
   "payroll.view",
   "inventory.log", // record the supplies used on a visit (Provider and Front desk by default)
   "inventory.manage", // receive, count, adjust and order stock; suppliers (the catalog itself is services.manage)
@@ -52,9 +54,11 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
   {
     title: "Checkout & money",
     items: [
-      { action: "checkout.take", label: "Take payments", description: "Open checkout, record payments, sell packages and gift cards." },
-      { action: "reports.view", label: "View sales reports", description: "Sales, tips and refunds across the business. Also allows refunds." },
-      { action: "checkout.refund", label: "Refund payments", description: "Refund a sale or give store credit back, without seeing the sales reports." },
+      { action: "checkout.take", label: "Take payments", description: "Open checkout, record payments, sell packages and gift cards. A role that sees only its own calendar sees only its own tickets." },
+      { action: "checkout.discount", label: "Discounts and price changes", description: "Discount a ticket, change a price, and void an unpaid ticket." },
+      { action: "giftcards.issue", label: "Issue free gift cards", description: "Create a gift card with no payment (a comp or a correction)." },
+      { action: "reports.view", label: "View sales reports", description: "Sales, tips and refunds across the business." },
+      { action: "checkout.refund", label: "Refund payments", description: "Refund a sale, give store credit, or refund a deposit." },
       { action: "payroll.view", label: "Run payroll", description: "See pay rules and generate pay sheets for everyone." },
     ],
   },
@@ -100,7 +104,7 @@ const ALL = new Set<Action>(ACTIONS);
 export const DEFAULT_ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {
   owner: ALL,
   manager: new Set<Action>(ACTIONS.filter((a) => a !== "business.manage")),
-  front_desk: new Set<Action>(["clients.read", "clients.write", "appointments.read.any", "appointments.read.own", "appointments.write.any", "appointments.write.own", "checkout.take", "inventory.log"]),
+  front_desk: new Set<Action>(["clients.read", "clients.write", "appointments.read.any", "appointments.read.own", "appointments.write.any", "appointments.write.own", "checkout.take", "checkout.discount", "inventory.log"]),
   provider: new Set<Action>(["clients.read", "appointments.read.own", "appointments.write.own", "checkout.take", "inventory.log"]),
 };
 
