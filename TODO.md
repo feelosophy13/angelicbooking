@@ -396,9 +396,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       test card number; a PaymentIntent confirmed with Stripe's test Visa through the API was recorded by the app and closed the sale (the UI
       could not fill expiry/CVC/ZIP reliably through browser automation, so the click-through is not done). Fixed: every "Enter card" or reader
       attempt used to leave a "Pending" payment row; starting a new attempt now cancels the old PaymentIntents and drops those rows (one that cannot be
-      cancelled, e.g. it just succeeded, is kept). Open: the desk's card form also offers Klarna, Affirm, Cash App Pay, Amazon Pay, bank and Link signup
-      (the account's dashboard payment-method list; `payment_method_types: ["card"]` needs the older API version, as for the reader). Still
-      untested: a real reader and online booking deposits on the demo account.
+      cancelled, e.g. it just succeeded, is kept). Fixed: the desk's typed-card form listed Klarna, Affirm, Cash App Pay, Amazon Pay, bank and Link
+      signup (Stripe's dashboard-managed methods). Desk PaymentIntents now use `payment_method_types: ["card"]` (older API version, `PINNED_API_VERSION`) and the
+      form is Stripe's plain `CardElement` (the Payment Element also draws Link's offers), confirmed with `confirmCardPayment`. Walked in the browser on demo-salon:
+      typed Visa 4242 -> "card · VISA •••• 4242 · Succeeded", sale paid. Also walked: an online booking with a $50 deposit (Classic Full Set, Any available
+      provider): the Payment Element (card + bank, a Link prompt) took the test card, the confirmation page showed deposit $50 / due at the salon $95, the
+      appointment is booked with deposit paid (VISA 4242) and the PaymentIntent succeeded on the demo account. The online deposit form still shows Bank
+      and a Link prompt (dashboard-managed; not changed). Still untested: a real reader, deposit refund on cancel.
 - [x] 2026-10-15: platform admin accounts moved into the database (migration 0091 `admin_users`). Login, password reset, Google sign-in and the audit
       actor all use the table; the session cookie names the admin and `requireAdmin()` rechecks they still exist and are enabled. New Admins page
       (add by email with an emailed set-password link, disable/enable; not yourself, not the last one). `pnpm --filter @angelic/admin create-admin

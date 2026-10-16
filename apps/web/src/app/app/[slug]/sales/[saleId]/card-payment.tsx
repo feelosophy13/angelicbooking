@@ -2,7 +2,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { loadStripe } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
 import { Button, Field, Input, Notice, Checkbox } from "@/components/ui";
 import { finishCardPayment, startCardPayment } from "./actions";
 
@@ -53,13 +53,14 @@ export function CardPayment(props: { slug: string; saleId: string; dueCents: num
   }
 
   return (
-    <Elements stripe={stripePromise} options={{ clientSecret: intent.clientSecret, appearance: { theme: "stripe" } }}>
-      <ConfirmForm slug={props.slug} saleId={props.saleId} onCancel={() => setIntent(null)} />
+    // The desk takes cards only, so Stripe's plain card field rather than the Payment Element (which also draws Link's bank and buy-now-pay-later offers).
+    <Elements stripe={stripePromise}>
+      <ConfirmForm slug={props.slug} saleId={props.saleId} clientSecret={intent.clientSecret} onCancel={() => setIntent(null)} />
     </Elements>
   );
 }
 
-function ConfirmForm({ slug, saleId, onCancel }: { slug: string; saleId: string; onCancel: () => void }) {
+function ConfirmForm({ slug, saleId, clientSecret, onCancel }: { slug: string; saleId: string; clientSecret: string; onCancel: () => void }) {
   const stripe = useStripe();
   const elements = useElements();
   const router = useRouter();
@@ -71,7 +72,9 @@ function ConfirmForm({ slug, saleId, onCancel }: { slug: string; saleId: string;
     if (!stripe || !elements) return;
     setBusy(true);
     setError(null);
-    const { error: err, paymentIntent } = await stripe.confirmPayment({ elements, redirect: "if_required" });
+    const card = elements.getElement(CardElement);
+    if (!card) return;
+    const { error: err, paymentIntent } = await stripe.confirmCardPayment(clientSecret, { payment_method: { card } });
     if (err) {
       setError(err.message ?? "Payment failed");
       setBusy(false);
@@ -89,7 +92,9 @@ function ConfirmForm({ slug, saleId, onCancel }: { slug: string; saleId: string;
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <PaymentElement />
+      <div className="rounded-lg border border-stone-300 bg-white px-3 py-3">
+        <CardElement options={{ style: { base: { fontSize: "16px", color: "#1c1917", "::placeholder": { color: "#a8a29e" } } } }} />
+      </div>
       {error ? <Notice>{error}</Notice> : null}
       <div className="flex gap-2">
         <Button type="submit" disabled={!stripe || busy}>{busy ? "Charging…" : "Charge card"}</Button>
