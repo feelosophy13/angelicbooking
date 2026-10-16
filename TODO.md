@@ -402,6 +402,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] 2026-10-16: shop and gift-card checkout now use the plain card field too (`PayStep` in `book/[slug]/shop/checkout.tsx`, `confirmCardPayment`); walked on demo-salon:
       order #1521 paid with the test Visa. The booking manage page no longer assumes a live first service (`firstStaff`), so a fully cancelled booking cannot crash
       it. Browser-pane note: after a while a long-lived pane tab stops hydrating pages (HMR websocket fails); a fresh tab works, so check there before suspecting the app.
+- [x] 2026-10-16: cancellation reasons (migration 0094, `server/cancellation-reasons.ts`). Per-business list seeded with Client is sick / Schedule conflict / Changed their mind /
+      Found another salon / Salon cancelled (our side, staff only) / Other; managed under Settings → Cancellation reasons (rename, reorder, retire, "Shown to clients" vs "Staff only").
+      The staff cancel dialog now REQUIRES a reason (plus the old free-text note); the client's online cancel page offers an optional one-tap reason (staff-only reasons hidden).
+      `setAppointmentStatus` records reason id, who cancelled (client/staff) and whether it fell inside the cancellation window (at that moment, so policy changes don't rewrite history).
+      Appointment page shows it; the API has `cancellation_reason_id`, `cancelled_by`, `cancelled_late` and `POST /appointments/:id/cancel` takes optional `reason_id`. Reports: "Cancellations by
+      reason" (count, by client, inside window, booked value lost, deposits kept, late fees collected). Test: `cancellation-reasons.test.ts`. Still open: cancellations made by other paths
+      (calendar quick status, mobile API, class/series cancel) record no reason id and show as "No reason given"; old cancellations have none; no-shows are not in this report.
 - [x] 2026-10-16: staff cancel with a paid deposit now asks what to do with it (appointment page -> Cancel): keep all of it, keep only the late fee it
       covers and refund the rest (inside the window, "deposit counts toward the fee" policy, deposit larger than the fee), or refund all (default outside the
       window). Refunding needs `reports.view` or `checkout.refund`; without it the deposit stays. `refundDeposit` takes an optional partial amount (the
