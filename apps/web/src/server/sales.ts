@@ -628,7 +628,7 @@ export async function addTipAfterPayment(input: {
   const accountId = input.accountId!;
   let pi;
   try {
-    const customerId = await withTenant(input.businessId, (tx) => ensureStripeCustomer({ accountId, businessId: input.businessId, client, tx }));
+    const customerId = await ensureStripeCustomer({ accountId, businessId: input.businessId, client });
     pi = await stripe().paymentIntents.create(
       { amount: input.amountCents, currency: sale.currency, customer: customerId, payment_method: input.paymentMethodId, off_session: true, confirm: true, description: `Tip · Sale #${sale.number}`, metadata: { businessId: input.businessId, saleId: sale.id, paymentId, tipFor: input.staffId }, expand: ["latest_charge"], ...(fee > 0 ? { application_fee_amount: fee } : {}) },
       { stripeAccount: accountId, idempotencyKey: `tip_${paymentId}` },
@@ -1009,7 +1009,7 @@ export async function chargeCardOnFile(input: {
   const { sale, client, amount, fee, paymentId } = prep;
   let pi;
   try {
-    const customerId = await withTenant(input.businessId, (tx) => ensureStripeCustomer({ accountId: input.accountId, businessId: input.businessId, client, tx }));
+    const customerId = await ensureStripeCustomer({ accountId: input.accountId, businessId: input.businessId, client });
     pi = await stripe().paymentIntents.create(
       {
         amount,
@@ -1047,7 +1047,10 @@ export async function chargeCardOnFile(input: {
   });
 }
 
-/** Create a PaymentIntent for a new card entered in the browser (Payment Element). */
+/**
+ * Create a PaymentIntent for a new card entered in the browser (Payment Element). The pending row is saved first, then Stripe is called
+ * with no transaction open (a slow Stripe must not hold database connections), then the PaymentIntent id is saved on the row.
+ */
 export async function createCardPaymentIntent(input: {
   businessId: string;
   accountId: string;
@@ -1058,32 +1061,28 @@ export async function createCardPaymentIntent(input: {
   /** The card is tapped, dipped or swiped on a reader rather than typed in. */
   terminal?: boolean;
 }) {
-  return withTenant(input.businessId, async (tx) => {
-    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
+  // A card attempt that was abandoned (form closed, reader cancelled, page reloaded) must not pile up as "Pending" rows: cancel its PaymentIntent and
+  // drop the row. A row whose PaymentIntent can't be cancelled (it may have just succeeded) is left for the webhook / finish step to settle.
+  const abandoned = await withTenant(input.businessId, (tx) => tx.select().from(schema.payments).where(and(eq(schema.payments.saleId, input.saleId), eq(schema.payments.status, "pending"))));
+  for (const old of abandoned) {
+    if (old.stripePaymentIntentId) {
+      // Cancel it; if Stripe refuses, it is gone only when it is already cancelled (a payment that succeeded must stay).
+      const acct = old.stripeAccountId ?? input.accountId;
+      const cancelled = await stripe().paymentIntents.cancel(old.stripePaymentIntentId, {}, { stripeAccount: acct }).then(
+        () => true,
+        async () => (await stripe().paymentIntents.retrieve(old.stripePaymentIntentId!, {}, { stripeAccount: acct }).then((p) => p.status === "canceled", () => false)),
+      );
+      if (!cancelled) continue;
+    }
+    await withTenant(input.businessId, (tx) => tx.delete(schema.payments).where(and(eq(schema.payments.id, old.id), eq(schema.payments.status, "pending"))));
+  }
+  const { sale, pending, amount, client, fee } = await withTenant(input.businessId, async (tx) => {
+    const [sale] = await tx.select().from(schema.sales).where(eq(schema.sales.id, input.saleId)).for("update");
     if (!sale) throw new SaleError("Sale not found.");
     assertOpen(sale);
     const amount = Math.min(input.amountCents, balance(sale));
     if (amount < 50) throw new SaleError("Amount must be at least $0.50.");
-    // A card attempt that was abandoned (form closed, reader cancelled, page reloaded) must not pile up as "Pending" rows: cancel its PaymentIntent and
-    // drop the row. A row whose PaymentIntent can't be cancelled (it may have just succeeded) is left for the webhook / finish step to settle.
-    const abandoned = await tx.select().from(schema.payments).where(and(eq(schema.payments.saleId, sale.id), eq(schema.payments.status, "pending")));
-    for (const old of abandoned) {
-      if (old.stripePaymentIntentId) {
-        // Cancel it; if Stripe refuses, it is gone only when it is already cancelled (a payment that succeeded must stay).
-        const acct = old.stripeAccountId ?? input.accountId;
-        const cancelled = await stripe().paymentIntents.cancel(old.stripePaymentIntentId, {}, { stripeAccount: acct }).then(
-          () => true,
-          async () => (await stripe().paymentIntents.retrieve(old.stripePaymentIntentId!, {}, { stripeAccount: acct }).then((p) => p.status === "canceled", () => false)),
-        );
-        if (!cancelled) continue;
-      }
-      await tx.delete(schema.payments).where(eq(schema.payments.id, old.id));
-    }
-    let customerId: string | undefined;
-    if (sale.clientId) {
-      const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) });
-      if (client) customerId = await ensureStripeCustomer({ accountId: input.accountId, businessId: input.businessId, client, tx });
-    }
+    const client = sale.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) }) : undefined;
     const [pending] = await tx
       .insert(schema.payments)
       .values({
@@ -1098,6 +1097,10 @@ export async function createCardPaymentIntent(input: {
       })
       .returning();
     const fee = Math.round((amount * (await platformFeeBpsFor(input.businessId, tx))) / 10_000);
+    return { sale, pending: pending!, amount, client, fee };
+  });
+  try {
+    const customerId = client ? await ensureStripeCustomer({ accountId: input.accountId, businessId: input.businessId, client }) : undefined;
     const pi = await stripe().paymentIntents.create(
       {
         amount,
@@ -1108,14 +1111,18 @@ export async function createCardPaymentIntent(input: {
         allowed_payment_method_types: input.terminal ? ["card_present"] : ["card"],
         ...(input.terminal ? { capture_method: "automatic" as const } : {}),
         ...(input.saveCard && customerId ? { setup_future_usage: "off_session" as const } : {}),
-        metadata: { businessId: input.businessId, saleId: sale.id, paymentId: pending!.id },
+        metadata: { businessId: input.businessId, saleId: sale.id, paymentId: pending.id },
         ...(fee > 0 ? { application_fee_amount: fee } : {}),
       },
-      { stripeAccount: input.accountId, idempotencyKey: `pi_${pending!.id}` },
+      { stripeAccount: input.accountId, idempotencyKey: `pi_${pending.id}` },
     );
-    await tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending!.id));
-    return { clientSecret: pi.client_secret!, paymentId: pending!.id, amount };
-  });
+    await withTenant(input.businessId, (tx) => tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending.id)));
+    return { clientSecret: pi.client_secret!, paymentId: pending.id, amount };
+  } catch (e) {
+    // Nothing was charged: don't leave a "Pending" row behind.
+    await withTenant(input.businessId, (tx) => tx.delete(schema.payments).where(and(eq(schema.payments.id, pending.id), eq(schema.payments.status, "pending"), sql`${schema.payments.stripePaymentIntentId} is null`)));
+    throw e;
+  }
 }
 
 /**
@@ -1172,8 +1179,9 @@ export async function refundPayment(input: {
   /** With externalRefundId: Stripe's total refunded on the payment. Only what we haven't recorded yet is booked (worked out under the lock). */
   externalTotalCents?: number;
 }) {
-  const stopBilling: string[] = [];
-  await withTenant(input.businessId, async (tx) => {
+  // Checked under lock; when the money goes back through Stripe, the call is made after this commits (no transaction held open while
+  // Stripe answers) and the refund is recorded in a second transaction.
+  const prep = await withTenant(input.businessId, async (tx) => {
     // Locked: two refund clicks must not both give a gift card or store credit its balance back.
     const [p] = await tx.select().from(schema.payments).where(eq(schema.payments.id, input.paymentId)).for("update");
     if (!p) throw new SaleError("Payment not found.");
@@ -1185,65 +1193,101 @@ export async function refundPayment(input: {
     const planned = input.items?.length ? await planRefundItems(tx, (await tx.select().from(schema.sales).where(eq(schema.sales.id, p.saleId)).for("update"))[0]!, input.items) : null;
     const refundable = p.amountCents - p.refundedCents - (await creditedAgainstPayment(tx, p.id));
     // A Stripe-side refund we may have just recorded ourselves (our own refund's webhook can arrive while we commit): book only the gap.
-    if (input.externalRefundId && input.externalTotalCents !== undefined && input.externalTotalCents - p.refundedCents <= 0) return;
+    if (input.externalRefundId && input.externalTotalCents !== undefined && input.externalTotalCents - p.refundedCents <= 0) return null;
     const wanted = planned ? planned.reduce((n, x) => n + x.amountCents, 0) : input.externalRefundId && input.externalTotalCents !== undefined ? input.externalTotalCents - p.refundedCents : input.amountCents;
     if (planned && wanted > refundable) throw new SaleError(`That's ${(wanted / 100).toFixed(2)}, more than the ${(refundable / 100).toFixed(2)} left on this payment. Refund some of it from another payment.`);
     const amount = Math.min(wanted, refundable);
     if (amount <= 0) throw new SaleError("Nothing left to refund.");
-    let stripeRefundId: string | null = input.externalRefundId ?? null;
-    if (p.stripePaymentIntentId && !input.externalRefundId) {
-      // Back through the account that took it, even if the location now uses another one.
-      const account = p.stripeAccountId ?? input.accountId;
-      if (!account) throw new SaleError("Stripe account not connected.");
-      const r = await stripe().refunds.create(
-        { payment_intent: p.stripePaymentIntentId, amount, reason: "requested_by_customer", metadata: { paymentId: p.id } },
-        { stripeAccount: account, idempotencyKey: `rf_${p.id}_${p.refundedCents + amount}` },
-      );
-      stripeRefundId = r.id;
+    const viaStripe = !!p.stripePaymentIntentId && !input.externalRefundId;
+    // No Stripe call (cash, gift card, points, store credit, or a refund Stripe already made): record it in this same transaction.
+    if (!viaStripe) return { done: await recordRefund(tx, input, p, amount, planned, input.externalRefundId ?? null) };
+    // Back through the account that took it, even if the location now uses another one.
+    const account = p.stripeAccountId ?? input.accountId;
+    if (!account) throw new SaleError("Stripe account not connected.");
+    return { stripe: { p, amount, account } };
+  });
+  if (!prep) return;
+  if ("done" in prep) {
+    await stopMembershipBilling(input.businessId, prep.done!, input.actorUserId);
+    return;
+  }
+  const { p: before, amount, account } = prep.stripe;
+  // Keyed on the running total, so a double click (or a retry) is one refund in Stripe.
+  const r = await stripe().refunds.create(
+    { payment_intent: before.stripePaymentIntentId!, amount, reason: "requested_by_customer", metadata: { paymentId: before.id } },
+    { stripeAccount: account, idempotencyKey: `rf_${before.id}_${before.refundedCents + amount}` },
+  );
+  const stopBilling = await withTenant(input.businessId, async (tx) => {
+    const [p] = await tx.select().from(schema.payments).where(eq(schema.payments.id, input.paymentId)).for("update");
+    // Already recorded: the twin of a double click, or the webhook got here first (then add the items it couldn't know about).
+    const [known] = await tx.select().from(schema.refunds).where(eq(schema.refunds.stripeRefundId, r.id));
+    if (known) {
+      const [hasItems] = await tx.select({ n: sql<number>`count(*)` }).from(schema.refundItems).where(eq(schema.refundItems.refundId, known.id));
+      if (!input.items?.length || Number(hasItems?.n ?? 0) > 0) return [];
+      const sale = (await tx.select().from(schema.sales).where(eq(schema.sales.id, p!.saleId)).for("update"))[0]!;
+      const planned = await planRefundItems(tx, sale, input.items).catch(() => null);
+      return planned ? recordRefundItems(tx, input.businessId, sale, planned, { refundId: known.id }, input.actorUserId) : [];
     }
-    const [refundRow] = await tx
-      .insert(schema.refunds)
-      .values({
-        businessId: input.businessId,
-        paymentId: p.id,
-        amountCents: amount,
-        reason: input.reason,
-        reasonId: input.reasonId ?? null,
-        stripeRefundId,
-        createdByUserId: input.externalRefundId ? null : input.actorUserId,
-      })
-      .returning({ id: schema.refunds.id });
-    const newRefunded = p.refundedCents + amount;
-    // The tip part of the payment shrinks in proportion, so tip reports and payroll follow the refund.
-    const tipRefund = p.amountCents > 0 ? Math.min(p.tipCents, Math.round((p.tipCents * amount) / p.amountCents)) : 0;
-    await tx
-      .update(schema.payments)
-      .set({ refundedCents: newRefunded, tipCents: p.tipCents - tipRefund, status: newRefunded >= p.amountCents ? "refunded" : "partially_refunded" })
-      .where(eq(schema.payments.id, p.id));
-    const sale = (await tx.query.sales.findFirst({ where: eq(schema.sales.id, p.saleId) }))!;
-    if (planned) stopBilling.push(...(await recordRefundItems(tx, input.businessId, sale, planned, { refundId: refundRow!.id }, input.actorUserId)));
-    // Refunding a points payment gives the points back.
-    if (p.method === "loyalty" && sale.clientId) {
-      const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { loyaltyPointValueCents: true } });
-      const points = Math.round(amount / Math.max(1, biz?.loyaltyPointValueCents ?? 1));
-      if (points > 0) await tx.insert(schema.loyaltyLedger).values({ businessId: input.businessId, clientId: sale.clientId, delta: points, reason: "adjust", saleId: sale.id, note: `Refund on sale #${sale.number}`, createdByUserId: input.actorUserId }).onConflictDoNothing();
-    }
-    // Refunding a gift card payment puts the money back on the card.
-    if (p.method === "gift_card" && p.giftCardId) {
-      await tx.update(schema.giftCards).set({ balanceCents: sql`${schema.giftCards.balanceCents} + ${amount}`, active: true }).where(eq(schema.giftCards.id, p.giftCardId));
-    }
-    // Refunding a store-credit payment puts the credit back on the client's account.
-    if (p.method === "store_credit" && sale.clientId) {
-      await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale.clientId, deltaCents: amount, reason: "payment_refund", saleId: sale.id, paymentId: p.id, note: `Refund on sale #${sale.number}`, actorUserId: input.actorUserId });
-    }
-    const t = await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
-    if (t.refundedCents >= t.paidCents && t.paidCents > 0) {
-      await tx.update(schema.sales).set({ status: "refunded" }).where(eq(schema.sales.id, sale.id));
-      stopBilling.push(...(await unwindPaidSale(tx, input.businessId, sale, input.actorUserId)));
-    }
-    await audit(tx, input.businessId, input.actorUserId, "payment.refund", sale.id, { paymentId: p.id, amount, items: planned?.map((x) => ({ line: x.line.name, cents: x.amountCents })) });
+    // The money has gone back: record it even if the lines changed meanwhile (then without the item breakdown).
+    const sale = (await tx.select().from(schema.sales).where(eq(schema.sales.id, p!.saleId)).for("update"))[0]!;
+    const planned = input.items?.length ? await planRefundItems(tx, sale, input.items).catch(() => null) : null;
+    return recordRefund(tx, input, p!, amount, planned, r.id);
   });
   await stopMembershipBilling(input.businessId, stopBilling, input.actorUserId);
+}
+
+/** Save a refund that has happened (or needs no outside call), and undo what it covers. Returns memberships whose billing must stop. */
+async function recordRefund(
+  tx: TenantDb,
+  input: { businessId: string; reason: string | null; reasonId?: string | null; actorUserId: string; taxRateBps: number; externalRefundId?: string | null },
+  p: typeof schema.payments.$inferSelect,
+  amount: number,
+  planned: PlannedItem[] | null,
+  stripeRefundId: string | null,
+): Promise<string[]> {
+  const stopBilling: string[] = [];
+  const [refundRow] = await tx
+    .insert(schema.refunds)
+    .values({
+      businessId: input.businessId,
+      paymentId: p.id,
+      amountCents: amount,
+      reason: input.reason,
+      reasonId: input.reasonId ?? null,
+      stripeRefundId,
+      createdByUserId: input.externalRefundId ? null : input.actorUserId,
+    })
+    .returning({ id: schema.refunds.id });
+  const newRefunded = p.refundedCents + amount;
+  // The tip part of the payment shrinks in proportion, so tip reports and payroll follow the refund.
+  const tipRefund = p.amountCents > 0 ? Math.min(p.tipCents, Math.round((p.tipCents * amount) / p.amountCents)) : 0;
+  await tx
+    .update(schema.payments)
+    .set({ refundedCents: newRefunded, tipCents: p.tipCents - tipRefund, status: newRefunded >= p.amountCents ? "refunded" : "partially_refunded" })
+    .where(eq(schema.payments.id, p.id));
+  const sale = (await tx.query.sales.findFirst({ where: eq(schema.sales.id, p.saleId) }))!;
+  if (planned) stopBilling.push(...(await recordRefundItems(tx, input.businessId, sale, planned, { refundId: refundRow!.id }, input.actorUserId)));
+  // Refunding a points payment gives the points back.
+  if (p.method === "loyalty" && sale.clientId) {
+    const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { loyaltyPointValueCents: true } });
+    const points = Math.round(amount / Math.max(1, biz?.loyaltyPointValueCents ?? 1));
+    if (points > 0) await tx.insert(schema.loyaltyLedger).values({ businessId: input.businessId, clientId: sale.clientId, delta: points, reason: "adjust", saleId: sale.id, note: `Refund on sale #${sale.number}`, createdByUserId: input.actorUserId }).onConflictDoNothing();
+  }
+  // Refunding a gift card payment puts the money back on the card.
+  if (p.method === "gift_card" && p.giftCardId) {
+    await tx.update(schema.giftCards).set({ balanceCents: sql`${schema.giftCards.balanceCents} + ${amount}`, active: true }).where(eq(schema.giftCards.id, p.giftCardId));
+  }
+  // Refunding a store-credit payment puts the credit back on the client's account.
+  if (p.method === "store_credit" && sale.clientId) {
+    await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale.clientId, deltaCents: amount, reason: "payment_refund", saleId: sale.id, paymentId: p.id, note: `Refund on sale #${sale.number}`, actorUserId: input.actorUserId });
+  }
+  const t = await recompute(tx, sale.id, input.taxRateBps, await currentDiscount(tx, sale));
+  if (t.refundedCents >= t.paidCents && t.paidCents > 0) {
+    await tx.update(schema.sales).set({ status: "refunded" }).where(eq(schema.sales.id, sale.id));
+    stopBilling.push(...(await unwindPaidSale(tx, input.businessId, sale, input.actorUserId)));
+  }
+  await audit(tx, input.businessId, input.actorUserId, "payment.refund", sale.id, { paymentId: p.id, amount, items: planned?.map((x) => ({ line: x.line.name, cents: x.amountCents })) });
+  return stopBilling;
 }
 
 /**

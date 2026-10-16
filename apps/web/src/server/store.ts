@@ -64,7 +64,7 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
   if (input.fulfillment.method === "ship" && (!business.shippingFlatCents || !input.fulfillment.address)) throw new StoreError("Enter a shipping address.");
   const clientId = await findOrCreateClient(business.id, { ...input.buyer, phone: input.buyer.phone, notes: null, serviceId: "", staffId: "", startAt: new Date(), email: input.buyer.email });
   const accountId = pay.accountId!;
-  return withTenant(business.id, async (tx) => {
+  const { sale, pending, total, client, fee } = await withTenant(business.id, async (tx) => {
     const products = input.items.length ? await tx.select().from(schema.products).where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true), eq(schema.products.kind, "retail"), sql`${schema.products.id} in ${input.items.map((i) => i.productId)}`)) : [];
     // What can still be sold here: on hand at this location, less other buyers' unpaid orders (the products are locked while we check).
     const available = await onlineAvailability(tx, pay.location?.id ?? null, products.map((p) => p.id), { lock: true });
@@ -121,17 +121,28 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
       await tx.update(schema.sales).set({ discountNote: null, fulfillment: { ...sale!.fulfillment!, giftRecipientEmail: input.giftCard.recipientEmail, giftRecipientName: input.giftCard.recipientName ?? undefined } as never }).where(eq(schema.sales.id, sale!.id));
     }
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
-    const customer = client ? await ensureStripeCustomer({ accountId, businessId: business.id, client, tx }) : undefined;
     const [pending] = await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card", status: "pending", amountCents: total, tipCents: 0, stripeAccountId: accountId }).returning();
     const fee = Math.round((total * (await platformFeeBpsFor(business.id, tx))) / 10_000);
-    const pi = await stripe().paymentIntents.create(
-      { amount: total, currency: business.currency, customer, allowed_payment_method_types: ["card"], description: `Order #${sale!.number} · ${pay.name}`, receipt_email: input.buyer.email, metadata: { businessId: business.id, saleId: sale!.id, paymentId: pending!.id, kind: "order" }, ...(fee > 0 ? { application_fee_amount: fee } : {}) },
-      { stripeAccount: accountId, idempotencyKey: `order_${pending!.id}` },
-    );
-    await tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending!.id));
-    const browser = await browserStripe(accountId, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
-    return { saleId: sale!.id, clientSecret: pi.client_secret!, accountId: browser.stripeAccount, publishableKey: browser.publishableKey, totalCents: total };
+    return { sale: sale!, pending: pending!, total, client, fee };
   });
+  // Stripe is called with no transaction open (the order and its pending payment are already saved).
+  try {
+    const customer = client ? await ensureStripeCustomer({ accountId, businessId: business.id, client }) : undefined;
+    const pi = await stripe().paymentIntents.create(
+      { amount: total, currency: business.currency, customer, allowed_payment_method_types: ["card"], description: `Order #${sale.number} · ${pay.name}`, receipt_email: input.buyer.email, metadata: { businessId: business.id, saleId: sale.id, paymentId: pending.id, kind: "order" }, ...(fee > 0 ? { application_fee_amount: fee } : {}) },
+      { stripeAccount: accountId, idempotencyKey: `order_${pending.id}` },
+    );
+    await withTenant(business.id, (tx) => tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending.id)));
+    const browser = await browserStripe(accountId, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+    return { saleId: sale.id, clientSecret: pi.client_secret!, accountId: browser.stripeAccount, publishableKey: browser.publishableKey, totalCents: total };
+  } catch (e) {
+    // Nothing was charged: drop the payment and void the order so it stops holding stock.
+    await withTenant(business.id, async (tx) => {
+      await tx.delete(schema.payments).where(and(eq(schema.payments.id, pending.id), eq(schema.payments.status, "pending"), sql`${schema.payments.stripePaymentIntentId} is null`));
+      await tx.update(schema.sales).set({ status: "void", closedAt: new Date() }).where(and(eq(schema.sales.id, sale.id), eq(schema.sales.status, "open")));
+    });
+    throw e;
+  }
 }
 
 /** The browser confirmed the PaymentIntent: verify with Stripe, close the sale, email the buyer (and gift recipient). */

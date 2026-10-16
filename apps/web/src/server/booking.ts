@@ -132,7 +132,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
   }
   try {
     return await withTenant(input.businessId, async (tx) => {
-      const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
+      const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
       const locationId = await resolveAppointmentLocation(tx, input.staffId, input.startAt, biz?.timezone ?? "America/New_York", input.locationId);
       if (!(await serviceOfferedAt(tx, input.serviceId, locationId))) throw new BookingError("That service isn't offered at this location.");
       const [appt] = await tx
@@ -249,7 +249,7 @@ export async function rescheduleService(input: {
         if (service) await assertQualified(tx, target, service);
       }
       // The moved segments must land inside the provider's working hours that day (busy clashes are the DB's job).
-      const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
+      const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
       const tz = biz?.timezone ?? "America/New_York";
       const moved = siblings.map((s) => ({ start: new Date(s.startAt.getTime() + deltaMs), end: new Date(s.endAt.getTime() + deltaMs) }));
       const day = instantToISODate(moved[0]!.start, tz);
@@ -309,7 +309,7 @@ export async function rescheduleAppointment(input: { businessId: string; appoint
       if (items.some((i) => i.classSessionId)) throw new BookingError("Seats in a class move with the class. Cancel the seat and book another session instead.");
       const deltaMs = input.newStartAt.getTime() - items[0]!.startAt.getTime();
       if (deltaMs === 0) return;
-      const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
+      const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
       const tz = biz?.timezone ?? "America/New_York";
       const moved = items.map((i) => ({ item: i, start: new Date(i.startAt.getTime() + deltaMs), end: new Date(i.endAt.getTime() + deltaMs) }));
       const staffIds = [...new Set(moved.map((m) => m.item.staffId))];
@@ -404,7 +404,7 @@ export async function blockTime(input: { businessId: string; staffId: string; st
     return await withTenant(input.businessId, async (tx) => {
       const staffRow = await tx.query.staff.findFirst({ where: eq(schema.staff.id, input.staffId) });
       if (!staffRow || !staffRow.active) throw new BookingError("That staff member is not available.");
-      const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
+      const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
       const locationId = await resolveAppointmentLocation(tx, input.staffId, input.startAt, biz?.timezone ?? "America/New_York", input.locationId);
       const [appt] = await tx
         .insert(schema.appointments)

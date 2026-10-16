@@ -89,13 +89,13 @@ export async function customerIdFor(tx: TenantDb, clientId: string, accountId: s
 }
 
 /** Find-or-create the Stripe Customer for a client ON THE GIVEN CONNECTED ACCOUNT. */
+/** The client's Stripe customer on this account, created on first use. The Stripe call runs with no transaction open. */
 export async function ensureStripeCustomer(opts: {
   accountId: string;
   businessId: string;
   client: { id: string; firstName: string; lastName: string; email: string | null; phone: string | null };
-  tx: TenantDb;
 }) {
-  const existing = await customerIdFor(opts.tx, opts.client.id, opts.accountId);
+  const existing = await withTenant(opts.businessId, (tx) => customerIdFor(tx, opts.client.id, opts.accountId));
   if (existing) return existing;
   const c = await stripe().customers.create(
     {
@@ -104,13 +104,13 @@ export async function ensureStripeCustomer(opts: {
       phone: opts.client.phone ?? undefined,
       metadata: { clientId: opts.client.id, businessId: opts.businessId },
     },
-    { stripeAccount: opts.accountId },
+    { stripeAccount: opts.accountId, idempotencyKey: `customer_${opts.accountId}_${opts.client.id}` },
   );
-  await opts.tx
-    .insert(schema.clientStripeCustomers)
-    .values({ businessId: opts.businessId, clientId: opts.client.id, stripeAccountId: opts.accountId, customerId: c.id })
-    .onConflictDoNothing();
-  return c.id;
+  await withTenant(opts.businessId, (tx) =>
+    tx.insert(schema.clientStripeCustomers).values({ businessId: opts.businessId, clientId: opts.client.id, stripeAccountId: opts.accountId, customerId: c.id }).onConflictDoNothing(),
+  );
+  // Two first uses at once: keep whichever was saved first.
+  return (await withTenant(opts.businessId, (tx) => customerIdFor(tx, opts.client.id, opts.accountId))) ?? c.id;
 }
 
 export interface SavedCard {

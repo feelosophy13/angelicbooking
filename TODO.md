@@ -87,10 +87,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
         Activity as `deposit.orphan_refund`); a page that returns after that is told to book again. Online order receipts and gift-card codes are
         emailed from the webhook too, once (`sendOrderEmailsOnce`).
       - Verified against the demo Stripe sandbox with `apps/web/scripts/money-smoke.ts`; DB tests in `server/__tests__/money-fixes.test.ts`.
-- [ ] Still open from the money batch: refunds and deposit refunds still call Stripe inside their transaction (safe to retry thanks to the
-      idempotency key, but a crash after Stripe leaves the refund unrecorded); Stripe-side refunds and disputes are still ignored by the webhook;
-      payments don't store which Stripe account took them; partial refunds don't deactivate a sold gift card/package; loyalty earns on gift
-      cards and packages.
+- [x] Money batch follow-ups, all closed by 2026-10-16: Stripe-side refunds and disputes reach the webhook; payments store their Stripe
+      account; partial refunds handle sold gift cards and packages; loyalty earns on services and products only. Stripe calls no longer run
+      inside a database transaction (card and deposit refunds, desk card payments, online store orders, creating a client's Stripe
+      customer): rows are checked and locked, Stripe is called with nothing held open, then the result is saved in a second short
+      transaction (a double click is one refund; a crash after Stripe is recovered by the charge.refunded webhook). Also fixed: reads
+      through the pool from inside a transaction (payroll, closing a sale, refunds, booking, forms), which froze the local app on
+      2026-10-16 when Reports ran several payroll builds at once; Postgres now ends a transaction left idle for 2 minutes. Test:
+      `stripe-outside-tx.test.ts`.
 - [x] Consent batch, 2026-10-16 (migration 0097):
       - Marketing consent is separate from appointment messages: `sms_marketing_opt_in` (+ when/how it was given) starts OFF for everyone, because the
         booking checkbox only ever covered confirmations and reminders; `email_marketing_opt_in` copies the old email flag. Campaigns and promotional

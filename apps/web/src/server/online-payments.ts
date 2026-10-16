@@ -8,7 +8,7 @@
  * the meantime the deposit is refunded automatically.
  */
 import type Stripe from "stripe";
-import { eq, or, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { changeStoreCredit } from "./store-credit";
 import { stripe } from "@/lib/stripe";
@@ -61,7 +61,7 @@ export async function startOnlinePayment(business: PublicBusiness, pay: PaymentC
   if (!accountId || !pay.ready) throw new BookingError("Online payments are not set up.");
   const client = await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, meta.clientId) }));
   if (!client) throw new BookingError("Client not found.");
-  const customer = await withTenant(business.id, (tx) => ensureStripeCustomer({ accountId, businessId: business.id, client, tx }));
+  const customer = await ensureStripeCustomer({ accountId, businessId: business.id, client });
   const metadata = { ...meta, kind: mode };
   if (mode === "deposit") {
     const fee = Math.round((amountCents * (await platformFeeBpsFor(business.id))) / 10_000);
@@ -143,10 +143,10 @@ export async function appointmentForIntent(businessId: string, intentId: string)
  * the charge). Idempotent: does nothing unless the deposit is in "paid".
  */
 export async function refundDeposit(input: { businessId: string; accountId: string | null; appointmentId: string; actorUserId: string; reason: string; /** Give back only part of the deposit (the rest stays as the late-cancel fee); default is all of it. */ amountCents?: number; /** Override the business policy (staff choosing explicitly). */ as?: "original" | "store_credit" }) {
-  return withTenant(input.businessId, async (tx) => {
-    const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, input.appointmentId) });
+  const prep = await withTenant(input.businessId, async (tx) => {
+    const [appt] = await tx.select().from(schema.appointments).where(eq(schema.appointments.id, input.appointmentId)).for("update");
     if (!appt || appt.depositStatus !== "paid" || !appt.depositPaymentIntentId) return false;
-    const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { depositRefundAs: true } });
+    const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { depositRefundAs: true } });
     const refundCents = Math.min(appt.depositCents, Math.max(1, Math.round(input.amountCents ?? appt.depositCents)));
     const partial = refundCents < appt.depositCents;
     const as = input.as ?? (biz?.depositRefundAs === "store_credit" ? "store_credit" : "original");
@@ -160,11 +160,22 @@ export async function refundDeposit(input: { businessId: string; accountId: stri
     // Back through the account that took the deposit (the location may have switched accounts since).
     const account = appt.depositStripeAccountId ?? input.accountId;
     if (!account) throw new BookingError("Stripe account not connected.");
-    // A partial refund names its amount (and carries it in the idempotency key); a full one lets Stripe refund what is left.
-    await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId, ...(partial ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: account, idempotencyKey: `deposit_refund_${appt.id}_${partial ? refundCents : "all"}` });
-    // After a partial refund the deposit is what the salon kept; it stays "paid" so it can still be applied to the visit's bill or the fee.
-    await tx.update(schema.appointments).set(partial ? { depositCents: appt.depositCents - refundCents } : { depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
-    await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.refund", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: refundCents, kept: appt.depositCents - refundCents, reason: input.reason }) });
+    return { appt, refundCents, partial, account };
+  });
+  if (typeof prep === "boolean") return prep;
+  const { appt, refundCents, partial, account } = prep;
+  // Stripe is called with no transaction open. A partial refund names its amount (and carries it in the idempotency key); a full one lets
+  // Stripe refund what is left.
+  await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId!, ...(partial ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: account, idempotencyKey: `deposit_refund_${appt.id}_${partial ? refundCents : "all"}` });
+  return withTenant(input.businessId, async (tx) => {
+    // Only if nothing recorded it meanwhile (a double click, or the webhook for this very refund): then the deposit has already moved on.
+    const updated = await tx
+      .update(schema.appointments)
+      // After a partial refund the deposit is what the salon kept; it stays "paid" so it can still be applied to the visit's bill or the fee.
+      .set(partial ? { depositCents: appt.depositCents - refundCents } : { depositStatus: "refunded" })
+      .where(and(eq(schema.appointments.id, appt.id), eq(schema.appointments.depositStatus, "paid"), eq(schema.appointments.depositCents, appt.depositCents)))
+      .returning({ id: schema.appointments.id });
+    if (updated.length) await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.refund", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: refundCents, kept: appt.depositCents - refundCents, reason: input.reason }) });
     return true;
   });
 }

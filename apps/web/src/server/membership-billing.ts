@@ -55,7 +55,7 @@ export async function enableAutoRenew(business: Business, membershipId: string, 
   const pay = await paymentContextFor(business, m.locationId ?? client.homeLocationId);
   const accountId = pay.accountId;
   if (!accountId || !pay.ready) throw new MembershipBillingError("Connect Stripe under Settings → Payments first.");
-  const customer = await withTenant(business.id, (tx) => ensureStripeCustomer({ accountId, businessId: business.id, client, tx }));
+  const customer = await ensureStripeCustomer({ accountId, businessId: business.id, client });
   const priceId = await ensurePlanPrice(accountId, business.id, plan, business.currency);
   const anchor = Math.max(Math.floor(m.currentPeriodEnd.getTime() / 1000), Math.floor(Date.now() / 1000) + 300);
   const sub = await stripe().subscriptions.create(

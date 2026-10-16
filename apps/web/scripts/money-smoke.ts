@@ -30,7 +30,7 @@ async function main() {
   });
   if (!appt) throw new Error("No un-rung demo appointment to use.");
   const client = (await withTenant(biz.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, appt.client_id) })))!;
-  const customer = await withTenant(biz.id, (tx) => ensureStripeCustomer({ accountId, businessId: biz.id, client, tx }));
+  const customer = await ensureStripeCustomer({ accountId, businessId: biz.id, client });
   const pm = await stripe().paymentMethods.attach("pm_card_visa", { customer }, { stripeAccount: accountId });
   console.log(`appointment ${appt.id}, client ${client.firstName}, card ${pm.id}`);
 

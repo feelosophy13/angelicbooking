@@ -347,7 +347,7 @@ export async function submissionsCsv(businessId: string, formId: string): Promis
     // Columns: the form's current questions, plus any question that only exists in an older signed copy.
     const qs: FormFieldDef[] = form.fields.filter((f) => !DISPLAY_TYPES.includes(f.type));
     for (const { s: sub } of subs) for (const f of sub.formSnapshot?.fields ?? []) if (!DISPLAY_TYPES.includes(f.type) && !qs.some((q) => q.id === f.id)) qs.push(f);
-    const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId), columns: { timezone: true } });
+    const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId), columns: { timezone: true } });
     const fmt = new Intl.DateTimeFormat("en-CA", { dateStyle: "short", timeStyle: "short", timeZone: biz?.timezone ?? "UTC", hour12: false });
     const headers = ["Submitted", "Client", "Email", "Phone", "Signed as", "Assisted", "Voided", ...qs.map((q) => q.label)];
     const rows = subs.map(({ s: sub, first, last, email, phone }) => [
@@ -396,7 +396,7 @@ export async function getSubmission(businessId: string, submissionId: string) {
       where: and(eq(schema.formSubmissions.clientId, hit.s.clientId), eq(schema.formSubmissions.formId, hit.s.formId), lt(schema.formSubmissions.createdAt, hit.s.createdAt)),
       orderBy: desc(schema.formSubmissions.createdAt),
     });
-    const assistedBy = hit.s.assistedByUserId ? await db.query.user.findFirst({ where: eq(schema.user.id, hit.s.assistedByUserId), columns: { name: true } }) : null;
+    const assistedBy = hit.s.assistedByUserId ? await tx.query.user.findFirst({ where: eq(schema.user.id, hit.s.assistedByUserId), columns: { name: true } }) : null;
     return { ...hit, previous: previous ?? null, assistedByName: assistedBy?.name ?? null };
   });
 }
