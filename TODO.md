@@ -391,7 +391,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Verified server-side with a simulated reader: card-present Visa 4242 succeeded. **Found:** Stripe's newest API version (2026-09-30.endive) rejects
       `payment_method_types`, and card-reader PaymentIntents need `card_present`, so they are created with API version 2025-09-30.clover
       (`TERMINAL_API_VERSION` in `server/sales.ts`). Restart the web dev server after changing these vars. The Payments page's Refresh/Connect buttons
-      do not work for the demo account (it is not a Connect account). Browser walk of the simulated reader still to do after a server restart.
+      do not work for the demo account (it is not a Connect account). Walked in the browser 2026-10-16 on demo-salon: product-only sale, simulated reader, paid in full (terminal · VISA), then a full
+      card refund ("Goodwill") through the demo account. Still untested: a real reader, the typed-card form and online booking deposits on the demo account.
 - [x] 2026-10-15: platform admin accounts moved into the database (migration 0091 `admin_users`). Login, password reset, Google sign-in and the audit
       actor all use the table; the session cookie names the admin and `requireAdmin()` rechecks they still exist and are enabled. New Admins page
       (add by email with an emailed set-password link, disable/enable; not yourself, not the last one). `pnpm --filter @angelic/admin create-admin
