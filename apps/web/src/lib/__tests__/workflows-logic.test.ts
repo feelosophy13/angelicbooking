@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deferToDaytime, matchesFilters, summarizeSteps, validateSteps, waitResumesAt } from "../workflows-logic";
+import { deferToDaytime, matchesFilters, summarizeSteps, validateSteps, waitResumesAt, birthdayKeys, noVisitWindow } from "../workflows-logic";
 
 describe("matchesFilters", () => {
   it("can be limited to bookings the client made online", () => {
@@ -59,5 +59,20 @@ describe("steps", () => {
   it("summarises", () => {
     expect(summarizeSteps([{ id: "1", type: "wait", mode: "before_appointment", hours: 48 }, { id: "2", type: "sms", body: "x" }, { id: "3", type: "email", subject: "s", body: "b" }])).toBe("2 days before the visit → text + email");
     expect(summarizeSteps([{ id: "1", type: "wait", mode: "delay", hours: 1 }, { id: "2", type: "notify_staff", to: "owner", body: "x" }])).toBe("wait 1 h → notify owner");
+  });
+});
+
+describe("scheduled workflow dates", () => {
+  it("reaches only clients who crossed the no-visit line in the last week", () => {
+    const now = new Date("2027-03-10T17:00:00Z");
+    const w = noVisitWindow(now, 60);
+    expect(w.to.toISOString()).toBe("2027-01-09T17:00:00.000Z");
+    expect(w.from.toISOString()).toBe("2027-01-02T17:00:00.000Z");
+  });
+  it("celebrates 29 February birthdays on the 28th in years without one", () => {
+    expect(birthdayKeys("2027-02-28")).toEqual(["02-28", "02-29"]);
+    expect(birthdayKeys("2028-02-28")).toEqual(["02-28"]);
+    expect(birthdayKeys("2028-02-29")).toEqual(["02-29"]);
+    expect(birthdayKeys("2027-07-04")).toEqual(["07-04"]);
   });
 });

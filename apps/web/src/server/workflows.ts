@@ -14,7 +14,7 @@
  *   marketing texts, quiet hours (9am–8pm local) for marketing triggers, one run per
  *   occasion, review requests only once per visit.
  */
-import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { db, schema, withJobs, withTenant, type TenantDb, type WorkflowFilters, type WorkflowRunContext, type WorkflowRunLogEntry, type WorkflowStep, type WorkflowTrigger } from "@angelic/db";
 import { instantToISODate, normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
@@ -25,7 +25,7 @@ import { smsBody, smsWithStopNotice } from "@/lib/notify/sms";
 import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing";
 import { pathTo } from "@/server/categories";
 import { ensureReferralCode, referralsEnabled } from "./loyalty";
-import { APPOINTMENT_TRIGGERS, deferToDaytime, isMarketingTrigger, matchesFilters, newStepId, validateSteps, waitResumesAt, type TriggerFacts } from "@/lib/workflows-logic";
+import { APPOINTMENT_TRIGGERS, birthdayKeys, deferToDaytime, isMarketingTrigger, matchesFilters, newStepId, noVisitWindow, validateSteps, waitResumesAt, type TriggerFacts } from "@/lib/workflows-logic";
 
 type Business = typeof schema.businesses.$inferSelect;
 export type Workflow = typeof schema.workflows.$inferSelect;
@@ -570,44 +570,98 @@ export async function processWorkflowRuns(now = new Date()): Promise<{ businesse
 // ---------------------------------------------------------------------------
 // Scheduled triggers: birthday and "no visit for N days" (checked in the morning window)
 // ---------------------------------------------------------------------------
+/** Most runs one scheduled workflow starts per job; the rest start on the next job (the day is only marked done once everyone due has started). */
+const SCHEDULED_BATCH = 200;
+
+/**
+ * Birthday and "no visit" workflows. Each enabled one is scanned once a day after 9am local (not every 5 minutes): one query finds who is
+ * due and hasn't had this workflow for this occasion yet, then their runs start in one transaction and their messages go out together.
+ * Suspended businesses are skipped. A no-visit workflow only reaches clients who crossed its threshold in the last week (noVisitWindow).
+ */
 export async function runScheduledTriggers(now = new Date()): Promise<{ businesses: number; started: number }> {
   const enabled = await withJobs((tx) => tx.selectDistinct({ businessId: schema.workflows.businessId }).from(schema.workflows).where(and(eq(schema.workflows.enabled, true), inArray(schema.workflows.trigger, ["birthday", "no_visit"]))));
   let started = 0;
   for (const { businessId } of enabled) {
     const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
-    if (!business) continue;
+    if (!business || business.suspendedAt) continue;
     const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: business.timezone, hour: "numeric", hour12: false }).format(now)) % 24;
     if (hour < 9 || hour >= 20) continue;
     const today = instantToISODate(now, business.timezone);
-    const flows = await withTenant(businessId, (tx) => tx.select().from(schema.workflows).where(and(eq(schema.workflows.enabled, true), inArray(schema.workflows.trigger, ["birthday", "no_visit"]))));
+    const flows = await withTenant(businessId, (tx) =>
+      tx.select().from(schema.workflows).where(and(eq(schema.workflows.enabled, true), inArray(schema.workflows.trigger, ["birthday", "no_visit"]), or(isNull(schema.workflows.lastScanOn), ne(schema.workflows.lastScanOn, today)))),
+    );
     for (const w of flows) {
-      if (w.trigger === "birthday") {
-        const rows = await withTenant(businessId, (tx) => tx.select({ id: schema.clients.id, tags: schema.clients.tags }).from(schema.clients).where(sql`${schema.clients.birthday} is not null and to_char(${schema.clients.birthday}, 'MM-DD') = ${today.slice(5)}`));
-        for (const c of rows) started += await triggerWorkflows(business, "birthday", { clientId: c.id, dedupeKey: `${c.id}:${today.slice(0, 4)}`, facts: { clientTags: c.tags }, context: { reason: "Birthday" } });
-      } else {
-        const days = w.filters.days ?? 60;
-        const rows = await withTenant(businessId, (tx) =>
-          tx.execute<{ client_id: string; appointment_id: string; last_visit: string; has_upcoming: boolean; tags: string[] }>(sql`
-            select v.client_id, v.appointment_id, v.last_visit, c.tags,
-                   exists (select 1 from appointments a2 join appointment_items i2 on i2.appointment_id = a2.id
-                           where a2.client_id = v.client_id and a2.status in ('booked','confirmed') and i2.start_at > now()) as has_upcoming
-            from (
-              select distinct on (a.client_id) a.client_id, a.id as appointment_id, i.start_at as last_visit
-              from appointments a join appointment_items i on i.appointment_id = a.id and i.sort_order = 0
-              where a.status = 'completed' and a.client_id is not null
-              order by a.client_id, i.start_at desc
-            ) v join clients c on c.id = v.client_id`),
-        );
-        const cutoff = now.getTime() - days * 86_400_000;
-        for (const r of rows) {
-          if (r.has_upcoming || new Date(r.last_visit).getTime() > cutoff) continue;
-          // Once per lapse: the dedupe key is the last visit, so a client who returns and lapses again is eligible again.
-          started += await triggerWorkflows(business, "no_visit", { clientId: r.client_id, appointmentId: null, dedupeKey: `${r.client_id}:${r.appointment_id}`, facts: { clientTags: r.tags }, context: { reason: `No visit for ${days} days` } });
+      const due = await withTenant(businessId, async (tx) => {
+        if (w.trigger === "birthday") {
+          const rows = await tx.execute<{ client_id: string; tags: string[] }>(sql`
+            select c.id as client_id, c.tags from clients c
+            where c.birthday is not null and to_char(c.birthday, 'MM-DD') in ${birthdayKeys(today)}
+              and not exists (select 1 from workflow_runs wr where wr.workflow_id = ${w.id} and wr.dedupe_key = c.id || ':' || ${today.slice(0, 4)})`);
+          return rows.map((r) => ({ clientId: r.client_id, appointmentId: null, dedupeKey: `${r.client_id}:${today.slice(0, 4)}`, tags: r.tags, reason: "Birthday" }));
         }
-      }
+        const days = w.filters.days ?? 60;
+        const win = noVisitWindow(now, days);
+        const rows = await tx.execute<{ client_id: string; appointment_id: string; tags: string[] }>(sql`
+          select v.client_id, v.appointment_id, c.tags
+          from (
+            select distinct on (a.client_id) a.client_id, a.id as appointment_id, i.start_at as last_visit
+            from appointments a join appointment_items i on i.appointment_id = a.id and i.sort_order = 0
+            where a.status = 'completed' and a.client_id is not null
+            order by a.client_id, i.start_at desc
+          ) v join clients c on c.id = v.client_id
+          where v.last_visit > ${win.from.toISOString()}::timestamptz and v.last_visit <= ${win.to.toISOString()}::timestamptz
+            and not exists (select 1 from appointments a2 join appointment_items i2 on i2.appointment_id = a2.id
+                            where a2.client_id = v.client_id and a2.status in ('booked','confirmed') and i2.start_at > now())
+            and not exists (select 1 from workflow_runs wr where wr.workflow_id = ${w.id} and wr.dedupe_key = v.client_id || ':' || v.appointment_id)`);
+        return rows.map((r) => ({ clientId: r.client_id, appointmentId: null, dedupeKey: `${r.client_id}:${r.appointment_id}`, tags: r.tags, reason: `No visit for ${days} days` }));
+      });
+      // The window is small (one day of birthdays, one week of lapses), so filters are applied before the batch cap: clients a filter
+      // leaves out never hold up the day.
+      const matching = due.filter((d) => matchesFilters(w.filters, { clientTags: d.tags }));
+      started += await startScheduledRuns(business, w, matching.slice(0, SCHEDULED_BATCH));
+      if (matching.length <= SCHEDULED_BATCH) await withTenant(businessId, (tx) => tx.update(schema.workflows).set({ lastScanOn: today }).where(eq(schema.workflows.id, w.id)));
     }
   }
   return { businesses: enabled.length, started };
+}
+
+/** For the workflow page: how many clients a no-visit workflow would message at its next daily scan (in the window, not yet messaged). */
+export async function noVisitReach(business: Business, w: Workflow, now = new Date()): Promise<number> {
+  const win = noVisitWindow(now, w.filters.days ?? 60);
+  const [row] = await withTenant(business.id, (tx) =>
+    tx.execute<{ n: number }>(sql`
+      select count(*)::int as n from (
+        select distinct on (a.client_id) a.client_id, a.id as appointment_id, i.start_at as last_visit
+        from appointments a join appointment_items i on i.appointment_id = a.id and i.sort_order = 0
+        where a.status = 'completed' and a.client_id is not null
+        order by a.client_id, i.start_at desc
+      ) v
+      where v.last_visit > ${win.from.toISOString()}::timestamptz and v.last_visit <= ${win.to.toISOString()}::timestamptz
+        and not exists (select 1 from appointments a2 join appointment_items i2 on i2.appointment_id = a2.id
+                        where a2.client_id = v.client_id and a2.status in ('booked','confirmed') and i2.start_at > now())
+        and not exists (select 1 from workflow_runs wr where wr.workflow_id = ${w.id} and wr.dedupe_key = v.client_id || ':' || v.appointment_id)`),
+  );
+  return Number(row?.n ?? 0);
+}
+
+/** Start one workflow's runs for many clients in one transaction (skipping any already started) and send what they queue together. */
+async function startScheduledRuns(business: Business, w: Workflow, due: { clientId: string; appointmentId: string | null; dedupeKey: string; tags: string[]; reason: string }[]): Promise<number> {
+  if (!due.length) return 0;
+  const now = new Date();
+  const ids = await withTenant(business.id, async (tx) => {
+    const out: string[] = [];
+    for (const d of due) {
+      const [run] = await tx
+        .insert(schema.workflowRuns)
+        .values({ businessId: business.id, workflowId: w.id, clientId: d.clientId, appointmentId: d.appointmentId, dedupeKey: d.dedupeKey, context: { reason: d.reason }, log: [{ at: now.toISOString(), step: null, event: "started", detail: d.reason }] })
+        .onConflictDoNothing()
+        .returning();
+      if (run) await advanceRun(tx, business, w, run, now, out);
+    }
+    return out;
+  });
+  if (ids.length) await deliverMany(business.id, ids).catch((e) => console.error("[workflows] delivery failed", (e as Error).message));
+  return ids.length;
 }
 
 // keep helpers referenced for future steps

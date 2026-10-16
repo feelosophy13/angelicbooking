@@ -167,3 +167,22 @@ export function summarizeSteps(steps: WorkflowStep[]): string {
 export function renderWorkflowText(text: string, vars: Record<string, string | number | null | undefined>): string {
   return text.replace(/\{(\w+)\}/g, (m, k: string) => (vars[k] == null ? m : String(vars[k])));
 }
+
+/**
+ * Who a "no visit for N days" workflow reaches today: clients whose last visit is between N and N+7 days ago. Only people who crossed the
+ * line recently, so turning it on (or importing years of history) never messages every client who ever lapsed; a week of slack covers
+ * days the job didn't run. The dedupe key (client + last visit) keeps it to once per lapse.
+ */
+export const NO_VISIT_WINDOW_DAYS = 7;
+export function noVisitWindow(now: Date, days: number): { from: Date; to: Date } {
+  const day = 86_400_000;
+  return { from: new Date(now.getTime() - (days + NO_VISIT_WINDOW_DAYS) * day), to: new Date(now.getTime() - days * day) };
+}
+
+/** Birthdays to celebrate on a local date (YYYY-MM-DD) as "MM-DD": 29 February birthdays are on the 28th in years without one. */
+export function birthdayKeys(today: string): string[] {
+  const md = today.slice(5);
+  const year = Number(today.slice(0, 4));
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  return md === "02-28" && !leap ? ["02-28", "02-29"] : [md];
+}

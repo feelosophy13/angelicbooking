@@ -1294,6 +1294,8 @@ export const workflows = pgTable(
     // Stop the sequence as soon as the client books again (rebook / win-back style flows).
     exitOnBooking: boolean("exit_on_booking").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
+    // Birthday / no-visit workflows: the local day the daily scan last finished, so it runs once a day instead of every 5 minutes.
+    lastScanOn: date("last_scan_on"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

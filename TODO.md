@@ -129,7 +129,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       shelf is still the separate "put back on the shelf" box; reports don't yet break refunds down by item.
 - [ ] Still open from payroll: a tip added to an old ticket after finalizing shows as drift rather than landing in the current period; overtime
       (workweek alignment, commission in the regular rate, daily OT) and the 14-hour auto-close are unchanged; no "my earnings" view or 1099 YTD.
-- [ ] Next from the "Fix first" table: "We miss you" window and scan cost; then the per-area lists in `REVIEW-2026-10-16.md`.
+- [x] Scheduled automations, 2026-10-16 (migration 0099): "We miss you" (no visit) only reaches clients whose last visit was N to N+7 days
+      ago, so turning it on or importing years of history never messages every lapsed client at once; its page shows how many it would reach.
+      Birthday and no-visit workflows are scanned once a day (`workflows.last_scan_on`) with one query that skips clients already messaged,
+      runs start in batches of 200 in one transaction and send together; suspended businesses are skipped; 29 February birthdays fire on the
+      28th in other years. Tests: `server/__tests__/scheduled-workflows.test.ts`, `lib/__tests__/workflows-logic.test.ts`.
+- [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
+      Next: the per-area lists in that file.
 
 ### Platform admin app (`apps/admin`, built 2026-10-14: tenant list with filters and CSV, usage metrics, price book and custom pricing, suspend / comp / extend trial, audit log, health page, TOTP login)
 - [x] Deployed 2026-10-14 as Render service `angelic-admin` (srv-db7vr98n74is73d85io0, starter) at https://admin.angelicbooking.com
