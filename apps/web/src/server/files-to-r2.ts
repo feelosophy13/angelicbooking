@@ -6,7 +6,7 @@
  * rewritten to the CDN address so visitors skip the redirect through the app.
  */
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { db, schema, withTenant } from "@angelic/db";
+import { db, schema, withJobs, withTenant } from "@angelic/db";
 import { optimizeUpload } from "@/lib/images";
 import { PRIVATE_KINDS, SERVED_KINDS, visibilityOf } from "@/lib/files";
 import { publicObjectUrl, putObject, r2Config } from "@/lib/object-storage";
@@ -17,22 +17,26 @@ const MOVABLE = SERVED_KINDS;
 const IMMUTABLE = "public, max-age=31536000, immutable";
 
 export async function filesLeftInDatabase() {
-  const [r] = await db
-    .select({ n: sql<number>`count(*)`, bytes: sql<number>`coalesce(sum(${schema.files.size}), 0)` })
-    .from(schema.files)
-    .where(and(eq(schema.files.storage, "db"), isNotNull(schema.files.data), inArray(schema.files.kind, MOVABLE)));
+  const [r] = await withJobs((tx) =>
+    tx
+      .select({ n: sql<number>`count(*)`, bytes: sql<number>`coalesce(sum(${schema.files.size}), 0)` })
+      .from(schema.files)
+      .where(and(eq(schema.files.storage, "db"), isNotNull(schema.files.data), inArray(schema.files.kind, MOVABLE))),
+  );
   return { files: Number(r?.n ?? 0), bytes: Number(r?.bytes ?? 0) };
 }
 
 export async function migrateFilesToR2(limit = 20, only?: string[]): Promise<{ moved: number; failed: number; bytesBefore: number; bytesAfter: number; left: { files: number; bytes: number } }> {
   const cfg = r2Config();
   if (!cfg) throw new Error("R2 is not configured (set the R2_* variables).");
-  const rows = await db
-    .select()
-    .from(schema.files)
-    .where(and(eq(schema.files.storage, "db"), isNotNull(schema.files.data), inArray(schema.files.kind, MOVABLE), ...(only ? [inArray(schema.files.id, only)] : [])))
-    .orderBy(asc(schema.files.createdAt))
-    .limit(limit);
+  const rows = await withJobs((tx) =>
+    tx
+      .select()
+      .from(schema.files)
+      .where(and(eq(schema.files.storage, "db"), isNotNull(schema.files.data), inArray(schema.files.kind, MOVABLE), ...(only ? [inArray(schema.files.id, only)] : [])))
+      .orderBy(asc(schema.files.createdAt))
+      .limit(limit),
+  );
   let moved = 0;
   let failed = 0;
   let bytesBefore = 0;
@@ -49,7 +53,7 @@ export async function migrateFilesToR2(limit = 20, only?: string[]): Promise<{ m
       const ext = p.ext;
       const key = `${row.businessId}/${row.kind}/${randomUUID()}.${ext}`;
       await putObject(cfg, visibility, key, data, contentType, visibility === "public" ? IMMUTABLE : undefined);
-      await db.update(schema.files).set({ storage: "r2", storageKey: key, contentType, size: data.length, data: null }).where(and(eq(schema.files.id, row.id), eq(schema.files.storage, "db")));
+      await withTenant(row.businessId, (tx) => tx.update(schema.files).set({ storage: "r2", storageKey: key, contentType, size: data.length, data: null }).where(and(eq(schema.files.id, row.id), eq(schema.files.storage, "db"))));
       bytesBefore += row.size;
       bytesAfter += data.length;
       moved++;

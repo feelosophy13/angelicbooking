@@ -7,7 +7,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db, schema } from "@angelic/db";
+import { schema, withJobs, withTenant } from "@angelic/db";
 import { appUrl } from "./stripe";
 import { optimizeUpload, ImageError } from "./images";
 import { deleteObject, keyFromPublicUrl, publicObjectUrl, putObject, r2Config, type Visibility } from "./object-storage";
@@ -35,14 +35,14 @@ async function saveFile(businessId: string, kind: string, p: { data: Buffer; con
     const key = `${businessId}/${kind}/${randomUUID()}.${p.ext}`;
     await putObject(cfg, visibility, key, p.data, p.contentType, visibility === "public" ? IMMUTABLE : undefined);
     try {
-      const [row] = await db.insert(schema.files).values({ businessId, kind, contentType: p.contentType, size: p.data.length, storage: "r2", storageKey: key }).returning({ id: schema.files.id });
+      const [row] = await withTenant(businessId, (tx) => tx.insert(schema.files).values({ businessId, kind, contentType: p.contentType, size: p.data.length, storage: "r2", storageKey: key }).returning({ id: schema.files.id }));
       return { id: row!.id, url: visibility === "public" ? publicObjectUrl(cfg, key) : appUrl(`/api/files/${row!.id}`) };
     } catch (e) {
       await deleteObject(cfg, visibility, key).catch(() => undefined); // do not leave an orphan behind
       throw e;
     }
   }
-  const [row] = await db.insert(schema.files).values({ businessId, kind, contentType: p.contentType, size: p.data.length, data: p.data }).returning({ id: schema.files.id });
+  const [row] = await withTenant(businessId, (tx) => tx.insert(schema.files).values({ businessId, kind, contentType: p.contentType, size: p.data.length, data: p.data }).returning({ id: schema.files.id }));
   return { id: row!.id, url: appUrl(`/api/files/${row!.id}`) };
 }
 
@@ -76,10 +76,11 @@ export async function deleteFileById(id: string | null | undefined) {
 
 async function deleteStoredFile(where: ReturnType<typeof eq>) {
   const cfg = r2Config();
-  const row = await db.query.files.findFirst({ where, columns: { id: true, kind: true, storage: true, storageKey: true } });
+  // Found by id or key across businesses (the jobs context), then removed inside its own business.
+  const row = await withJobs((tx) => tx.query.files.findFirst({ where, columns: { id: true, businessId: true, kind: true, storage: true, storageKey: true } }));
   if (!row) return;
   if (row.storage === "r2" && row.storageKey && cfg) await deleteObject(cfg, visibilityOf(row.kind), row.storageKey).catch((e) => console.error("[files] could not delete object", row.storageKey, (e as Error).message));
-  await db.delete(schema.files).where(eq(schema.files.id, row.id));
+  await withTenant(row.businessId, (tx) => tx.delete(schema.files).where(eq(schema.files.id, row.id)));
 }
 
 export function fileIdFromUrl(url: string | null | undefined): string | null {

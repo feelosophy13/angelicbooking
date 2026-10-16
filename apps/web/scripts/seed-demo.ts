@@ -91,7 +91,7 @@ async function tile(businessId: string, kind: "category" | "service" | "package"
   const [a, b] = PALETTES[i % PALETTES.length]!;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="500" height="300" viewBox="0 0 500 300"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="500" height="300" fill="url(#g)"/><circle cx="420" cy="60" r="90" fill="#fff" fill-opacity="0.12"/><circle cx="60" cy="260" r="70" fill="#fff" fill-opacity="0.1"/><text x="250" y="165" font-size="110" text-anchor="middle" dominant-baseline="middle">${emoji}</text><text x="250" y="262" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="22" font-weight="600" fill="#fff" fill-opacity="0.9" text-anchor="middle">${label.replace(/&/g, "&amp;")}</text></svg>`;
   const data = Buffer.from(svg, "utf8");
-  const [row] = await db.insert(schema.files).values({ businessId, kind, contentType: "image/svg+xml", size: data.length, data }).returning({ id: schema.files.id });
+  const [row] = await withTenant(businessId, (tx) => tx.insert(schema.files).values({ businessId, kind, contentType: "image/svg+xml", size: data.length, data }).returning({ id: schema.files.id }));
   return appUrl(`/api/files/${row!.id}`);
 }
 
@@ -100,7 +100,7 @@ async function portrait(businessId: string, name: string, color: string): Promis
   const initials = name.split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase();
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400"><rect width="400" height="400" fill="${color}" fill-opacity="0.18"/><circle cx="200" cy="200" r="150" fill="${color}"/><circle cx="200" cy="165" r="55" fill="#fff" fill-opacity="0.85"/><path d="M95 330a105 95 0 0 1 210 0z" fill="#fff" fill-opacity="0.85"/><text x="200" y="372" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="30" font-weight="700" fill="${color}" text-anchor="middle">${initials}</text></svg>`;
   const data = Buffer.from(svg, "utf8");
-  const [row] = await db.insert(schema.files).values({ businessId, kind: "staff", contentType: "image/svg+xml", size: data.length, data }).returning({ id: schema.files.id });
+  const [row] = await withTenant(businessId, (tx) => tx.insert(schema.files).values({ businessId, kind: "staff", contentType: "image/svg+xml", size: data.length, data }).returning({ id: schema.files.id }));
   return appUrl(`/api/files/${row!.id}`);
 }
 const PRODUCT_CAT_EMOJI: Record<string, string> = { "Back-bar": "🧴", "Brow care": "🪮", "Lash care": "👁️", "Skin care": "🧖", "Tools & Gifts": "🎁" };
@@ -124,7 +124,7 @@ async function photo(businessId: string, kind: "category" | "service" | "package
   }
   const got = await fetched.get(path)!;
   if (!got) return tile(businessId, kind, label, emoji, i);
-  const [row] = await db.insert(schema.files).values({ businessId, kind, contentType: got.type, size: got.data.length, data: got.data }).returning({ id: schema.files.id });
+  const [row] = await withTenant(businessId, (tx) => tx.insert(schema.files).values({ businessId, kind, contentType: got.type, size: got.data.length, data: got.data }).returning({ id: schema.files.id }));
   return appUrl(`/api/files/${row!.id}`);
 }
 
@@ -319,7 +319,7 @@ async function main() {
   if (existingBiz) {
     console.log("Deleting the existing demo business…");
     // Tenant tables cascade from businesses; files are unscoped so clear them by business id.
-    await db.delete(schema.files).where(eq(schema.files.businessId, existingBiz.id));
+    await withTenant(existingBiz.id, (tx) => tx.delete(schema.files).where(eq(schema.files.businessId, existingBiz.id)));
     await db.delete(schema.organization).where(eq(schema.organization.id, existingBiz.id));
   }
 
@@ -640,7 +640,7 @@ async function main() {
       let imageUrl: string | null = null;
       if (!p.backbar) {
         const art = Buffer.from(productArt(p.name, i), "utf8");
-        const [file] = await db.insert(schema.files).values({ businessId, kind: "product", contentType: "image/svg+xml", size: art.length, data: art }).returning({ id: schema.files.id });
+        const [file] = await withTenant(businessId, (tx) => tx.insert(schema.files).values({ businessId, kind: "product", contentType: "image/svg+xml", size: art.length, data: art }).returning({ id: schema.files.id }));
         imageUrl = appUrl(`/api/files/${file!.id}`);
       }
       if (!prodCats.has(p.cat)) {

@@ -196,6 +196,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       repricing a plan clears its per-account Stripe prices so renewals charge the new price. Test: `member-pricing.test.ts`.
 - [x] Reports, 2026-10-16: refunds are counted on the day they were made (total and per location), so a closed month no longer changes when
       an old sale is refunded; staff revenue is after each line's share of the ticket discount; the page says which date each figure uses.
+- [x] Data isolation, 2026-10-16 (migration 0105): `files` (client photos, signed forms, staged client imports) now has forced row-level
+      security like every business table; lookups by file id use the jobs context, writes run inside the business. A test fails if any table
+      with a `business_id` lacks forced RLS (`rls-coverage.test.ts`). Demo seed scripts write files through the tenant too.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

@@ -1,5 +1,5 @@
 import { and, eq, or, sql } from "drizzle-orm";
-import { db, schema } from "@angelic/db";
+import { db, schema, withJobs } from "@angelic/db";
 import { getSession } from "@/lib/session";
 import { getClientSessionId } from "@/lib/client-session";
 import { getObject, publicObjectUrl, r2Config } from "@/lib/object-storage";
@@ -15,7 +15,7 @@ import { PRIVATE_KINDS, PUBLIC_KINDS } from "@/lib/files";
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/.test(id)) return new Response("Not found", { status: 404 });
-  const row = await db.query.files.findFirst({ where: eq(schema.files.id, id) });
+  const row = await withJobs((tx) => tx.query.files.findFirst({ where: eq(schema.files.id, id) }));
   if (!row) return new Response("Not found", { status: 404 });
   const isPublic = PUBLIC_KINDS.has(row.kind);
   if (!isPublic) {

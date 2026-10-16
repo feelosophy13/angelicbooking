@@ -10,7 +10,7 @@ import { PACKAGE_BLURBS, PACKAGE_PHOTOS, productArt } from "./demo-art";
 const IMG = "https://angelicbeauty.s3.us-east-2.amazonaws.com/images/";
 
 async function store(businessId: string, kind: "product" | "package", contentType: string, data: Buffer) {
-  const [row] = await db.insert(schema.files).values({ businessId, kind, contentType, size: data.length, data }).returning({ id: schema.files.id });
+  const [row] = await withTenant(businessId, (tx) => tx.insert(schema.files).values({ businessId, kind, contentType, size: data.length, data }).returning({ id: schema.files.id }));
   return appUrl(`/api/files/${row!.id}`);
 }
 

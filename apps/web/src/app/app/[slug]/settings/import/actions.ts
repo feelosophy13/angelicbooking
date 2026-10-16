@@ -1,7 +1,7 @@
 "use server";
 import { and, eq, lt } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { db, schema } from "@angelic/db";
+import { db, schema, withTenant } from "@angelic/db";
 import { z } from "zod";
 import { requireAction } from "@/lib/tenant";
 import { parseTable, TableError } from "@/lib/import/parse";
@@ -18,7 +18,7 @@ const STAGE_TTL_MS = 24 * 3_600_000;
 
 export async function readStaged(businessId: string, id: string): Promise<Staged | null> {
   if (!/^[a-f0-9-]{36}$/.test(id)) return null;
-  const row = await db.query.files.findFirst({ where: and(eq(schema.files.id, id), eq(schema.files.businessId, businessId), eq(schema.files.kind, STAGE_KIND)) });
+  const row = await withTenant(businessId, (tx) => tx.query.files.findFirst({ where: and(eq(schema.files.id, id), eq(schema.files.businessId, businessId), eq(schema.files.kind, STAGE_KIND)) }));
   if (!row || !row.data) return null;
   try {
     const s = JSON.parse(Buffer.from(row.data).toString("utf8")) as Staged;
@@ -28,8 +28,8 @@ export async function readStaged(businessId: string, id: string): Promise<Staged
   }
 }
 
-async function discardStaged(id: string) {
-  await db.delete(schema.files).where(and(eq(schema.files.id, id), eq(schema.files.kind, STAGE_KIND)));
+async function discardStaged(businessId: string, id: string) {
+  await withTenant(businessId, (tx) => tx.delete(schema.files).where(and(eq(schema.files.id, id), eq(schema.files.kind, STAGE_KIND))));
 }
 
 /** Step 1: parse the upload, auto-map headers, stage it server-side, redirect to the preview. */
@@ -48,11 +48,11 @@ export async function uploadImport(_prev: UploadState, formData: FormData): Prom
     throw e;
   }
   if (!table.rows.length) return { error: "No rows found in that file." };
-  await db.delete(schema.files).where(and(eq(schema.files.businessId, ctx.business.id), eq(schema.files.kind, STAGE_KIND), lt(schema.files.createdAt, new Date(Date.now() - STAGE_TTL_MS))));
+  await withTenant(ctx.business.id, (tx) => tx.delete(schema.files).where(and(eq(schema.files.businessId, ctx.business.id), eq(schema.files.kind, STAGE_KIND), lt(schema.files.createdAt, new Date(Date.now() - STAGE_TTL_MS)))));
   const id = crypto.randomUUID();
   const staged: Staged = { id, businessId: ctx.business.id, kind, filename: file.name, headers: table.headers, rows: table.rows, mapping: autoMap(kind, table.headers) };
   const data = Buffer.from(JSON.stringify(staged), "utf8");
-  await db.insert(schema.files).values({ id, businessId: ctx.business.id, kind: STAGE_KIND, contentType: "application/json", size: data.length, data });
+  await withTenant(ctx.business.id, (tx) => tx.insert(schema.files).values({ id, businessId: ctx.business.id, kind: STAGE_KIND, contentType: "application/json", size: data.length, data }));
   redirect(`/app/${slug}/settings/import?staged=${id}`);
 }
 
@@ -71,6 +71,6 @@ export async function commitImport(_prev: UploadState, formData: FormData): Prom
   const missing = FIELDS[staged.kind].filter((f) => f.required && !mapping[f.key] && !(staged.kind === "clients" && f.key === "firstName" && mapping.fullName));
   if (missing.length) return { error: `Map these columns first: ${missing.map((m) => m.label).join(", ")}` };
   const result = await runImport(ctx.business, staged.kind, staged.rows, mapping, ctx.user.id, staged.filename);
-  await discardStaged(id);
+  await discardStaged(ctx.business.id, id);
   redirect(`/app/${slug}/settings/import?done=${encodeURIComponent(JSON.stringify({ kind: staged.kind, ...result, errors: result.errors.slice(0, 20) }))}`);
 }
