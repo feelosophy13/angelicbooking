@@ -120,3 +120,27 @@ export async function refundsByReason(tx: TenantDb, from: Date, to: Date): Promi
   }
   return [...out.values()].sort((a, b) => b.moneyCents + b.creditCents - (a.moneyCents + a.creditCents));
 }
+
+/**
+ * What was refunded, by item, for refunds that named their items; refunds taken off a whole ticket are one line ("Whole ticket"). Money
+ * back and store credit together.
+ */
+export async function refundsByItem(tx: TenantDb, from: Date, to: Date): Promise<{ name: string; kind: string | null; count: number; quantity: number; cents: number }[]> {
+  const [items, money, credit] = await Promise.all([
+    tx
+      .select({ name: schema.saleLines.name, kind: schema.saleLines.kind, count: sql<number>`count(*)`, quantity: sql<number>`coalesce(sum(${schema.refundItems.quantity}), 0)`, cents: sql<number>`coalesce(sum(${schema.refundItems.amountCents}), 0)` })
+      .from(schema.refundItems)
+      .innerJoin(schema.saleLines, eq(schema.saleLines.id, schema.refundItems.saleLineId))
+      .where(and(gte(schema.refundItems.createdAt, from), lt(schema.refundItems.createdAt, to)))
+      .groupBy(schema.saleLines.name, schema.saleLines.kind),
+    tx.select({ count: sql<number>`count(*)`, cents: sql<number>`coalesce(sum(${schema.refunds.amountCents}), 0)` }).from(schema.refunds).where(and(gte(schema.refunds.createdAt, from), lt(schema.refunds.createdAt, to), sql`not exists (select 1 from refund_items ri where ri.refund_id = ${schema.refunds.id})`)),
+    tx
+      .select({ count: sql<number>`count(*)`, cents: sql<number>`coalesce(sum(${schema.storeCreditLedger.deltaCents}), 0)` })
+      .from(schema.storeCreditLedger)
+      .where(and(eq(schema.storeCreditLedger.reason, "refund"), gte(schema.storeCreditLedger.createdAt, from), lt(schema.storeCreditLedger.createdAt, to), sql`not exists (select 1 from refund_items ri where ri.credit_ledger_id = ${schema.storeCreditLedger.id})`)),
+  ]);
+  const out = items.map((r) => ({ name: r.name, kind: r.kind as string | null, count: Number(r.count), quantity: Number(r.quantity), cents: Number(r.cents) })).sort((a, b) => b.cents - a.cents);
+  const whole = { count: Number(money[0]?.count ?? 0) + Number(credit[0]?.count ?? 0), cents: Number(money[0]?.cents ?? 0) + Number(credit[0]?.cents ?? 0) };
+  if (whole.count) out.push({ name: "Whole ticket (no items named)", kind: null, count: whole.count, quantity: 0, cents: whole.cents });
+  return out;
+}

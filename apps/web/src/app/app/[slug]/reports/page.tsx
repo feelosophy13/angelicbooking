@@ -12,7 +12,7 @@ import { productLabel } from "@/lib/inventory";
 import { withTenant } from "@angelic/db";
 import { payrollByLocation, runPayroll } from "@/server/payroll";
 import { storeCreditSummary } from "@/server/store-credit";
-import { refundsByReason } from "@/server/refund-reasons";
+import { refundsByItem, refundsByReason } from "@/server/refund-reasons";
 import { cancellationsByReason } from "@/server/cancellation-reasons";
 import { referralsInPeriod } from "@/server/loyalty";
 import { formatDateLong, formatMoney, shiftISODate } from "@/lib/utils";
@@ -59,13 +59,14 @@ export default async function ReportsPage({
   const prevTo = shiftISODate(from, -1);
   const isPreset = (from === today && to === today) || (from === shiftISODate(today, -6) && to === today) || (from === `${today.slice(0, 8)}01` && to === today);
   const stock = await stockReport(business.id);
-  const [credit, creditBefore, byReason, cancels, referrals] = await withTenant(business.id, async (tx) => [
+  const [credit, creditBefore, byReason, cancels, referrals, byItem] = await withTenant(business.id, async (tx) => [
     await storeCreditSummary(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
     await storeCreditSummary(tx, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz)),
     await refundsByReason(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
     await cancellationsByReason(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
     business.loyaltyEnabled ? await referralsInPeriod(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)) : [],
-  ]);
+    await refundsByItem(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
+  ] as const);
   // Pay is not split by service, so it is left out while a service filter is on.
   const canPayroll = can(permissions, "payroll.view") && !scoped;
   const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation }, prev, categories, pay, payBefore, payByLoc] = await Promise.all([
@@ -394,6 +395,19 @@ export default async function ReportsPage({
           )}
           {can(permissions, "business.manage") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/refund-reasons`} className="text-brand-700 underline">Settings → Refund reasons</Link>.</p> : null}
         </Card>
+        {byItem.length ? (
+          <Card className={scoped ? "hidden" : ""}>
+            <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Refunds by item</h2>
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Item</th><th className="px-4 py-2 text-right">Refunds</th><th className="px-4 py-2 text-right">Qty</th><th className="px-4 py-2 text-right">Total</th></tr></thead>
+              <tbody className="divide-y divide-stone-100">
+                {byItem.slice(0, 20).map((r) => (
+                  <tr key={`${r.kind}:${r.name}`}><td className="px-4 py-2">{r.name}</td><td className="px-4 py-2 text-right tabular-nums">{r.count}</td><td className="px-4 py-2 text-right tabular-nums">{r.quantity || ""}</td><td className="px-4 py-2 text-right font-medium tabular-nums">{money(r.cents)}</td></tr>
+                ))}
+              </tbody>
+            </table></div>
+          </Card>
+        ) : null}
         <Card className={scoped ? "hidden" : ""}>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Cancellations by reason</h2>
           {cancels.length === 0 ? <div className="p-4"><Empty title="No cancellations in this range" /></div> : (

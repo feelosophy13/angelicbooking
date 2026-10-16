@@ -22,6 +22,9 @@ export function rateLimit(key: string, limit: number, windowMs: number): { ok: b
  * app.angelicbooking.com is DNS-only on Cloudflare) appends the address it accepted the connection from; everything before it
  * was written by the caller and is ignored, so a forged header can't dodge a rate limit. "local" in development.
  */
+/** Set by the proxy on every request it passes on: the client address we trust (see clientIpFrom). */
+export const CLIENT_IP_HEADER = "x-angelic-client-ip";
+
 export function clientIpFrom(h: Headers): string {
   const parts = (h.get("x-forwarded-for") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
   return parts.at(-1) ?? h.get("x-real-ip")?.trim() ?? "local";

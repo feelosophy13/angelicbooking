@@ -75,9 +75,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       without a passing token. Off when the keys aren't set, and off on hosts not registered on the widget (`NEXT_PUBLIC_TURNSTILE_HOSTNAMES`,
       default app.angelicbooking.com and localhost): a business's own booking domain has no bot check yet (add the domain to the widget in
       Cloudflare and to that variable, or leave it to the rate limits). Tests: `lib/__tests__/turnstile.test.ts`.
-- [ ] Still open from the security batch: Better Auth's own in-memory limiter still keys on the
-      first X-Forwarded-For entry (our proxy limit covers `/api/auth`); `requireEmailVerification` + `revokeSessionsOnPasswordReset`;
-      trial-expired not enforced on mobile/API; dev origins in `trustedOrigins`; providers seeing every sale (scope Sales for own-calendar roles).
+- [x] Security batch leftovers, 2026-10-16: Better Auth's own rate limiter keys on the client address the proxy works out (header
+      `x-angelic-client-ip`, the last X-Forwarded-For entry; a client's own value is overwritten), so a spoofed header no longer lands
+      everyone in one shared bucket. Already done earlier: password reset signs other devices out, mobile and API refuse an expired trial,
+      dev mobile origins trusted only in development, own-calendar roles see only their own sales.
+- [ ] Decide: require a verified email before staff can sign in (`requireEmailVerification`). Off today; a Google sign-in can't take over an
+      unverified password account either way.
 - [x] Money batch, 2026-10-16 (migration 0096):
       - No-show and late-cancel fees go on a fee-only ticket (`openFeeSaleForAppointment`): a paid deposit stays on the appointment (kept or
         refunded by the cancel choice), an open visit ticket that had taken the deposit is rebuilt with the deposit put back and package
@@ -134,8 +137,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       off the whole ticket, spread in proportion. A refunded gift card loses that balance (never more than is left on it) and switches off at
       zero; a package refunded in full loses its unused sessions. Refunds and deposit refunds now need `checkout.refund` (no longer
       `reports.view`). Tests: `server/__tests__/refund-items.test.ts`; checked in the browser on demo sale #1518.
-- [ ] Still open from line-item refunds: returning a product to the shelf is still the separate "put back on the shelf" box; reports don't yet
-      break refunds down by item. (Memberships: done 2026-10-16, see "Delivery" below.)
+- [x] Line-item refund follow-ups, 2026-10-16: a ticked product in the refund form has its own "Back on the shelf" box (unticked by default:
+      stock only goes back when the product does; the separate box shows only for whole-ticket refunds). Reports has "Refunds by item"
+      (itemized refunds by what was refunded, plus one "Whole ticket" line). Memberships: see "Delivery" below.
 - [x] Payroll overtime, 2026-10-16 (migration 0107): commission counts toward the overtime regular rate (FLSA: the period's commission is
       spread evenly over the hours worked, and each overtime hour adds half of that per-hour amount, each double-time hour all of it; shown
       as "OT on commission" and on the Excel sheet). Payroll → Options → "Count overtime" sets Weekly (1.5× over 40 h) or Daily (California:

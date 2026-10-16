@@ -761,6 +761,8 @@ export interface RefundableLine {
   kind: Line["kind"];
   name: string;
   staffId: string | null;
+  /** The product (or package / plan) the line sold. */
+  productId: string | null;
   quantity: number;
   paidCents: number;
   taxCents: number;
@@ -794,7 +796,7 @@ async function refundableLinesIn(tx: TenantDb, sale: Sale): Promise<RefundableLi
       giftCardBalanceCents = card?.balanceCents ?? 0;
       remaining = Math.min(remaining, giftCardBalanceCents);
     }
-    out.push({ id: l.id, kind: l.kind, name: l.name, staffId: l.staffId, quantity: l.quantity, paidCents: paid, taxCents: tax, refundedCents: already, remainingCents: remaining, giftCardBalanceCents });
+    out.push({ id: l.id, kind: l.kind, name: l.name, staffId: l.staffId, productId: l.productId, quantity: l.quantity, paidCents: paid, taxCents: tax, refundedCents: already, remainingCents: remaining, giftCardBalanceCents });
   }
   return out;
 }

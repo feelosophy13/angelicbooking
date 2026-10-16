@@ -11,6 +11,7 @@ import { instantToISODate } from "@angelic/core";
 import { addProductLine, addServiceLine, getSale, openWalkInSale, recordManualPayment, refundableLines, refundPayment, refundToStoreCredit, setTips } from "@/server/sales";
 import { addOfferLine } from "@/server/offers";
 import { buildPayrollLines } from "@/server/payroll";
+import { refundsByItem } from "@/server/refund-reasons";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
 
 vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: () => undefined }));
@@ -115,5 +116,10 @@ describe.skipIf(!up)("line-item refunds", () => {
     await refundPayment({ ...base(), accountId: null, paymentId: first.paymentId, amountCents: 6000, reason: null });
     const gone = await membership();
     expect([gone.status, gone.creditsRemaining]).toEqual(["cancelled", 0]);
+  });
+  it("reports refunds by item, with refunds off a whole ticket as one line", async () => {
+    const rows = await withTenant(kit.A, (tx) => refundsByItem(tx, new Date(Date.now() - 86_400_000), new Date(Date.now() + 86_400_000)));
+    expect(rows.find((r) => r.name === "Shampoo")).toMatchObject({ kind: "product", count: 1, cents: 3000 });
+    expect(rows.at(-1)!.name).toMatch(/^Whole ticket/);
   });
 });

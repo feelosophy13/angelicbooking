@@ -174,13 +174,15 @@ export function SavedCardForm({ action, slug, saleId, dueCents, cards }: { actio
  */
 export type ReasonOption = { id: string; name: string };
 
-export type RefundLineOption = { id: string; name: string; kind: string; quantity: number; remainingCents: number };
+export type RefundLineOption = { id: string; name: string; kind: string; productId?: string | null; quantity: number; remainingCents: number };
 
 export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons, goods = [], items = [] }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[]; /** Products this sale took off the shelf that haven't come back, so a returned item can go back on it. */ goods?: { productId: string; name: string; left: number }[]; /** Ticket lines with money left to refund: choosing them refunds exactly those (and takes exactly them back from the stylist's pay). */ items?: RefundLineOption[] }) {
   const [state, act, pending] = useActionState(action, undefined);
   const [to, setTo] = useState<"original" | "store_credit">("original");
   // lineId → amount typed (dollars) and how many; a line is chosen when it has an amount.
   const [picked, setPicked] = useState<Record<string, { amount: string; qty: number }>>({});
+  // How many of each product can still go back on the shelf.
+  const shelf = new Map(goods.map((g) => [g.productId, g.left]));
   // A form action resets the checkboxes in the page but not this state: redraw them from it after every reply.
   const [drawn, setDrawn] = useState(0);
   useEffect(() => setDrawn((n) => n + 1), [state]);
@@ -217,6 +219,13 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
                       </Select>
                     ) : null}
                     <MoneyInput name={`item:${l.id}`} value={p.amount} onChange={(e) => setPicked((c) => ({ ...c, [l.id]: { ...p, amount: e.target.value } }))} className="w-28" aria-label={`Refund for ${l.name}`} />
+                    {/* A returned product: back into stock with the refund (unticked when it never arrived or was a goodwill refund). */}
+                    {l.kind === "product" && l.productId && shelf.has(l.productId) ? (
+                      <label className="flex items-center gap-1.5 text-xs text-stone-600">
+                        <input type="checkbox" name={`back:${l.productId}`} value={Math.min(p.qty, shelf.get(l.productId)!)} />
+                        Back on the shelf
+                      </label>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -238,7 +247,7 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
         {reasons.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
       </Select>
       <Input name="note" placeholder="Note (optional)" className="w-40" />
-      {goods.length ? (
+      {goods.length && !chosen.length ? (
         <details className="basis-full text-sm">
           <summary className="cursor-pointer select-none text-stone-600 hover:text-stone-900">Did the client bring goods back? Put them back on the shelf</summary>
           <div className="mt-2 space-y-1.5 rounded-lg border border-stone-200 bg-stone-50 p-3">

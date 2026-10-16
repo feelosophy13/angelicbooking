@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionCookie } from "better-auth/cookies";
-import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { CLIENT_IP_HEADER, clientIp, rateLimit } from "@/lib/rate-limit";
 
 const APP_HOSTS = new Set(
   [process.env.NEXT_PUBLIC_APP_URL, process.env.BETTER_AUTH_URL, "http://localhost:3001", "http://localhost:3000"]
@@ -51,6 +51,9 @@ export function proxy(request: NextRequest) {
   // Expose the pathname to server layouts (used for tab highlighting).
   const reqHeaders = new Headers(request.headers);
   reqHeaders.set("x-pathname", pathname);
+  // The client's address as we trust it (the last X-Forwarded-For entry, added by Render), for Better Auth's own rate limiter. Set here,
+  // so a value a client sends under this name is overwritten.
+  reqHeaders.set(CLIENT_IP_HEADER, clientIp(request));
   return NextResponse.next({ request: { headers: reqHeaders } });
 }
 

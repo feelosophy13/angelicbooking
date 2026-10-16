@@ -92,7 +92,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const allReasons = canRefund ? await listRefundReasons(business.id, { includeRetired: true }) : [];
   const reasonOptions = allReasons.filter((r) => r.active).map((r) => ({ id: r.id, name: r.name }));
   // Each line with what is left to refund on it, for "what's being refunded".
-  const refundLines = canRefund && !open ? (await refundableLines(business.id, sale.id)).filter((l) => l.remainingCents > 0).map((l) => ({ id: l.id, name: l.name, kind: l.kind, quantity: l.quantity, remainingCents: l.remainingCents })) : [];
+  const refundLines = canRefund && !open ? (await refundableLines(business.id, sale.id)).filter((l) => l.remainingCents > 0).map((l) => ({ id: l.id, name: l.name, kind: l.kind, productId: l.productId, quantity: l.quantity, remainingCents: l.remainingCents })) : [];
   const reasonName = (id: string | null) => (id ? allReasons.find((r) => r.id === id)?.name ?? null : null);
   const reasonText = (id: string | null, note: string | null) => [reasonName(id), note].filter(Boolean).join(" · ");
   // Credit already given against a payment counts as refunded for what is left to refund.

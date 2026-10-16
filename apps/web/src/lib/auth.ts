@@ -12,7 +12,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { DEFAULT_ROLE_META, DEFAULT_ROLE_PERMISSIONS, worksOwnCalendar } from "@angelic/core";
 import { sql } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
-import { formIp } from "./rate-limit";
+import { CLIENT_IP_HEADER, formIp } from "./rate-limit";
 
 // Organization-management permissions (invite/remove members etc.) per role.
 // Business-level permissions live in @angelic/core `can()`.
@@ -109,6 +109,8 @@ export const auth = betterAuth({
     },
   },
   user: { changeEmail: { enabled: false } },
+  // Better Auth's own rate limits key on the address the proxy worked out (one value, never the client's own X-Forwarded-For).
+  advanced: { ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } },
   // The mobile app's origins are only trusted in development (the production app has its own scheme).
   trustedOrigins: process.env.NODE_ENV === "production" ? ["angelic://"] : ["angelic://", "exp://", "http://localhost:8081"],
   session: {
