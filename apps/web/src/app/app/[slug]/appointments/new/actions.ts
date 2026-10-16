@@ -31,7 +31,20 @@ const schema = z.object({
 export type BookState = { error?: string } | undefined;
 
 /** Book the extra services of a multi-service visit back to back after what is already on the ticket. */
+/**
+ * Add the visit's further services. If one can't be added (its time is taken), the whole new appointment is taken back out, so the desk
+ * never ends up with half a booking that a retry would then duplicate.
+ */
 async function appendServices(businessId: string, appointmentId: string, serviceIds: string[], staffId: string, actorUserId: string) {
+  try {
+    await appendServicesOnce(businessId, appointmentId, serviceIds, staffId, actorUserId);
+  } catch (e) {
+    await withTenant(businessId, (tx) => tx.delete(dbSchema.appointments).where(eq(dbSchema.appointments.id, appointmentId)));
+    throw e;
+  }
+}
+
+async function appendServicesOnce(businessId: string, appointmentId: string, serviceIds: string[], staffId: string, actorUserId: string) {
   for (const serviceId of serviceIds) {
     const [row] = await withTenant(businessId, (tx) =>
       tx.select({ end: sql<Date | null>`max(${dbSchema.appointmentItems.endAt})` }).from(dbSchema.appointmentItems).where(and(eq(dbSchema.appointmentItems.appointmentId, appointmentId), sql`${dbSchema.appointmentItems.status} <> 'cancelled'`)),
@@ -47,6 +60,13 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
   const extraServiceIds = formData.getAll("extraServiceIds").map(String).filter((id) => id && id !== d.serviceId);
   const ctx = await requireBookingAccess(d.slug);
   if (ctx.access === "own" && d.staffId !== ctx.staffId) return { error: "You can only book appointments on your own calendar." };
+  // Ids from the form must be this business's own (foreign keys don't see row-level security).
+  const foreign = await withTenant(ctx.business.id, async (tx) => {
+    if (d.clientId && !(await tx.query.clients.findFirst({ where: eq(dbSchema.clients.id, d.clientId), columns: { id: true } }))) return "client";
+    if (d.locationId && !(await tx.query.locations.findFirst({ where: eq(dbSchema.locations.id, d.locationId), columns: { id: true } }))) return "location";
+    return null;
+  });
+  if (foreign) return { error: `That ${foreign} isn't available. Reload the page and try again.` };
   let startAt: Date;
   if (d.customTime && d.date) {
     const location = d.locationId ? await withTenant(ctx.business.id, (tx) => tx.query.locations.findFirst({ where: eq(dbSchema.locations.id, d.locationId!) })) : null;
@@ -72,15 +92,27 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
         createdByUserId: ctx.user.id,
         locationId: d.locationId,
       });
-      for (const c of r.created) await appendServices(ctx.business.id, c.appointmentId, extraServiceIds, d.staffId, ctx.user.id);
+      // A date where the extra services don't fit is taken back out and reported with the other skipped dates.
+      const kept: typeof r.created = [];
+      const skippedDates = [...r.skipped];
+      for (const c of r.created) {
+        try {
+          await appendServices(ctx.business.id, c.appointmentId, extraServiceIds, d.staffId, ctx.user.id);
+          kept.push(c);
+        } catch (e) {
+          if (!(e instanceof BookingError)) throw e;
+          skippedDates.push({ startAt: c.startAt, reason: "the extra services don't fit" });
+        }
+      }
+      if (!kept.length) return { error: "None of those dates have room for every service." };
       // One confirmation (for the first visit) rather than one per occurrence; reminders for all.
       // Unticking "Send confirmation" skips the confirmation, not the reminders.
-      if (d.sendConfirmation) await notifyAppointment(ctx.business, r.created[0]!.appointmentId, "confirmation");
-      else await scheduleReminderFor(ctx.business, r.created[0]!.appointmentId);
-      for (const c of r.created.slice(1)) await scheduleReminderFor(ctx.business, c.appointmentId);
+      if (d.sendConfirmation) await notifyAppointment(ctx.business, kept[0]!.appointmentId, "confirmation");
+      else await scheduleReminderFor(ctx.business, kept[0]!.appointmentId);
+      for (const c of kept.slice(1)) await scheduleReminderFor(ctx.business, c.appointmentId);
       const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: ctx.business.timezone });
-      const skipped = r.skipped.length ? ` ${r.skipped.length} skipped (${r.skipped.map((s) => `${fmt.format(s.startAt)}: ${s.reason}`).join("; ")}).` : "";
-      await setFlash(`Booked ${r.created.length} of ${d.repeatCount} visits.${skipped}`, r.skipped.length ? "info" : "success");
+      const skipped = skippedDates.length ? ` ${skippedDates.length} skipped (${skippedDates.map((s) => `${fmt.format(s.startAt)}: ${s.reason}`).join("; ")}).` : "";
+      await setFlash(`Booked ${kept.length} of ${d.repeatCount} visits.${skipped}`, skippedDates.length ? "info" : "success");
     } else {
       const { appointmentId } = await bookAppointment({
         businessId: ctx.business.id,

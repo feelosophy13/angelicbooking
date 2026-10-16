@@ -245,11 +245,25 @@ export async function rescheduleService(input: {
         const when = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz }).format(moved[0]!.start);
         throw new BookingError(blocks.length ? `${target.displayName} isn't working at ${when}. Pick a time inside their hours, or change their hours under Staff.` : `${target.displayName} is off on ${when.split(",")[0]}.`);
       }
+      // A different provider charges their own price, and a single-block service takes their own length (a service with processing
+      // time keeps its shape; its price still follows the provider).
+      let priceFor: number | null = null;
+      let lengthMin: number | null = null;
+      if (staffId !== item.staffId && item.serviceId) {
+        const svc = await tx.query.services.findFirst({ where: eq(schema.services.id, item.serviceId), columns: { priceCents: true, durationMin: true } });
+        const own = await tx.query.staffServices.findFirst({ where: and(eq(schema.staffServices.staffId, staffId), eq(schema.staffServices.serviceId, item.serviceId)) });
+        if (svc) {
+          priceFor = own?.priceCentsOverride ?? svc.priceCents;
+          if (siblings.length === 1) lengthMin = own?.durationMinOverride ?? svc.durationMin;
+        }
+      }
+      const priced = siblings.find((x) => x.priceCents > 0) ?? first;
       await tx.execute(sql`set constraints appointment_items_no_double_booking deferred`);
       for (const s of siblings) {
+        const start = new Date(s.startAt.getTime() + deltaMs);
         await tx
           .update(schema.appointmentItems)
-          .set({ startAt: new Date(s.startAt.getTime() + deltaMs), endAt: new Date(s.endAt.getTime() + deltaMs), staffId })
+          .set({ startAt: start, endAt: lengthMin !== null ? new Date(start.getTime() + lengthMin * 60_000) : new Date(s.endAt.getTime() + deltaMs), staffId, ...(priceFor !== null && s.id === priced.id ? { priceCents: priceFor } : {}) })
           .where(eq(schema.appointmentItems.id, s.id));
       }
       await followProviderLocation(tx, input.businessId, item.appointmentId);
@@ -408,8 +422,16 @@ export async function setAppointmentStatus(
   reason?: string | null,
   /** The managed reason picked from the list (cancellation_reasons.id). Who cancelled is "client" when the actor is the client, else staff. */
   reasonId?: string | null,
-) {
+): Promise<boolean> {
+  let changed = false;
+  try {
   await withTenant(businessId, async (tx) => {
+    // The few rules every path follows (desk, calendar, API, app): a cancelled visit stays cancelled (book it again instead, since its
+    // time may be taken), and setting the status it already has changes nothing (no second message or log).
+    const [cur] = await tx.select({ status: schema.appointments.status }).from(schema.appointments).where(eq(schema.appointments.id, appointmentId)).for("update");
+    if (!cur) throw new BookingError("Appointment not found.");
+    if (cur.status === status) return;
+    if (cur.status === "cancelled") throw new BookingError("This appointment is cancelled. Book it again instead.");
     let cancelledLate: boolean | null = null;
     let cleanReasonId: string | null = null;
     if (status === "cancelled") {
@@ -443,8 +465,14 @@ export async function setAppointmentStatus(
       await refreshHomeLocation(tx, appt?.clientId);
     }
     await audit(tx, businessId, actorUserId, `appointment.${status}`, appointmentId, reason || reasonId ? { reason, reasonId } : undefined);
+    changed = true;
   });
-  if (status === "no_show") {
+  } catch (e) {
+    // Undoing a no-show or a completion puts the visit back on the calendar, where its time may have been taken since.
+    if ((e as { code?: string }).code === "23P01" || (e as { cause?: { code?: string } }).cause?.code === "23P01") throw new BookingError("That time has been booked since. Move the appointment first.");
+    throw e;
+  }
+  if (changed && status === "no_show") {
     const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
     if (business) {
       const wf = await import("@/server/workflows");
@@ -452,6 +480,7 @@ export async function setAppointmentStatus(
       await wf.triggerAppointmentWorkflows(business, "appointment_no_show", appointmentId);
     }
   }
+  return changed;
 }
 
 export async function updateAppointmentNotes(businessId: string, appointmentId: string, notes: string | null, actorUserId: string) {

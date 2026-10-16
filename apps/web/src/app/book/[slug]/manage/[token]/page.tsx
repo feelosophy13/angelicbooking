@@ -10,7 +10,7 @@ import { MonthCalendar } from "../../calendar";
 
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
-export default async function ManagePage({ params, searchParams }: { params: Promise<{ slug: string; token: string }>; searchParams: Promise<{ date?: string; month?: string; staff?: string; moved?: string; cancelled?: string }> }) {
+export default async function ManagePage({ params, searchParams }: { params: Promise<{ slug: string; token: string }>; searchParams: Promise<{ date?: string; month?: string; staff?: string; moved?: string; cancelled?: string; refund?: string }> }) {
   const { slug, token } = await params;
   const sp = await searchParams;
   const m = await getManagedAppointment(slug, token);
@@ -54,7 +54,7 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
   return (
     <div className="space-y-4">
       {sp.moved ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Your appointment has been moved.</p> : null}
-      {sp.cancelled ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Your appointment has been cancelled.</p> : null}
+      {sp.cancelled ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Your appointment has been cancelled.{sp.refund === "pending" ? " Your deposit couldn't be refunded automatically; the salon has been told and will refund it." : ""}</p> : null}
       <div className="rounded-xl border border-stone-200 bg-white p-5">
         <p className="text-xs uppercase tracking-wide text-stone-500">{status.replace("_", " ")}</p>
         <h1 className="mt-1 text-xl font-semibold">{[...new Set(m.live.map((i) => i.name.replace(" (finish)", "")))].join(", ")}</h1>

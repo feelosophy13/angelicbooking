@@ -18,8 +18,16 @@ export async function updateAppointmentStatus(formData: FormData) {
   const appointmentId = String(formData.get("appointmentId"));
   const status = statusSchema.parse(formData.get("status"));
   const ctx = await requireAppointmentAccess(slug, appointmentId, await modeForKind((await requireBusiness(slug)).business.id, appointmentId, status === "cancelled" ? "cancel" : "write"));
-  await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id);
-  if (status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");
+  // Visits are cancelled from the appointment's Cancel (reason, deposit, fee); here only blocks are removed.
+  const kind = await withTenant(ctx.business.id, async (tx) => (await tx.query.appointments.findFirst({ where: eq(dbSchema.appointments.id, appointmentId), columns: { kind: true } }))?.kind);
+  if (status === "cancelled" && kind === "visit") return;
+  let changed = false;
+  try {
+    changed = await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id);
+  } catch (e) {
+    if (!(e instanceof BookingError)) throw e;
+  }
+  if (changed && status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");
   revalidatePath(`/app/${slug}`);
 }
 

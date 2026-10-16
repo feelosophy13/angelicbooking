@@ -10,7 +10,7 @@ import { triggerAppointmentWorkflows } from "@/server/workflows";
 import { cancelQueuedReminders, notifyAppointment } from "@/lib/notify";
 import { can, isInsideCancelWindow, lateCancelFee, parseMoney } from "@angelic/core";
 import { withTenant } from "@angelic/db";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { setFlash } from "@/lib/flash";
 import { InventoryError, logUsage, undoUsage } from "@/server/inventory";
@@ -36,9 +36,27 @@ export async function changeStatus(formData: FormData) {
   // Cancelling is its own permission, removing blocked time is another; every other status change is part of updating an appointment.
   const ctx = await requireAppointmentAccess(slug, appointmentId, await modeForKind((await requireBusiness(slug)).business.id, appointmentId, status === "cancelled" ? "cancel" : "write"));
   const reason = String(formData.get("reason") ?? "").trim() || null;
-  await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id, reason);
-  if (status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");
-  if (status === "completed") await triggerAppointmentWorkflows(ctx.business, "appointment_completed", appointmentId);
+  // A visit is cancelled through Cancel (reason, deposit, fee); this button only removes blocks and class seats.
+  const kind = await withTenant(ctx.business.id, async (tx) => (await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId), columns: { kind: true } }))?.kind);
+  const seat = await withTenant(ctx.business.id, async (tx) => !!(await tx.query.appointmentItems.findFirst({ where: and(eq(schema.appointmentItems.appointmentId, appointmentId), isNotNull(schema.appointmentItems.classSessionId)), columns: { id: true } })));
+  if (status === "cancelled" && kind === "visit" && !seat) {
+    await setFlash("Use Cancel on the appointment to choose a reason.", "error");
+    revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
+    return;
+  }
+  let changed = false;
+  try {
+    changed = await setAppointmentStatus(ctx.business.id, appointmentId, status, ctx.user.id, reason);
+  } catch (e) {
+    if (e instanceof BookingError) {
+      await setFlash(e.message, "error");
+      revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
+      return;
+    }
+    throw e;
+  }
+  if (changed && status === "cancelled") await notifyAppointment(ctx.business, appointmentId, "cancellation");
+  if (changed && status === "completed") await triggerAppointmentWorkflows(ctx.business, "appointment_completed", appointmentId);
   revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
   revalidatePath(`/app/${slug}`);
 }
@@ -181,8 +199,8 @@ export async function cancelAppointment(_prev: ActionState, formData: FormData):
         }
       }
     }
-    await setAppointmentStatus(ctx.business.id, d.appointmentId, "cancelled", ctx.user.id, reason, d.reasonId);
-    await notifyAppointment(ctx.business, d.appointmentId, "cancellation");
+    const changed = await setAppointmentStatus(ctx.business.id, d.appointmentId, "cancelled", ctx.user.id, reason, d.reasonId);
+    if (changed) await notifyAppointment(ctx.business, d.appointmentId, "cancellation");
     if (refundCents) {
       try {
         const pay = await paymentContextForAppointment(ctx.business, d.appointmentId);

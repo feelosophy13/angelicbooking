@@ -516,14 +516,23 @@ export async function cancelOnline(slug: string, token: string, reasonId?: strin
   if (!m.canChange) throw new BookingError(`Online cancellation closes ${m.business.cancelWindowHours} hours before the appointment. Please call ${m.business.phone ?? "the salon"}.`);
   // Optional: only a reason the salon offers to clients counts; anything else is ignored.
   const offered = reasonId ? (await listCancellationReasons(m.business.id)).find((r) => r.id === reasonId && r.clientVisible) : null;
-  await setAppointmentStatus(m.business.id, m.appt.id, "cancelled", "client", "Cancelled online by client", offered?.id ?? null);
-  // Inside the cancellation window the deposit goes back automatically (on the account that took it).
+  const changed = await setAppointmentStatus(m.business.id, m.appt.id, "cancelled", "client", "Cancelled online by client", offered?.id ?? null);
+  if (!changed) return { refundFailed: false };
+  // Inside the cancellation window the deposit goes back automatically (on the account that took it). If that fails the money is still
+  // owed: the salon is told (activity log and email) and the client's page says it will be sorted out, rather than that it went back.
   const pay = await paymentContextFor(m.business, m.appt.locationId);
-  await refundDeposit({ businessId: m.business.id, accountId: pay.accountId, appointmentId: m.appt.id, actorUserId: "client", reason: "Cancelled online within policy" }).catch((e) =>
-    console.error("[online-payments] deposit refund on cancel failed", m.appt.id, (e as Error).message),
-  );
+  let refundFailed = false;
+  await refundDeposit({ businessId: m.business.id, accountId: pay.accountId, appointmentId: m.appt.id, actorUserId: "client", reason: "Cancelled online within policy" }).catch(async (e) => {
+    refundFailed = true;
+    console.error("[online-payments] deposit refund on cancel failed", m.appt.id, (e as Error).message);
+    await withTenant(m.business.id, (tx) => tx.insert(schema.auditLog).values({ businessId: m.business.id, actorUserId: null, action: "deposit.refund_failed", entity: "appointment", entityId: m.appt.id, diff: JSON.stringify({ error: (e as Error).message }) }));
+    if (m.business.email) {
+      await queueOneOff(m.business.id, { channel: "email", template: "deposit_refund_failed", recipient: m.business.email, subject: "A deposit refund didn't go through", body: `<p>A client cancelled online and their deposit should have gone back automatically, but the refund failed: ${(e as Error).message}</p><p><a href="${appUrl(`/app/${m.business.slug}/appointments/${m.appt.id}`)}">Open the appointment</a> and use "Refund deposit".</p>` }).catch(() => undefined);
+    }
+  });
   await notifyAppointment(m.business, m.appt.id, "cancellation");
   await alertBusiness(m.business, m.appt.id, "cancelled");
+  return { refundFailed };
 }
 
 /**

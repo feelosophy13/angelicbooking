@@ -164,13 +164,14 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
 
 export async function cancelBooking(_prev: PublicState, formData: FormData): Promise<PublicState> {
   const d = z.object({ slug: z.string(), token: z.string().min(10), reasonId: z.string().optional() }).parse(Object.fromEntries(formData));
+  let refundFailed = false;
   try {
-    await cancelOnline(d.slug, d.token, d.reasonId || null);
+    ({ refundFailed } = await cancelOnline(d.slug, d.token, d.reasonId || null));
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     throw e;
   }
-  redirect(`/book/${d.slug}/manage/${d.token}?cancelled=1`);
+  redirect(`/book/${d.slug}/manage/${d.token}?cancelled=1${refundFailed ? "&refund=pending" : ""}`);
 }
 
 export async function rescheduleBooking(_prev: PublicState, formData: FormData): Promise<PublicState> {

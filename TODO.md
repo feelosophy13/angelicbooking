@@ -169,6 +169,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       disputes are logged and emailed to the owner; the last package session or membership credit can't be spent twice, and a plan's credits
       only cover its included service (checked on the server); points are earned on services and products only, not gift cards, packages,
       fees or what was paid with points; points can be redeemed twice on one ticket. Test: `money-tail.test.ts`.
+- [x] Calendar rules, 2026-10-16: every status change refuses to revive a cancelled visit, does nothing (and sends nothing) when the status
+      is unchanged, and turns a clash on undoing a no-show into a message; the calendar's plain cancel no longer cancels a visit without a
+      reason (it points to Cancel); a desk booking whose extra service doesn't fit is taken back out instead of leaving half a booking (a
+      standing appointment skips that date and says so); moving a service to another provider takes their price (and length, for one-block
+      services); a failed automatic deposit refund on an online cancel is logged, emailed to the salon and shown honestly to the client;
+      desk bookings check the client and location belong to the business. Test: `status-rules.test.ts`.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 
