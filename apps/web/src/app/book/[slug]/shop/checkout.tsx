@@ -34,7 +34,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
   const giftCents = isGift ? (giftCustom ? Math.round(Number(giftCustom) * 100) : giftAmount) : 0;
   const subtotal = items.reduce((s, i) => s + (props.products.find((p) => p.id === i.productId)?.priceCents ?? 0) * i.quantity, 0) + (isGift ? giftCents || 0 : 0);
   const shipping = method === "ship" ? props.shippingFlatCents : 0;
-  const stripePromise = useMemo(() => (started ? loadStripe(props.publishableKey, { stripeAccount: started.accountId }) : null), [props.publishableKey, started]);
+  const stripePromise = useMemo(() => (started ? loadStripe(started.publishableKey ?? props.publishableKey, started.accountId ? { stripeAccount: started.accountId } : undefined) : null), [props.publishableKey, started]);
   const canShip = props.shippingFlatCents > 0 && !isGift;
   // A product with options is one entry with its options under it; anything else stands alone.
   const shelf = useMemo(() => {

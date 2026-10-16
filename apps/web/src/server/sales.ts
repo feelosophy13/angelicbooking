@@ -15,6 +15,9 @@ import { productLabel } from "@/lib/inventory";
 import { countPromoUse, promoDiscount, validatePromo, PromoError } from "./promos";
 import { locationOrDefault } from "./locations";
 
+/** The API version card-reader PaymentIntents are created with (see createCardPaymentIntent). */
+const TERMINAL_API_VERSION = "2025-09-30.clover";
+
 export class SaleError extends Error {}
 
 type Sale = typeof schema.sales.$inferSelect;
@@ -687,12 +690,14 @@ export async function createCardPaymentIntent(input: {
         currency: sale.currency,
         customer: customerId,
         description: `Sale #${sale.number}`,
-        ...(input.terminal ? { payment_method_types: ["card_present"], capture_method: "automatic" as const } : { automatic_payment_methods: { enabled: true } }),
+        ...(input.terminal ? { payment_method_types: ["card_present"] as string[], capture_method: "automatic" as const } : { automatic_payment_methods: { enabled: true } }),
         ...(input.saveCard && customerId ? { setup_future_usage: "off_session" as const } : {}),
         metadata: { businessId: input.businessId, saleId: sale.id, paymentId: pending!.id },
         ...(fee > 0 ? { application_fee_amount: fee } : {}),
       },
-      { stripeAccount: input.accountId, idempotencyKey: `pi_${pending!.id}` },
+      // A card-reader payment needs `payment_method_types: ["card_present"]`, which Stripe's newest API version no longer accepts (payment methods
+      // became dashboard-managed and in-person ones are not offered that way); the older version still does and works with the Terminal SDK.
+      { stripeAccount: input.accountId, idempotencyKey: `pi_${pending!.id}`, ...(input.terminal ? { apiVersion: TERMINAL_API_VERSION } : {}) },
     );
     await tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending!.id));
     return { clientSecret: pi.client_secret!, paymentId: pending!.id, amount };

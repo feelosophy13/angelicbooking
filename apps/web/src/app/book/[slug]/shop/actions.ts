@@ -12,7 +12,7 @@ const buyer = z.object({
   phone: z.string().trim().max(30).optional().transform((v) => v || null),
 });
 
-export type StartOrderResult = { saleId: string; clientSecret: string; accountId: string; totalCents: number } | { error: string };
+export type StartOrderResult = { saleId: string; clientSecret: string; accountId: string | null; publishableKey: string | null; totalCents: number } | { error: string };
 
 export async function startOrderAction(input: {
   slug: string;

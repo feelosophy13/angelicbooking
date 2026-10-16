@@ -12,7 +12,7 @@
     "e2e": "playwright test",
     "test": "vitest run",
     "inventory:check": "../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/inventory-check.mts",
-    "demo:refresh": "../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts --reset && ../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts --profile glow --reset"
+    "demo:refresh": "../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts --reset && ../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/seed-demo.ts --profile glow --reset && ../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/link-demo-stripe.ts"
   },
   "dependencies": {
     "@angelic/core": "workspace:*",

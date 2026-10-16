@@ -14,12 +14,12 @@ import { finishCardPayment, startCardPayment } from "./actions";
 export function CardPayment(props: { slug: string; saleId: string; dueCents: number; publishableKey: string | null; hasClient: boolean }) {
   const [amount, setAmount] = useState((props.dueCents / 100).toFixed(2));
   const [saveCard, setSaveCard] = useState(false);
-  const [intent, setIntent] = useState<{ clientSecret: string; accountId: string } | null>(null);
+  const [intent, setIntent] = useState<{ clientSecret: string; accountId: string | null; publishableKey: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   const stripePromise = useMemo(
-    () => (props.publishableKey && intent ? loadStripe(props.publishableKey, { stripeAccount: intent.accountId }) : null),
+    () => ((intent?.publishableKey ?? props.publishableKey) && intent ? loadStripe((intent.publishableKey ?? props.publishableKey)!, intent.accountId ? { stripeAccount: intent.accountId } : undefined) : null),
     [props.publishableKey, intent],
   );
 
@@ -42,7 +42,7 @@ export function CardPayment(props: { slug: string; saleId: string; dueCents: num
               setError(null);
               const r = await startCardPayment({ slug: props.slug, saleId: props.saleId, amount, saveCard });
               if ("error" in r) setError(r.error);
-              else setIntent({ clientSecret: r.clientSecret, accountId: r.accountId });
+              else setIntent({ clientSecret: r.clientSecret, accountId: r.accountId, publishableKey: r.publishableKey });
             })
           }
         >

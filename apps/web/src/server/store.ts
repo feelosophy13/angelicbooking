@@ -5,6 +5,7 @@
  * account; closing it issues the gift card and emails the buyer.
  */
 import { after } from "next/server";
+import { browserStripe } from "@/lib/stripe-demo";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
@@ -122,7 +123,8 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
       { stripeAccount: accountId, idempotencyKey: `order_${pending!.id}` },
     );
     await tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending!.id));
-    return { saleId: sale!.id, clientSecret: pi.client_secret!, accountId, totalCents: total };
+    const browser = await browserStripe(accountId, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+    return { saleId: sale!.id, clientSecret: pi.client_secret!, accountId: browser.stripeAccount, publishableKey: browser.publishableKey, totalCents: total };
   });
 }
 

@@ -384,6 +384,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `ContactFields` for the free and paid forms, with promo/referral codes behind "Have a code?"; paid form labelled
       Step 1/2 and 2/2 and uses the shared `Button`; waitlist pre-fills for signed-in clients; dead ends link to another
       service or a tel: link. Not yet walked live: the details form and the Stripe payment steps.
+- [x] 2026-10-16: demo Stripe account. `DEMO_ACCOUNT_STRIPE_SECRET_TEST_KEY` / `..._PUBLISHABLE_TEST_KEY` (local `.env`, test keys only, ignored in
+      production) belong to a separate sandbox ("Angelic Beauty sandbox") that is NOT connected to the platform, so `lib/stripe-demo.ts` routes any request
+      for that account through its own key (an HTTP-client shim used only when the vars are set) and hands the browser its publishable key.
+      `scripts/link-demo-stripe.ts` (run by `pnpm demo:refresh`) points demo-salon at it (account ids are unique per business, so demo-twosites is not linked).
+      Verified server-side with a simulated reader: card-present Visa 4242 succeeded. **Found:** Stripe's newest API version (2026-09-30.endive) rejects
+      `payment_method_types`, and card-reader PaymentIntents need `card_present`, so they are created with API version 2025-09-30.clover
+      (`TERMINAL_API_VERSION` in `server/sales.ts`). Restart the web dev server after changing these vars. The Payments page's Refresh/Connect buttons
+      do not work for the demo account (it is not a Connect account). Browser walk of the simulated reader still to do after a server restart.
 - [x] 2026-10-15: platform admin accounts moved into the database (migration 0091 `admin_users`). Login, password reset, Google sign-in and the audit
       actor all use the table; the session cookie names the admin and `requireAdmin()` rechecks they still exist and are enabled. New Admins page
       (add by email with an emailed set-password link, disable/enable; not yourself, not the last one). `pnpm --filter @angelic/admin create-admin

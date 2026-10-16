@@ -1,5 +1,6 @@
 "use server";
 import { redirect } from "next/navigation";
+import { browserStripe } from "@/lib/stripe-demo";
 import { z } from "zod";
 import { normalizePhone } from "@angelic/core";
 import { BookingError } from "@/server/booking";
@@ -76,7 +77,7 @@ export async function bookOnline(_prev: PublicState, formData: FormData): Promis
   redirect(confirmedPath(d, token));
 }
 
-export type StartPaymentResult = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string } | { error: string };
+export type StartPaymentResult = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null } | { error: string };
 
 /**
  * Step 1 of a paid booking: validate the form and the slot, create the client,
@@ -121,7 +122,8 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
     else await assertSlotOpen(business, d.serviceId, d.staffId, startAt, new Date(), d.locationId);
     const clientId = await findOrCreateClient(business.id, { ...d, startAt });
     const r = await startOnlinePayment(business, pay, req.mode, { businessId: business.id, clientId, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" }, req.amountCents);
-    return { clientSecret: r.clientSecret, intentId: r.id, kind: r.kind, accountId: r.accountId };
+    const browser = await browserStripe(r.accountId, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+    return { clientSecret: r.clientSecret, intentId: r.id, kind: r.kind, accountId: browser.stripeAccount, publishableKey: browser.publishableKey };
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     throw e;

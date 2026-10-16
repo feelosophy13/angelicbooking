@@ -6,7 +6,7 @@ import { Button, Notice } from "@/components/ui";
 import { ContactFields, type BookingDefaults } from "./forms";
 import { abandonOnlinePaymentAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
 
-type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string };
+type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null };
 
 /**
  * Booking form for services that take a deposit or require a card on file.
@@ -45,7 +45,7 @@ export function PaidBookingForm(props: {
   const [intent, setIntent] = useState<Intent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  const stripePromise = useMemo(() => (intent ? loadStripe(props.publishableKey, { stripeAccount: intent.accountId }) : null), [props.publishableKey, intent]);
+  const stripePromise = useMemo(() => (intent ? loadStripe(intent.publishableKey ?? props.publishableKey, intent.accountId ? { stripeAccount: intent.accountId } : undefined) : null), [props.publishableKey, intent]);
 
   if (!intent || !fields) {
     return (

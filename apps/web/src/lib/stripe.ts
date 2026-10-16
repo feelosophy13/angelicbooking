@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { demoStripeConfigured, routingFetch } from "./stripe-demo";
 
 let client: Stripe | null = null;
 
@@ -17,6 +18,8 @@ export function stripe(): Stripe {
     client = new Stripe(process.env.STRIPE_SECRET_KEY!, {
       appInfo: { name: "Angelic Booking", version: "0.1.0" },
       typescript: true,
+      // Only when the demo account's keys are set (local/demo): its requests go out with its own key (see stripe-demo.ts). Otherwise the SDK's default client, untouched.
+      ...(demoStripeConfigured() ? { httpClient: Stripe.createFetchHttpClient(routingFetch as typeof fetch) } : {}),
     });
   }
   return client;

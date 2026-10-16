@@ -36,6 +36,7 @@ import { setFlash } from "@/lib/flash";
 import { formatMoney } from "@/lib/utils";
 import { getSale } from "@/server/sales";
 import { paymentContextForSale } from "@/server/locations";
+import { browserStripe } from "@/lib/stripe-demo";
 import { TerminalError, terminalConnectionToken, terminalLocationFor } from "@/server/stripe-terminal";
 import { findProductByCode, InventoryError, returnToShelf } from "@/server/inventory";
 import { productLabel } from "@/lib/inventory";
@@ -193,7 +194,7 @@ export async function payWithSavedCard(_prev: SaleActionState, formData: FormDat
 }
 
 /** Step 1 of a new-card payment: create the PaymentIntent and hand the client secret to the browser. */
-export async function startCardPayment(input: { slug: string; saleId: string; amount: string; saveCard: boolean }): Promise<{ clientSecret: string; accountId: string; amount: number } | { error: string }> {
+export async function startCardPayment(input: { slug: string; saleId: string; amount: string; saveCard: boolean }): Promise<{ clientSecret: string; accountId: string | null; publishableKey: string | null; amount: number } | { error: string }> {
   const d = base.extend({ amount: z.string(), saveCard: z.boolean() }).parse(input);
   const ctx = await ctxFor(d.slug);
   const cents = parseMoney(d.amount);
@@ -203,7 +204,8 @@ export async function startCardPayment(input: { slug: string; saleId: string; am
   if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
   try {
     const r = await createCardPaymentIntent({ businessId: ctx.business.id, accountId: pay.accountId, saleId: d.saleId, amountCents: cents, saveCard: d.saveCard, actorUserId: ctx.user.id });
-    return { clientSecret: r.clientSecret, accountId: pay.accountId, amount: r.amount };
+    const browser = await browserStripe(pay.accountId, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+    return { clientSecret: r.clientSecret, accountId: browser.stripeAccount, publishableKey: browser.publishableKey, amount: r.amount };
   } catch (e) {
     const f = friendly(e);
     return { error: f?.error ?? "Could not start payment" };
