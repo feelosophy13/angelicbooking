@@ -147,4 +147,27 @@ describe.skipIf(!up)("checkout: a products-only ticket", () => {
     expect(r.tipCashCents + r.tipCardCents).toBe(r.sales.reduce((n, x) => n + x.tipCents, 0));
     expect(r.byMethod.reduce((n, m) => n + Number(m.tips), 0)).toBe(r.tipCashCents + r.tipCardCents);
   });
+
+  it("refuses a whole-ticket tip when nobody is credited, instead of dropping it", async () => {
+    const saleId = await open();
+    await addProductLine({ ...base(), saleId, productId, quantity: 1, staffId: null });
+    await expect(setTips({ businessId: kit.A, saleId, tips: [{ staffId: null, amountCents: 500 }], taxRateBps: TAX })).rejects.toThrow(/who the tip is for/);
+    // Naming the person works.
+    await setTips({ businessId: kit.A, saleId, tips: [{ staffId, amountCents: 500 }], taxRateBps: TAX });
+    expect((await getSale(kit.A, saleId))!.sale.tipCents).toBe(500);
+  });
+
+  it("pays commission on a package sold at the desk: payroll treats it as a package, credited to whoever sold it", async () => {
+    const saleId = await open();
+    await withTenant(kit.A, async (tx) => {
+      await tx.insert(schema.saleLines).values({ businessId: kit.A, saleId, kind: "package", staffId, name: "Starter package", quantity: 1, unitCents: 20_000, amountCents: 20_000, taxable: false, sortOrder: 200 });
+      await tx.insert(schema.saleLines).values({ businessId: kit.A, saleId, kind: "package", staffId: null, name: "Unattributed package", quantity: 1, unitCents: 9_000, amountCents: 9_000, taxable: false, sortOrder: 201 });
+      await tx.insert(schema.payments).values({ businessId: kit.A, saleId, method: "cash", status: "succeeded", amountCents: 29_000 });
+      await tx.update(schema.sales).set({ status: "paid", subtotalCents: 29_000, totalCents: 29_000, paidCents: 29_000, closedAt: new Date() }).where(eq(schema.sales.id, saleId));
+    });
+    const biz = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, kit.A) }))!;
+    const rows = await buildPayrollLines(biz, { start: "2000-01-01", end: "2999-12-31" } as never);
+    const mine = rows.filter((r) => r.name.includes("package"));
+    expect(mine.map((r) => [r.name, r.kind, r.staffId])).toEqual([["Starter package", "package", staffId]]); // the unattributed one pays nobody
+  });
 });

@@ -33,7 +33,8 @@ export function DiscountForm({ action, slug, saleId, currentCents, current, note
 export function TipsForm({ action, slug, saleId, staff, current, currentMethods = {}, baseCents, choices = [], currency = "USD" }: { action: Action; slug: string; saleId: string; staff: { id: string; name: string }[]; current: Record<string, number>; /** How each tip already on the ticket was handed over ("" = same as the payment). */ currentMethods?: Record<string, "cash" | "card" | "">; /** Everyone who could receive a tip, offered when nobody is credited on the ticket yet (a products-only sale). */ choices?: { id: string; name: string }[]; /** What a percentage tip is worked out on: the goods after any discount, before tax. */ baseCents: number; currency?: string }) {
   const [state, act, pending] = useActionState(action, undefined);
   const initial: Record<string, string> = {};
-  const [who, setWho] = useState(choices[0]?.id ?? "");
+  // No default person: a tip nobody is credited for has to be given to someone on purpose.
+  const [who, setWho] = useState("");
   const nobody = staff.length === 0;
   for (const x of staff) initial[x.id] = current[x.id] ? (current[x.id]! / 100).toFixed(2) : "";
   initial[""] = "";
@@ -83,11 +84,12 @@ export function TipsForm({ action, slug, saleId, staff, current, currentMethods 
       {nobody && choices.length ? (
         <div className="grid grid-cols-[1fr_7rem_9.5rem] gap-2">
           <Field label="Tip for">
-            <Select value={who} onChange={(e) => { setVals({ "": "" }); setWho(e.target.value); }}>
+            <Select value={who} required={(vals[""] ?? "").trim() !== ""} onChange={(e) => { setWho(e.target.value); }}>
+              <option value="" disabled>Choose who…</option>
               {choices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
-          <Field label="Amount"><MoneyInput name={`tip_${who}`} value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} /></Field>
+          <Field label="Amount"><MoneyInput name={who ? `tip_${who}` : undefined} value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} /></Field>
           {tipBy(who)}
         </div>
       ) : staff.length > 1 ? (
@@ -353,7 +355,8 @@ export function LateTipForm({ action, slug, saleId, staff, cards }: { action: Ac
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
       <Field label="Tip for">
-        <Select name="staffId" defaultValue={staff[0]?.id ?? ""}>
+        <Select name="staffId" defaultValue="" required>
+          <option value="" disabled>Choose who…</option>
           {staff.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </Select>
       </Field>

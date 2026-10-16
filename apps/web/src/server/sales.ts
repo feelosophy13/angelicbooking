@@ -405,6 +405,8 @@ export async function setTips(input: { businessId: string; saleId: string; tips:
           key,
           weight: serviceLines.filter((l) => l.staffId === key).reduce((s, l) => s + l.amountCents, 0),
         }));
+        // Nobody is credited on the ticket to share it between: refuse rather than quietly drop the tip.
+        if (!weights.length) throw new SaleError("Choose who the tip is for: nobody is credited on this sale yet.");
         const split = allocateProportionally(t.amountCents, weights);
         for (const [k, v] of Object.entries(split)) add(k, method, v);
       }

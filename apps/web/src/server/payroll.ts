@@ -90,7 +90,8 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         }
         const cash = Math.round(net * cashShare);
         const card = net - cash;
-        const kind: PayrollLine["kind"] = l.kind === "service" ? "service" : l.kind === "product" ? (/package/i.test(l.name) ? "package" : /membership/i.test(l.name) ? "membership" : "product") : "fee";
+        // A package or membership sold at the desk is its own sale-line kind (not a product named "package"), so map it directly; gift cards and fees are not commissionable.
+        const kind: PayrollLine["kind"] = l.kind === "service" ? "service" : l.kind === "package" ? "package" : l.kind === "membership" ? "membership" : l.kind === "product" ? (/package/i.test(l.name) ? "package" : /membership/i.test(l.name) ? "membership" : "product") : "fee";
         const start = l.appointmentItemId ? itemStart.get(l.appointmentItemId) : null;
         out.push({
           staffId: l.staffId,

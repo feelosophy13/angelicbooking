@@ -384,6 +384,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `ContactFields` for the free and paid forms, with promo/referral codes behind "Have a code?"; paid form labelled
       Step 1/2 and 2/2 and uses the shared `Button`; waitlist pre-fills for signed-in clients; dead ends link to another
       service or a tel: link. Not yet walked live: the details form and the Stripe payment steps.
+- [x] 2026-10-16: no guessing who gets credit. Adding a product, a service or a package at the desk now needs a deliberate "Who gets credit?" (no default; "No staff credit" is its own
+      choice; scanning a barcode uses the same choice, the scan field is now inside the product form), the "Tip for" choice on a tip nobody is credited for has no default, and a late tip
+      needs a person. `setTips` refuses an unassigned tip when nobody is credited instead of dropping it. FOUND AND FIXED: packages sold at the desk never earned commission (the Sell
+      a package form had no seller, and payroll mapped a package/membership sale-line to "fee", which is excluded from commission); the form now asks who sold it and payroll maps
+      package/membership lines properly (test in `sales-checkout.test.ts`). Packages sold BEFORE this have no seller and paid nobody; closed sales cannot be corrected (no "change who
+      gets credit" on a paid sale).
 - [x] 2026-10-16: tips know how they were handed over (migration 0092 `sale_lines.tip_method`). Each tip on the Tips card has "Paid in": Same as sale / Card / Cash; payroll
       (`splitTips` in core, used by `server/payroll.ts`) sends a marked tip where it was marked and splits an unmarked one by how the sale was paid. The card-tip fee now
       applies only to tips paid through a real card (`CARD_FEE_METHODS`: card, card on file, terminal): gift card, store credit and points no longer count as card.

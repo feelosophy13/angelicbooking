@@ -217,22 +217,20 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         />
                         <div className="grid grid-cols-[5rem_1fr] gap-2">
                           <input name="quantity" type="number" min={1} max={99} defaultValue={1} className="h-10 rounded-lg border border-stone-300 px-3 text-sm" aria-label="Quantity" />
-                          <Select name="staffId" defaultValue={staffOnTicket[0]?.id ?? myStaffId ?? ""} aria-label="Who gets credit">
-                            <option value="">No staff credit</option>
+                          {/* No default: whoever sold it has to be chosen, so commission never lands on a guess. "No staff credit" is a deliberate choice. */}
+                          <Select name="staffId" defaultValue="" required aria-label="Who gets credit">
+                            <option value="" disabled>Who gets credit?</option>
                             {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                            <option value="none">No staff credit</option>
                           </Select>
                         </div>
-                        <p className="text-xs text-stone-500">Tap a product to add it with this quantity and staff credit.</p>
+                        <p className="text-xs text-stone-500">Choose who gets credit, then tap a product (or scan one) to add it with this quantity.</p>
+                        <div className="flex gap-2">
+                          <Input name="code" placeholder="Scan a barcode or type a SKU" aria-label="Barcode or SKU" autoComplete="off" className="min-w-0 flex-1" />
+                          <button type="submit" formAction={addProductByCode} className="inline-flex h-10 items-center rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium hover:bg-stone-50">Add</button>
+                        </div>
                       </form>
                     )}
-                    {products.length > 0 ? (
-                      <form action={addProductByCode} className="mt-3 flex gap-2">
-                        <input type="hidden" name="slug" value={slug} />
-                        <input type="hidden" name="saleId" value={sale.id} />
-                        <Input name="code" placeholder="Scan a barcode or type a SKU" aria-label="Barcode or SKU" autoComplete="off" className="min-w-0 flex-1" />
-                        <Button type="submit" size="sm" variant="secondary">Add</Button>
-                      </form>
-                    ) : null}
                   </div>
                   <div>
                     <h3 className="mb-2 text-sm font-medium text-stone-700">Service</h3>
@@ -240,9 +238,10 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />
                       <ServicePicker name="serviceId" groups={serviceGroupsForSale} value={null} />
                       <div className="grid grid-cols-2 gap-2">
-                        <Select name="staffId" defaultValue={staffOnTicket[0]?.id ?? ""}>
-                          <option value="">No staff credit</option>
+                        <Select name="staffId" defaultValue="" required aria-label="Who performed it">
+                          <option value="" disabled>Who gets credit?</option>
                           {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                          <option value="none">No staff credit</option>
                         </Select>
                         <MoneyInput name="price" placeholder="Price (optional)" />
                       </div>
@@ -274,6 +273,11 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                   <form action={addOffer} className="space-y-2">
                     <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="kind" value="package" />
                     <Select name="refId" required>{(catalog?.packages ?? []).filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)}</option>)}</Select>
+                    <Select name="staffId" defaultValue="" required aria-label="Who sold it">
+                      <option value="" disabled>Who sold it?</option>
+                      {staff.map((x) => <option key={x.id} value={x.id}>{x.displayName}</option>)}
+                      <option value="none">No staff credit</option>
+                    </Select>
                     <Button type="submit" size="sm" variant="secondary" disabled={!catalog?.packages.some((p) => p.active)}>Add package</Button>
                   </form>
                   <form action={addOffer} className="space-y-2">

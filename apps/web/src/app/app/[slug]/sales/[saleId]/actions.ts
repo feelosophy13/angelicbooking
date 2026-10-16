@@ -62,22 +62,45 @@ async function ctxFor(slug: string) {
   return requireAction(slug, "checkout.take");
 }
 
+/** Who gets credit for a line: a chosen person, or "none" on purpose. There is no default, so a missing choice is an error, not a guess. */
+function creditFrom(v: string | undefined): { ok: true; staffId: string | null } | { ok: false } {
+  if (v === "none") return { ok: true, staffId: null };
+  return v ? { ok: true, staffId: v } : { ok: false };
+}
+
 export async function addProduct(formData: FormData) {
   const d = base.extend({ productId: z.string().min(1), quantity: z.coerce.number().int().min(1).max(99).default(1), staffId: z.string().optional() }).parse(Object.fromEntries(formData));
   const ctx = await ctxFor(d.slug);
-  await addProductLine({ businessId: ctx.business.id, saleId: d.saleId, productId: d.productId, quantity: d.quantity, staffId: d.staffId || null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+  const credit = creditFrom(d.staffId);
+  if (!credit.ok) {
+    await setFlash("Choose who gets credit for it first (or \"No staff credit\").", "error");
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    return;
+  }
+  await addProductLine({ businessId: ctx.business.id, saleId: d.saleId, productId: d.productId, quantity: d.quantity, staffId: credit.staffId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
 
 /** A scanner (or a typed SKU) adds one of that product to the ticket. */
 export async function addProductByCode(formData: FormData) {
-  const d = base.extend({ code: z.string().trim().min(1).max(60) }).parse(Object.fromEntries(formData));
+  const d = base.extend({ code: z.string().trim().max(60), staffId: z.string().optional() }).parse(Object.fromEntries(formData));
   const ctx = await ctxFor(d.slug);
+  if (!d.code) {
+    await setFlash("Scan a barcode or type a SKU first.", "error");
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    return;
+  }
+  const credit = creditFrom(d.staffId);
+  if (!credit.ok) {
+    await setFlash("Choose who gets credit first, then scan.", "error");
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    return;
+  }
   const product = await findProductByCode(ctx.business.id, d.code);
   if (!product || product.kind !== "retail") await setFlash(`No product with the barcode or SKU "${d.code}".`, "error");
   else {
     try {
-      await addProductLine({ businessId: ctx.business.id, saleId: d.saleId, productId: product.id, quantity: 1, staffId: null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+      await addProductLine({ businessId: ctx.business.id, saleId: d.saleId, productId: product.id, quantity: 1, staffId: credit.staffId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
       await setFlash(`${productLabel(product)} added`, "success");
     } catch (e) {
       if (e instanceof SaleError) await setFlash(e.message, "error");
@@ -355,10 +378,17 @@ export async function voidOpenSale(formData: FormData) {
 }
 
 export async function addOffer(formData: FormData) {
-  const d = base.extend({ kind: z.enum(["gift_card", "package", "membership"]), refId: z.string().optional(), amount: z.string().optional(), recipientName: z.string().optional() }).parse(Object.fromEntries(formData));
+  const d = base.extend({ kind: z.enum(["gift_card", "package", "membership"]), refId: z.string().optional(), amount: z.string().optional(), recipientName: z.string().optional(), staffId: z.string().optional() }).parse(Object.fromEntries(formData));
   const ctx = await ctxFor(d.slug);
+  // A package earns its seller commission, so who sold it must be chosen (no default); gift cards and memberships earn none.
+  const credit = d.kind === "package" ? creditFrom(d.staffId) : { ok: true as const, staffId: null };
+  if (!credit.ok) {
+    await setFlash("Choose who sold the package first (or \"No staff credit\").", "error");
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    return;
+  }
   try {
-    await addOfferLine({ businessId: ctx.business.id, saleId: d.saleId, kind: d.kind, refId: d.refId || null, amountCents: d.amount ? parseMoney(d.amount) : null, recipientName: d.recipientName?.trim() || null });
+    await addOfferLine({ businessId: ctx.business.id, saleId: d.saleId, kind: d.kind, refId: d.refId || null, amountCents: d.amount ? parseMoney(d.amount) : null, recipientName: d.recipientName?.trim() || null, staffId: credit.staffId });
   } catch (e) {
     if (e instanceof SaleError) {
       await setFlash(e.message, "error");
@@ -558,6 +588,12 @@ export async function attachClient(formData: FormData) {
 export async function addServiceToSale(formData: FormData) {
   const d = base.extend({ serviceId: z.string().min(1), staffId: z.string().optional(), price: z.string().optional() }).parse(Object.fromEntries(formData));
   const ctx = await ctxFor(d.slug);
+  const credit = creditFrom(d.staffId);
+  if (!credit.ok) {
+    await setFlash("Choose who performed it first (or \"No staff credit\").", "error");
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    return;
+  }
   const price = d.price?.trim() ? parseMoney(d.price) : null;
   if (d.price?.trim() && price === null) {
     await setFlash("Enter a price like 65 or 65.50.", "error");
@@ -565,7 +601,7 @@ export async function addServiceToSale(formData: FormData) {
     return;
   }
   try {
-    await addServiceLine({ businessId: ctx.business.id, saleId: d.saleId, serviceId: d.serviceId, staffId: d.staffId || null, priceCents: price, taxRateBps: ctx.business.taxRateBps, actorUserId: ctx.user.id });
+    await addServiceLine({ businessId: ctx.business.id, saleId: d.saleId, serviceId: d.serviceId, staffId: credit.staffId, priceCents: price, taxRateBps: ctx.business.taxRateBps, actorUserId: ctx.user.id });
   } catch (e) {
     if (e instanceof SaleError) await setFlash(e.message, "error");
     else throw e;

@@ -65,7 +65,7 @@ export async function getClientCredits(tx: TenantDb, clientId: string) {
 }
 
 /** Add a gift card / package / membership line to an open sale. Fulfilment happens when the sale is paid. */
-export async function addOfferLine(input: { businessId: string; saleId: string; kind: "gift_card" | "package" | "membership"; refId: string | null; amountCents: number | null; recipientName?: string | null }) {
+export async function addOfferLine(input: { businessId: string; saleId: string; kind: "gift_card" | "package" | "membership"; refId: string | null; amountCents: number | null; recipientName?: string | null; /** Who sold it, for commission (packages). */ staffId?: string | null }) {
   await withTenant(input.businessId, async (tx) => {
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
     if (!sale || sale.status !== "open") throw new SaleError("Sale is not open.");
@@ -88,7 +88,7 @@ export async function addOfferLine(input: { businessId: string; saleId: string; 
       const noun = periodNoun(isMembershipInterval(p.interval) ? p.interval : "month", p.intervalCount);
       name = `${p.name} membership (${p.intervalCount > 1 ? noun : `1 ${noun}`})`;
     }
-    await tx.insert(schema.saleLines).values({ businessId: input.businessId, saleId: sale.id, kind: input.kind, productId: input.refId, name, quantity: 1, unitCents: amount, amountCents: amount, taxable: false, sortOrder: 200 });
+    await tx.insert(schema.saleLines).values({ businessId: input.businessId, saleId: sale.id, kind: input.kind, productId: input.refId, staffId: input.staffId ?? null, name, quantity: 1, unitCents: amount, amountCents: amount, taxable: false, sortOrder: 200 });
     await tx.update(schema.sales).set({ subtotalCents: sql`${schema.sales.subtotalCents} + ${amount}`, totalCents: sql`${schema.sales.totalCents} + ${amount}` }).where(eq(schema.sales.id, sale.id));
   });
 }
