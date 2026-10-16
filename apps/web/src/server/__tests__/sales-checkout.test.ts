@@ -6,6 +6,7 @@ import "../../../../../packages/db/src/env";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
+import { buildPayrollLines } from "@/server/payroll";
 import { addProductLine, completeNoCharge, getSale, openWalkInSale, recordManualPayment, removeLine, setSaleNotes, setTaxExempt, setTips } from "@/server/sales";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
 
@@ -80,5 +81,40 @@ describe.skipIf(!up)("checkout: a products-only ticket", () => {
     expect(d.sale.status).toBe("paid");
     expect(d.payments.map((p) => p.amountCents)).toEqual([6890]);
     await expect(removeLine({ businessId: kit.A, saleId, lineId: d.lines[0]!.id, taxRateBps: TAX })).rejects.toThrow(/paid/);
+  });
+
+  it("keeps how a tip was handed over, and payroll splits cash and card tips by it (gift-card payments carry no card fee)", async () => {
+    // Sale A: paid by card; $10 of the tip was left in cash and $5 on the card.
+    const a = await open();
+    await addProductLine({ ...base(), saleId: a, productId, quantity: 1, staffId });
+    await setTips({ businessId: kit.A, saleId: a, tips: [{ staffId, amountCents: 1000, method: "cash" }, { staffId, amountCents: 500, method: "card" }], taxRateBps: TAX });
+    const lines = (await getSale(kit.A, a))!.lines.filter((l) => l.kind === "tip");
+    expect(lines.map((l) => [l.tipMethod, l.amountCents]).sort()).toEqual([["card", 500], ["cash", 1000]]);
+    // Close both sales with direct payment rows so no card or Stripe is involved.
+    const close = async (saleId: string, method: "card" | "gift_card") => {
+      const sale = (await getSale(kit.A, saleId))!.sale;
+      await withTenant(kit.A, async (tx) => {
+        await tx.insert(schema.payments).values({ businessId: kit.A, saleId, method, status: "succeeded", amountCents: sale.totalCents });
+        await tx.update(schema.sales).set({ status: "paid", paidCents: sale.totalCents, closedAt: new Date() }).where(eq(schema.sales.id, saleId));
+      });
+    };
+    await close(a, "card");
+    // Sale B: $20 tip, not marked, paid wholly with a gift card: no card was involved, so no card fee should apply to it.
+    const b = await open();
+    await addProductLine({ ...base(), saleId: b, productId, quantity: 1, staffId });
+    await setTips({ businessId: kit.A, saleId: b, tips: [{ staffId, amountCents: 2000 }], taxRateBps: TAX });
+    await close(b, "gift_card");
+    // Sale C: $8 tip, not marked, paid by card: all card.
+    const c = await open();
+    await addProductLine({ ...base(), saleId: c, productId, quantity: 1, staffId });
+    await setTips({ businessId: kit.A, saleId: c, tips: [{ staffId, amountCents: 800 }], taxRateBps: TAX });
+    await close(c, "card");
+
+    const biz = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, kit.A) }))!;
+    const rows = (await buildPayrollLines(biz, { start: "2000-01-01", end: "2999-12-31" } as never)).filter((r) => r.staffId === staffId && r.name === "Tip");
+    const tipRows = rows.map((r) => [r.cashTipCents, r.cardTipCents]);
+    expect(tipRows).toContainEqual([1000, 500]); // A: as marked
+    expect(tipRows).toContainEqual([2000, 0]); // B: gift card, no card fee
+    expect(tipRows).toContainEqual([0, 800]); // C: card
   });
 });

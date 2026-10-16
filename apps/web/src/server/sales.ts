@@ -377,7 +377,7 @@ export async function removePromoFromSale(input: { businessId: string; saleId: s
 }
 
 /** Replace tip lines. `tips` is per staff; an unassigned tip is split by service revenue. */
-export async function setTips(input: { businessId: string; saleId: string; tips: { staffId: string | null; amountCents: number }[]; taxRateBps: number }) {
+export async function setTips(input: { businessId: string; saleId: string; tips: { staffId: string | null; amountCents: number; /** How it is handed over; omitted = same as the payment. */ method?: "cash" | "card" | null }[]; taxRateBps: number }) {
   await withTenant(input.businessId, async (tx) => {
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
     if (!sale) throw new SaleError("Sale not found.");
@@ -389,25 +389,33 @@ export async function setTips(input: { businessId: string; saleId: string; tips:
       .from(schema.saleLines)
       .where(and(eq(schema.saleLines.saleId, sale.id), sql`${schema.saleLines.kind} in ('service','product')`));
     const serviceLines = creditable.some((l) => l.kind === "service") ? creditable.filter((l) => l.kind === "service") : creditable;
-    const byStaff = new Map<string, number>();
+    // One tip line per person and way of tipping, so a cash tip and a card tip for the same stylist stay apart.
+    const byStaff = new Map<string, { staffId: string; method: "cash" | "card" | null; amountCents: number }>();
+    const add = (staffId: string, method: "cash" | "card" | null, cents: number) => {
+      const key = `${staffId}|${method ?? ""}`;
+      const cur = byStaff.get(key);
+      byStaff.set(key, { staffId, method, amountCents: (cur?.amountCents ?? 0) + cents });
+    };
     for (const t of input.tips) {
       if (t.amountCents <= 0) continue;
-      if (t.staffId) byStaff.set(t.staffId, (byStaff.get(t.staffId) ?? 0) + t.amountCents);
+      const method = t.method === "cash" || t.method === "card" ? t.method : null;
+      if (t.staffId) add(t.staffId, method, t.amountCents);
       else {
         const weights = [...new Set(serviceLines.map((l) => l.staffId).filter((x): x is string => !!x))].map((key) => ({
           key,
           weight: serviceLines.filter((l) => l.staffId === key).reduce((s, l) => s + l.amountCents, 0),
         }));
         const split = allocateProportionally(t.amountCents, weights);
-        for (const [k, v] of Object.entries(split)) byStaff.set(k, (byStaff.get(k) ?? 0) + v);
+        for (const [k, v] of Object.entries(split)) add(k, method, v);
       }
     }
     if (byStaff.size) {
       await tx.insert(schema.saleLines).values(
-        [...byStaff.entries()].map(([staffId, amountCents]) => ({
+        [...byStaff.values()].map(({ staffId, method, amountCents }) => ({
           businessId: input.businessId,
           saleId: sale.id,
           kind: "tip" as const,
+          tipMethod: method,
           staffId,
           name: "Tip",
           quantity: 1,

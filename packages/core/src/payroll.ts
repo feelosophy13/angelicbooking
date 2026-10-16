@@ -117,6 +117,36 @@ export interface PayrollResult {
   unmatchedStaffIds: string[];
 }
 
+/** A tip on a sale and how it was handed over, when the desk said: "cash" or "card"; null means "same as the payment". */
+export interface TipPart {
+  amountCents: number;
+  method: "cash" | "card" | null;
+}
+
+/** Payment methods that cost the salon a card-processing fee. Cash, "other", gift cards, store credit and loyalty points do not. */
+export const CARD_FEE_METHODS = new Set(["card", "card_on_file", "terminal"]);
+
+/**
+ * Cash versus card for one person's tips on one sale. A tip the desk marked cash or card goes where it was marked;
+ * the rest (older tips, or "same as the payment") follows `noFeeShare`, the share of what the sale was paid with
+ * that carried no card fee (0 = all by card, 1 = all cash/other). Parts add back to the total exactly.
+ */
+export function splitTips(parts: TipPart[], noFeeShare: number): { cashCents: number; cardCents: number; totalCents: number } {
+  let cash = 0;
+  let unspecified = 0;
+  let total = 0;
+  for (const p of parts) {
+    if (p.amountCents <= 0) continue;
+    total += p.amountCents;
+    if (p.method === "cash") cash += p.amountCents;
+    else if (p.method === "card") continue;
+    else unspecified += p.amountCents;
+  }
+  const share = Math.min(1, Math.max(0, noFeeShare));
+  cash += Math.round(unspecified * share);
+  return { cashCents: cash, cardCents: total - cash, totalCents: total };
+}
+
 export const NON_REVENUE_POSITIONS = ["receptionist", "manager", "front desk", "admin"];
 
 export function generatesRevenue(position: string | null | undefined): boolean {

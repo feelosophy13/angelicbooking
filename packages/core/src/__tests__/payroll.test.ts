@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeHours, computePayroll, rateLabel, type PayrollEmployee, type PayrollLine } from "../payroll";
+import { CARD_FEE_METHODS, computeHours, computePayroll, rateLabel, splitTips, type PayrollEmployee, type PayrollLine } from "../payroll";
 
 const base = (over: Partial<PayrollEmployee>): PayrollEmployee => ({
   staffId: "s",
@@ -152,5 +152,28 @@ describe("combined pay models", () => {
     expect(rateLabel(base({ payType: "hourly", hourlyRateCents: 1800, mainCommissionBps: 1500 }))).toBe("$18.00/hr + 15%");
     expect(rateLabel(base({ payType: "hourly", hourlyRateCents: 1800, mainCommissionBps: 0 }))).toBe("$18.00/hr");
     expect(rateLabel(base({ payType: "commission", mainCommissionBps: 4000 }))).toBe("40%");
+  });
+});
+
+describe("splitTips", () => {
+  it("sends a tip marked cash or card where it was marked, whatever the payment mix", () => {
+    expect(splitTips([{ amountCents: 1500, method: "cash" }], 0)).toEqual({ cashCents: 1500, cardCents: 0, totalCents: 1500 });
+    expect(splitTips([{ amountCents: 1500, method: "card" }], 1)).toEqual({ cashCents: 0, cardCents: 1500, totalCents: 1500 });
+    expect(splitTips([{ amountCents: 1000, method: "cash" }, { amountCents: 500, method: "card" }], 0.5)).toEqual({ cashCents: 1000, cardCents: 500, totalCents: 1500 });
+  });
+  it("splits an unmarked tip by the share paid without a card, and the parts add back exactly", () => {
+    expect(splitTips([{ amountCents: 1000, method: null }], 0.25)).toEqual({ cashCents: 250, cardCents: 750, totalCents: 1000 });
+    const r = splitTips([{ amountCents: 333, method: null }, { amountCents: 100, method: "cash" }], 1 / 3);
+    expect(r.cashCents + r.cardCents).toBe(r.totalCents);
+    expect(r.totalCents).toBe(433);
+  });
+  it("ignores empty tips and clamps a nonsense share", () => {
+    expect(splitTips([{ amountCents: 0, method: "cash" }], 0.5).totalCents).toBe(0);
+    expect(splitTips([{ amountCents: 100, method: null }], 7).cashCents).toBe(100);
+    expect(splitTips([{ amountCents: 100, method: null }], -1).cashCents).toBe(0);
+  });
+  it("charges the card fee only for real card payments, not gift cards, store credit, points or cash", () => {
+    for (const m of ["card", "card_on_file", "terminal"]) expect(CARD_FEE_METHODS.has(m)).toBe(true);
+    for (const m of ["cash", "other", "gift_card", "store_credit", "loyalty"]) expect(CARD_FEE_METHODS.has(m)).toBe(false);
   });
 });

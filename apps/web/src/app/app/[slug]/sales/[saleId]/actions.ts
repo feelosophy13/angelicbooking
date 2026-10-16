@@ -138,7 +138,7 @@ export async function applyDiscount(_prev: SaleActionState, formData: FormData):
 export async function applyTips(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.parse(Object.fromEntries(formData));
   const ctx = await ctxFor(d.slug);
-  const tips: { staffId: string | null; amountCents: number }[] = [];
+  const tips: { staffId: string | null; amountCents: number; method: "cash" | "card" | null }[] = [];
   for (const [k, v] of formData.entries()) {
     if (!k.startsWith("tip_")) continue;
     const cents = parseMoney(String(v));
@@ -146,7 +146,9 @@ export async function applyTips(_prev: SaleActionState, formData: FormData): Pro
       if (String(v).trim() !== "") return { error: "Tips must be amounts like 10 or 10.50." };
       continue;
     }
-    tips.push({ staffId: k === "tip_" ? null : k.slice(4), amountCents: cents });
+    const who = k === "tip_" ? "" : k.slice(4);
+    const how = String(formData.get(`tipby_${who}`) ?? "");
+    tips.push({ staffId: who || null, amountCents: cents, method: how === "cash" || how === "card" ? how : null });
   }
   try {
     await setTips({ businessId: ctx.business.id, saleId: d.saleId, tips, taxRateBps: ctx.business.taxRateBps });

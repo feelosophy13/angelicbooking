@@ -384,6 +384,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `ContactFields` for the free and paid forms, with promo/referral codes behind "Have a code?"; paid form labelled
       Step 1/2 and 2/2 and uses the shared `Button`; waitlist pre-fills for signed-in clients; dead ends link to another
       service or a tel: link. Not yet walked live: the details form and the Stripe payment steps.
+- [x] 2026-10-16: tips know how they were handed over (migration 0092 `sale_lines.tip_method`). Each tip on the Tips card has "Paid in": Same as sale / Card / Cash; payroll
+      (`splitTips` in core, used by `server/payroll.ts`) sends a marked tip where it was marked and splits an unmarked one by how the sale was paid. The card-tip fee now
+      applies only to tips paid through a real card (`CARD_FEE_METHODS`: card, card on file, terminal): gift card, store credit and points no longer count as card.
+      Test: `sales-checkout.test.ts` (payroll cases). Gaps noticed, not built: the Reports "Tips" line has no cash/card split; the public API's per-payment `tip_cents`
+      is still a proportional estimate; a tip can't be added after the sale is paid (e.g. a tip decided after the card was charged); goods columns on the pay sheet still
+      count gift-card payments as card (only tips were changed).
 - [x] 2026-10-16: shop and gift-card checkout now use the plain card field too (`PayStep` in `book/[slug]/shop/checkout.tsx`, `confirmCardPayment`); walked on demo-salon:
       order #1521 paid with the test Visa. The booking manage page no longer assumes a live first service (`firstStaff`), so a fully cancelled booking cannot crash
       it. Browser-pane note: after a while a long-lived pane tab stops hydrating pages (HMR websocket fails); a fresh tab works, so check there before suspecting the app.

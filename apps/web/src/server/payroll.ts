@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
-import { computePayroll, zonedToInstant, type Adjustment, type HoursEntry, type PayrollEmployee, type PayrollLine, type PayrollResult } from "@angelic/core";
+import { CARD_FEE_METHODS, computePayroll, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type PayrollEmployee, type PayrollLine, type PayrollResult, type TipPart } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
 import { ratesForPeriod, syncCurrentRates } from "@/server/pay-rates";
 
@@ -58,6 +58,9 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       const paidTotal = sp.reduce((s, p) => s + p.amountCents, 0);
       const cashPaid = sp.filter((p) => CASH_METHODS.has(p.method)).reduce((s, p) => s + p.amountCents, 0);
       const cashShare = paidTotal > 0 ? cashPaid / paidTotal : 0;
+      // Tips: the share of the sale that was not paid through a card (cash, other, gift card, store credit, points) carries no card fee.
+      const cardPaid = sp.filter((p) => CARD_FEE_METHODS.has(p.method)).reduce((s, p) => s + p.amountCents, 0);
+      const tipNoFeeShare = paidTotal > 0 ? 1 - cardPaid / paidTotal : 0;
       const fullyRefunded = sale.status === "refunded" || (sale.paidCents > 0 && sale.refundedCents >= sale.paidCents);
       // Partial refunds reduce goods proportionally; tips are left whole.
       const keep = fullyRefunded || sale.paidCents <= 0 ? 1 : Math.max(0, (sale.paidCents - sale.refundedCents) / sale.paidCents);
@@ -66,8 +69,8 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       const checkoutDate = localDate(sale.closedAt ?? sale.createdAt, tz);
 
       // Tips per staff, attached to that staff's first service line (or a standalone row).
-      const tipByStaff = new Map<string, number>();
-      for (const t of tips) if (t.staffId) tipByStaff.set(t.staffId, (tipByStaff.get(t.staffId) ?? 0) + t.amountCents);
+      const tipByStaff = new Map<string, TipPart[]>();
+      for (const t of tips) if (t.staffId) tipByStaff.set(t.staffId, [...(tipByStaff.get(t.staffId) ?? []), { amountCents: t.amountCents, method: t.tipMethod === "cash" || t.tipMethod === "card" ? t.tipMethod : null }]);
 
       const seenStaffTip = new Set<string>();
       for (const l of goods) {
@@ -78,12 +81,15 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         // (amountCents is 0 so the ticket adds up); the provider is still paid on it.
         const net = Math.round((l.amountCents - disc + tax) * keep) + Math.round((l.creditCents ?? 0) * keep);
         let tip = 0;
+        let cashTip = 0;
+        let cardTip = 0;
         if (l.kind === "service" && !seenStaffTip.has(l.staffId) && tipByStaff.has(l.staffId)) {
-          tip = tipByStaff.get(l.staffId)!;
+          const split = splitTips(tipByStaff.get(l.staffId)!, tipNoFeeShare);
+          tip = split.totalCents;
+          cashTip = split.cashCents;
+          cardTip = split.cardCents;
           seenStaffTip.add(l.staffId);
         }
-        const cashTip = Math.round(tip * cashShare);
-        const cardTip = tip - cashTip;
         const cash = Math.round(net * cashShare);
         const card = net - cash;
         const kind: PayrollLine["kind"] = l.kind === "service" ? "service" : l.kind === "product" ? (/package/i.test(l.name) ? "package" : /membership/i.test(l.name) ? "membership" : "product") : "fee";
@@ -107,10 +113,11 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         });
       }
       // Tips for staff with no goods line on this sale (rare) → standalone row.
-      for (const [staffId, tip] of tipByStaff) {
+      for (const [staffId, parts] of tipByStaff) {
         if (seenStaffTip.has(staffId)) continue;
-        const cashTip = Math.round(tip * cashShare);
-        out.push({ staffId, kind: "service", refunded: fullyRefunded, date: checkoutDate, customer, name: "Tip", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: cashTip, cardTipCents: tip - cashTip, discountCents: 0, amtPaidCents: tip, locationId: sale.locationId });
+        const split = splitTips(parts, tipNoFeeShare);
+        const tip = split.totalCents;
+        out.push({ staffId, kind: "service", refunded: fullyRefunded, date: checkoutDate, customer, name: "Tip", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: split.cashCents, cardTipCents: split.cardCents, discountCents: 0, amtPaidCents: tip, locationId: sale.locationId });
       }
     }
     return out.filter((l) => l.date >= period.start && l.date <= period.end);

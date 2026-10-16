@@ -30,7 +30,7 @@ export function DiscountForm({ action, slug, saleId, currentCents, current, note
   );
 }
 
-export function TipsForm({ action, slug, saleId, staff, current, baseCents, choices = [], currency = "USD" }: { action: Action; slug: string; saleId: string; staff: { id: string; name: string }[]; current: Record<string, number>; /** Everyone who could receive a tip, offered when nobody is credited on the ticket yet (a products-only sale). */ choices?: { id: string; name: string }[]; /** What a percentage tip is worked out on: the goods after any discount, before tax. */ baseCents: number; currency?: string }) {
+export function TipsForm({ action, slug, saleId, staff, current, currentMethods = {}, baseCents, choices = [], currency = "USD" }: { action: Action; slug: string; saleId: string; staff: { id: string; name: string }[]; current: Record<string, number>; /** How each tip already on the ticket was handed over ("" = same as the payment). */ currentMethods?: Record<string, "cash" | "card" | "">; /** Everyone who could receive a tip, offered when nobody is credited on the ticket yet (a products-only sale). */ choices?: { id: string; name: string }[]; /** What a percentage tip is worked out on: the goods after any discount, before tax. */ baseCents: number; currency?: string }) {
   const [state, act, pending] = useActionState(action, undefined);
   const initial: Record<string, string> = {};
   const [who, setWho] = useState(choices[0]?.id ?? "");
@@ -38,6 +38,18 @@ export function TipsForm({ action, slug, saleId, staff, current, baseCents, choi
   for (const x of staff) initial[x.id] = current[x.id] ? (current[x.id]! / 100).toFixed(2) : "";
   initial[""] = "";
   const [vals, setVals] = useState(initial);
+  // How each tip is handed over: cash or card, or "same as the payment" (payroll then splits it by how the sale was paid).
+  const [by, setBy] = useState<Record<string, string>>({ ...currentMethods });
+  const setMethod = (k: string, v: string) => setBy((m) => ({ ...m, [k]: v }));
+  const tipBy = (k: string) => (
+    <Field label="Paid in">
+      <Select name={`tipby_${k}`} value={by[k] ?? ""} onChange={(e) => setMethod(k, e.target.value)} aria-label="How this tip is paid">
+        <option value="">Same as sale</option>
+        <option value="card">Card</option>
+        <option value="cash">Cash</option>
+      </Select>
+    </Field>
+  );
   // One person: the preset fills their field; several: it fills the whole-ticket field, which is split by who earned the revenue.
   const target = staff.length === 1 ? staff[0]!.id : "";
   const fill = (pct: number) => setVals((v) => {
@@ -61,23 +73,30 @@ export function TipsForm({ action, slug, saleId, staff, current, baseCents, choi
         </div>
       ) : null}
       {staff.map((s) => (
-        <Field key={s.id} label={`Tip for ${s.name}`}>
-          <Input name={`tip_${s.id}`} inputMode="decimal" placeholder="0" value={vals[s.id] ?? ""} onChange={(e) => setVals((v) => ({ ...v, [s.id]: e.target.value }))} />
-        </Field>
+        <div key={s.id} className="grid grid-cols-[1fr_9.5rem] gap-2">
+          <Field label={`Tip for ${s.name}`}>
+            <Input name={`tip_${s.id}`} inputMode="decimal" placeholder="0" value={vals[s.id] ?? ""} onChange={(e) => setVals((v) => ({ ...v, [s.id]: e.target.value }))} />
+          </Field>
+          {tipBy(s.id)}
+        </div>
       ))}
       {nobody && choices.length ? (
-        <div className="grid grid-cols-[1fr_7rem] gap-2">
+        <div className="grid grid-cols-[1fr_7rem_9.5rem] gap-2">
           <Field label="Tip for">
             <Select value={who} onChange={(e) => { setVals({ "": "" }); setWho(e.target.value); }}>
               {choices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>
           </Field>
           <Field label="Amount"><MoneyInput name={`tip_${who}`} value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} /></Field>
+          {tipBy(who)}
         </div>
       ) : staff.length > 1 ? (
-        <Field label="Tip on the whole ticket (split by who earned the revenue)">
-          <MoneyInput name="tip_" value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} />
-        </Field>
+        <div className="grid grid-cols-[1fr_9.5rem] gap-2">
+          <Field label="Tip on the whole ticket (split by who earned the revenue)">
+            <MoneyInput name="tip_" value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} />
+          </Field>
+          {tipBy("")}
+        </div>
       ) : null}
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <Button type="submit" size="sm" variant="secondary" disabled={pending}>Save tips</Button>

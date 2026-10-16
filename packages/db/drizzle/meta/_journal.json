@@ -645,6 +645,13 @@
       "when": 1793200000000,
       "tag": "0091_admin_users",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1793300000000,
+      "tag": "0092_tip_method",
+      "breakpoints": true
     }
   ]
 }

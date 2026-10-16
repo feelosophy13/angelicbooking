@@ -308,6 +308,8 @@ export const saleLines = pgTable(
     clientPackageId: text("client_package_id"),
     clientMembershipId: text("client_membership_id"),
     creditCents: integer("credit_cents").notNull().default(0),
+    // A tip line only: how it was handed over, "cash" or "card". Null = same as the payment (older tips, or the desk did not say); payroll splits those by the payment mix.
+    tipMethod: text("tip_method"),
   },
   (t) => [index("sale_lines_sale_idx").on(t.saleId), index("sale_lines_business_staff_idx").on(t.businessId, t.staffId)],
 );

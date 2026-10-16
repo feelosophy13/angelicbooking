@@ -63,7 +63,14 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const creditedIds = [...new Set(lines.filter((l) => l.kind === "service" && l.staffId).map((l) => l.staffId!))];
   const creditedAny = creditedIds.length ? creditedIds : [...new Set(lines.filter((l) => l.kind === "product" && l.staffId).map((l) => l.staffId!))];
   const tipStaff = creditedAny.map((id) => staff.find((x) => x.id === id)).filter((x): x is NonNullable<typeof x> => !!x).map((x) => ({ id: x.id, name: x.displayName }));
-  const currentTips = Object.fromEntries(lines.filter((l) => l.kind === "tip" && l.staffId).map((l) => [l.staffId!, l.amountCents]));
+  const currentTips: Record<string, number> = {};
+  const currentTipMethods: Record<string, "cash" | "card" | ""> = {};
+  for (const l of lines.filter((x) => x.kind === "tip" && x.staffId)) {
+    currentTips[l.staffId!] = (currentTips[l.staffId!] ?? 0) + l.amountCents;
+    const m = l.tipMethod === "cash" || l.tipMethod === "card" ? l.tipMethod : "";
+    // Several tip lines for one person (a cash and a card tip) show as "same as the payment" when they differ; saving merges them.
+    currentTipMethods[l.staffId!] = l.staffId! in currentTipMethods && currentTipMethods[l.staffId!] !== m ? "" : m;
+  }
   const goods = lines.filter((l) => l.kind !== "tip");
   const catalog = open ? await getOffersCatalog(business.id) : null;
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
@@ -279,7 +286,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               {goods.length > 0 ? (
                 <Card className="p-4">
                   <h2 className="mb-2 font-medium">Tips</h2>
-                  <TipsForm key={JSON.stringify(currentTips)} action={applyTips} slug={slug} saleId={sale.id} staff={tipStaff} current={currentTips} baseCents={Math.max(0, sale.subtotalCents - sale.discountCents)} currency={cur} choices={tipStaff.length ? [] : staff.map((x) => ({ id: x.id, name: x.displayName }))} />
+                  <TipsForm key={JSON.stringify([currentTips, currentTipMethods])} action={applyTips} slug={slug} saleId={sale.id} staff={tipStaff} current={currentTips} currentMethods={currentTipMethods} baseCents={Math.max(0, sale.subtotalCents - sale.discountCents)} currency={cur} choices={tipStaff.length ? [] : staff.map((x) => ({ id: x.id, name: x.displayName }))} />
                 </Card>
               ) : null}
             </div>
