@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { instantToISODate, lateCancelFeeLabel, weekdayOf } from "@angelic/core";
 import { getAvailableDates, getManagedAppointment, getPublicSlots, publicProvidersFor } from "@/server/public-booking";
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
+import { listCancellationReasons } from "@/server/cancellation-reasons";
 import { CancelForm, RescheduleForm } from "./forms";
 import { MonthCalendar } from "../../calendar";
 
@@ -119,7 +120,7 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
             <p className="mb-3 text-xs text-stone-500">
               Free until {deadlineText}.{depositPaid ? ` Your ${money(m.appt.depositCents)} deposit is ${m.business.depositRefundAs === "store_credit" ? "returned as store credit" : "refunded"} when you cancel in time.` : ""}{lateFee ? ` After that, cancelling carries a fee of ${lateFee}.` : ""}
             </p>
-            <CancelForm slug={slug} token={token} />
+            <CancelForm slug={slug} token={token} reasons={(await listCancellationReasons(m.business.id)).filter((r) => r.clientVisible).map((r) => ({ id: r.id, name: r.name }))} />
           </div>
         </>
       )}

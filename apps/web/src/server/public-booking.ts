@@ -1,3 +1,4 @@
+import { listCancellationReasons } from "@/server/cancellation-reasons";
 import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { buildBookingSegments, canClientCancel, instantToISODate, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
@@ -451,11 +452,13 @@ export async function getManagedAppointment(slug: string, token: string) {
   });
 }
 
-export async function cancelOnline(slug: string, token: string) {
+export async function cancelOnline(slug: string, token: string, reasonId?: string | null) {
   const m = await getManagedAppointment(slug, token);
   if (!m) throw new BookingError("Appointment not found.");
   if (!m.canChange) throw new BookingError(`Online cancellation closes ${m.business.cancelWindowHours} hours before the appointment. Please call ${m.business.phone ?? "the salon"}.`);
-  await setAppointmentStatus(m.business.id, m.appt.id, "cancelled", "client", "Cancelled online by client");
+  // Optional: only a reason the salon offers to clients counts; anything else is ignored.
+  const offered = reasonId ? (await listCancellationReasons(m.business.id)).find((r) => r.id === reasonId && r.clientVisible) : null;
+  await setAppointmentStatus(m.business.id, m.appt.id, "cancelled", "client", "Cancelled online by client", offered?.id ?? null);
   // Inside the cancellation window the deposit goes back automatically (on the account that took it).
   const pay = await paymentContextFor(m.business, m.appt.locationId);
   await refundDeposit({ businessId: m.business.id, accountId: pay.accountId, appointmentId: m.appt.id, actorUserId: "client", reason: "Cancelled online within policy" }).catch((e) =>

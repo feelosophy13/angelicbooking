@@ -162,9 +162,9 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
 }
 
 export async function cancelBooking(_prev: PublicState, formData: FormData): Promise<PublicState> {
-  const d = z.object({ slug: z.string(), token: z.string().min(10) }).parse(Object.fromEntries(formData));
+  const d = z.object({ slug: z.string(), token: z.string().min(10), reasonId: z.string().optional() }).parse(Object.fromEntries(formData));
   try {
-    await cancelOnline(d.slug, d.token);
+    await cancelOnline(d.slug, d.token, d.reasonId || null);
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     throw e;

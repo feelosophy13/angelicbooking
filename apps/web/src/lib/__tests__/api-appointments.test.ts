@@ -221,7 +221,7 @@ describe.skipIf(!up)("API: appointment extras", () => {
       const staff = await mkStaff(A());
       const appt = await book(a("client"), a("service"), staff, slot(16, 10));
       const r = await call(getAppt, readKey, { id: appt.id });
-      expect(Object.keys((await r.json()).data).sort()).toEqual(["cancellation_reason", "cancelled_at", "client_id", "created_at", "deposit_cents", "end_at", "id", "items", "kind", "location_id", "notes", "source", "start_at", "status"]);
+      expect(Object.keys((await r.json()).data).sort()).toEqual(["cancellation_reason", "cancellation_reason_id", "cancelled_at", "cancelled_by", "cancelled_late", "client_id", "created_at", "deposit_cents", "end_at", "id", "items", "kind", "location_id", "notes", "source", "start_at", "status"]);
     });
   });
 

@@ -13,6 +13,7 @@ import { withTenant } from "@angelic/db";
 import { payrollByLocation, runPayroll } from "@/server/payroll";
 import { storeCreditSummary } from "@/server/store-credit";
 import { refundsByReason } from "@/server/refund-reasons";
+import { cancellationsByReason } from "@/server/cancellation-reasons";
 import { referralsInPeriod } from "@/server/loyalty";
 import { formatDateLong, formatMoney, shiftISODate } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Empty, LinkButton } from "@/components/ui";
@@ -58,10 +59,11 @@ export default async function ReportsPage({
   const prevTo = shiftISODate(from, -1);
   const isPreset = (from === today && to === today) || (from === shiftISODate(today, -6) && to === today) || (from === `${today.slice(0, 8)}01` && to === today);
   const stock = await stockReport(business.id);
-  const [credit, creditBefore, byReason, referrals] = await withTenant(business.id, async (tx) => [
+  const [credit, creditBefore, byReason, cancels, referrals] = await withTenant(business.id, async (tx) => [
     await storeCreditSummary(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
     await storeCreditSummary(tx, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz)),
     await refundsByReason(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
+    await cancellationsByReason(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
     business.loyaltyEnabled ? await referralsInPeriod(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)) : [],
   ]);
   // Pay is not split by service, so it is left out while a service filter is on.
@@ -391,6 +393,21 @@ export default async function ReportsPage({
             </table></div>
           )}
           {can(permissions, "business.manage") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/refund-reasons`} className="text-brand-700 underline">Settings → Refund reasons</Link>.</p> : null}
+        </Card>
+        <Card className={scoped ? "hidden" : ""}>
+          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Cancellations by reason</h2>
+          {cancels.length === 0 ? <div className="p-4"><Empty title="No cancellations in this range" /></div> : (
+            <div className="overflow-x-auto"><table className="w-full text-sm">
+              <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Reason</th><th className="px-4 py-2 text-right">Cancelled</th><th className="px-4 py-2 text-right">By client</th><th className="px-4 py-2 text-right">Inside window</th><th className="px-4 py-2 text-right">Booked value lost</th><th className="px-4 py-2 text-right">Deposits kept</th><th className="px-4 py-2 text-right">Fees collected</th></tr></thead>
+              <tbody className="divide-y divide-stone-100">
+                {cancels.map((r) => (
+                  <tr key={r.reasonId ?? "none"}><td className="px-4 py-2">{r.name}</td><td className="px-4 py-2 text-right tabular-nums">{r.count}</td><td className="px-4 py-2 text-right tabular-nums">{r.byClient}</td><td className="px-4 py-2 text-right tabular-nums">{r.lateCount}</td><td className="px-4 py-2 text-right tabular-nums">{money(r.lostCents)}</td><td className="px-4 py-2 text-right tabular-nums">{money(r.depositKeptCents)}</td><td className="px-4 py-2 text-right tabular-nums">{money(r.feeCents)}</td></tr>
+                ))}
+                <tr className="font-medium"><td className="px-4 py-2">Total</td><td className="px-4 py-2 text-right tabular-nums">{cancels.reduce((n, r) => n + r.count, 0)}</td><td className="px-4 py-2 text-right tabular-nums">{cancels.reduce((n, r) => n + r.byClient, 0)}</td><td className="px-4 py-2 text-right tabular-nums">{cancels.reduce((n, r) => n + r.lateCount, 0)}</td><td className="px-4 py-2 text-right tabular-nums">{money(cancels.reduce((n, r) => n + r.lostCents, 0))}</td><td className="px-4 py-2 text-right tabular-nums">{money(cancels.reduce((n, r) => n + r.depositKeptCents, 0))}</td><td className="px-4 py-2 text-right tabular-nums">{money(cancels.reduce((n, r) => n + r.feeCents, 0))}</td></tr>
+              </tbody>
+            </table></div>
+          )}
+          {can(permissions, "business.manage") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/cancellation-reasons`} className="text-brand-700 underline">Settings → Cancellation reasons</Link>. Cancellations made before reasons existed show as &quot;No reason given&quot;.</p> : null}
         </Card>
         {business.loyaltyEnabled && !scoped ? (
           <Card>

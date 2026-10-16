@@ -137,9 +137,10 @@ export async function startCheckout(formData: FormData) {
  * charge what the deposit doesn't cover to a saved card; the fee lands on a ticket of its own.
  */
 export async function cancelAppointment(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const d = base.extend({ reason: z.string().trim().max(200).optional(), chargeFee: z.string().optional(), paymentMethodId: z.string().optional(), deposit: z.enum(["keep", "fee_only", "refund_all"]).optional() }).parse(Object.fromEntries(formData));
+  const d = base.extend({ reason: z.string().trim().max(200).optional(), reasonId: z.string().optional(), chargeFee: z.string().optional(), paymentMethodId: z.string().optional(), deposit: z.enum(["keep", "fee_only", "refund_all"]).optional() }).parse(Object.fromEntries(formData));
   const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "cancel");
   // What happens to a paid deposit is the salon's call when staff cancel: keep it, keep only the late fee, or give it all back. Giving money back needs the refund permission.
+  if (!d.reasonId) return { error: "Choose why it is being cancelled." };
   const choice = d.deposit ?? "keep";
   if (choice !== "keep" && !can(ctx.permissions, "reports.view") && !can(ctx.permissions, "checkout.refund")) throw new PermissionError();
   const reason = d.reason || null;
@@ -187,7 +188,7 @@ export async function cancelAppointment(_prev: ActionState, formData: FormData):
         }
       }
     }
-    await setAppointmentStatus(ctx.business.id, d.appointmentId, "cancelled", ctx.user.id, reason);
+    await setAppointmentStatus(ctx.business.id, d.appointmentId, "cancelled", ctx.user.id, reason, d.reasonId);
     await notifyAppointment(ctx.business, d.appointmentId, "cancellation");
     if (refundCents) {
       try {

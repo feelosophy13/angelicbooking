@@ -359,6 +359,22 @@ export const refundReasons = pgTable(
   (t) => [index("refund_reasons_business_idx").on(t.businessId, t.sortOrder)],
 );
 
+/** Why appointments get cancelled, managed per business under Settings (seeded with defaults). */
+export const cancellationReasons = pgTable(
+  "cancellation_reasons",
+  {
+    id: id(),
+    businessId: businessId(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    active: boolean("active").notNull().default(true),
+    // Offered to clients on their own cancel page (staff always see every active reason).
+    clientVisible: boolean("client_visible").notNull().default(true),
+    createdAt: createdAt(),
+  },
+  (t) => [index("cancellation_reasons_business_idx").on(t.businessId, t.sortOrder)],
+);
+
 export const refunds = pgTable(
   "refunds",
   {

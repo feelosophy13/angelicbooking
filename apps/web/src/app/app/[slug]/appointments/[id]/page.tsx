@@ -25,6 +25,7 @@ import { SlotPickerForm } from "./slot-picker-form";
 import { ServicePicker } from "@/components/service-picker";
 import { serviceGroups } from "@/server/service-groups";
 import { NoShowFeeForm } from "./no-show-form";
+import { listCancellationReasons } from "@/server/cancellation-reasons";
 import { CancelForm } from "./cancel-form";
 import { VisitPhotosCard, type PhotoGroup } from "./visit-photos-card";
 import { SuppliesCard } from "./supplies-card";
@@ -79,6 +80,7 @@ export default async function AppointmentPage({
   const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, id), ne(schema.sales.status, "void")), orderBy: desc(schema.sales.createdAt) }));
   // The rating request for this visit, if one went out: submitted or still waiting.
   const review = await withTenant(business.id, (tx) => tx.query.reviews.findFirst({ where: eq(schema.reviews.appointmentId, id), orderBy: desc(schema.reviews.requestedAt) }));
+  const cancelReasonName = appointment.cancellationReasonId ? ((await listCancellationReasons(business.id, { includeRetired: true })).find((r) => r.id === appointment.cancellationReasonId)?.name ?? null) : null;
   const activity = await appointmentActivity(business, id);
   const fmtDay = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
   const pinnedNotes = client ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
@@ -365,12 +367,13 @@ export default async function AppointmentPage({
             </form>
             {appointment.status === "cancelled" ? (
               <p className="mt-3 text-sm text-stone-500">
-                Cancelled{appointment.cancellationReason ? `: ${appointment.cancellationReason}` : ""}.
+                Cancelled{appointment.cancelledBy === "client" ? " by the client" : ""}{appointment.cancelledLate ? ", inside the cancellation window" : ""}
+                {cancelReasonName ? `: ${cancelReasonName}` : ""}{appointment.cancellationReason ? ` (${appointment.cancellationReason})` : ""}.
               </p>
             ) : canCancel ? (
               <details className="group mt-3 border-t border-stone-200 pt-3">
                 <summary className="cursor-pointer select-none text-sm text-stone-500 hover:text-stone-800 marker:content-none [&::-webkit-details-marker]:hidden">Cancel this appointment…</summary>
-                <CancelForm slug={slug} appointmentId={id} late={lateCancel} cards={savedCards} deposit={depositChoice} />
+                <CancelForm slug={slug} appointmentId={id} late={lateCancel} cards={savedCards} reasons={(await listCancellationReasons(business.id)).map((r) => ({ id: r.id, name: r.name }))} deposit={depositChoice} />
               </details>
             ) : null}
           </Card>

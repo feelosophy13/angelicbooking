@@ -4,10 +4,10 @@ import { and, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { apiAudit, ApiErrors, readBody, route } from "@/lib/api";
 import { getAppointmentApi } from "@/server/api-v1";
-import { setAppointmentStatus } from "@/server/booking";
+import { BookingError, setAppointmentStatus } from "@/server/booking";
 import { notifyAppointment } from "@/lib/notify";
 
-const body = z.object({ reason: z.string().max(500).nullish(), notify: z.boolean().default(true) });
+const body = z.object({ reason: z.string().max(500).nullish(), reason_id: z.string().nullish(), notify: z.boolean().default(true) });
 
 /** POST /api/v1/appointments/:id/cancel. No fee is charged; refunds and fees stay in the staff app. */
 export const POST = route<{ id: string }>("appointments:cancel", async (ctx, req, { id }) => {
@@ -18,7 +18,12 @@ export const POST = route<{ id: string }>("appointments:cancel", async (ctx, req
   if (!current || current.kind !== "visit") return ApiErrors.notFound("appointment");
   if (current.status === "cancelled") return ApiErrors.conflict("That appointment is already cancelled.");
   if (current.status === "completed") return ApiErrors.conflict("A completed appointment cannot be cancelled.");
-  await setAppointmentStatus(businessId, id, "cancelled", ctx.actor, parsed.data.reason ?? null);
+  try {
+    await setAppointmentStatus(businessId, id, "cancelled", ctx.actor, parsed.data.reason ?? null, parsed.data.reason_id ?? null);
+  } catch (e) {
+    if (e instanceof BookingError) return ApiErrors.conflict(e.message);
+    throw e;
+  }
   await apiAudit(ctx, "api.appointment.cancel", "appointment", id, { reason: parsed.data.reason ?? null });
   if (parsed.data.notify) after(() => notifyAppointment(ctx.business, id, "cancellation").catch((e) => console.error("[api/v1] notify failed", (e as Error).message)));
   return NextResponse.json({ data: await getAppointmentApi(businessId, id) });

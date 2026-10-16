@@ -9,7 +9,7 @@ import { ConfirmSubmit } from "@/components/form";
  * the client owes, how much a kept deposit covers, and offers to charge the rest to a saved card.
  */
 type DepositChoice = "keep" | "fee_only" | "refund_all";
-export function CancelForm(props: { slug: string; appointmentId: string; late: null | { feeLabel: string; depositCoversLabel: string | null; chargeLabel: string | null; chargeCents: number }; cards: { id: string; brand: string; last4: string }[]; deposit: null | { totalLabel: string; feeOnly: null | { keepLabel: string; refundLabel: string }; canRefund: boolean; defaultChoice: DepositChoice } }) {
+export function CancelForm(props: { slug: string; appointmentId: string; late: null | { feeLabel: string; depositCoversLabel: string | null; chargeLabel: string | null; chargeCents: number }; cards: { id: string; brand: string; last4: string }[]; reasons: { id: string; name: string }[]; deposit: null | { totalLabel: string; feeOnly: null | { keepLabel: string; refundLabel: string }; canRefund: boolean; defaultChoice: DepositChoice } }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(cancelAppointment, undefined);
   const canCharge = !!props.late && props.late.chargeCents > 0 && props.cards.length > 0;
   const [charge, setCharge] = useState(canCharge);
@@ -60,7 +60,11 @@ export function CancelForm(props: { slug: string; appointmentId: string; late: n
           )}
         </fieldset>
       ) : null}
-      <Input name="reason" placeholder="Reason (optional)" />
+      <Select name="reasonId" required defaultValue="" aria-label="Why is it being cancelled?">
+        <option value="" disabled>Why is it being cancelled?</option>
+        {props.reasons.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+      </Select>
+      <Input name="reason" placeholder="Note (optional)" />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <ConfirmSubmit title="Cancel this appointment?" body={`The client is notified if they have messages turned on. The time becomes available again.${l && charge && l.chargeCents > 0 ? ` The saved card is charged ${l.chargeLabel}.` : ""}${props.deposit?.canRefund ? (depositChoice === "refund_all" ? ` The ${props.deposit.totalLabel} deposit is refunded to the client.` : depositChoice === "fee_only" && props.deposit.feeOnly ? ` ${props.deposit.feeOnly.refundLabel} of the deposit is refunded; the salon keeps ${props.deposit.feeOnly.keepLabel}.` : ` The salon keeps the ${props.deposit.totalLabel} deposit.`) : ""}`} confirmLabel={l && charge && l.chargeCents > 0 ? `Cancel and charge ${l.chargeLabel}` : "Cancel appointment"} variant="danger" className="w-full">{pending ? "Cancelling…" : "Cancel appointment"}</ConfirmSubmit>
     </form>

@@ -771,6 +771,10 @@ export const appointments = pgTable(
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     cancellationReason: text("cancellation_reason"),
+    // The managed reason picked at cancel time (cancellation_reasons.id), who cancelled, and whether it fell inside the cancellation window.
+    cancellationReasonId: text("cancellation_reason_id"),
+    cancelledBy: text("cancelled_by"), // staff | client | system
+    cancelledLate: boolean("cancelled_late"),
     // Secret for the client's self-service page (cancel / reschedule). Unguessable.
     manageToken: text("manage_token")
       .notNull()
@@ -1357,6 +1361,7 @@ export const TENANT_TABLES = [
   "payments",
   "refunds",
   "refund_reasons",
+  "cancellation_reasons",
   "store_credit_ledger",
   "notifications",
   "waitlist",

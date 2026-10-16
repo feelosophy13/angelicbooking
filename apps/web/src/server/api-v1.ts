@@ -91,7 +91,7 @@ export const serializeAppointment = (a: typeof schema.appointments.$inferSelect,
   id: a.id, status: a.status, source: a.source, kind: a.kind, client_id: a.clientId, location_id: a.locationId, notes: a.notes,
   start_at: iso(items.length ? new Date(Math.min(...items.map((i) => i.startAt.getTime()))) : null),
   end_at: iso(items.length ? new Date(Math.max(...items.map((i) => i.endAt.getTime()))) : null),
-  deposit_cents: a.depositCents, cancelled_at: iso(a.cancelledAt), cancellation_reason: a.cancellationReason,
+  deposit_cents: a.depositCents, cancelled_at: iso(a.cancelledAt), cancellation_reason: a.cancellationReason, cancellation_reason_id: a.cancellationReasonId, cancelled_by: a.cancelledBy, cancelled_late: a.cancelledLate,
   items: items.sort((x, y) => x.sortOrder - y.sortOrder).map((i) => ({ id: i.id, service_id: i.serviceId, service_name: i.serviceName, staff_id: i.staffId, start_at: iso(i.startAt), end_at: iso(i.endAt), price_cents: i.priceCents, status: i.status })),
   created_at: iso(a.createdAt),
 });

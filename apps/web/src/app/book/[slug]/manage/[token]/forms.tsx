@@ -4,7 +4,7 @@ import { cancelBooking, rescheduleBooking, type PublicState } from "../../action
 import { Button, Notice } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
-export function CancelForm({ slug, token }: { slug: string; token: string }) {
+export function CancelForm({ slug, token, reasons }: { slug: string; token: string; reasons: { id: string; name: string }[] }) {
   const [state, action, pending] = useActionState<PublicState, FormData>(cancelBooking, undefined);
   const [confirm, setConfirm] = useState(false);
   if (state?.ok) return <Notice kind="success">Your appointment has been cancelled.</Notice>;
@@ -16,9 +16,19 @@ export function CancelForm({ slug, token }: { slug: string; token: string }) {
       {!confirm ? (
         <Button type="button" variant="secondary" onClick={() => setConfirm(true)}>Cancel this appointment</Button>
       ) : (
-        <div className="flex items-center gap-2">
-          <Button type="submit" variant="danger" disabled={pending}>{pending ? "…" : "Yes, cancel it"}</Button>
-          <Button type="button" variant="ghost" onClick={() => setConfirm(false)}>Keep it</Button>
+        <div className="space-y-2">
+          {reasons.length ? (
+            <fieldset className="space-y-1 text-sm text-stone-700">
+              <legend className="mb-1 text-xs text-stone-500">Why are you cancelling? (optional)</legend>
+              {reasons.map((r) => (
+                <label key={r.id} className="flex items-center gap-2"><input type="radio" name="reasonId" value={r.id} /> {r.name}</label>
+              ))}
+            </fieldset>
+          ) : null}
+          <div className="flex items-center gap-2">
+            <Button type="submit" variant="danger" disabled={pending}>{pending ? "…" : "Yes, cancel it"}</Button>
+            <Button type="button" variant="ghost" onClick={() => setConfirm(false)}>Keep it</Button>
+          </div>
         </div>
       )}
     </form>

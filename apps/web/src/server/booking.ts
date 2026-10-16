@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
-import { buildBookingSegments, instantToISODate, rowsForDate, weekdayOf } from "@angelic/core";
+import { buildBookingSegments, instantToISODate, isInsideCancelWindow, rowsForDate, weekdayOf } from "@angelic/core";
 import { timingFor, withinWorkingBlocks, workingBlocksFor } from "./availability";
 import { refreshHomeLocation, serviceOfferedAt } from "./locations";
 
@@ -406,14 +406,32 @@ export async function setAppointmentStatus(
   status: (typeof schema.appointmentStatus.enumValues)[number],
   actorUserId: string,
   reason?: string | null,
+  /** The managed reason picked from the list (cancellation_reasons.id). Who cancelled is "client" when the actor is the client, else staff. */
+  reasonId?: string | null,
 ) {
   await withTenant(businessId, async (tx) => {
+    let cancelledLate: boolean | null = null;
+    let cleanReasonId: string | null = null;
+    if (status === "cancelled") {
+      // Whether it fell inside the cancellation window is recorded now, so Reports stay right if the policy changes later.
+      const [first] = await tx.select({ startAt: schema.appointmentItems.startAt }).from(schema.appointmentItems).where(and(eq(schema.appointmentItems.appointmentId, appointmentId), sql`${schema.appointmentItems.status} <> 'cancelled'`)).orderBy(schema.appointmentItems.startAt).limit(1);
+      const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId), columns: { cancelWindowHours: true } });
+      cancelledLate = first && biz ? isInsideCancelWindow(first.startAt, biz.cancelWindowHours) : null;
+      if (reasonId) {
+        const ok = await tx.query.cancellationReasons.findFirst({ where: eq(schema.cancellationReasons.id, reasonId), columns: { id: true } });
+        if (!ok) throw new BookingError("Pick a reason from the list.");
+        cleanReasonId = ok.id;
+      }
+    }
     await tx
       .update(schema.appointments)
       .set({
         status,
         cancelledAt: status === "cancelled" ? new Date() : null,
         cancellationReason: status === "cancelled" ? (reason ?? null) : null,
+        cancellationReasonId: cleanReasonId,
+        cancelledBy: status === "cancelled" ? (actorUserId === "client" ? "client" : "staff") : null,
+        cancelledLate,
       })
       .where(eq(schema.appointments.id, appointmentId));
     await tx
@@ -424,7 +442,7 @@ export async function setAppointmentStatus(
       const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId), columns: { clientId: true } });
       await refreshHomeLocation(tx, appt?.clientId);
     }
-    await audit(tx, businessId, actorUserId, `appointment.${status}`, appointmentId, reason ? { reason } : undefined);
+    await audit(tx, businessId, actorUserId, `appointment.${status}`, appointmentId, reason || reasonId ? { reason, reasonId } : undefined);
   });
   if (status === "no_show") {
     const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
