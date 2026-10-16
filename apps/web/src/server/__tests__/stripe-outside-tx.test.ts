@@ -65,28 +65,37 @@ describe.skipIf(!up)("Stripe calls outside transactions", () => {
       await tx.update(schema.sales).set({ status: "paid", paidCents: 5000, closedAt: new Date() }).where(eq(schema.sales.id, saleId));
       return tx.insert(schema.payments).values({ businessId: kit.A, saleId, method: "card", status: "succeeded", amountCents: 5000, stripePaymentIntentId: `pi_${kit.A}`, stripeAccountId: "acct_test" }).returning();
     });
+    const refund = (cents: number) => refundPayment({ businessId: kit.A, accountId: "acct_test", paymentId: p!.id, amountCents: cents, reason: null, actorUserId: userId, taxRateBps: 0 });
+    // One refund: the payment row is free while Stripe answers. (With two at once, one may hold it while the other calls Stripe.)
     probe = free(kit.A, "payments", p!.id);
-    const refund = () => refundPayment({ businessId: kit.A, accountId: "acct_test", paymentId: p!.id, amountCents: 2000, reason: null, actorUserId: userId, taxRateBps: 0 });
-    await Promise.allSettled([refund(), refund()]);
-    expect(rowFreeDuringCall.every(Boolean)).toBe(true);
+    await refund(1000);
+    probe = null;
+    expect(rowFreeDuringCall).toEqual([true]);
+    // A double click: one refund.
+    await Promise.allSettled([refund(1000), refund(1000)]);
     const d = (await getSale(kit.A, saleId))!;
-    expect(d.refunds.map((r) => [r.amountCents, r.stripeRefundId])).toEqual([[2000, "re_1"]]);
+    expect(d.refunds.map((r) => [r.amountCents, r.stripeRefundId]).sort((x, y) => String(x[1]).localeCompare(String(y[1])))).toEqual([[1000, "re_1"], [1000, "re_2"]]);
     // The webhook for that same refund: already booked, nothing added.
-    expect(await recordStripeSideRefund({ businessId: kit.A, paymentIntentId: `pi_${kit.A}`, refundedTotalCents: 2000, refundId: "re_1", taxRateBps: 0 })).toBe(0);
-    expect((await getSale(kit.A, saleId))!.refunds.length).toBe(1);
+    expect(await recordStripeSideRefund({ businessId: kit.A, paymentIntentId: `pi_${kit.A}`, refundedTotalCents: 2000, refundId: "re_2", taxRateBps: 0 })).toBe(0);
+    expect((await getSale(kit.A, saleId))!.refunds.length).toBe(2);
   });
 
   it("refunds a deposit without holding the appointment row", async () => {
     rowFreeDuringCall = [];
     const clientId = (await withTenant(kit.A, (tx) => tx.insert(schema.clients).values({ businessId: kit.A, firstName: "Ana" }).returning()))[0]!.id;
-    const [appt] = await withTenant(kit.A, (tx) => tx.insert(schema.appointments).values({ businessId: kit.A, clientId, depositCents: 2500, depositStatus: "paid", depositPaymentIntentId: `pi_dep_${kit.A}`, depositStripeAccountId: "acct_test" }).returning());
-    probe = free(kit.A, "appointments", appt!.id);
-    await Promise.all([1, 2].map(() => refundDeposit({ businessId: kit.A, accountId: "acct_test", appointmentId: appt!.id, actorUserId: userId, reason: "test" })));
-    expect(rowFreeDuringCall.length).toBeGreaterThan(0);
-    expect(rowFreeDuringCall.every(Boolean)).toBe(true);
-    const after = await withTenant(kit.A, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appt!.id) }));
+    const deposit = async (n: number) => (await withTenant(kit.A, (tx) => tx.insert(schema.appointments).values({ businessId: kit.A, clientId, depositCents: 2500, depositStatus: "paid", depositPaymentIntentId: `pi_dep${n}_${kit.A}`, depositStripeAccountId: "acct_test" }).returning()))[0]!;
+    const refund = (id: string) => refundDeposit({ businessId: kit.A, accountId: "acct_test", appointmentId: id, actorUserId: userId, reason: "test" });
+    const one = await deposit(1);
+    probe = free(kit.A, "appointments", one.id);
+    await refund(one.id);
+    probe = null;
+    expect(rowFreeDuringCall).toEqual([true]);
+    // A double click: refunded once, logged once.
+    const two = await deposit(2);
+    await Promise.all([refund(two.id), refund(two.id)]);
+    const after = await withTenant(kit.A, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, two.id) }));
     expect(after!.depositStatus).toBe("refunded");
-    const logged = await withTenant(kit.A, (tx) => tx.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, appt!.id)));
+    const logged = await withTenant(kit.A, (tx) => tx.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, two.id)));
     expect(logged.filter((l) => l.action === "deposit.refund").length).toBe(1);
   });
 });

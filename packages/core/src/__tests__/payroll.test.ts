@@ -212,3 +212,45 @@ describe("overtime across a pay-period boundary", () => {
     expect(computeHours(entries.slice(4), 1, true).overtimeMinutes).toBe(0);
   });
 });
+
+describe("daily overtime (California) and commission in the overtime rate", () => {
+  // 2026-10-05 is a Monday; weekStart 1 = Monday.
+  const day = (d: number, hours: number) => ({ staffId: "s", date: `2026-10-${String(d).padStart(2, "0")}`, minutes: hours * 60 });
+
+  it("pays over 8 h a day as overtime and over 12 h as double time", () => {
+    const h = computeHours([day(5, 13), day(6, 6)], 1, true, 40 * 60, undefined, "daily");
+    expect([h.regularMinutes / 60, h.overtimeMinutes / 60, h.doubleMinutes / 60]).toEqual([14, 4, 1]);
+  });
+
+  it("counts only regular hours toward the 40 h week, and the seventh day in a row is all overtime or double", () => {
+    // Six 9-hour days: 8 regular + 1 overtime each → 48 regular hours, 8 of them past 40 → weekly overtime.
+    const six = [5, 6, 7, 8, 9, 10].map((d) => day(d, 9));
+    const h = computeHours([...six, day(11, 10)], 1, true, 40 * 60, undefined, "daily");
+    // Regular 40; overtime 6 (daily) + 8 (weekly) + 8 (7th day, first 8 h); double 2 (7th day past 8 h).
+    expect([h.regularMinutes / 60, h.overtimeMinutes / 60, h.doubleMinutes / 60]).toEqual([40, 22, 2]);
+  });
+
+  it("leaves the weekly rule as it was: 1.5× past 40 h, no daily line", () => {
+    const h = computeHours([day(5, 13), day(6, 6)], 1, true);
+    expect([h.regularMinutes / 60, h.overtimeMinutes / 60, h.doubleMinutes]).toEqual([19, 0, 0]);
+  });
+
+  it("adds half the commission per hour to each overtime hour (FLSA regular rate)", () => {
+    // 50 h at $20 with $1,000 commission on $2,500 of services: commission per hour $20, so 10 overtime hours add 10 × $10 = $100.
+    const hours = [5, 6, 7, 8, 9].map((d) => day(d, 10));
+    const emp = base({ payType: "hourly", hourlyRateCents: 2000, mainCommissionBps: 4000, overtimeOverride: null });
+    const r = computePayroll({ employees: [emp], lines: [line({ amtPaidCents: 250_000 })], hours, adjustments: [], overtime: true });
+    const e = r.employees[0]!;
+    expect(e.mainCommissionCents).toBe(100_000);
+    expect(e.overtimeOnCommissionCents).toBe(10_000);
+    // 40 × $20 + 10 × $30 + $100
+    expect(e.wageCents).toBe(80_000 + 30_000 + 10_000);
+  });
+
+  it("adds nothing when overtime is off", () => {
+    const hours = [5, 6, 7, 8, 9].map((d) => day(d, 10));
+    const emp = base({ payType: "hourly", hourlyRateCents: 2000, mainCommissionBps: 4000 });
+    const e = computePayroll({ employees: [emp], lines: [line({ amtPaidCents: 250_000 })], hours, adjustments: [], overtime: false }).employees[0]!;
+    expect([e.overtimeOnCommissionCents, e.wageCents]).toEqual([0, 100_000]);
+  });
+});

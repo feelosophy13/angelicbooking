@@ -314,6 +314,8 @@ export const saleLines = pgTable(
     preMemberUnitCents: integer("pre_member_unit_cents"),
     // A tip line only: how it was handed over, "cash" or "card". Null = same as the payment (older tips, or the desk did not say); payroll splits those by the payment mix.
     tipMethod: text("tip_method"),
+    // When the line was added (a tip added after the sale closed is paid in the period it was added).
+    createdAt: createdAt(),
   },
   (t) => [index("sale_lines_sale_idx").on(t.saleId), index("sale_lines_business_staff_idx").on(t.businessId, t.staffId)],
 );

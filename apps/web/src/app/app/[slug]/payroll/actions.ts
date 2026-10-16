@@ -52,3 +52,16 @@ export async function finalize(formData: FormData) {
   await setFlash("Pay period finalized");
   revalidatePath(`/app/${d.slug}/payroll`);
 }
+
+/** How overtime is counted when a run has it on: federal weekly, or California daily. A business-wide setting. */
+export async function setOvertimeRule(formData: FormData) {
+  const d = z.object({ slug: z.string(), rule: z.enum(["weekly", "daily"]), back: z.string().startsWith("/app/") }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "payroll.view");
+  await withTenant(ctx.business.id, async (tx) => {
+    await tx.update(schema.businesses).set({ overtimeRule: d.rule }).where(eq(schema.businesses.id, ctx.business.id));
+    await tx.insert(schema.auditLog).values({ businessId: ctx.business.id, actorUserId: ctx.user.id, action: "payroll.overtime_rule", entity: "business", entityId: ctx.business.id, diff: JSON.stringify({ from: ctx.business.overtimeRule, to: d.rule }) });
+  });
+  await setFlash(d.rule === "daily" ? "Overtime counted daily (California)" : "Overtime counted weekly");
+  revalidatePath(`/app/${d.slug}/payroll`);
+  redirect(d.back);
+}

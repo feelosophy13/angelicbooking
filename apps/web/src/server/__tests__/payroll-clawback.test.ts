@@ -85,4 +85,13 @@ describe.skipIf(!up)("payroll: refunds by date, finalized periods locked", () =>
     await expect(recordPayChange({ businessId: kit.A, timezone: business.timezone, staffId, effectiveFrom: shiftISODate(end, -2), rates, note: null, actorUserId: userId })).rejects.toThrow(/finalized through/);
     await expect(recordPayChange({ businessId: kit.A, timezone: business.timezone, staffId, effectiveFrom: shiftISODate(end, 1), rates, note: null, actorUserId: userId })).resolves.toBeUndefined();
   });
+  it("pays a tip added to an old ticket in the period it was added, not the closed one", async () => {
+    const { saleId, number } = await paidSale();
+    // A $15 cash tip added 20 days after the visit (as addTipAfterPayment would, dated then).
+    const later = shiftISODate(today, 20);
+    await withTenant(kit.A, (tx) => tx.insert(schema.saleLines).values({ businessId: kit.A, saleId, kind: "tip", tipMethod: "cash", staffId, name: "Tip", quantity: 1, unitCents: 1500, amountCents: 1500, createdAt: new Date(Date.now() + 20 * 86_400_000) }));
+    expect(await mine(today, today, number)).toEqual([[today, 10_000]]);
+    const next = (await buildPayrollLines(business, { start: shiftISODate(today, 14), end: shiftISODate(today, 27) })).filter((l) => l.saleNumber === number);
+    expect(next.map((l) => [l.date, l.name, l.cashTipCents])).toEqual([[later, "Tip (added later)", 1500]]);
+  });
 });

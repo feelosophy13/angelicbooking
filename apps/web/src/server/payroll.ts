@@ -59,7 +59,17 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       .map((r) => ({ saleId: r.saleId!, cents: r.cents, date: localDate(r.at, tz) }))
       .filter((r) => r.cents > 0 && inPeriod(r.date));
     const itemEvents = refundedItems.map((r) => ({ saleId: r.saleId, lineId: r.lineId, cents: r.cents, date: localDate(r.at, tz) })).filter((r) => inPeriod(r.date));
-    const refundSaleIds = [...new Set([...refundEvents, ...itemEvents].map((r) => r.saleId))];
+    // Tips added to a ticket after the day it closed are paid in the period they were added (not the closed one, which may be paid already).
+    const lateTipSales = (
+      await tx
+        .select({ saleId: schema.saleLines.saleId, at: schema.saleLines.createdAt, closedAt: schema.sales.closedAt })
+        .from(schema.saleLines)
+        .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
+        .where(and(eq(schema.saleLines.kind, "tip"), gte(schema.saleLines.createdAt, refundFrom), lte(schema.saleLines.createdAt, refundTo)))
+    )
+      .filter((t) => t.closedAt && localDate(t.at, tz) > localDate(t.closedAt, tz) && inPeriod(localDate(t.at, tz)))
+      .map((t) => t.saleId);
+    const refundSaleIds = [...new Set([...refundEvents, ...itemEvents].map((r) => r.saleId).concat(lateTipSales))];
     const sales = await tx
       .select()
       .from(schema.sales)
@@ -93,7 +103,10 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
     for (const sale of sales) {
       const sl = lines.filter((l) => l.saleId === sale.id);
       const goods = sl.filter((l) => l.kind !== "tip");
-      const tips = sl.filter((l) => l.kind === "tip");
+      const checkoutDay = localDate(sale.closedAt ?? sale.createdAt, tz);
+      const isLate = (t: (typeof sl)[number]) => localDate(t.createdAt, tz) > checkoutDay;
+      const tips = sl.filter((l) => l.kind === "tip" && !isLate(l));
+      const lateTips = sl.filter((l) => l.kind === "tip" && isLate(l));
       const goodsTotal = goods.reduce((s, l) => s + l.amountCents, 0);
       const taxableTotal = goods.filter((l) => l.taxable).reduce((s, l) => s + l.amountCents, 0);
       const sp = pays.filter((p) => p.saleId === sale.id);
@@ -163,6 +176,14 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         base.push({ staffId, kind: "service", refunded: false, date: checkoutDate, customer, name: "Tip", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: split.cashCents, cardTipCents: split.cardCents, discountCents: 0, amtPaidCents: split.totalCents, locationId: sale.locationId });
       }
       out.push(...base);
+      // Tips added on a later day: a row of their own, on the day they were added.
+      const late: PayrollLine[] = [];
+      for (const t of lateTips) {
+        if (!t.staffId) continue;
+        const split = splitTips([{ amountCents: t.amountCents, method: t.tipMethod === "cash" || t.tipMethod === "card" ? t.tipMethod : null }], tipNoFeeShare);
+        late.push({ staffId: t.staffId, kind: "service", refunded: false, date: localDate(t.createdAt, tz), customer, name: "Tip (added later)", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: split.cashCents, cardTipCents: split.cardCents, discountCents: 0, amtPaidCents: split.totalCents, locationId: sale.locationId });
+      }
+      out.push(...late);
       // An itemized refund takes back exactly the line refunded, from whoever was credited on it, on the day it was refunded.
       for (const r of itemEvents.filter((e) => e.saleId === sale.id)) {
         const line = sl.find((x) => x.id === r.lineId);
@@ -183,7 +204,7 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         for (const r of refundEvents.filter((e) => e.saleId === sale.id)) {
           const f = Math.min(1, r.cents / paidTotal);
           const back = (c: number) => -Math.round(c * f);
-          for (const b of base) {
+          for (const b of [...base, ...late]) {
             out.push({ ...b, date: r.date, name: `Refund · ${b.name}`, cashCents: back(b.cashCents), cardCents: back(b.cardCents), cashTipCents: back(b.cashTipCents), cardTipCents: back(b.cardTipCents), discountCents: 0, amtPaidCents: back(b.amtPaidCents) });
           }
         }
@@ -260,7 +281,7 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
 /** `locationId` limits sales (commission, tips) to one site; hours and adjustments are per person and stay whole. */
 export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean, locationId?: string | null, opts: { split?: boolean } = {}): Promise<PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[]; rateChanges: { staffId: string; name: string; effectiveFrom: string }[] }> {
   const inputs = await getPayrollInputs(business, period, locationId, opts);
-  const result = computePayroll({ employees: inputs.employees, lines: inputs.lines, hours: inputs.hours, adjustments: inputs.adjustments, overtime, weekStart: 1, countFrom: period.start });
+  const result = computePayroll({ employees: inputs.employees, lines: inputs.lines, hours: inputs.hours, adjustments: inputs.adjustments, overtime, overtimeRule: business.overtimeRule, weekStart: 1, countFrom: period.start });
   return { ...result, adjustmentRows: inputs.adjustmentRows, rateChanges: inputs.rateChanges };
 }
 

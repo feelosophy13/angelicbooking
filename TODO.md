@@ -136,8 +136,16 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `reports.view`). Tests: `server/__tests__/refund-items.test.ts`; checked in the browser on demo sale #1518.
 - [ ] Still open from line-item refunds: returning a product to the shelf is still the separate "put back on the shelf" box; reports don't yet
       break refunds down by item. (Memberships: done 2026-10-16, see "Delivery" below.)
-- [ ] Still open from payroll: a tip added to an old ticket after finalizing shows as drift rather than landing in the current period; overtime
-      (workweek alignment, commission in the regular rate, daily OT) and the 14-hour auto-close are unchanged; no "my earnings" view or 1099 YTD.
+- [x] Payroll overtime, 2026-10-16 (migration 0107): commission counts toward the overtime regular rate (FLSA: the period's commission is
+      spread evenly over the hours worked, and each overtime hour adds half of that per-hour amount, each double-time hour all of it; shown
+      as "OT on commission" and on the Excel sheet). Payroll → Options → "Count overtime" sets Weekly (1.5× over 40 h) or Daily (California:
+      1.5× over 8 h a day, 2× over 12 h, the 7th day in a row 1.5× then 2×, and 40 h a week counted on the remaining regular hours). A tip
+      added to an old ticket on a later day is paid in the period it was added ("Tip (added later)"), so a finalized period no longer
+      drifts; sale lines now record when they were added (existing lines: when their sale closed). Tests: core `payroll.test.ts`,
+      `payroll-clawback.test.ts`.
+- [ ] Still open from payroll: the 14-hour auto-close is unchanged; no "my earnings" view or 1099 YTD; adjustments are not counted in the
+      overtime rate (a bonus entered as an adjustment would be); California's meal/rest-break premiums and split-shift pay aren't computed;
+      overtime is still ticked per run rather than defaulting on for hourly staff; salary is flat per run.
 - [x] Scheduled automations, 2026-10-16 (migration 0099): "We miss you" (no visit) only reaches clients whose last visit was N to N+7 days
       ago, so turning it on or importing years of history never messages every lapsed client at once; its page shows how many it would reach.
       Birthday and no-visit workflows are scanned once a day (`workflows.last_scan_on`) with one query that skips clients already messaged,
@@ -201,8 +209,6 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       on Time clock; time entries can be edited (hours, note) and every add/edit/remove is audited; web clock-ins record the person's site;
       kiosk PINs are keyed with the server secret (old ones upgrade on use) and wrong PINs are limited per kiosk; the dev "View as" switch
       only works for owners. Test: core `payroll.test.ts` (split week).
-- [ ] Still open in payroll: overtime premium doesn't include commission in the regular rate (FLSA); no daily overtime (CA); overtime is
-      still ticked per run rather than defaulting on for hourly staff; salary is flat per run.
 - [x] Settings and imports, 2026-10-16: a location with sales, visits or hours can't be deleted (its history stays in reports; refunds
       already follow the payment's own Stripe account); `.xls` uploads and unreadable spreadsheets get a clear "save as .xlsx or CSV"
       message instead of an error page; imported appointments get a location and future ones get the salon's reminders. Test:

@@ -88,6 +88,8 @@ export const businesses = pgTable("businesses", {
     lateCancelDeposit: text("late_cancel_deposit").notNull().default("toward"), // toward | extra
   // When a deposit comes back (cancellation inside policy, staff refund): to the card, or as store credit.
   depositRefundAs: text("deposit_refund_as").notNull().default("original"), // original | store_credit
+  // Payroll overtime when a run has it on: "weekly" (over 40 h a workweek) or "daily" (California: over 8 h a day, double over 12, seventh day).
+  overtimeRule: text("overtime_rule").$type<"weekly" | "daily">().notNull().default("weekly"),
   requireCardOnline: boolean("require_card_online").notNull().default(false),
   noShowFeeCents: integer("no_show_fee_cents").notNull().default(0),
   bookingPolicy: text("booking_policy"),

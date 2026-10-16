@@ -73,6 +73,8 @@ export interface PayrollInput {
   adjustments: Adjustment[];
   /** Run-level overtime (1.5× over 40h per workweek). Employees can override. */
   overtime: boolean;
+  /** How overtime is counted when on. Default "weekly". */
+  overtimeRule?: OvertimeRule;
   /** 0 = Sunday … 6 = Saturday. Default Monday. */
   weekStart?: number;
   /** First day of the pay period: hours before it (the start of its first workweek) count toward overtime but aren't paid. */
@@ -84,6 +86,8 @@ export interface WeekHours {
   minutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  /** Double time (the "daily" rule only). */
+  doubleMinutes: number;
 }
 
 export interface EmployeePayroll {
@@ -96,7 +100,13 @@ export interface EmployeePayroll {
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  doubleMinutes: number;
   overtimeApplied: boolean;
+  /**
+   * Overtime on commission (FLSA regular rate): commission earned in the period is spread evenly over the hours worked, and each overtime
+   * hour adds half of that per-hour amount (each double-time hour, all of it). Included in wageCents.
+   */
+  overtimeOnCommissionCents: number;
   wageCents: number; // hourly or salary pay before adjustments
   mainRevenueCents: number; // service money on main rows (amt paid − tips)
   mainCommissionCents: number;
@@ -204,43 +214,74 @@ export function weekStartOf(date: string, weekStart: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+/** How overtime is counted: "weekly" (federal: over 40 h a workweek) or "daily" (California, below). */
+export type OvertimeRule = "weekly" | "daily";
+
 /**
  * Hours by day and by workweek, with overtime past `thresholdMinutes` a week. Overtime is counted day by day in order, so the hours that
  * cross the line are the overtime ones. With `countFrom`, earlier days (the start of a workweek that began in the previous pay period)
  * count toward the weekly line but aren't paid again here.
+ *
+ * The "daily" rule (California): over 8 h in a day is overtime and over 12 h is double time; on the seventh day in a row of a workweek the
+ * first 8 h are overtime and the rest double time; and only the remaining regular hours count toward the 40 h a week.
  */
-export function computeHours(entries: HoursEntry[], weekStart: number, applyOvertime: boolean, thresholdMinutes = 40 * 60, countFrom?: string): {
+export function computeHours(entries: HoursEntry[], weekStart: number, applyOvertime: boolean, thresholdMinutes = 40 * 60, countFrom?: string, rule: OvertimeRule = "weekly"): {
   byDate: { date: string; minutes: number }[];
   weeks: WeekHours[];
   totalMinutes: number;
   regularMinutes: number;
   overtimeMinutes: number;
+  doubleMinutes: number;
 } {
   const byDateMap = new Map<string, number>();
   for (const e of entries) byDateMap.set(e.date, (byDateMap.get(e.date) ?? 0) + Math.max(0, e.minutes));
-  const days = [...byDateMap.entries()].sort(([a], [b]) => a.localeCompare(b));
+  const days = [...byDateMap.entries()].filter(([, m]) => m > 0).sort(([a], [b]) => a.localeCompare(b));
   const paid = (d: string) => !countFrom || d >= countFrom;
-  const weekMap = new Map<string, { minutes: number; regular: number; overtime: number; running: number }>();
+  const weekMap = new Map<string, { minutes: number; regular: number; overtime: number; double: number; running: number; daysWorked: number }>();
   for (const [date, minutes] of days) {
     const w = weekStartOf(date, weekStart);
-    const wk = weekMap.get(w) ?? { minutes: 0, regular: 0, overtime: 0, running: 0 };
-    const regular = applyOvertime ? Math.min(minutes, Math.max(0, thresholdMinutes - wk.running)) : minutes;
-    wk.running += minutes;
+    const wk = weekMap.get(w) ?? { minutes: 0, regular: 0, overtime: 0, double: 0, running: 0, daysWorked: 0 };
+    wk.daysWorked++;
+    let regular = minutes;
+    let overtime = 0;
+    let double = 0;
+    if (applyOvertime && rule === "daily") {
+      if (wk.daysWorked === 7) {
+        regular = 0;
+        overtime = Math.min(minutes, 8 * 60);
+        double = minutes - overtime;
+      } else {
+        regular = Math.min(minutes, 8 * 60);
+        double = Math.max(0, minutes - 12 * 60);
+        overtime = minutes - regular - double;
+      }
+      // The weekly line counts only regular hours (daily overtime isn't counted twice).
+      const weekly = Math.max(0, regular - Math.max(0, thresholdMinutes - wk.running));
+      wk.running += regular;
+      regular -= weekly;
+      overtime += weekly;
+    } else if (applyOvertime) {
+      regular = Math.min(minutes, Math.max(0, thresholdMinutes - wk.running));
+      overtime = minutes - regular;
+      wk.running += minutes;
+    }
     if (paid(date)) {
       wk.minutes += minutes;
       wk.regular += regular;
-      wk.overtime += minutes - regular;
+      wk.overtime += overtime;
+      wk.double += double;
     }
     weekMap.set(w, wk);
   }
   const weeks: WeekHours[] = [...weekMap.entries()]
     .filter(([, w]) => w.minutes > 0)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([ws, w]) => ({ weekStart: ws, minutes: w.minutes, regularMinutes: w.regular, overtimeMinutes: w.overtime }));
+    .map(([ws, w]) => ({ weekStart: ws, minutes: w.minutes, regularMinutes: w.regular, overtimeMinutes: w.overtime, doubleMinutes: w.double }));
   const byDate = days.filter(([d]) => paid(d)).map(([date, minutes]) => ({ date, minutes }));
   const totalMinutes = weeks.reduce((s, w) => s + w.minutes, 0);
   const overtimeMinutes = weeks.reduce((s, w) => s + w.overtimeMinutes, 0);
-  return { byDate, weeks, totalMinutes, regularMinutes: totalMinutes - overtimeMinutes, overtimeMinutes };
+  const doubleMinutes = weeks.reduce((s, w) => s + w.doubleMinutes, 0);
+  return { byDate, weeks, totalMinutes, regularMinutes: totalMinutes - overtimeMinutes - doubleMinutes, overtimeMinutes, doubleMinutes };
 }
 
 export function computePayroll(input: PayrollInput): PayrollResult {
@@ -270,9 +311,9 @@ export function computePayroll(input: PayrollInput): PayrollResult {
     // overtime only ever applies to hourly pay. Salary is a flat amount per run.
     const applyOt = emp.overtimeOverride ?? input.overtime;
     const paysHourly = emp.hourlyRateCents > 0 && (emp.payType === "hourly" || emp.payType === "commission");
-    const hrs = computeHours(input.hours.filter((h) => h.staffId === emp.staffId), weekStart, applyOt && paysHourly, 40 * 60, input.countFrom);
+    const hrs = computeHours(input.hours.filter((h) => h.staffId === emp.staffId), weekStart, applyOt && paysHourly, 40 * 60, input.countFrom, input.overtimeRule ?? "weekly");
     let wageCents = 0;
-    if (paysHourly) wageCents += roundCents((hrs.regularMinutes / 60) * emp.hourlyRateCents + (hrs.overtimeMinutes / 60) * emp.hourlyRateCents * 1.5);
+    if (paysHourly) wageCents += roundCents((hrs.regularMinutes / 60) * emp.hourlyRateCents + (hrs.overtimeMinutes / 60) * emp.hourlyRateCents * 1.5 + (hrs.doubleMinutes / 60) * emp.hourlyRateCents * 2);
     if (emp.payType === "salary") wageCents += emp.salaryPerPeriodCents;
 
     const adjustments = input.adjustments.filter((a) => a.staffId === emp.staffId);
@@ -281,6 +322,13 @@ export function computePayroll(input: PayrollInput): PayrollResult {
     // Service commission for anyone with a rate: the whole pay for commission providers,
     // a bonus on top of wages for employees.
     const mainCommissionCents = bps(mainRevenueCents, emp.mainCommissionBps);
+    // Commission is part of the regular rate for overtime (FLSA): spread over all hours worked, overtime adds half of it per hour on top.
+    const commissionCents = mainCommissionCents + productCommissionCents;
+    const overtimeOnCommissionCents =
+      applyOt && paysHourly && commissionCents > 0 && hrs.totalMinutes > 0 && hrs.overtimeMinutes + hrs.doubleMinutes > 0
+        ? roundCents((commissionCents / hrs.totalMinutes) * (0.5 * hrs.overtimeMinutes + hrs.doubleMinutes))
+        : 0;
+    wageCents += overtimeOnCommissionCents;
     let taxCents = 0;
     let totalCents: number;
     if (emp.payType === "commission") {
@@ -309,7 +357,9 @@ export function computePayroll(input: PayrollInput): PayrollResult {
       totalMinutes: hrs.totalMinutes,
       regularMinutes: hrs.regularMinutes,
       overtimeMinutes: hrs.overtimeMinutes,
+      doubleMinutes: hrs.doubleMinutes,
       overtimeApplied: applyOt && paysHourly,
+      overtimeOnCommissionCents,
       wageCents,
       mainRevenueCents,
       mainCommissionCents,

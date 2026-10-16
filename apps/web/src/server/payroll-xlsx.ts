@@ -86,9 +86,12 @@ function simpleSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, period: string, 
   if (emp.payType === "hourly") {
     row("Rate", `$${(emp.hourlyRateCents / 100).toFixed(2)}/hr`, null);
     row("Hours worked", h(e.totalMinutes), null);
-    if (e.overtimeMinutes) {
-      row("Regular hours", h(e.regularMinutes), $(Math.round((e.regularMinutes / 60) * emp.hourlyRateCents)));
-      row("Overtime hours (1.5×)", h(e.overtimeMinutes), $(e.wageCents - Math.round((e.regularMinutes / 60) * emp.hourlyRateCents)));
+    if (e.overtimeMinutes || e.doubleMinutes) {
+      const at = (minutes: number, x: number) => Math.round((minutes / 60) * emp.hourlyRateCents * x);
+      row("Regular hours", h(e.regularMinutes), $(at(e.regularMinutes, 1)));
+      if (e.overtimeMinutes) row("Overtime hours (1.5×)", h(e.overtimeMinutes), $(at(e.overtimeMinutes, 1.5)));
+      if (e.doubleMinutes) row("Double-time hours (2×)", h(e.doubleMinutes), $(at(e.doubleMinutes, 2)));
+      if (e.overtimeOnCommissionCents) row("Overtime on commission", "commission in the regular rate", $(e.overtimeOnCommissionCents));
     }
     row("Pay", "", $(e.wageCents), { bold: true });
   } else {

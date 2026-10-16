@@ -10,7 +10,7 @@ import { requireAction } from "@/lib/tenant";
 import { defaultPeriod, driftFromSnapshot, getFinalizedRun, listPayrollRuns, runPayroll } from "@/server/payroll";
 import { formatDateLong, formatMoney } from "@/lib/utils";
 import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice, Checkbox } from "@/components/ui";
-import { deleteAdjustment, finalize } from "./actions";
+import { deleteAdjustment, finalize, setOvertimeRule } from "./actions";
 import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
 import { and, gte, ilike, lte } from "drizzle-orm";
@@ -26,11 +26,15 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   const start = isDate(sp.start) ? sp.start! : def.start;
   const end = isDate(sp.end) ? sp.end! : def.end;
   const overtime = sp.overtime === "1";
+  const daily = business.overtimeRule === "daily";
   const period = { start, end };
   const locations = await listLocations(business.id);
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
   const [result, finalized, runs] = await Promise.all([runPayroll(business, period, overtime, locationFilter), getFinalizedRun(business.id, period), listPayrollRuns(business.id)]);
   const money = (c: number) => formatMoney(c, business.currency);
+  // "6.00 OT, 1.00 double, incl. $40.00 OT on commission"
+  const otText = (e: (typeof result.employees)[number]) =>
+    [`${(e.overtimeMinutes / 60).toFixed(2)} OT`, e.doubleMinutes ? `${(e.doubleMinutes / 60).toFixed(2)} double` : null, e.overtimeOnCommissionCents ? `incl. ${money(e.overtimeOnCommissionCents)} OT on commission` : null].filter(Boolean).join(", ");
   const active = result.employees.filter((e) => e.hasActivity);
   const unconfigured = result.employees.filter((e) => e.hasActivity && e.employee.payType === "commission" && e.employee.mainCommissionBps === 0 && e.mainRevenueCents > 0);
   const qs = `start=${start}&end=${end}&overtime=${overtime ? 1 : 0}${locationFilter ? `&location=${locationFilter}` : ""}`;
@@ -58,9 +62,24 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <details className="relative">
             <summary className="cursor-pointer select-none rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden">Options{overtime ? " · overtime on" : ""}</summary>
             <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-stone-200 bg-white p-3 text-sm shadow-lg">
-              <Checkbox name="overtime" value="1" defaultChecked={overtime} label="Overtime at 1.5× over 40 h/week" hint={'for hourly staff set to "follow the payroll run"'} />
+              <Checkbox name="overtime" value="1" defaultChecked={overtime} label={daily ? "Overtime, California rules" : "Overtime at 1.5× over 40 h/week"} hint={'for hourly staff set to "follow the payroll run"'} />
+              <div className="mt-3 border-t border-stone-100 pt-3">
+                <label className="mb-1 block text-xs font-medium text-stone-600" htmlFor="ot-rule-select">Count overtime</label>
+                <div className="flex gap-2">
+                  <select id="ot-rule-select" name="rule" form="ot-rule" defaultValue={business.overtimeRule} className="h-8 min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-2 text-sm">
+                    <option value="weekly">Weekly: 1.5× over 40 h</option>
+                    <option value="daily">Daily (California)</option>
+                  </select>
+                  <Button type="submit" form="ot-rule" variant="secondary" size="sm">Save</Button>
+                </div>
+                <p className="mt-1 text-xs text-stone-500">{daily ? "1.5× over 8 h a day or 40 h a week, 2× over 12 h, and the 7th day in a row." : "Daily rules (California) pay 1.5× over 8 h a day and 2× over 12 h."} Commission counts toward the overtime rate.</p>
+              </div>
             </div>
           </details>
+        </form>
+        <form id="ot-rule" action={setOvertimeRule} className="hidden">
+          <input type="hidden" name="slug" value={slug} />
+          <input type="hidden" name="back" value={`/app/${slug}/payroll?${qs}`} />
         </form>
         <LocationFilter locations={locations} current={locationFilter} query={`start=${start}&end=${end}&overtime=${overtime ? 1 : 0}`} allLabel="All" />
       </PageHeader>
@@ -155,7 +174,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
                     <dt className="text-stone-500">Main service revenue</dt><dd className="text-right sm:col-span-2">{money(e.mainRevenueCents)}</dd>
                     <dt className="text-stone-500">Main Services ({(emp.mainCommissionBps / 100).toFixed(0)}%)</dt><dd className="text-right sm:col-span-2">{money(e.mainCommissionCents)}</dd>
-                    {e.wageCents ? <><dt className="text-stone-500">Hourly base ({(e.totalMinutes / 60).toFixed(2)} h × ${(emp.hourlyRateCents / 100).toFixed(2)}{e.overtimeApplied ? `, ${(e.overtimeMinutes / 60).toFixed(2)} OT` : ""})</dt><dd className="text-right sm:col-span-2">{money(e.wageCents)}</dd></> : null}
+                    {e.wageCents ? <><dt className="text-stone-500">Hourly base ({(e.totalMinutes / 60).toFixed(2)} h × ${(emp.hourlyRateCents / 100).toFixed(2)}{e.overtimeApplied ? `, ${otText(e)}` : ""})</dt><dd className="text-right sm:col-span-2">{money(e.wageCents)}</dd></> : null}
                     <dt className="text-stone-500">Product/Package Sale ({(emp.productCommissionBps / 100).toFixed(0)}%) on {money(e.productSalesCents)}</dt><dd className="text-right sm:col-span-2">{money(e.productCommissionCents)}</dd>
                     <dt className="text-stone-500">Cash tips</dt><dd className="text-right sm:col-span-2">{money(e.cashTipsCents)}</dd>
                     <dt className="text-stone-500">Card tips</dt><dd className="text-right sm:col-span-2">{money(e.cardTipsCents)}</dd>
@@ -165,7 +184,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                   </dl>
                 ) : (
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
-                    {emp.payType === "hourly" ? <><dt className="text-stone-500">Hours{e.overtimeApplied ? ` (${(e.overtimeMinutes / 60).toFixed(2)} OT)` : ""}</dt><dd className="text-right sm:col-span-2">{(e.totalMinutes / 60).toFixed(2)}</dd></> : null}
+                    {emp.payType === "hourly" ? <><dt className="text-stone-500">Hours{e.overtimeApplied ? ` (${otText(e)})` : ""}</dt><dd className="text-right sm:col-span-2">{(e.totalMinutes / 60).toFixed(2)}</dd></> : null}
                     <dt className="text-stone-500">{emp.payType === "hourly" ? "Pay" : "Salary"}</dt><dd className="text-right sm:col-span-2">{money(e.wageCents)}</dd>
                     {emp.mainCommissionBps > 0 ? <><dt className="text-stone-500">Service commission ({(emp.mainCommissionBps / 100).toFixed(emp.mainCommissionBps % 100 ? 1 : 0)}%) on {money(e.mainRevenueCents)}</dt><dd className="text-right sm:col-span-2">{money(e.mainCommissionCents)}</dd></> : null}
                     {e.cashTipsCents + e.cardTipsCents ? <><dt className="text-stone-500">Tips (cash {money(e.cashTipsCents)} / card {money(e.cardTipsCents)}, fee −{money(e.ccTipFeeCents)})</dt><dd className="text-right sm:col-span-2">{money(e.cashTipsCents + e.cardTipsCents - e.ccTipFeeCents)}</dd></> : null}
