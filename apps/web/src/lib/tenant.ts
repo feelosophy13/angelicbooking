@@ -29,7 +29,16 @@ export type TenantContext = {
  * a member. Non-members get a 404 so business existence is not leaked.
  * The tenant id is ONLY ever derived here, server-side.
  */
-export const requireBusiness = cache(async (slug: string): Promise<TenantContext> => {
+export const requireBusiness = (slug: string): Promise<TenantContext> => resolveBusiness(slug, false);
+
+/** For the billing actions only: the business even while the trial is over, so the owner can subscribe. */
+export async function requireBillingAction(slug: string): Promise<TenantContext> {
+  const ctx = await resolveBusiness(slug, true);
+  if (!can(ctx.permissions, "business.manage")) throw new PermissionError();
+  return ctx;
+}
+
+const resolveBusiness = cache(async (slug: string, allowLocked: boolean): Promise<TenantContext> => {
   const session = await requireSession();
   const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, slug) });
   if (!business) notFound();
@@ -41,9 +50,13 @@ export const requireBusiness = cache(async (slug: string): Promise<TenantContext
   if (business.suspendedAt) redirect("/suspended");
   // Trial over and no subscription: the staff app is closed except the billing page and the locked page, where they can subscribe.
   const access = await businessAccess(business);
-  if (access.state === "expired") {
-    const path = (await headers()).get("x-pathname") ?? "";
-    const open = [`/app/${slug}/settings/billing`, `/app/${slug}/locked`].some((p) => path === p || path.startsWith(`${p}/`));
+  if (access.state === "expired" && !allowLocked) {
+    const h = await headers();
+    const path = h.get("x-pathname") ?? "";
+    // A server action is posted to whatever page it was called from, so the page path can't vouch for it: while locked, actions run only
+    // through requireBillingAction. Pages: only billing and the locked page render.
+    const isAction = h.has("next-action");
+    const open = !isAction && [`/app/${slug}/settings/billing`, `/app/${slug}/locked`].some((p) => path === p || path.startsWith(`${p}/`));
     if (!open) redirect(`/app/${slug}/locked`);
   }
   const myStaff = await withTenant(business.id, (tx) => tx.query.staff.findFirst({ where: eq(schema.staff.userId, session.user.id), columns: { id: true } }));

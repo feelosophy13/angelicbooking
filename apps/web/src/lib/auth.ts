@@ -66,6 +66,8 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 8,
+    // Resetting a password (often because of a compromise) signs every other device out.
+    revokeSessionsOnPasswordReset: true,
     sendResetPassword: async ({ user, url }) => {
       await sendAuthEmail({ to: user.email, subject: "Reset your Angelic Booking password", heading: "Reset your password", body: "Someone (hopefully you) asked to reset the password for this account. The link expires in one hour.", cta: { label: "Choose a new password", url } });
     },
@@ -88,8 +90,27 @@ export const auth = betterAuth({
     : {},
   // A Google sign-in with the same (verified) email attaches to the existing account instead of creating a duplicate.
   account: { accountLinking: { enabled: true, trustedProviders: ["google"] } },
+  databaseHooks: {
+    account: {
+      create: {
+        /**
+         * Google proves who owns the email. If it is being linked to an account whose email was never verified, that account may have
+         * been opened by someone else with the owner's address: its password is removed and its sessions signed out, so only the real
+         * owner (signing in with Google) gets in. They can set a new password from Account.
+         */
+        before: async (account) => {
+          if (account.providerId === "credential") return;
+          const u = await db.query.user.findFirst({ where: eq(schema.user.id, account.userId), columns: { emailVerified: true } });
+          if (!u || u.emailVerified) return;
+          await db.delete(schema.account).where(and(eq(schema.account.userId, account.userId), eq(schema.account.providerId, "credential")));
+          await db.delete(schema.session).where(eq(schema.session.userId, account.userId));
+        },
+      },
+    },
+  },
   user: { changeEmail: { enabled: false } },
-  trustedOrigins: ["angelic://", "exp://", "http://localhost:8081"],
+  // The mobile app's origins are only trusted in development (the production app has its own scheme).
+  trustedOrigins: process.env.NODE_ENV === "production" ? ["angelic://"] : ["angelic://", "exp://", "http://localhost:8081"],
   session: {
     cookieCache: { enabled: true, maxAge: 5 * 60 },
   },
@@ -110,6 +131,8 @@ export const auth = betterAuth({
       // Custom roles per business live in organization_role (Better Auth) + roles (ours).
       dynamicAccessControl: { enabled: true, maximumRolesPerOrganization: 30 },
       invitationExpiresIn: 60 * 60 * 24 * 7,
+      // Accepting an invitation needs a verified email: a forwarded link alone doesn't make you that person.
+      requireEmailVerificationOnInvitation: true,
       organizationHooks: {
         // Every business starts the same way, whichever endpoint created it: agreed terms, a usable address.
         beforeCreateOrganization: async ({ organization: org }) => {

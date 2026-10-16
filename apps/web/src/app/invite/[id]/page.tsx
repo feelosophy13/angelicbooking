@@ -3,6 +3,7 @@ import { db, schema } from "@angelic/db";
 import { getSession } from "@/lib/session";
 import { Card, LinkButton } from "@/components/ui";
 import { AcceptForm } from "./accept-form";
+import { resendInviteVerification } from "./actions";
 
 export default async function InvitePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -59,6 +60,20 @@ export default async function InvitePage({ params }: { params: Promise<{ id: str
       <>
         {head}
         <p className="text-sm text-red-700">You&apos;re signed in as {session.user.email}, but this invitation is for {inv.email}. Sign out and use the invited email.</p>
+      </>,
+    );
+  }
+
+  // A forwarded invitation link must not be enough: whoever accepts has to prove they read that inbox.
+  if (!session.user.emailVerified) {
+    return shell(
+      <>
+        {head}
+        <p className="mb-3 text-sm text-stone-600">Confirm your email first: open the verification link we sent to {inv.email}, then come back to this page.</p>
+        <form action={resendInviteVerification}>
+          <input type="hidden" name="invitationId" value={inv.id} />
+          <button type="submit" className="text-sm text-brand-700 underline">Send the link again</button>
+        </form>
       </>,
     );
   }

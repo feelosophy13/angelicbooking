@@ -89,6 +89,7 @@ export default function DevelopersPage() {
           {[
             ["400", "bad_request", "The body is not valid JSON, or is too large."],
             ["401", "invalid_api_key", "Missing, wrong, revoked or expired key. All look the same on purpose."],
+            ["402", "subscription_required", "The business's free trial has ended with no subscription. The key works again once a card is added under Settings → Billing."],
             ["403", "insufficient_scope", "The key lacks the scope this call needs."],
             ["404", "not_found", "No such item in your business (including ids that belong to someone else)."],
             ["409", "conflict / booking_conflict", "Duplicate client, wrong state, or the time is taken."],

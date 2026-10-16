@@ -147,6 +147,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       re-sends "booked" messages like the new-booking alert. Online class seats must match their session's service (no free-service id
       carrying a paid seat) and the booking window; cancelling a class refunds every seat's deposit (failures flagged and logged). Tests:
       `reminder-timing.test.ts`, `classes-money.test.ts`.
+- [x] Sign-in hardening, 2026-10-16: a password reset signs every other device out; linking Google to an account whose email was never
+      verified removes that account's password and sessions (closes the "pre-register someone's email" takeover); accepting an invitation
+      needs a verified email (with a resend link that returns to the invite); dev mobile origins aren't trusted in production; an expired
+      trial closes the REST API (402 `subscription_required`) and the mobile app like the staff app; server actions can no longer slip past
+      the trial lock by posting to the billing page (only the billing actions run while locked). **Pending invites from people who never
+      verified their email now need them to verify first.**
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

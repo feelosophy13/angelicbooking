@@ -84,6 +84,9 @@ export async function authenticate(req: Request, scope: ApiScope): Promise<{ ctx
   if (!found || found.revokedAt || (found.expiresAt && found.expiresAt <= new Date())) return bad();
   const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, found.businessId) });
   if (!business || business.suspendedAt) return bad();
+  // Trial over with no subscription: the API is closed like the staff app (the key itself is fine).
+  const { businessAccess } = await import("@/server/access");
+  if ((await businessAccess(business)).state === "expired") return { error: apiError(402, "subscription_required", "This business's free trial has ended. Add a card under Settings → Billing to use the API again.") };
   // A key restricted to certain addresses answers like any other bad key from anywhere else. The address is the one our proxy saw (the last
   // X-Forwarded-For entry): the first entry is whatever the caller wrote, so it proves nothing.
   if (!ipAllowed(found.allowedIps, clientIp(req))) return bad();
