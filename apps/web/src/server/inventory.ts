@@ -131,10 +131,21 @@ export async function returnToShelf(input: { businessId: string; saleId: string;
 // ---- By hand: receive, adjust, write off, transfer, count ----
 
 export async function recordMovement(input: { businessId: string; productId: string; locationId?: string | null; entered: number; reason: ManualReason; note: string | null; actorUserId: string }) {
+  await withTenant(input.businessId, (tx) => recordMovementIn(tx, input));
+}
+
+/** Several products in one go (a delivery with no order): all of them or none, so a failure part-way can't be resubmitted into doubles. */
+export async function recordMovements(input: { businessId: string; locationId?: string | null; items: { productId: string; entered: number }[]; reason: ManualReason; note: string | null; actorUserId: string }) {
+  await withTenant(input.businessId, async (tx) => {
+    for (const it of input.items) await recordMovementIn(tx, { ...input, productId: it.productId, entered: it.entered });
+  });
+}
+
+async function recordMovementIn(tx: TenantDb, input: { businessId: string; productId: string; locationId?: string | null; entered: number; reason: ManualReason; note: string | null; actorUserId: string }) {
   if (!isManualReason(input.reason)) throw new InventoryError("Unknown reason.");
   const delta = manualDelta(input.reason, Math.round(input.entered));
   if (delta === 0) throw new InventoryError("Enter how many units.");
-  await withTenant(input.businessId, async (tx) => {
+  {
     const p = await tx.query.products.findFirst({ where: eq(schema.products.id, input.productId) });
     if (!p) throw new InventoryError("Product not found.");
     const locationId = input.locationId || (await mainLocationId(tx));
@@ -142,7 +153,7 @@ export async function recordMovement(input: { businessId: string; productId: str
     if (delta < 0 && have + delta < 0) throw new InventoryError(have <= 0 ? "Nothing is counted at this location to take off. Count it first." : `Only ${have} counted here.`);
     await applyMove(tx, { businessId: input.businessId, productId: p.id, locationId, delta, reason: input.reason, note: input.note, actorUserId: input.actorUserId });
     if (!p.trackStock) await tx.update(schema.products).set({ trackStock: true }).where(eq(schema.products.id, p.id));
-  });
+  }
 }
 
 /** Move units between two locations: the total does not change. */
@@ -463,7 +474,8 @@ export async function createPurchaseOrder(input: { businessId: string; supplierI
 }
 
 async function openPo(tx: TenantDb, id: string, allowed: PurchaseOrder["status"][]) {
-  const po = await tx.query.purchaseOrders.findFirst({ where: eq(schema.purchaseOrders.id, id) });
+  // Locked for the rest of the transaction: two people receiving the same delivery are handled one after the other.
+  const [po] = await tx.select().from(schema.purchaseOrders).where(eq(schema.purchaseOrders.id, id)).for("update");
   if (!po) throw new InventoryError("Order not found.");
   if (!allowed.includes(po.status)) throw new InventoryError(`This order is ${po.status}.`);
   return po;
@@ -514,15 +526,17 @@ export async function receiveOrder(input: { businessId: string; id: string; line
     let units = 0;
     for (const it of input.lines) {
       const line = lines.find((l) => l.id === it.lineId);
-      const qty = Math.floor(it.qty);
+      // Never more than is still outstanding on the line: a resubmitted or doubled receipt finds nothing left instead of adding stock twice.
+      const qty = line ? Math.min(Math.floor(it.qty), line.orderedQty - line.receivedQty) : 0;
       if (!line || qty <= 0) continue;
       const cost = it.unitCostCents ?? line.unitCostCents;
+      // The price paid becomes the product's cost first, so the receipt's movement is valued at what this delivery cost.
+      await tx.update(schema.products).set({ trackStock: true, ...(cost > 0 ? { costCents: cost } : {}) }).where(eq(schema.products.id, line.productId));
       await applyMove(tx, { businessId: input.businessId, productId: line.productId, locationId, delta: qty, reason: "received", purchaseOrderId: po.id, note: `Order #${po.number}`, actorUserId: input.actorUserId });
       await tx.update(schema.purchaseOrderLines).set({ receivedQty: sql`${schema.purchaseOrderLines.receivedQty} + ${qty}`, unitCostCents: cost }).where(eq(schema.purchaseOrderLines.id, line.id));
-      await tx.update(schema.products).set({ trackStock: true, ...(cost > 0 ? { costCents: cost } : {}) }).where(eq(schema.products.id, line.productId));
       units += qty;
     }
-    if (!units) throw new InventoryError("Enter how many arrived.");
+    if (!units) throw new InventoryError(lines.every((l) => l.receivedQty >= l.orderedQty) ? "Everything on this order has already been received." : "Enter how many arrived.");
     const after = await tx.select().from(schema.purchaseOrderLines).where(eq(schema.purchaseOrderLines.purchaseOrderId, po.id));
     const done = after.every((l) => l.receivedQty >= l.orderedQty);
     await tx.update(schema.purchaseOrders).set({ status: done ? "received" : "partial", receivedAt: done ? new Date() : null, orderedAt: po.orderedAt ?? new Date(), ...(input.reference ? { reference: input.reference } : {}) }).where(eq(schema.purchaseOrders.id, po.id));

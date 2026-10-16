@@ -10,7 +10,7 @@ import { f, formAction, FormError } from "@/lib/form";
 import { GroupError, quickCreateOption } from "@/server/product-groups";
 import { productLabel } from "@/lib/inventory";
 import { setFlash } from "@/lib/flash";
-import { applyCount, attachBarcode, quickCreateProduct, undoReceipt, trackedProductIds, logUsage, togglePin, undoMovement, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, setPoLine, updatePurchaseOrder } from "@/server/inventory";
+import { applyCount, attachBarcode, quickCreateProduct, undoReceipt, trackedProductIds, logUsage, togglePin, undoMovement, cancelOrder, createPurchaseOrder, InventoryError, markOrdered, receiveOrder, recordMovement, recordMovements, setPoLine, updatePurchaseOrder } from "@/server/inventory";
 
 const refresh = (slug: string) => {
   revalidatePath(`/app/${slug}/inventory`, "layout");
@@ -39,19 +39,20 @@ const centsOf = (v: FormDataEntryValue | null) => {
 /** A delivery with no purchase order: one quantity per product, one note. */
 export const receiveStock = formAction(z.object({ slug: z.string(), locationId: z.string().optional(), note: f.optional(200) }), async (d, raw) => {
   const ctx = await requireAction(d.slug, "inventory.manage");
-  let units = 0;
-  let products = 0;
+  const items: { productId: string; entered: number }[] = [];
   for (const [key, v] of raw.entries()) {
     if (!key.startsWith("qty:")) continue;
     const qty = intOf(v as string);
     if (qty == null) continue;
     if (Number.isNaN(qty) || qty < 0) throw new FormError("Quantities are whole numbers.");
     if (qty === 0) continue;
-    await wrap(undefined, () => recordMovement({ businessId: ctx.business.id, productId: key.slice(4), locationId: d.locationId || null, entered: qty, reason: "received", note: d.note, actorUserId: ctx.user.id }));
-    units += qty;
-    products++;
+    items.push({ productId: key.slice(4), entered: qty });
   }
-  if (!units) throw new FormError("Enter how many arrived for at least one product.");
+  if (!items.length) throw new FormError("Enter how many arrived for at least one product.");
+  // One transaction: all of the delivery goes in, or none of it.
+  await wrap(undefined, () => recordMovements({ businessId: ctx.business.id, locationId: d.locationId || null, items, reason: "received", note: d.note, actorUserId: ctx.user.id }));
+  const units = items.reduce((n, i) => n + i.entered, 0);
+  const products = items.length;
   refresh(d.slug);
   return `Received ${units} unit${units === 1 ? "" : "s"} of ${products} product${products === 1 ? "" : "s"}`;
 });
@@ -253,11 +254,9 @@ export async function receiveScannedAction(input: { slug: string; locationId: st
   const lines = scanLines.safeParse(input.lines);
   if (!lines.success) return { ok: false, error: lines.error.issues[0]?.message ?? "Check the quantities." };
   return asResult(async () => {
-    let units = 0;
-    for (const l of lines.data) {
-      await recordMovement({ businessId: ctx.business.id, productId: l.productId, locationId: input.locationId || null, entered: l.qty, reason: "received", note: input.note.trim().slice(0, 200) || "Scanned delivery", actorUserId: ctx.user.id });
-      units += l.qty;
-    }
+    // One transaction: the whole scanned delivery goes in, or none of it.
+    await recordMovements({ businessId: ctx.business.id, locationId: input.locationId || null, items: lines.data.map((l) => ({ productId: l.productId, entered: l.qty })), reason: "received", note: input.note.trim().slice(0, 200) || "Scanned delivery", actorUserId: ctx.user.id });
+    const units = lines.data.reduce((n, l) => n + l.qty, 0);
     refresh(input.slug);
     return `Received ${units} unit${units === 1 ? "" : "s"} of ${lines.data.length} product${lines.data.length === 1 ? "" : "s"}`;
   });

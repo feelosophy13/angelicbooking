@@ -112,7 +112,9 @@ export async function updateGroup(input: { businessId: string; groupId: string; 
       patch.name = patch.name.trim();
       if (!patch.name) throw new GroupError("Give the product a name.");
     }
-    const [g] = await tx.update(schema.productGroups).set({ ...patch, ...(patch.kind === "backbar" ? { sellOnline: false } : {}) }).where(eq(schema.productGroups.id, cur.id)).returning();
+    // Back-bar products have no price; going back to retail keeps them off the online store until the owner prices them and turns it on.
+    const backToRetail = patch.kind === "retail" && cur.kind === "backbar";
+    const [g] = await tx.update(schema.productGroups).set({ ...patch, ...(patch.kind === "backbar" || backToRetail ? { sellOnline: false } : {}) }).where(eq(schema.productGroups.id, cur.id)).returning();
     await syncOptions(tx, g!, cur.imageUrl);
     if (g!.kind === "backbar" && cur.kind !== "backbar") await tx.update(schema.products).set({ trackStock: true, priceCents: 0 }).where(eq(schema.products.groupId, g!.id));
     return g!;

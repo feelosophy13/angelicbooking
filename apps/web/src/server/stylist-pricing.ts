@@ -103,11 +103,14 @@ type Pick = { serviceId: string; price: number | null | undefined; duration: num
  * to the service's base is stored as "use the base", so later changes to the base still flow
  * through. A field that was not posted keeps what is stored (an old form never erases prices).
  */
-export async function applyStaffServices(tx: TenantDb, businessId: string, staffId: string, picks: Pick[]) {
+export async function applyStaffServices(tx: TenantDb, businessId: string, staffId: string, picks: Pick[], opts: { activeOnly?: boolean } = {}) {
   const ids = picks.map((p) => p.serviceId);
   const existing = new Map((await tx.select().from(schema.staffServices).where(eq(schema.staffServices.staffId, staffId))).map((r) => [r.serviceId, r]));
   const base = ids.length ? new Map((await tx.select({ id: schema.services.id, price: schema.services.priceCents, duration: schema.services.durationMin }).from(schema.services).where(inArray(schema.services.id, ids))).map((s) => [s.id, s])) : new Map<string, { id: string; price: number; duration: number }>();
-  await tx.delete(schema.staffServices).where(and(eq(schema.staffServices.staffId, staffId), ids.length ? notInArray(schema.staffServices.serviceId, ids) : undefined));
+  // The staff page lists active services only, so unticked means "not these": hidden (inactive) services keep their assignment and the
+  // stylist's own price and length, ready for when the service is shown again.
+  const shown = opts.activeOnly ? sql`${schema.staffServices.serviceId} in (select id from services where active)` : undefined;
+  await tx.delete(schema.staffServices).where(and(eq(schema.staffServices.staffId, staffId), ids.length ? notInArray(schema.staffServices.serviceId, ids) : undefined, shown));
   if (!picks.length) return;
   const values = picks.map((p) => {
     const b = base.get(p.serviceId);

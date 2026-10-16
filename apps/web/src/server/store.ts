@@ -7,7 +7,7 @@
 import { after } from "next/server";
 import { browserStripe } from "@/lib/stripe-demo";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { stripe, appUrl } from "@/lib/stripe";
@@ -39,7 +39,7 @@ export async function storeProducts(businessId: string, locationId?: string | nu
       .select({ p: schema.products, category: schema.productCategories.name })
       .from(schema.products)
       .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
-      .where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true), eq(schema.products.kind, "retail")))
+      .where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true), eq(schema.products.kind, "retail"), gt(schema.products.priceCents, 0)))
       .orderBy(asc(schema.productCategories.sortOrder), asc(schema.products.name), asc(schema.products.variantLabel));
     const avail = await onlineAvailability(tx, locationId ?? null, rows.map((r) => r.p.id));
     return rows.map((r) => ({ ...r, available: avail.get(r.p.id) ?? null }));
@@ -71,10 +71,14 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
     const lines: (typeof schema.saleLines.$inferInsert)[] = [];
     let subtotal = 0;
     let taxable = 0;
-    for (const it of input.items) {
+    // The same product on two lines counts once against what is left: merge them first.
+    const merged = new Map<string, number>();
+    for (const it of input.items) merged.set(it.productId, (merged.get(it.productId) ?? 0) + Math.max(1, Math.floor(it.quantity)));
+    for (const it of [...merged].map(([productId, quantity]) => ({ productId, quantity }))) {
       const p = products.find((x) => x.id === it.productId);
       if (!p) throw new StoreError("One of the products is no longer available.");
-      const qty = Math.max(1, Math.min(20, Math.floor(it.quantity)));
+      const qty = Math.floor(it.quantity);
+      if (qty > 20) throw new StoreError(`Up to 20 of ${productLabel(p)} per order.`);
       const left = available.get(p.id);
       if (left != null && left < qty) throw new StoreError(left <= 0 ? `${productLabel(p)} just sold out.` : `Only ${left} of ${productLabel(p)} left.`);
       const amount = p.priceCents * qty;

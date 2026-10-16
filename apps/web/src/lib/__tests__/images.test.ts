@@ -38,9 +38,14 @@ describe("prepareImage", () => {
     expect(out.contentType).toBe("image/webp");
     expect(meta.pages).toBe(2);
   });
-  it("stores SVG, PDF and HEIC as sent, and caps SVG size", async () => {
+  it("stores PDF and HEIC as sent, draws SVG into an image, and caps SVG size", async () => {
     const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>');
-    expect(await optimizeUpload("service", svg, "image/svg+xml")).toMatchObject({ data: svg, ext: "svg", resized: false });
+    // Drawn into a WebP (an SVG could carry script); the script in it never survives.
+    expect(await optimizeUpload("service", svg, "image/svg+xml")).toMatchObject({ contentType: "image/webp", ext: "webp", resized: true });
+    const scripted = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script><rect width="10" height="10"/></svg>');
+    const out = await optimizeUpload("service", scripted, "image/svg+xml");
+    expect(out.contentType).toBe("image/webp");
+    expect(out.data.includes(Buffer.from("script"))).toBe(false);
     const pdf = Buffer.from("%PDF-1.4 test");
     expect(await optimizeUpload("form", pdf, "application/pdf")).toMatchObject({ data: pdf, ext: "pdf" });
     expect(await optimizeUpload("form", Buffer.from("heic bytes"), "image/heic")).toMatchObject({ ext: "heic" });

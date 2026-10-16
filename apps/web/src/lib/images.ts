@@ -19,19 +19,24 @@ export const MAX_SVG_BYTES = 512 * 1024;
 export type PreparedImage = { data: Buffer; contentType: string; ext: string; resized: boolean };
 
 const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "image/svg+xml": "svg", "image/heic": "heic", "image/heif": "heif", "application/pdf": "pdf" };
-/** Types stored exactly as sent because they cannot be shrunk here. */
-const AS_SENT = new Set(["image/svg+xml", "application/pdf", "image/heic", "image/heif"]);
+/**
+ * Types stored exactly as sent because they cannot be shrunk here. SVG is not one of them: it can carry script, and pictures are served
+ * from our own image domain, so it is drawn into an ordinary image instead (which also makes it safe to show anywhere).
+ */
+const AS_SENT = new Set(["application/pdf", "image/heic", "image/heif"]);
 const UNREADABLE = "That file isn't a picture we can read. Try a PNG, JPEG or WebP.";
 
 /** Resize and re-encode a photo or graphic as WebP. Animated GIFs stay animated. */
 export async function prepareImage(kind: string, input: Buffer, contentType: string): Promise<PreparedImage> {
   try {
     const max = MAX_SIDE[kind] ?? DEFAULT_MAX_SIDE;
-    const pipeline = sharp(input, { limitInputPixels: 60_000_000, animated: contentType === "image/gif" })
+    const svg = contentType === "image/svg+xml";
+    // An SVG is drawn at high density so a small logo stays sharp once sized down to the limit.
+    const pipeline = sharp(input, { limitInputPixels: 60_000_000, animated: contentType === "image/gif", ...(svg ? { density: 300 } : {}) })
       .rotate() // honour the camera's orientation before the metadata is dropped
       .resize({ width: max, height: max, fit: "inside", withoutEnlargement: true });
     // Screenshots, logos and graphics (PNG) stay crisp as lossless WebP; photos and animations use lossy.
-    const data = await (contentType === "image/png" ? pipeline.webp({ lossless: true }) : pipeline.webp({ quality: 82 })).toBuffer();
+    const data = await (contentType === "image/png" || svg ? pipeline.webp({ lossless: true }) : pipeline.webp({ quality: 82 })).toBuffer();
     return { data, contentType: "image/webp", ext: "webp", resized: true };
   } catch {
     throw new ImageError(UNREADABLE);

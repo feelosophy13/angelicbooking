@@ -341,6 +341,8 @@ export async function addProductLine(input: { businessId: string; saleId: string
     assertOpen(sale);
     const product = await tx.query.products.findFirst({ where: eq(schema.products.id, input.productId) });
     if (!product || !product.active || product.kind !== "retail") throw new SaleError("Product not available.");
+    // A product with no price (e.g. it used to be back-bar) isn't sold for nothing by accident.
+    if (product.priceCents <= 0) throw new SaleError(`${product.name} has no price yet. Set one under Products first.`);
     const qty = Math.max(1, Math.min(99, Math.round(input.quantity)));
     await tx.insert(schema.saleLines).values({
       businessId: input.businessId,

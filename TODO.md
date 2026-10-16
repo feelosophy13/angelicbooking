@@ -158,6 +158,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       claim their day in `job_markers` (no more skipped days when a run is late); job secrets compared in constant time. Calendar feeds stop
       for inactive staff and deactivating someone rotates their link; ICS text is escaped and folded per RFC 5545.
 - [ ] **Set `ERROR_WEBHOOK_URL` on Render** (a Slack or Discord incoming webhook) so these alerts reach someone.
+- [x] Catalog and inventory, 2026-10-16: saving a stylist's services keeps their hidden (inactive) ones and custom prices; receiving a
+      purchase order locks it and never takes more than is outstanding (a doubled receipt adds stock once) and values the receipt at the
+      price paid; "Receive stock" and scanned deliveries go in all-or-nothing; a $0 retail product can't be rung up or listed online, and a
+      product group switched back from back-bar stays off the online store until priced; the same product on two cart lines counts once
+      against stock; uploaded SVGs are drawn into WebP (no script on our image domain). Test: `catalog-fixes.test.ts`.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

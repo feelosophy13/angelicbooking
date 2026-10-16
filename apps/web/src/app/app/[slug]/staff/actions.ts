@@ -207,7 +207,7 @@ export async function saveStaffServices(formData: FormData) {
   const serviceIds = formData.getAll("serviceIds").map(String);
   try {
     const picks = serviceIds.map((serviceId) => ({ serviceId, price: parsePriceField(formData.get(`price_${serviceId}`)), duration: parseMinutesField(formData.get(`duration_${serviceId}`)) }));
-    await withTenant(ctx.business.id, (tx) => applyStaffServices(tx, ctx.business.id, staffId, picks));
+    await withTenant(ctx.business.id, (tx) => applyStaffServices(tx, ctx.business.id, staffId, picks, { activeOnly: true }));
   } catch (e) {
     if (e instanceof TermError) {
       await setFlash(e.message, "error");
