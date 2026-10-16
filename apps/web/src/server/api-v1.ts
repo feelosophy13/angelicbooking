@@ -34,7 +34,7 @@ type ClientRow = typeof schema.clients.$inferSelect;
 export const serializeClient = (c: ClientRow, scopes: readonly string[]) => ({
   id: c.id, first_name: c.firstName, last_name: c.lastName, email: c.email, phone: c.phone, tags: c.tags, birthday: c.birthday,
   ...(scopes.includes("client-notes:read") ? { notes: c.notes } : {}),
-  sms_opt_in: c.smsOptIn, email_opt_in: c.emailOptIn,
+  sms_opt_in: c.smsOptIn, email_opt_in: c.emailOptIn, sms_marketing_opt_in: c.smsMarketingOptIn, email_marketing_opt_in: c.emailMarketingOptIn,
   ...(scopes.includes("clients:balances") ? { store_credit_cents: c.storeCreditCents } : {}),
   created_at: iso(c.createdAt), updated_at: iso(c.updatedAt),
 });

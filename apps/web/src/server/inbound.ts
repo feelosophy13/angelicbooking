@@ -5,6 +5,7 @@
  * level for toll-free numbers). The owner is emailed when a new conversation
  * goes unread.
  */
+import { isSmsSuppressed, suppressSms, unsuppressSms } from "./consent";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
@@ -74,8 +75,9 @@ export async function recordInboundSms(input: { from: string; to: string; body: 
       .onConflictDoNothing()
       .returning({ id: schema.inboundMessages.id });
     if (!inserted.length) return null;
-    if (client && keyword === "stop") await tx.update(schema.clients).set({ smsOptIn: false }).where(eq(schema.clients.id, client.id));
-    else if (client && keyword === "start") await tx.update(schema.clients).set({ smsOptIn: true }).where(eq(schema.clients.id, client.id));
+    // STOP covers the number, not one record: every client with it, anyone added with it later, and texts already queued to it.
+    if (keyword === "stop") await suppressSms(tx, business.id, from, "stop");
+    else if (keyword === "start") await unsuppressSms(tx, business.id, from);
     // Opt-out/in words are handled above and are not worth an email; anything else on a conversation nobody has read yet is.
     return !keyword && Number(unreadBefore) === 0 ? { name: client ? `${client.firstName} ${client.lastName}`.trim() : from, key } : null;
   });
@@ -214,7 +216,8 @@ export async function addNumberAsClient(businessId: string, number: string, name
     const phone = normalizePhone(number) ?? number;
     let client = await clientByPhone(tx, phone);
     if (!client) {
-      const [created] = await tx.insert(schema.clients).values({ businessId, firstName: name.firstName.trim() || "New", lastName: (name.lastName ?? "").trim(), phone, tags: ["texted-in"] }).returning();
+      // Texting in is not consent to marketing; a number that sent STOP stays off texts.
+      const [created] = await tx.insert(schema.clients).values({ businessId, firstName: name.firstName.trim() || "New", lastName: (name.lastName ?? "").trim(), phone, tags: ["texted-in"], smsOptIn: !(await isSmsSuppressed(tx, phone)) }).returning();
       client = created!;
     }
     await tx.update(schema.inboundMessages).set({ clientId: client.id }).where(and(isNull(schema.inboundMessages.clientId), eq(schema.inboundMessages.fromNumber, number)));

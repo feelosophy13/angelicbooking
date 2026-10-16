@@ -680,6 +680,13 @@
       "when": 1793700000000,
       "tag": "0096_money_fixes",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1793800000000,
+      "tag": "0097_marketing_consent",
+      "breakpoints": true
     }
   ]
 }

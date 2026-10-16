@@ -91,8 +91,24 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       idempotency key, but a crash after Stripe leaves the refund unrecorded); Stripe-side refunds and disputes are still ignored by the webhook;
       payments don't store which Stripe account took them; partial refunds don't deactivate a sold gift card/package; loyalty earns on gift
       cards and packages.
-- [ ] Next from the "Fix first" table: consent/opt-out (TCPA), payroll snapshots and refund clawback, campaign sending (double send, Resend
-      rate), "We miss you" window.
+- [x] Consent batch, 2026-10-16 (migration 0097):
+      - Marketing consent is separate from appointment messages: `sms_marketing_opt_in` (+ when/how it was given) starts OFF for everyone, because the
+        booking checkbox only ever covered confirmations and reminders; `email_marketing_opt_in` copies the old email flag. Campaigns and promotional
+        automations need it; clients give it with a separate unticked box on the booking form or in their account, or staff record written consent
+        on the client page (audited as `client.consent`). **Existing clients will get no marketing texts until they opt in.**
+      - STOP (and Twilio 21610) puts the number on `sms_suppressions`: every record with it goes off texts, texts already queued to it are cancelled,
+        and nothing (staff edit, import, API, booking form) can turn it back on; START lifts it (appointment texts only).
+      - Delivery re-checks consent right before sending (suppression, appointment-text flag, marketing flags), so a STOP or unsubscribe after
+        queueing is honoured. Messages carry a `marketing` flag.
+      - Unsubscribe now turns off marketing email only (as its page always said), lives at `/unsubscribe/<slug>/<token>` outside the booking site,
+        and marketing emails carry `List-Unsubscribe` + one-click POST (`/api/unsubscribe/...`).
+      - Campaign texts wait for 9am–8pm local, one message per phone/email; rating-request texts wait for daytime too. Delivery claims in batches
+        of 50, so a large campaign can't be reclaimed and sent twice.
+      - DB tests: `server/__tests__/consent.test.ts`.
+- [ ] Still open from consent: the booking form's new box wasn't clicked through in the browser (typechecked only); the Vagaro import maps
+      `text_valid` to appointment texts (fine) but there is no way to carry over marketing consent from Vagaro; Resend rate limit (concurrency 8 vs
+      ~2/s) and per-tenant fairness; a global suppression list across businesses was not added (per business only).
+- [ ] Next from the "Fix first" table: payroll snapshots and refund clawback, "We miss you" window and scan cost.
 
 ### Platform admin app (`apps/admin`, built 2026-10-14: tenant list with filters and CSV, usage metrics, price book and custom pricing, suspend / comp / extend trial, audit log, health page, TOTP login)
 - [x] Deployed 2026-10-14 as Render service `angelic-admin` (srv-db7vr98n74is73d85io0, starter) at https://admin.angelicbooking.com

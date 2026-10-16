@@ -3,6 +3,7 @@ import { schema, withTenant } from "@angelic/db";
 import { buildBookingSegments, normalizePhone, zonedToInstant } from "@angelic/core";
 import { parseBool, parseDate, parseDuration, parseTime, splitName, type ImportKind } from "@/lib/import/mapping";
 import { timingFor } from "./availability";
+import { isSmsSuppressed } from "./consent";
 
 type Business = typeof schema.businesses.$inferSelect;
 export interface ImportResult {
@@ -93,6 +94,8 @@ async function importClients(tx: Tx, business: Business, rows: Record<string, st
       const smsOptIn = parseBool(get(row, mapping, "smsOptIn"));
       const emailOptIn = parseBool(get(row, mapping, "emailOptIn"));
       const existing = await findClient(tx, first, last, phone, email);
+      // An opt-in column never overrides a STOP; marketing texts are never turned on by an import (no record of the client's consent).
+      const stopped = await isSmsSuppressed(tx, phone);
       if (existing) {
         await tx
           .update(schema.clients)
@@ -100,7 +103,7 @@ async function importClients(tx: Tx, business: Business, rows: Record<string, st
             email: existing.email ?? email,
             phone: existing.phone ?? phone,
             notes: existing.notes ?? (notesParts.join("\n") || null),
-            ...(smsOptIn != null ? { smsOptIn } : {}),
+            ...(smsOptIn != null ? { smsOptIn: smsOptIn && !stopped } : {}),
             ...(emailOptIn != null ? { emailOptIn } : {}),
           })
           .where(eq(schema.clients.id, existing.id));
@@ -113,7 +116,7 @@ async function importClients(tx: Tx, business: Business, rows: Record<string, st
           email,
           phone,
           notes: notesParts.join("\n") || null,
-          smsOptIn: smsOptIn ?? true,
+          smsOptIn: (smsOptIn ?? true) && !stopped,
           emailOptIn: emailOptIn ?? true,
           tags: ["imported"],
         });

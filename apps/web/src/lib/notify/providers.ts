@@ -19,7 +19,7 @@ export function fromAddress(fromName?: string | null): string {
   return fromName ? `${fromName.replace(/["<>]/g, "")} <${addr}>` : raw;
 }
 
-export async function sendEmail(input: { to: string; subject: string; html: string; text?: string; replyTo?: string; fromName?: string | null }): Promise<{ id: string }> {
+export async function sendEmail(input: { to: string; subject: string; html: string; text?: string; replyTo?: string; fromName?: string | null; headers?: Record<string, string> }): Promise<{ id: string }> {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
@@ -30,6 +30,7 @@ export async function sendEmail(input: { to: string; subject: string; html: stri
       html: input.html,
       text: input.text,
       reply_to: input.replyTo,
+      ...(input.headers ? { headers: input.headers } : {}),
     }),
   });
   const json = (await res.json().catch(() => ({}))) as { id?: string; message?: string; name?: string };

@@ -4,6 +4,7 @@ import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { apiAudit, list, pageParams, readBody, route, CLIENT_FIELDS } from "@/lib/api";
 import { clientCreate, CLIENT_DEFAULTS, getClientApi, listClientsApi, serializeClient } from "@/server/api-v1";
+import { isSmsSuppressed } from "@/server/consent";
 
 /** GET /api/v1/clients?q=&email=&phone=&updated_since=&page=&limit= */
 export const GET = route("clients:read", async (ctx, req) => {
@@ -35,7 +36,7 @@ export const POST = route("clients:write", async (ctx, req) => {
     if (dup) return { duplicate: dup.id };
     const [row] = await tx
       .insert(schema.clients)
-      .values({ businessId, firstName: d.first_name, lastName: d.last_name, email: d.email ?? null, phone, notes: d.notes ?? null, tags: d.tags ?? [], birthday: d.birthday ?? null, smsOptIn: d.sms_opt_in, emailOptIn: d.email_opt_in })
+      .values({ businessId, firstName: d.first_name, lastName: d.last_name, email: d.email ?? null, phone, notes: d.notes ?? null, tags: d.tags ?? [], birthday: d.birthday ?? null, smsOptIn: d.sms_opt_in && !(await isSmsSuppressed(tx, phone)), emailOptIn: d.email_opt_in })
       .returning({ id: schema.clients.id });
     return { id: row!.id };
   });

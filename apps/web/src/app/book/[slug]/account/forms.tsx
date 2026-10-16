@@ -33,7 +33,7 @@ export function SignInForm({ slug }: { slug: string }) {
   );
 }
 
-export function ProfileForm({ slug, client }: { slug: string; client: { firstName: string; lastName: string; email: string | null; phone: string | null; birthday: string | null; smsOptIn: boolean; emailOptIn: boolean } }) {
+export function ProfileForm({ slug, client }: { slug: string; client: { firstName: string; lastName: string; email: string | null; phone: string | null; birthday: string | null; smsOptIn: boolean; emailOptIn: boolean; smsMarketingOptIn: boolean; emailMarketingOptIn: boolean } }) {
   const [state, action] = useActionState<AccountState, FormData>(saveClientProfile, undefined);
   return (
     <form action={action} className="space-y-3">
@@ -47,6 +47,8 @@ export function ProfileForm({ slug, client }: { slug: string; client: { firstNam
       <Field label="Birthday"><Input name="birthday" type="date" defaultValue={client.birthday ?? ""} /></Field>
       <Checkbox name="smsOptIn" defaultChecked={client.smsOptIn} label="Text me confirmations and reminders" />
       <Checkbox name="emailOptIn" defaultChecked={client.emailOptIn} label="Email me confirmations and receipts" />
+      <Checkbox name="smsMarketingOptIn" defaultChecked={client.smsMarketingOptIn} label="Text me offers and news (msg & data rates may apply; reply STOP to opt out)" />
+      <Checkbox name="emailMarketingOptIn" defaultChecked={client.emailMarketingOptIn} label="Email me offers and news" />
       {state?.error ? <Notice>{state.error}</Notice> : state?.ok ? <Notice kind="success">Saved.</Notice> : null}
       <SubmitButton variant="secondary" pendingText="Saving…">Save details</SubmitButton>
     </form>

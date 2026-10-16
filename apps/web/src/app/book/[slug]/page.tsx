@@ -71,7 +71,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   // The late fee is added to the policy line unless the owner's own text already states that same fee.
   const latePolicy = { feeType: business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: business.lateCancelFeeValue, deposit: business.lateCancelDeposit as "toward" | "extra" };
   const lateFee = policyFeeCheck(business.bookingPolicy, latePolicy).repeats.length ? null : lateCancelFeeLabel(latePolicy, (c) => formatMoney(c, business.currency));
-  const defaults = me ? { firstName: me.firstName, lastName: me.lastName, phone: me.phone, email: me.email, smsOptIn: me.smsOptIn } : null;
+  const defaults = me ? { firstName: me.firstName, lastName: me.lastName, phone: me.phone, email: me.email, smsOptIn: me.smsOptIn, smsMarketingOptIn: me.smsMarketingOptIn } : null;
   const tz = tzFor(business, location);
   const today = instantToISODate(new Date(), tz);
   const service = services.find((s) => s.id === sp.service) ?? null;

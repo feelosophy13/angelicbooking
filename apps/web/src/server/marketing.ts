@@ -4,7 +4,7 @@
  * notifications table so delivery, opt-outs, logs and SMS metering are shared
  * with transactional messages.
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { unsubscribeUrl, verifyUnsubscribe } from "@/lib/unsubscribe";
 import { after } from "next/server";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { schema, withTenant, type CampaignAudience, type TenantDb } from "@angelic/db";
@@ -13,35 +13,23 @@ import { appUrl } from "@/lib/stripe";
 import { marketingEmail } from "@/lib/notify/templates";
 import { deliverMany } from "@/lib/notify";
 import { smsWithStopNotice } from "@/lib/notify/sms";
+import { deferToDaytime } from "@/lib/workflows-logic";
+import { phoneTail } from "@/server/consent";
 
 type Business = typeof schema.businesses.$inferSelect;
 
 export class MarketingError extends Error {}
 
 // ---------------------------------------------------------------------------
-// Unsubscribe links (email). Token = HMAC over business + client ids.
+// Unsubscribe links (email): see lib/unsubscribe.ts
 // ---------------------------------------------------------------------------
-function unsubSig(businessId: string, clientId: string): string {
-  return createHmac("sha256", process.env.BETTER_AUTH_SECRET ?? "dev").update(`unsub:${businessId}:${clientId}`).digest("base64url").slice(0, 32);
-}
+export { unsubscribeUrl, verifyUnsubscribe } from "@/lib/unsubscribe";
 
-export function unsubscribeUrl(business: Business, clientId: string): string {
-  return appUrl(`/book/${business.slug}/unsubscribe/${clientId}.${unsubSig(business.id, clientId)}`);
-}
-
-/** The client id an unsubscribe token points at, or null if the signature is wrong. Does not change anything. */
-export function verifyUnsubscribe(business: Business, token: string): string | null {
-  const [clientId, sig] = token.split(".");
-  if (!clientId || !sig) return null;
-  const expected = unsubSig(business.id, clientId);
-  if (expected.length !== sig.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return null;
-  return clientId;
-}
-
-export async function applyUnsubscribe(business: Business, token: string): Promise<boolean> {
+/** Unsubscribe turns off marketing email only; appointment confirmations, reminders and receipts still go (as the page says). */
+export async function applyUnsubscribe(business: { id: string }, token: string): Promise<boolean> {
   const clientId = verifyUnsubscribe(business, token);
   if (!clientId) return false;
-  await withTenant(business.id, (tx) => tx.update(schema.clients).set({ emailOptIn: false }).where(eq(schema.clients.id, clientId)));
+  await withTenant(business.id, (tx) => tx.update(schema.clients).set({ emailMarketingOptIn: false }).where(eq(schema.clients.id, clientId)));
   return true;
 }
 
@@ -71,7 +59,13 @@ export async function audienceClients(tx: TenantDb, business: Business, audience
     .innerJoin(schema.appointmentItems, and(eq(schema.appointmentItems.appointmentId, schema.appointments.id), eq(schema.appointmentItems.sortOrder, 0)))
     .groupBy(schema.appointments.clientId)
     .as("v");
-  const conds = [channel === "email" ? and(eq(schema.clients.emailOptIn, true), sql`${schema.clients.email} is not null and ${schema.clients.email} <> ''`) : and(eq(schema.clients.smsOptIn, true), sql`${schema.clients.phone} is not null and ${schema.clients.phone} <> ''`)];
+  // Marketing consent, not just appointment-message consent: marketing texts need the client's written opt-in (TCPA), and a number on
+  // the STOP list is never texted whichever record it is on.
+  const conds = [
+    channel === "email"
+      ? and(eq(schema.clients.emailOptIn, true), eq(schema.clients.emailMarketingOptIn, true), sql`${schema.clients.email} is not null and ${schema.clients.email} <> ''`)
+      : and(eq(schema.clients.smsOptIn, true), eq(schema.clients.smsMarketingOptIn, true), sql`${schema.clients.phone} is not null and ${schema.clients.phone} <> ''`, sql`not exists (select 1 from sms_suppressions ss where ss.business_id = ${schema.clients.businessId} and ss.phone_tail = right(regexp_replace(${schema.clients.phone}, '\D', '', 'g'), 10))`),
+  ];
   const now = Date.now();
   if (audience.visitedWithinDays) conds.push(sql`v.last_visit >= ${new Date(now - audience.visitedWithinDays * 86_400_000)}`);
   if (audience.lapsedDays) conds.push(sql`v.last_visit is not null and v.last_visit <= ${new Date(now - audience.lapsedDays * 86_400_000)}`);
@@ -121,15 +115,22 @@ export async function sendCampaign(business: Business, id: string, actorUserId: 
     const bookingUrl = appUrl(`/book/${business.slug}`);
     const brand = { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address: business.addressLine };
     const rows: (typeof schema.notifications.$inferInsert)[] = [];
+    // Texts wait for daytime in the business's time zone (9am–8pm); emails go now.
+    const scheduledAt = c.channel === "sms" ? deferToDaytime(new Date(), business.timezone) : new Date();
+    // One message per address: family members sharing a phone, or duplicate records, get it once (and are charged once).
+    const seen = new Set<string>();
     for (const cl of clients) {
+      const key = c.channel === "email" ? (cl.email ?? "").trim().toLowerCase() : phoneTail(cl.phone);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
       const vars = { first_name: cl.firstName, business: business.name, booking_url: bookingUrl };
       if (c.channel === "email") {
         const t = marketingEmail(brand, { subject: renderText(c.subject ?? c.name, vars), text: renderText(c.body, vars), ctaUrl: bookingUrl, unsubscribeUrl: unsubscribeUrl(business, cl.id) });
-        rows.push({ businessId: business.id, clientId: cl.id, channel: "email", template: "campaign", recipient: cl.email!, subject: t.subject, body: t.html, campaignId: c.id });
+        rows.push({ businessId: business.id, clientId: cl.id, channel: "email", template: "campaign", recipient: cl.email!, subject: t.subject, body: t.html, campaignId: c.id, marketing: true, scheduledAt });
       } else {
         const phone = normalizePhone(cl.phone);
         if (!phone) continue;
-        rows.push({ businessId: business.id, clientId: cl.id, channel: "sms", template: "campaign", recipient: phone, body: await smsWithStopNotice(tx, cl, `${business.name}: ${renderText(c.body, vars)}`, true), campaignId: c.id });
+        rows.push({ businessId: business.id, clientId: cl.id, channel: "sms", template: "campaign", recipient: phone, body: await smsWithStopNotice(tx, cl, `${business.name}: ${renderText(c.body, vars)}`, true), campaignId: c.id, marketing: true, scheduledAt });
       }
     }
     const inserted = rows.length ? await tx.insert(schema.notifications).values(rows).returning({ id: schema.notifications.id }) : [];
@@ -137,7 +138,7 @@ export async function sendCampaign(business: Business, id: string, actorUserId: 
     await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "campaign.send", entity: "campaign", entityId: c.id, diff: JSON.stringify({ recipients: inserted.length, channel: c.channel }) });
     return inserted.map((r) => r.id);
   });
-  // Deliver after the response; the cron picks up anything left.
+  // Deliver after the response (texts held for quiet hours stay queued for the cron); the cron picks up anything left.
   if (ids.length) after(() => deliverMany(business.id, ids).catch((e) => console.error("[campaign] delivery failed", (e as Error).message)));
   return ids.length;
 }

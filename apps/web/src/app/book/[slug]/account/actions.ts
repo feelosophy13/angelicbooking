@@ -56,6 +56,8 @@ export async function saveClientProfile(_prev: AccountState, formData: FormData)
       birthday: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/).transform((v) => v || null),
       smsOptIn: z.string().optional().transform((v) => v === "on"),
       emailOptIn: z.string().optional().transform((v) => v === "on"),
+      smsMarketingOptIn: z.string().optional().transform((v) => v === "on"),
+      emailMarketingOptIn: z.string().optional().transform((v) => v === "on"),
     })
     .safeParse(Object.fromEntries(formData));
   if (!d.success) return { error: d.error.issues[0]?.message ?? "Check the form" };

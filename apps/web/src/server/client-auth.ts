@@ -16,6 +16,7 @@ import { readyAccountsOf } from "./locations";
 import { stripe } from "@/lib/stripe";
 import { pointsBalance, ensureReferralCode } from "./loyalty";
 import { sharedRateLimit } from "@/lib/shared-rate-limit";
+import { isSmsSuppressed, smsMarketingConsent } from "./consent";
 import type { PublicBusiness } from "./public-booking";
 
 export class ClientAuthError extends Error {}
@@ -162,6 +163,16 @@ export async function removeSavedCard(business: PublicBusiness, clientId: string
   throw new ClientAuthError("No saved cards.");
 }
 
-export async function updateClientProfile(business: PublicBusiness, clientId: string, input: { firstName: string; lastName: string; email: string | null; phone: string | null; birthday: string | null; smsOptIn: boolean; emailOptIn: boolean }) {
-  await withTenant(business.id, (tx) => tx.update(schema.clients).set(input).where(eq(schema.clients.id, clientId)));
+/** The client's own settings. Ticking "offers by text" here is their written consent; a number that replied STOP stays off until START. */
+export async function updateClientProfile(business: PublicBusiness, clientId: string, input: { firstName: string; lastName: string; email: string | null; phone: string | null; birthday: string | null; smsOptIn: boolean; emailOptIn: boolean; smsMarketingOptIn: boolean; emailMarketingOptIn: boolean }) {
+  await withTenant(business.id, async (tx) => {
+    const cur = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId), columns: { smsMarketingOptIn: true } });
+    const stopped = await isSmsSuppressed(tx, input.phone);
+    const { smsMarketingOptIn, ...rest } = input;
+    const marketing = stopped ? false : smsMarketingOptIn;
+    await tx
+      .update(schema.clients)
+      .set({ ...rest, smsOptIn: stopped ? false : input.smsOptIn, ...(marketing === cur?.smsMarketingOptIn ? {} : smsMarketingConsent(marketing, "client account page")) })
+      .where(eq(schema.clients.id, clientId));
+  });
 }

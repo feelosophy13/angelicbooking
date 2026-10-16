@@ -172,7 +172,7 @@ export default function DevelopersPage() {
       <Endpoint method="GET" path="/clients" scope="clients:read"><p>Query: <code>q</code> (name, email or phone search), <code>email</code>, <code>phone</code>, <code>updated_since</code> (ISO time, for syncing). Includes <code>total</code>.</p></Endpoint>
       <Endpoint method="GET" path="/clients/{id}" scope="clients:read" />
       <Endpoint method="POST" path="/clients" scope="clients:write">
-        <p>Body: <code>first_name</code> (required), <code>last_name</code>, <code>email</code>, <code>phone</code>, <code>notes</code>, <code>tags</code>, <code>birthday</code>, <code>sms_opt_in</code> (default <code>false</code>), <code>email_opt_in</code> (default <code>true</code>).</p>
+        <p>Body: <code>first_name</code> (required), <code>last_name</code>, <code>email</code>, <code>phone</code>, <code>notes</code>, <code>tags</code>, <code>birthday</code>, <code>sms_opt_in</code> (appointment texts, default <code>false</code>; refused with 409 for a number that replied STOP), <code>email_opt_in</code> (default <code>true</code>). Responses also show <code>sms_marketing_opt_in</code> and <code>email_marketing_opt_in</code>, which are read-only here: marketing texts need the client&apos;s own written consent, given on the booking form, in their account or recorded by staff.</p>
         <p>Only set <code>sms_opt_in</code> when the person has agreed to receive texts. If the email or phone is already on file you get <code>409</code> with <code>existing_id</code>.</p>
       </Endpoint>
       <Endpoint method="PATCH" path="/clients/{id}" scope="clients:write"><p>Same fields, all optional; send only what changes. Unknown fields are rejected.</p></Endpoint>

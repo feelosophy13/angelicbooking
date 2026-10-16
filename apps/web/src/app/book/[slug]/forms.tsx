@@ -5,7 +5,7 @@ import { Field, Input, Notice, Textarea, Checkbox } from "@/components/ui";
 import { Disclosure } from "@/components/disclosure";
 import { SubmitButton } from "@/components/form";
 
-export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean } | null;
+export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean; smsMarketingOptIn?: boolean } | null;
 
 export function BookingForm(props: { extraServiceIds?: string[]; /** The price being confirmed, shown on the button. */ priceLabel?: string; slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
@@ -42,9 +42,10 @@ export function ContactFields({ defaults: d, referrals, promos }: { defaults?: B
         <Field label="First name" required><Input name="firstName" required autoComplete="given-name" defaultValue={d?.firstName} /></Field>
         <Field label="Last name"><Input name="lastName" autoComplete="family-name" defaultValue={d?.lastName} /></Field>
       </div>
-      <Field label="Mobile number" required hint="We text your confirmation to this number."><Input name="phone" type="tel" required autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
+      <Field label="Mobile number" required hint={d?.smsOptIn ? "We text your confirmation to this number." : "Tick the box below to get your confirmation and reminders by text."}><Input name="phone" type="tel" required autoComplete="tel" defaultValue={d?.phone ?? ""} /></Field>
       <Field label="Email" required><Input name="email" type="email" required autoComplete="email" defaultValue={d?.email ?? ""} /></Field>
       {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
+      {d?.smsMarketingOptIn ? null : <SmsMarketingConsent />}
       <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
       {showReferral || promos ? (
         <Disclosure title="Have a code?" className="shadow-none">
@@ -88,6 +89,15 @@ export function WaitlistForm(props: { slug: string; serviceId: string; staffId: 
  * Explicit SMS opt-in (unchecked by default), worded the way US carriers expect
  * for toll-free verification. The checkbox state becomes the client's smsOptIn.
  */
+/** Separate, optional and unticked: marketing texts need their own written consent (TCPA), never bundled with appointment texts. */
+export function SmsMarketingConsent() {
+  return (
+    <Checkbox name="smsMarketingConsent" className="text-xs [&_span]:text-stone-600" label={<>
+        Also text me offers and news. Message frequency varies. Msg &amp; data rates may apply. Consent is not required to book. Reply STOP to opt out.
+      </>} />
+  );
+}
+
 export function SmsConsent() {
   return (
     <Checkbox name="smsConsent" className="text-xs [&_span]:text-stone-600" label={<>

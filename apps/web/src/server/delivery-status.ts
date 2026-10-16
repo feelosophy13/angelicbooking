@@ -4,6 +4,7 @@
  * delivered it, and turns an undelivered text into a failed row staff can see
  * and send again.
  */
+import { suppressSms } from "./consent";
 import { and, eq } from "drizzle-orm";
 import { schema, withJobs, withTenant } from "@angelic/db";
 
@@ -35,6 +36,11 @@ export async function recordDeliveryStatus(input: { sid: string; status: string;
   if (!n) return false;
   if ((RANK[n.deliveryStatus ?? ""] ?? 0) > rank) return true;
   const bad = status === "undelivered" || status === "failed";
+  // The carrier says this person has opted out of the number: treat it like a STOP so nothing else is sent to them.
+  if (bad && input.errorCode === "21610") {
+    const row = await withTenant(n.businessId, (tx) => tx.query.notifications.findFirst({ where: eq(schema.notifications.id, n.id), columns: { recipient: true } }));
+    if (row) await withTenant(n.businessId, (tx) => suppressSms(tx, n.businessId, row.recipient, "carrier"));
+  }
   await withTenant(n.businessId, (tx) =>
     tx
       .update(schema.notifications)

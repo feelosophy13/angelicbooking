@@ -426,8 +426,15 @@ export const clients = pgTable(
     // Derived: location of the most recent (non-cancelled) appointment. Clients are shared
     // across a business's locations; this only drives list filters, reports and audiences.
     homeLocationId: text("home_location_id").references(() => locations.id, { onDelete: "set null" }),
+    // Appointment texts and emails (confirmations, reminders, receipts). STOP turns texts off; see sms_suppressions.
     smsOptIn: boolean("sms_opt_in").notNull().default(true),
     emailOptIn: boolean("email_opt_in").notNull().default(true),
+    // Marketing (campaigns, promotional automations). Texts need the client's own written consent (TCPA), so they start off and record
+    // when and how it was given; marketing email is opt-out (CAN-SPAM), and the unsubscribe link turns off only this, not appointment emails.
+    smsMarketingOptIn: boolean("sms_marketing_opt_in").notNull().default(false),
+    smsMarketingConsentAt: timestamp("sms_marketing_consent_at", { withTimezone: true }),
+    smsMarketingConsentSource: text("sms_marketing_consent_source"),
+    emailMarketingOptIn: boolean("email_marketing_opt_in").notNull().default(true),
     birthday: date("birthday"), // for birthday messages; year may be 1900 when unknown
     reviewOptOut: boolean("review_opt_out").notNull().default(false),
     // Referral programme: this client's shareable code, and who referred them.
@@ -894,6 +901,8 @@ export const notifications = pgTable(
     campaignId: text("campaign_id"),
     // Set when a workflow step queued this message (Marketing → Automations), for the "why did this send" trail.
     workflowRunId: text("workflow_run_id"),
+    // A campaign or promotional automation: needs marketing consent when it is sent, not only when it was queued.
+    marketing: boolean("marketing").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [
@@ -1401,3 +1410,19 @@ export const TENANT_TABLES = [
   "purchase_order_lines",
   "api_keys",
 ] as const;
+
+/**
+ * Numbers that must not be texted by this business: a STOP reply, or the carrier reporting the person opted out (Twilio 21610). Keyed by
+ * the last ten digits so every client record sharing the number (family members, duplicates) and any client added later is covered.
+ * START removes the row.
+ */
+export const smsSuppressions = pgTable(
+  "sms_suppressions",
+  {
+    businessId: businessId(),
+    phoneTail: text("phone_tail").notNull(),
+    source: text("source").notNull(), // stop | carrier | staff
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.businessId, t.phoneTail] })],
+);

@@ -10,6 +10,7 @@ import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { deleteFileByUrl, FileError, uploadedImageFrom } from "@/lib/files";
+import { isSmsSuppressed, smsMarketingConsent } from "@/server/consent";
 
 const fields = z.object({
   slug: z.string(),
@@ -22,6 +23,8 @@ const fields = z.object({
   birthday: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Pick a date").transform((v) => v || null).optional(),
   smsOptIn: f.checkbox(),
   emailOptIn: f.checkbox(),
+  smsMarketingOptIn: f.checkbox(),
+  emailMarketingOptIn: f.checkbox(),
   removePhoto: f.checkbox(),
 });
 
@@ -38,10 +41,12 @@ export const createClient = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "clients.write");
   if (d.phone && !normalizePhone(d.phone)) throw new FormError("Enter a valid mobile number", "phone");
   const photoUrl = await photoOrFieldError(ctx.business.id, raw);
-  const [row] = await withTenant(ctx.business.id, (tx) =>
+  // Appointment texts and emails are on (they gave the number for their bookings) unless the number replied STOP; marketing texts need
+  // their written consent, recorded on the client's page.
+  const [row] = await withTenant(ctx.business.id, async (tx) =>
     tx
       .insert(schema.clients)
-      .values({ businessId: ctx.business.id, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, photoUrl, smsOptIn: true, emailOptIn: true })
+      .values({ businessId: ctx.business.id, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, photoUrl, smsOptIn: !(await isSmsSuppressed(tx, d.phone)), emailOptIn: true })
       .returning({ id: schema.clients.id }),
   );
   await triggerWorkflows(ctx.business, "client_created", { clientId: row!.id, dedupeKey: row!.id, facts: { firstVisit: true, clientTags: [] }, context: { reason: "New client (desk)" } });
@@ -56,12 +61,27 @@ export const updateClient = formAction(fields, async (d, raw) => {
   const uploaded = await photoOrFieldError(ctx.business.id, raw);
   const before = await withTenant(ctx.business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, d.clientId ?? ""), columns: { photoUrl: true } }));
   const photo = uploaded ? { photoUrl: uploaded } : d.removePhoto ? { photoUrl: null } : {};
-  await withTenant(ctx.business.id, (tx) =>
-    tx
+  await withTenant(ctx.business.id, async (tx) => {
+    const cur = await tx.query.clients.findFirst({ where: eq(schema.clients.id, d.clientId ?? "") });
+    if (!cur) throw new FormError("Client not found.");
+    // A number that replied STOP stays off: only the person texting START turns it back on.
+    const stopped = await isSmsSuppressed(tx, d.phone);
+    const smsOptIn = stopped ? false : d.smsOptIn;
+    const smsMarketing = stopped ? false : d.smsMarketingOptIn;
+    const consent = smsMarketing === cur.smsMarketingOptIn ? {} : smsMarketingConsent(smsMarketing, `staff (${ctx.user.name || ctx.user.email})`);
+    await tx
       .update(schema.clients)
-      .set({ ...photo, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, smsOptIn: d.smsOptIn, emailOptIn: d.emailOptIn })
-      .where(eq(schema.clients.id, d.clientId ?? "")),
-  );
+      .set({ ...photo, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, smsOptIn, emailOptIn: d.emailOptIn, emailMarketingOptIn: d.emailMarketingOptIn, ...consent })
+      .where(eq(schema.clients.id, cur.id));
+    // Consent changes are evidence: who changed what, when.
+    const changed = Object.fromEntries(
+      (["smsOptIn", "emailOptIn", "smsMarketingOptIn", "emailMarketingOptIn"] as const)
+        .map((k) => [k, cur[k], k === "smsOptIn" ? smsOptIn : k === "smsMarketingOptIn" ? smsMarketing : d[k]] as const)
+        .filter(([, a, b]) => a !== b)
+        .map(([k, a, b]) => [k, { from: a, to: b }]),
+    );
+    if (Object.keys(changed).length) await tx.insert(schema.auditLog).values({ businessId: ctx.business.id, actorUserId: ctx.user.id, action: "client.consent", entity: "client", entityId: cur.id, diff: JSON.stringify(changed) });
+  });
   if (before?.photoUrl && "photoUrl" in photo && before.photoUrl !== photo.photoUrl) await deleteFileByUrl(before.photoUrl);
   revalidatePath(`/app/${d.slug}/clients`);
   revalidatePath(`/app/${d.slug}/clients/${d.clientId}`);
@@ -81,8 +101,8 @@ export async function quickCreateClient(input: { slug: string; firstName: string
   if (d.data.phone && !phone) return { error: "Enter a valid mobile number" };
   const email = d.data.email ? d.data.email.toLowerCase() : null;
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: "Enter a valid email" };
-  const [row] = await withTenant(ctx.business.id, (tx) =>
-    tx.insert(schema.clients).values({ businessId: ctx.business.id, firstName: d.data.firstName, lastName: d.data.lastName, phone, email, smsOptIn: true, emailOptIn: true }).returning({ id: schema.clients.id }),
+  const [row] = await withTenant(ctx.business.id, async (tx) =>
+    tx.insert(schema.clients).values({ businessId: ctx.business.id, firstName: d.data.firstName, lastName: d.data.lastName, phone, email, smsOptIn: !(await isSmsSuppressed(tx, phone)), emailOptIn: true }).returning({ id: schema.clients.id }),
   );
   await triggerWorkflows(ctx.business, "client_created", { clientId: row!.id, dedupeKey: row!.id, facts: { firstVisit: true, clientTags: [] }, context: { reason: "New client (desk)" } });
   revalidatePath(`/app/${d.data.slug}/clients`);

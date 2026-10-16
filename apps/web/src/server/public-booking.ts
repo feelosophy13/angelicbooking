@@ -16,6 +16,7 @@ import { businessAccess, publishBlockedReason } from "./access";
 import { formatMoney, shiftISODate } from "@/lib/utils";
 import { overridesForService, priceForStaff, termsOf } from "./stylist-pricing";
 import { sameClientName } from "@/lib/client-match";
+import { isSmsSuppressed, smsMarketingConsent } from "./consent";
 import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt, tzFor } from "./locations";
 
 export type PublicBusiness = typeof schema.businesses.$inferSelect;
@@ -28,6 +29,15 @@ export async function getPublicBusiness(slug: string): Promise<PublicBusiness | 
   if ((await businessAccess(b)).state === "expired") return null;
   if (await publishBlockedReason(b)) return null;
   return b;
+}
+
+/**
+ * The business behind a link in a message (unsubscribe, and other links that must keep working): it only has to exist and not be
+ * suspended. Unlike getPublicBusiness, turning online booking off or an expired trial doesn't break it.
+ */
+export async function getBusinessForLinks(slug: string): Promise<PublicBusiness | null> {
+  const b = await db.query.businesses.findFirst({ where: eq(schema.businesses.slug, slug) });
+  return b && !b.suspendedAt ? b : null;
 }
 
 /** Average rating and count of submitted reviews, for the booking page header. */
@@ -244,6 +254,8 @@ export interface OnlineBookingInput {
   notes: string | null;
   /** Client ticked the SMS consent box on the public form. */
   smsConsent?: boolean;
+  /** The separate "also text me offers" box: written consent to marketing texts. */
+  smsMarketingConsent?: boolean;
   /** Joining a class: the session id (staffId/startAt then come from the session). */
   classSessionId?: string | null;
   /** Friend's referral code typed on the booking form (new clients only). */
@@ -289,18 +301,21 @@ export async function findOrCreateClient(businessId: string, input: OnlineBookin
     if (input.email) conds.push(sql`lower(${schema.clients.email}) = ${input.email.toLowerCase()}`);
     const candidates = conds.length ? await tx.query.clients.findMany({ where: or(...conds), orderBy: [asc(schema.clients.createdAt), asc(schema.clients.id)], limit: 25 }) : [];
     const existing = candidates.find((c) => sameClientName(c, input));
+    // A number that replied STOP stays off texts until it texts START, whatever is ticked here.
+    const stopped = await isSmsSuppressed(tx, phone);
+    const marketing = input.smsMarketingConsent && !stopped ? smsMarketingConsent(true, "online booking form") : {};
     if (existing) {
       // Fill in gaps without overwriting what the business already has.
       await tx
         .update(schema.clients)
-        .set({ email: existing.email ?? input.email, phone: existing.phone ?? phone, ...(input.smsConsent ? { smsOptIn: true } : {}) })
+        .set({ email: existing.email ?? input.email, phone: existing.phone ?? phone, ...(input.smsConsent && !stopped ? { smsOptIn: true } : {}), ...marketing })
         .where(eq(schema.clients.id, existing.id));
       return existing.id;
     }
     const referrer = await findReferrer(tx, input.referralCode);
     const [row] = await tx
       .insert(schema.clients)
-      .values({ businessId, firstName: input.firstName, lastName: input.lastName, email: input.email, phone, smsOptIn: input.smsConsent === true, referredByClientId: referrer?.id ?? null, birthday: input.birthday ?? null })
+      .values({ businessId, firstName: input.firstName, lastName: input.lastName, email: input.email, phone, smsOptIn: input.smsConsent === true && !stopped, ...marketing, referredByClientId: referrer?.id ?? null, birthday: input.birthday ?? null })
       .returning({ id: schema.clients.id });
     created = row!.id;
     return row!.id;

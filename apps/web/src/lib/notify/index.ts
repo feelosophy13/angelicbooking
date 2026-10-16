@@ -7,7 +7,9 @@ import { formatMoney } from "@/lib/utils";
 import { formsForAppointment } from "@/server/forms";
 import { isDemoSlug } from "@/lib/demo";
 import { emailConfigured, sendEmail, sendSms, smsConfigured, type SmsSender } from "./providers";
-import { platformSmsSender } from "@/lib/twilio";
+import { platformSmsSender, TwilioError } from "@/lib/twilio";
+import { phoneTail, suppressedTails, suppressSms } from "@/server/consent";
+import { oneClickUnsubscribeUrl } from "@/lib/unsubscribe";
 import { listNumbers } from "@/server/messaging";
 import { addressOf, tzFor } from "@/server/locations";
 import { billingEnabled, reportSmsUsage } from "@/server/billing";
@@ -176,7 +178,7 @@ export async function queueOneOff(businessId: string, input: { channel: "email" 
   if (row) after(() => deliverMany(businessId, [row.id]));
 }
 
-type Outcome = { id: string; status: "sent" | "failed" | "skipped"; providerId?: string; error?: string };
+type Outcome = { id: string; status: "sent" | "failed" | "skipped"; providerId?: string; error?: string; /** The carrier says this number opted out: suppress it. */ suppress?: string };
 
 /** Rows left in "sending" longer than this are assumed orphaned (process died mid-run) and retried. */
 const STALE_CLAIM_MS = 10 * 60_000;
@@ -191,7 +193,7 @@ const retryDelayMs = (attempt: number) => 5 * 60_000 * 2 ** Math.max(0, attempt 
  * stale "sending" rows. The UPDATE is the lock, so two concurrent runs (cron +
  * after-response delivery, or overlapping deploys) can never both send a row.
  */
-type Claimed = { row: Row; sender: SmsSender | null; email: { fromName: string; replyTo?: string; demo: boolean; suspended: boolean; smsPausedReason: string | null; blocked: string | null; emailBudget: { left: number } | null } | null };
+type Claimed = { row: Row; sender: SmsSender | null; /** Why consent forbids sending this now (checked at send time, not only when queued). */ consentBlock?: string | null; /** One-click unsubscribe address for a marketing email. */ unsubscribe?: string | null; email: { fromName: string; replyTo?: string; demo: boolean; suspended: boolean; smsPausedReason: string | null; blocked: string | null; emailBudget: { left: number } | null } | null };
 
 /**
  * The sender a message texts from: the verified number of the location it is
@@ -240,7 +242,41 @@ async function claimWithSender(tx: TenantDb, opts: { ids?: string[]; limit: numb
     }
   }
   const email = biz ? { fromName: biz.name, replyTo: biz.email ?? undefined, demo: isDemoSlug(biz.slug), suspended: !!biz.suspendedAt, smsPausedReason: smsPausedWhy, blocked, emailBudget } : null;
-  return rows.map((row) => ({ row, sender: row.channel === "sms" ? (senders.get(row.locationId) ?? null) : null, email }));
+  const block = await consentBlocks(tx, rows);
+  return rows.map((row) => ({
+    row,
+    sender: row.channel === "sms" ? (senders.get(row.locationId) ?? null) : null,
+    email,
+    consentBlock: block(row),
+    unsubscribe: row.marketing && row.channel === "email" && row.clientId && biz ? oneClickUnsubscribeUrl({ id: row.businessId, slug: biz.slug }, row.clientId) : null,
+  }));
+}
+
+/**
+ * Consent as it stands right before sending (a STOP, an unsubscribe or an edit may have come after the message was queued):
+ *   - no text ever goes to a number on the suppression list;
+ *   - a text to a client's own number needs their text consent, and a marketing text their marketing consent;
+ *   - a marketing email needs the client's email consent and that they haven't unsubscribed.
+ * Appointment emails were checked when queued and go to whatever address they were queued for (a gift card's recipient, for one).
+ */
+async function consentBlocks(tx: TenantDb, rows: Row[]): Promise<(row: Row) => string | null> {
+  const ids = [...new Set(rows.map((r) => r.clientId).filter((x): x is string => !!x))];
+  const people = ids.length
+    ? await tx.select({ id: schema.clients.id, phone: schema.clients.phone, smsOptIn: schema.clients.smsOptIn, emailOptIn: schema.clients.emailOptIn, smsMarketingOptIn: schema.clients.smsMarketingOptIn, emailMarketingOptIn: schema.clients.emailMarketingOptIn }).from(schema.clients).where(inArray(schema.clients.id, ids))
+    : [];
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const suppressed = await suppressedTails(tx, rows.filter((r) => r.channel === "sms").map((r) => r.recipient));
+  return (r) => {
+    const c = r.clientId ? byId.get(r.clientId) : undefined;
+    if (r.channel === "sms") {
+      if (suppressed.has(phoneTail(r.recipient))) return "This number replied STOP: no texts are sent to it";
+      if (c && phoneTail(c.phone) === phoneTail(r.recipient) && !c.smsOptIn) return "The client has turned texts off";
+      if (r.marketing && (!c || !c.smsMarketingOptIn)) return "No consent to marketing texts";
+      return null;
+    }
+    if (r.marketing && (!c || !c.emailOptIn || !c.emailMarketingOptIn)) return "The client unsubscribed from marketing emails";
+    return null;
+  };
 }
 
 async function claim(tx: TenantDb, opts: { ids?: string[]; limit: number }): Promise<Row[]> {
@@ -264,7 +300,8 @@ async function claim(tx: TenantDb, opts: { ids?: string[]; limit: number }): Pro
     .returning();
 }
 
-async function send({ row: n, sender, email }: Claimed): Promise<Outcome> {
+async function send({ row: n, sender, email, consentBlock, unsubscribe }: Claimed): Promise<Outcome> {
+  if (consentBlock) return { id: n.id, status: "skipped", error: consentBlock };
   // Demo businesses have fake clients: log the message but never email or text anyone.
   if (email?.demo) return { id: n.id, status: "skipped", error: "Demo business: nothing is sent" };
   if (email?.suspended) return { id: n.id, status: "skipped", error: "Business is suspended: nothing is sent" };
@@ -278,9 +315,12 @@ async function send({ row: n, sender, email }: Claimed): Promise<Outcome> {
   if (!configured) return { id: n.id, status: "skipped", error: `${n.channel} provider not configured` };
   if (n.channel === "sms" && !sender) return { id: n.id, status: "skipped", error: "No verified text number yet (Settings → Text messaging)" };
   try {
-    const r = n.channel === "email" ? await sendEmail({ to: n.recipient, subject: n.subject ?? "", html: n.body, fromName: email?.fromName, replyTo: email?.replyTo }) : await sendSms({ to: n.recipient, body: n.body, sender: sender! });
+    const headers = unsubscribe ? { "List-Unsubscribe": `<${unsubscribe}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } : undefined;
+    const r = n.channel === "email" ? await sendEmail({ to: n.recipient, subject: n.subject ?? "", html: n.body, fromName: email?.fromName, replyTo: email?.replyTo, headers }) : await sendSms({ to: n.recipient, body: n.body, sender: sender! });
     return { id: n.id, status: "sent", providerId: r.id };
   } catch (e) {
+    // Twilio 21610: the person has opted out of this number. Not worth retrying; nothing more should go to them.
+    if (e instanceof TwilioError && e.code === 21610) return { id: n.id, status: "skipped", error: "This person replied STOP to your number", suppress: n.recipient };
     return { id: n.id, status: "failed", error: (e as Error).message };
   }
 }
@@ -330,6 +370,7 @@ async function deliverClaimed(claimed: Claimed[]): Promise<Summary> {
           .where(and(eq(schema.notifications.id, o.id), eq(schema.notifications.status, "sending")));
       }
     });
+    for (const o of list) if (o.suppress) await withTenant(businessId, (tx) => suppressSms(tx, businessId, o.suppress!, "carrier"));
     // Metered billing: one meter event per text actually sent (idempotent on the notification id).
     await reportSmsUsage(businessId, list.filter((o) => o.status === "sent" && smsById.has(o.id)).map((o) => o.id));
   }
@@ -353,10 +394,18 @@ export async function resendNotification(businessId: string, id: string): Promis
 
 /** Deliver specific rows now (used right after a response). Rows not yet due are left queued. */
 export async function deliverMany(businessId: string, ids: string[]): Promise<Summary> {
-  if (!ids.length) return { processed: 0, sent: 0, failed: 0, skipped: 0 };
-  const claimed = await withTenant(businessId, (tx) => claimWithSender(tx, { ids, limit: ids.length }));
-  return deliverClaimed(claimed);
+  const total: Summary = { processed: 0, sent: 0, failed: 0, skipped: 0 };
+  // In small batches, each claimed just before it is sent: claiming a whole campaign at once let the cron reclaim (and send again) rows
+  // still waiting their turn after STALE_CLAIM_MS.
+  for (let i = 0; i < ids.length; i += CLAIM_BATCH) {
+    const claimed = await withTenant(businessId, (tx) => claimWithSender(tx, { ids: ids.slice(i, i + CLAIM_BATCH), limit: CLAIM_BATCH }));
+    const r = await deliverClaimed(claimed);
+    for (const k of Object.keys(total) as (keyof Summary)[]) total[k] += r[k];
+  }
+  return total;
 }
+
+const CLAIM_BATCH = 50;
 
 /**
  * Cron entry point: deliver everything due across all tenants.

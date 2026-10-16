@@ -4,6 +4,7 @@ import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { apiAudit, ApiErrors, readBody, route, CLIENT_FIELDS } from "@/lib/api";
 import { clientPatch, getClientApi, serializeClient } from "@/server/api-v1";
+import { isSmsSuppressed } from "@/server/consent";
 
 export const GET = route<{ id: string }>("clients:read", async (ctx, _req, { id }) => {
   const c = await getClientApi(ctx.business.id, id);
@@ -23,6 +24,11 @@ export const PATCH = route<{ id: string }>("clients:write", async (ctx, req, { i
     const conds = [...(d.email ? [sql`lower(${schema.clients.email}) = ${d.email}`] : []), ...(phone ? [eq(schema.clients.phone, phone)] : [])];
     const dup = conds.length ? await tx.query.clients.findFirst({ where: and(ne(schema.clients.id, id), or(...conds)), columns: { id: true } }) : null;
     if (dup) return "duplicate" as const;
+    // A number that replied STOP can only be turned back on by the person texting START.
+    if (d.sms_opt_in === true) {
+      const cur = await tx.query.clients.findFirst({ where: eq(schema.clients.id, id), columns: { phone: true } });
+      if (await isSmsSuppressed(tx, phone !== undefined ? phone : cur?.phone)) return "stopped" as const;
+    }
     await tx
       .update(schema.clients)
       .set({
@@ -41,6 +47,7 @@ export const PATCH = route<{ id: string }>("clients:write", async (ctx, req, { i
   });
   if (outcome === "missing") return ApiErrors.notFound("client");
   if (outcome === "duplicate") return ApiErrors.conflict("Another client already has that email or phone.");
+  if (outcome === "stopped") return ApiErrors.conflict("This number replied STOP. Texts come back on only when the person texts START.");
   await apiAudit(ctx, "client.update", "client", id, { fields: Object.keys(d) });
   return NextResponse.json({ data: serializeClient((await getClientApi(businessId, id))!, ctx.scopes) });
 }, { fields: CLIENT_FIELDS });

@@ -445,14 +445,16 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       if (step.type === "sms") {
         const phone = normalizePhone(client.phone);
         if (!client.smsOptIn || !phone) { note(i, "skipped", "No text consent or number"); continue; }
+        if (marketing && !client.smsMarketingOptIn) { note(i, "skipped", "No consent to marketing texts"); continue; }
         const body = await smsWithStopNotice(tx, client, `${v.brand.businessName}: ${renderText(step.body, v.vars)}`, marketing);
-        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: `workflow_${w.templateKey ?? "custom"}`, recipient: phone, body, scheduledAt, workflowRunId: run.id }).returning({ id: schema.notifications.id });
+        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: `workflow_${w.templateKey ?? "custom"}`, recipient: phone, body, scheduledAt, workflowRunId: run.id, marketing }).returning({ id: schema.notifications.id });
         out.push(row!.id);
         note(i, "sent", `Text queued to ${phone}${deferred}`);
       } else {
         if (!client.emailOptIn || !client.email) { note(i, "skipped", "No email consent or address"); continue; }
+        if (marketing && !client.emailMarketingOptIn) { note(i, "skipped", "Unsubscribed from marketing emails"); continue; }
         const t = marketingEmail(v.brand, { subject: renderText(step.subject, v.vars), text: renderText(step.body, v.vars), ctaLabel: step.ctaLabel ?? v.ctaLabel, ctaUrl: v.ctaUrl, unsubscribeUrl: unsubscribeUrl(business, client.id) });
-        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: `workflow_${w.templateKey ?? "custom"}`, recipient: client.email, subject: t.subject, body: t.html, scheduledAt, workflowRunId: run.id }).returning({ id: schema.notifications.id });
+        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: `workflow_${w.templateKey ?? "custom"}`, recipient: client.email, subject: t.subject, body: t.html, scheduledAt, workflowRunId: run.id, marketing }).returning({ id: schema.notifications.id });
         out.push(row!.id);
         note(i, "sent", `Email queued to ${client.email}${deferred}`);
       }
@@ -492,9 +494,9 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
         out.push(row!.id);
         note(i, "sent", `Rating request emailed to ${client.email}`);
       } else if (client.smsOptIn && phone) {
-        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: "review_request", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "review_request", v.apptCtx.ctx, { review_url: url })), scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });
+        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: "review_request", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "review_request", v.apptCtx.ctx, { review_url: url })), scheduledAt: deferToDaytime(now, business.timezone), workflowRunId: run.id }).returning({ id: schema.notifications.id });
         out.push(row!.id);
-        note(i, "sent", `Rating request texted to ${phone}`);
+        note(i, "sent", `Rating request texted to ${phone} (held for daytime if it's late)`);
       } else note(i, "skipped", "No channel the client has consented to");
       continue;
     }

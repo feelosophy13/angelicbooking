@@ -22,6 +22,7 @@ const contact = z.object({
   phone: z.string().trim().max(30).transform((v) => v || null),
   notes: z.string().trim().max(1000).transform((v) => v || null),
   smsConsent: z.string().optional().transform((v) => v === "on"),
+  smsMarketingConsent: z.string().optional().transform((v) => v === "on"),
   referralCode: z.string().trim().max(40).optional().transform((v) => v || null),
   promoCode: z.string().trim().max(40).optional().transform((v) => v || null),
 });

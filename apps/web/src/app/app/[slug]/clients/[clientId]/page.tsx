@@ -8,6 +8,7 @@ import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
+import { isSmsSuppressed } from "@/server/consent";
 import { can } from "@angelic/core";
 import { requireAction, requireBusiness } from "@/lib/tenant";
 import { formatMoney, formatTime } from "@/lib/utils";
@@ -81,6 +82,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   });
   if (!data) notFound();
   const { client, visits, sales, packs, memberships, notes } = data;
+  const stopped = await withTenant(business.id, (tx) => isSmsSuppressed(tx, client.phone));
   const activeForms = (await listForms(business.id)).filter((f) => f.active);
   const [submissions, loyalty, reviews, thread, storeCredit, referrals, referredBy] = await Promise.all([
     listSubmissionsForClient(business.id, clientId),
@@ -261,8 +263,20 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 <Field label="Email" name="email"><Input name="email" type="email" defaultValue={client.email ?? ""} /></Field>
                 <Field label="Birthday" name="birthday" hint="For birthday messages."><Input name="birthday" type="date" defaultValue={client.birthday ?? ""} /></Field>
                 <Field label="Notes" name="notes"><Textarea name="notes" rows={4} defaultValue={client.notes ?? ""} /></Field>
-                <Checkbox name="smsOptIn" defaultChecked={client.smsOptIn} label="Text messages" />
-                <Checkbox name="emailOptIn" defaultChecked={client.emailOptIn} label="Emails" />
+                {stopped ? (
+                  <p className="text-xs text-stone-500">This number replied STOP, so nothing is texted to it. Texts come back on only if they text START.</p>
+                ) : (
+                  <Checkbox name="smsOptIn" defaultChecked={client.smsOptIn} label="Appointment texts (confirmations and reminders)" />
+                )}
+                <Checkbox name="emailOptIn" defaultChecked={client.emailOptIn} label="Appointment emails" />
+                <Checkbox name="emailMarketingOptIn" defaultChecked={client.emailMarketingOptIn} label="Marketing emails" />
+                {stopped ? null : (
+                  <Checkbox
+                    name="smsMarketingOptIn"
+                    defaultChecked={client.smsMarketingOptIn}
+                    label={client.smsMarketingOptIn && client.smsMarketingConsentAt ? `Marketing texts (agreed ${client.smsMarketingConsentAt.toLocaleDateString("en-US")}, ${client.smsMarketingConsentSource ?? "unknown"})` : "Marketing texts: the client agreed in writing (signed form, booking checkbox or their own text)"}
+                  />
+                )}
                 <SubmitButton variant="secondary" pendingText="Saving…">Save</SubmitButton>
               </ActionForm>
               </details>
