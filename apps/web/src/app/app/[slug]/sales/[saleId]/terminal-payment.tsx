@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Field, Input, Notice } from "@/components/ui";
+import { Button, Checkbox, Field, Input, Notice } from "@/components/ui";
 import { finishCardPayment, startTerminalPayment, terminalLocation, terminalToken } from "./actions";
 
 // The slice of Stripe's Terminal JS SDK (https://js.stripe.com/terminal/v1/) this screen uses.
@@ -11,7 +11,7 @@ type Terminal = {
   discoverReaders: (cfg: { simulated?: boolean; location?: string }) => Promise<Failure | { discoveredReaders: Reader[] }>;
   connectReader: (r: Reader) => Promise<Failure | { reader: Reader }>;
   getConnectedReader: () => Reader | null;
-  collectPaymentMethod: (clientSecret: string) => Promise<Failure | { paymentIntent: unknown }>;
+  collectPaymentMethod: (clientSecret: string, config?: { config_override?: { allow_redisplay?: "always" | "limited" | "unspecified" } }) => Promise<Failure | { paymentIntent: unknown }>;
   processPayment: (pi: unknown) => Promise<Failure | { paymentIntent: { id: string } }>;
   cancelCollectPaymentMethod: () => Promise<unknown>;
 };
@@ -42,9 +42,10 @@ type Step = "idle" | "connecting" | "pick" | "waiting" | "processing";
  * to this salon location (internet readers such as the WisePOS E or Stripe Reader S700), collects the card, and the
  * server records the payment the same way it does for a typed card. In Stripe's test mode a simulated reader is used.
  */
-export function TerminalPayment({ slug, saleId, dueCents, test }: { slug: string; saleId: string; dueCents: number; test: boolean }) {
+export function TerminalPayment({ slug, saleId, dueCents, test, hasClient }: { slug: string; saleId: string; dueCents: number; test: boolean; hasClient: boolean }) {
   const router = useRouter();
   const [amount, setAmount] = useState((dueCents / 100).toFixed(2));
+  const [saveCard, setSaveCard] = useState(false);
   const [step, setStep] = useState<Step>("idle");
   const [readers, setReaders] = useState<Reader[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -101,10 +102,11 @@ export function TerminalPayment({ slug, saleId, dueCents, test }: { slug: string
         const c = await t.connectReader(reader);
         if ("error" in c) throw new Error(c.error.message);
       }
-      const started = await startTerminalPayment({ slug, saleId, amount });
+      const started = await startTerminalPayment({ slug, saleId, amount, saveCard: hasClient && saveCard });
       if ("error" in started) throw new Error(started.error);
       setStep("waiting");
-      const collected = await t.collectPaymentMethod(started.clientSecret);
+      // Saving the card needs the client's consent, passed to Stripe as allow_redisplay (the checkbox below is how the desk records it).
+      const collected = await t.collectPaymentMethod(started.clientSecret, hasClient && saveCard ? { config_override: { allow_redisplay: "always" } } : undefined);
       if ("error" in collected) throw new Error(collected.error.message);
       setStep("processing");
       const processed = await t.processPayment(collected.paymentIntent);
@@ -133,6 +135,7 @@ export function TerminalPayment({ slug, saleId, dueCents, test }: { slug: string
       {step === "idle" || step === "connecting" ? (
         <>
           <Field label="Amount to charge"><Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></Field>
+          {hasClient ? <Checkbox checked={saveCard} onChange={(e) => setSaveCard(e.target.checked)} label="The client agrees to save this card for future charges (needed for late-cancel or no-show fees)" /> : null}
           {error ? <Notice>{error}</Notice> : null}
           <Button type="button" onClick={findReaders} disabled={step === "connecting"}>{step === "connecting" ? "Finding reader…" : test ? "Use simulated reader" : "Use card reader"}</Button>
         </>

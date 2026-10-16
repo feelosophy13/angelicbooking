@@ -15,9 +15,6 @@ import { productLabel } from "@/lib/inventory";
 import { countPromoUse, promoDiscount, validatePromo, PromoError } from "./promos";
 import { locationOrDefault } from "./locations";
 
-/** The API version desk PaymentIntents (typed card and card reader) are created with (see createCardPaymentIntent). */
-const PINNED_API_VERSION = "2025-09-30.clover";
-
 export class SaleError extends Error {}
 
 type Sale = typeof schema.sales.$inferSelect;
@@ -705,16 +702,13 @@ export async function createCardPaymentIntent(input: {
         customer: customerId,
         description: `Sale #${sale.number}`,
         // The desk takes cards only: a typed card or a reader. (Klarna, Affirm, Cash App Pay and the like are for online checkout, not a client standing at the counter.)
-        // (not in the SDK's types for its newest API version, hence the cast)
-        ...({ payment_method_types: input.terminal ? ["card_present"] : ["card"] } as object),
+        allowed_payment_method_types: input.terminal ? ["card_present"] : ["card"],
         ...(input.terminal ? { capture_method: "automatic" as const } : {}),
         ...(input.saveCard && customerId ? { setup_future_usage: "off_session" as const } : {}),
         metadata: { businessId: input.businessId, saleId: sale.id, paymentId: pending!.id },
         ...(fee > 0 ? { application_fee_amount: fee } : {}),
       },
-      // Choosing payment methods by `payment_method_types` ("card" at the desk, "card_present" on a reader) is not accepted by Stripe's newest API
-      // version, which makes them dashboard-managed; the older version still does it and works with Elements and the Terminal SDK.
-      { stripeAccount: input.accountId, idempotencyKey: `pi_${pending!.id}`, apiVersion: PINNED_API_VERSION },
+      { stripeAccount: input.accountId, idempotencyKey: `pi_${pending!.id}` },
     );
     await tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending!.id));
     return { clientSecret: pi.client_secret!, paymentId: pending!.id, amount };

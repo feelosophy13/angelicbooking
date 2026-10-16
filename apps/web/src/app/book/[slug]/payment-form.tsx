@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState, useTransition } from "react";
 import { loadStripe } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
 import { Button, Notice } from "@/components/ui";
 import { ContactFields, type BookingDefaults } from "./forms";
 import { abandonOnlinePaymentAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
@@ -97,7 +97,8 @@ export function PaidBookingForm(props: {
         <span className="font-medium">{fields.firstName} {fields.lastName}</span> · {fields.phone || fields.email}{" "}
         <button type="button" className="underline" onClick={() => { void abandonOnlinePaymentAction(props.slug, props.locationId ?? null, { kind: intent.kind, id: intent.intentId }); setIntent(null); }}>Edit</button>
       </p>
-      <Elements stripe={stripePromise} options={{ clientSecret: intent.clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: props.brand } } }}>
+      {/* Cards only: Stripe's plain card field (the Payment Element also draws Link's bank and buy-now-pay-later offers). */}
+      <Elements stripe={stripePromise}>
         <ConfirmStep fields={fields} intent={intent} mode={props.mode} amountLabel={props.amountLabel} brand={props.brand} />
       </Elements>
     </div>
@@ -115,7 +116,12 @@ function ConfirmStep({ fields, intent, mode, amountLabel, brand }: { fields: Rec
     if (!stripe || !elements) return;
     setBusy(true);
     setError(null);
-    const r = mode === "deposit" ? await stripe.confirmPayment({ elements, redirect: "if_required" }) : await stripe.confirmSetup({ elements, redirect: "if_required" });
+    const card = elements.getElement(CardElement);
+    if (!card) return;
+    const billing = { name: `${fields.firstName ?? ""} ${fields.lastName ?? ""}`.trim() || undefined, email: fields.email || undefined, phone: fields.phone || undefined };
+    const r = mode === "deposit"
+      ? await stripe.confirmCardPayment(intent.clientSecret, { payment_method: { card, billing_details: billing } })
+      : await stripe.confirmCardSetup(intent.clientSecret, { payment_method: { card, billing_details: billing } });
     if (r.error) {
       setError(r.error.message ?? "Your card was declined.");
       setBusy(false);
@@ -137,7 +143,9 @@ function ConfirmStep({ fields, intent, mode, amountLabel, brand }: { fields: Rec
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <PaymentElement options={{ layout: "tabs" }} />
+      <div className="rounded-lg border border-stone-300 bg-white px-3 py-3">
+        <CardElement options={{ style: { base: { fontSize: "16px", color: "#1c1917", "::placeholder": { color: "#a8a29e" } } } }} />
+      </div>
       {error ? <Notice>{error}</Notice> : null}
       <Button type="submit" disabled={!stripe || busy} className="w-full" style={{ background: brand }}>
         {busy ? "Confirming…" : mode === "deposit" ? `Pay ${amountLabel} and book` : "Save card and book"}

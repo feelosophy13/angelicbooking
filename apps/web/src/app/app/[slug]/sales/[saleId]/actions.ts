@@ -240,8 +240,8 @@ export async function terminalLocation(input: { slug: string; saleId: string }):
 }
 
 /** Card reader step 1: a card-present PaymentIntent for the amount. The reader collects and processes it; finishCardPayment then records it. */
-export async function startTerminalPayment(input: { slug: string; saleId: string; amount: string }): Promise<{ clientSecret: string } | { error: string }> {
-  const d = base.extend({ amount: z.string() }).parse(input);
+export async function startTerminalPayment(input: { slug: string; saleId: string; amount: string; saveCard?: boolean }): Promise<{ clientSecret: string } | { error: string }> {
+  const d = base.extend({ amount: z.string(), saveCard: z.boolean().optional() }).parse(input);
   const ctx = await ctxFor(d.slug);
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
@@ -249,7 +249,7 @@ export async function startTerminalPayment(input: { slug: string; saleId: string
   const pay = await paymentContextForSale(ctx.business, d.saleId);
   if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
   try {
-    const r = await createCardPaymentIntent({ businessId: ctx.business.id, accountId: pay.accountId, saleId: d.saleId, amountCents: cents, saveCard: false, actorUserId: ctx.user.id, terminal: true });
+    const r = await createCardPaymentIntent({ businessId: ctx.business.id, accountId: pay.accountId, saleId: d.saleId, amountCents: cents, saveCard: !!d.saveCard, actorUserId: ctx.user.id, terminal: true });
     return { clientSecret: r.clientSecret };
   } catch (e) {
     const f = friendly(e);

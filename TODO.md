@@ -402,7 +402,16 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       typed Visa 4242 -> "card · VISA •••• 4242 · Succeeded", sale paid. Also walked: an online booking with a $50 deposit (Classic Full Set, Any available
       provider): the Payment Element (card + bank, a Link prompt) took the test card, the confirmation page showed deposit $50 / due at the salon $95, the
       appointment is booked with deposit paid (VISA 4242) and the PaymentIntent succeeded on the demo account. The online deposit form still shows Bank
-      and a Link prompt (dashboard-managed; not changed). Still untested: a real reader, deposit refund on cancel.
+      and a Link prompt (dashboard-managed; not changed). 2026-10-16 follow-ups, all walked on demo-salon: desk and reader PaymentIntents use
+      `allowed_payment_method_types` (the newest API version's name; the older-version pin is gone); the online booking card form is the plain `CardElement`
+      too (`confirmCardPayment` / `confirmCardSetup`; the Payment Element drew Bank and Link); a client cancelling an online deposit booking more than 24 h out
+      refunds the deposit (Stripe refund succeeded, deposit_status refunded); inside the window a staff cancel keeps the WHOLE deposit even when the late fee is
+      smaller (a $50 deposit vs a $25 fee kept $50; the staff dialog says "the $25.00 deposit covers it": decide whether the excess should be refunded);
+      staff "Refund deposit" (`refundDeposit`) works. Reader checkout can save the card to the client (consent checkbox -> `allow_redisplay: always`,
+      the reader's generated card appears in the client's saved cards). Text receipts: the app queues the SMS correctly (+1 normalised, body ok) but demo
+      businesses never send; a direct Twilio send from the account's own local numbers came back undelivered (error 30034, unregistered 10DLC), so a real text
+      needs a verified toll-free number on a non-demo business. Found: the booking details form submits as a plain GET (personal data in the address bar)
+      when submitted before the page has hydrated. Still untested: a real reader. The shop/gift checkout still uses the Payment Element.
 - [x] 2026-10-15: platform admin accounts moved into the database (migration 0091 `admin_users`). Login, password reset, Google sign-in and the audit
       actor all use the table; the session cookie names the admin and `requireAdmin()` rechecks they still exist and are enabled. New Admins page
       (add by email with an emailed set-password link, disable/enable; not yourself, not the last one). `pnpm --filter @angelic/admin create-admin

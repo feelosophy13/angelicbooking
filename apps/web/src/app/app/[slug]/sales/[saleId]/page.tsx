@@ -377,7 +377,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                           ) : null}
                           <div>
                             <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-500">Card reader</h4>
-                            <TerminalPayment slug={slug} saleId={sale.id} dueCents={due} test={(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "").startsWith("pk_test")} />
+                            <TerminalPayment slug={slug} saleId={sale.id} dueCents={due} hasClient={!!client} test={(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "").startsWith("pk_test")} />
                           </div>
                           <div className="border-t border-stone-100 pt-3">
                             <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-500">Type in a card</h4>
