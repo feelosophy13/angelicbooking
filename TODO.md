@@ -199,6 +199,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Data isolation, 2026-10-16 (migration 0105): `files` (client photos, signed forms, staged client imports) now has forced row-level
       security like every business table; lookups by file id use the jobs context, writes run inside the business. A test fails if any table
       with a `business_id` lacks forced RLS (`rls-coverage.test.ts`). Demo seed scripts write files through the tenant too.
+- [x] Custom domains, 2026-10-16: an address becomes active only once the salon publishes a TXT record (`_angelic-verify.<name>`, shown on
+      Settings → Custom domain) proving it's theirs; addresses already active stay active. A claim that never proved ownership can be taken
+      over by whoever publishes the record, and a custom hostname only serves a booking page once it is active (no more squatting another
+      salon's name).
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

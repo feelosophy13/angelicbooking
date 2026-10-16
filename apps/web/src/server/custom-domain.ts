@@ -4,9 +4,10 @@
  * change the live service by accident.
  */
 import { promises as dns } from "node:dns";
+import { createHmac } from "node:crypto";
 import { and, eq, inArray, isNull, lt, ne, or } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
-import { checkHostname, dnsAdvice, dnsProblem, looksApex, parseRenderDomain, platformDomains, type DnsAdvice, type DomainStatus, type RenderDomain } from "@/lib/custom-domain";
+import { checkHostname, dnsAdvice, ownershipRecord, dnsProblem, looksApex, parseRenderDomain, platformDomains, type DnsAdvice, type DomainStatus, type RenderDomain } from "@/lib/custom-domain";
 
 type Business = typeof schema.businesses.$inferSelect;
 
@@ -56,6 +57,18 @@ export async function instructions(host: string, apex?: boolean | null): Promise
   return dnsAdvice(host, { cnameTarget: target, apexIp: await apexIp(target), apex: apex ?? undefined });
 }
 
+/** This business's ownership token for a hostname (stable, unguessable without the server secret). */
+export function ownershipToken(businessId: string, host: string): string {
+  return createHmac("sha256", process.env.BETTER_AUTH_SECRET ?? "dev").update(`domain:${businessId}:${host}`).digest("hex").slice(0, 32);
+}
+
+/** Has the business published its TXT record for the hostname? */
+async function provesOwnership(businessId: string, host: string): Promise<boolean> {
+  const rec = ownershipRecord(host, ownershipToken(businessId, host));
+  const txt = await dns.resolveTxt(rec.fqdn).catch(() => [] as string[][]);
+  return txt.some((parts) => parts.join("") === rec.value);
+}
+
 async function set(id: string, v: Partial<typeof schema.businesses.$inferInsert>) {
   await db.update(schema.businesses).set(v).where(eq(schema.businesses.id, id));
 }
@@ -66,8 +79,18 @@ export async function connectDomain(b: Business, raw: string): Promise<DomainSta
   if (!checked.ok) throw new DomainError(checked.message);
   const host = checked.host;
   if (b.customDomain === host && b.customDomainStatus !== "none") return b.customDomainStatus as DomainStatus;
-  const taken = await db.query.businesses.findFirst({ where: and(eq(schema.businesses.customDomain, host), ne(schema.businesses.id, b.id)), columns: { id: true } });
-  if (taken) throw new DomainError("That address is already connected to another business. If it is yours, contact support.");
+  const taken = await db.query.businesses.findFirst({ where: and(eq(schema.businesses.customDomain, host), ne(schema.businesses.id, b.id)) });
+  if (taken) {
+    // Someone else claimed it but never proved it was theirs: whoever publishes the ownership record gets it.
+    const rec = ownershipRecord(host, ownershipToken(b.id, host));
+    if (taken.customDomainStatus === "active" || !(await provesOwnership(b.id, host))) {
+      throw new DomainError(taken.customDomainStatus === "active" ? "That address is already connected to another business. If it is yours, contact support." : `That address is waiting for its owner to prove it. If it's yours, add a TXT record named ${rec.name} with the value ${rec.value}, wait a few minutes, then add the address again.`);
+    }
+    await set(taken.id, { customDomain: null, customDomainStatus: "none", customDomainRenderId: null, customDomainError: `${host} was claimed by its verified owner.` });
+    if (b.customDomain) await removeDomain(b);
+    await set(b.id, { customDomain: host, customDomainStatus: "pending", customDomainRenderId: taken.customDomainRenderId, customDomainError: null, customDomainCheckedAt: new Date() });
+    return checkDomain({ ...b, customDomain: host, customDomainStatus: "pending", customDomainRenderId: taken.customDomainRenderId });
+  }
   if (b.customDomain) await removeDomain(b);
 
   let status: DomainStatus = "manual";
@@ -117,7 +140,13 @@ export async function checkDomain(b: Business): Promise<DomainStatus> {
       console.error("[domain] check failed", host, (e as Error).message);
     }
   }
-  if (status === "pending" || status === "problem") {
+  // Becoming active also needs the ownership record (an address that is already active keeps working).
+  if (status === "active" && b.customDomainStatus !== "active" && !(await provesOwnership(b.id, host))) {
+    status = "pending";
+    const rec = ownershipRecord(host, ownershipToken(b.id, host));
+    error = `Almost there: add the TXT record ${rec.name} below so we know the address is yours.`;
+  }
+  if ((status === "pending" || status === "problem") && !error) {
     const target = await cnameTarget();
     const seen = await lookup(host);
     error = error ?? dnsProblem({ host, cnameTarget: target, seenCname: seen.seenCname, seenA: seen.seenA, apexIp: await apexIp(target), apex: apex ?? looksApex(host) });

@@ -70,3 +70,11 @@ describe("dnsProblem", () => {
     expect(dnsProblem({ ...o, host: "x.com", apex: true, seenA: ["9.9.9.9"] })).toMatch(/should point at 216\.24\.57\.1/);
   });
 });
+
+describe("ownershipRecord", () => {
+  it("names the TXT record relative to the domain, like the CNAME", async () => {
+    const { ownershipRecord } = await import("../custom-domain");
+    expect(ownershipRecord("book.mysalon.com", "abc")).toEqual({ type: "TXT", name: "_angelic-verify.book", fqdn: "_angelic-verify.book.mysalon.com", value: "angelic-verify=abc" });
+    expect(ownershipRecord("mysalon.co.uk", "abc").name).toBe("_angelic-verify");
+  });
+});

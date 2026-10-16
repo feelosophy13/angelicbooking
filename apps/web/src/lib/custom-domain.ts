@@ -56,6 +56,12 @@ export function dnsAdvice(host: string, o: { cnameTarget: string; apexIp: string
   return { type: "CNAME", name: host.split(".").slice(0, -registrableLabels(host)).join("."), value: o.cnameTarget, note: "If you use Cloudflare, set this record to \"DNS only\" (grey cloud) until it shows Active." };
 }
 
+/** The TXT record that proves a business controls a hostname: its name (as entered at most DNS providers) and the full DNS name. */
+export function ownershipRecord(host: string, token: string): { type: "TXT"; name: string; fqdn: string; value: string } {
+  const sub = host.split(".").slice(0, -registrableLabels(host)).join(".");
+  return { type: "TXT", name: sub ? `_angelic-verify.${sub}` : "_angelic-verify", fqdn: `_angelic-verify.${host}`, value: `angelic-verify=${token}` };
+}
+
 /** How the owner sees each status. */
 export const STATUS_LABEL: Record<DomainStatus, string> = {
   none: "Not set",

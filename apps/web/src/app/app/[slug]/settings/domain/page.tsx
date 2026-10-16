@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
 import { Card, FormPage, Input, Notice } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
-import { STATUS_LABEL, type DomainStatus } from "@/lib/custom-domain";
-import { instructions } from "@/server/custom-domain";
+import { STATUS_LABEL, ownershipRecord, type DomainStatus } from "@/lib/custom-domain";
+import { instructions, ownershipToken } from "@/server/custom-domain";
 import { deleteDomain, recheckDomain, saveDomain } from "./actions";
 
 const BADGE: Record<DomainStatus, string> = {
@@ -22,6 +22,8 @@ export default async function DomainPage({ params }: { params: Promise<{ slug: s
   const host = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/^https?:\/\//, "");
   const status = business.customDomainStatus as DomainStatus;
   const advice = business.customDomain && status !== "none" ? await instructions(business.customDomain) : null;
+  // The TXT record proves the address is this salon's; it's needed until the address is active.
+  const ownership = business.customDomain && status !== "none" && status !== "active" ? ownershipRecord(business.customDomain, ownershipToken(business.id, business.customDomain)) : null;
   const checked = business.customDomainCheckedAt ? new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone }).format(business.customDomainCheckedAt) : null;
   return (
     <FormPage title="Custom booking domain" backHref={`/app/${slug}/settings`} backLabel="Settings">
@@ -56,10 +58,13 @@ export default async function DomainPage({ params }: { params: Promise<{ slug: s
           ) : null}
           {advice ? (
             <div className="mt-4">
-              <h3 className="text-sm font-medium">Add this record where you manage your domain's DNS</h3>
+              <h3 className="text-sm font-medium">Add {ownership ? "these records" : "this record"} where you manage your domain&apos;s DNS</h3>
               <table className="mt-2 w-full max-w-xl text-sm">
                 <thead className="text-left text-xs text-stone-500"><tr><th className="py-1 pr-4 font-medium">Type</th><th className="py-1 pr-4 font-medium">Name</th><th className="py-1 font-medium">Value</th></tr></thead>
-                <tbody><tr className="font-mono"><td className="py-1 pr-4">{advice.type}</td><td className="py-1 pr-4">{advice.name}</td><td className="py-1 break-all">{advice.value}</td></tr></tbody>
+                <tbody>
+                  <tr className="font-mono"><td className="py-1 pr-4">{advice.type}</td><td className="py-1 pr-4">{advice.name}</td><td className="py-1 break-all">{advice.value}</td></tr>
+                  {ownership ? <tr className="font-mono"><td className="py-1 pr-4">{ownership.type}</td><td className="py-1 pr-4">{ownership.name}</td><td className="py-1 break-all">{ownership.value}</td></tr> : null}
+                </tbody>
               </table>
               <p className="mt-2 text-xs text-stone-500">{advice.note}</p>
             </div>
