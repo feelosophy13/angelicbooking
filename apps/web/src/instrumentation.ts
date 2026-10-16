@@ -11,26 +11,7 @@ export async function register() {
 }
 
 export async function onRequestError(err: unknown, request: { path: string; method: string; headers: Record<string, string | string[] | undefined> }, context: { routerKind: string; routePath: string; routeType: string }) {
-  const url = process.env.ERROR_WEBHOOK_URL;
-  const e = err as { message?: string; stack?: string; digest?: string };
-  const summary = `${request.method} ${request.path} → ${e?.message ?? String(err)}`;
-  console.error("[request-error]", summary, e?.digest ?? "");
-  if (!url) return;
-  try {
-    await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text: `:rotating_light: ${summary}`, // Slack/Discord-friendly
-        app: "angelic-booking",
-        env: process.env.VERCEL_ENV ?? process.env.NODE_ENV,
-        route: `${context.routerKind} ${context.routeType} ${context.routePath}`,
-        digest: e?.digest,
-        stack: e?.stack?.split("\n").slice(0, 8).join("\n"),
-        at: new Date().toISOString(),
-      }),
-    });
-  } catch {
-    /* never let reporting throw */
-  }
+  const { reportError } = await import("./lib/report-error");
+  const e = err as { message?: string };
+  await reportError(`${request.method} ${request.path} → ${e?.message ?? String(err)}`, err, { route: `${context.routerKind} ${context.routeType} ${context.routePath}` });
 }

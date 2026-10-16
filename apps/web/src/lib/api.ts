@@ -172,7 +172,9 @@ export function route<P = Record<string, never>>(scope: ApiScope, handler: Handl
       if (e instanceof BookingError) return withApiHeaders(apiError(409, "booking_conflict", e.message), rate);
       if (e instanceof ApiBadRequest) return withApiHeaders(apiError(400, "bad_request", e.message), rate);
       if (e instanceof ApiTooLarge) return withApiHeaders(apiError(413, "payload_too_large", `Request body is larger than ${MAX_BODY_BYTES / 1000} KB.`), rate);
-      console.error("[api/v1]", (e as Error).message);
+      // Answered here, so Next's error hook never sees it: report it ourselves (route, key, stack).
+      const { reportError } = await import("./report-error");
+      await reportError(`API ${req.method} ${new URL(req.url).pathname} → ${(e as Error).message}`, e, { keyId: auth.ctx.keyId, businessId: auth.ctx.business.id });
       return withApiHeaders(apiError(500, "server_error", "Something went wrong on our side."), rate);
     }
   };

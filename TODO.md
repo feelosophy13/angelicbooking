@@ -153,6 +153,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       trial closes the REST API (402 `subscription_required`) and the mobile app like the staff app; server actions can no longer slip past
       the trial lock by posting to the billing page (only the billing actions run while locked). **Pending invites from people who never
       verified their email now need them to verify first.**
+- [x] Visibility and feeds, 2026-10-16 (migration 0101): API 500s and failing job steps go to `ERROR_WEBHOOK_URL` (shared `lib/report-error.ts`)
+      and the notifications job answers 500 when a step fails, so the cron's `curl -f` alerts; the daily billing reconcile and signup nudge
+      claim their day in `job_markers` (no more skipped days when a run is late); job secrets compared in constant time. Calendar feeds stop
+      for inactive staff and deactivating someone rotates their link; ICS text is escaped and folded per RFC 5545.
+- [ ] **Set `ERROR_WEBHOOK_URL` on Render** (a Slack or Discord incoming webhook) so these alerts reach someone.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done except Resend pacing/per-tenant fairness and the items listed as still open above.
       Next: the per-area lists in that file.
 

@@ -708,6 +708,13 @@
       "when": 1794100000000,
       "tag": "0100_sale_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1794200000000,
+      "tag": "0101_job_markers",
+      "breakpoints": true
     }
   ]
 }

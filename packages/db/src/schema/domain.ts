@@ -1428,3 +1428,10 @@ export const smsSuppressions = pgTable(
   },
   (t) => [primaryKey({ columns: [t.businessId, t.phoneTail] })],
 );
+
+/** Platform jobs that run once a day: the last day each one ran (claimed atomically, so a slow or late 5-minute run never skips a day). */
+export const jobMarkers = pgTable("job_markers", {
+  name: text("name").primaryKey(),
+  lastRunOn: date("last_run_on").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

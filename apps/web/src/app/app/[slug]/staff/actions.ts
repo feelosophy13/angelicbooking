@@ -143,7 +143,8 @@ export async function toggleStaffActive(formData: FormData) {
   const ctx = await requireAction(slug, "staff.manage");
   const staffId = String(formData.get("staffId"));
   const active = formData.get("active") === "true";
-  await withTenant(ctx.business.id, (tx) => tx.update(schema.staff).set({ active }).where(eq(schema.staff.id, staffId)));
+  // Deactivating also retires their calendar-feed link: a phone that still subscribes to it gets nothing, even if they come back later.
+  await withTenant(ctx.business.id, (tx) => tx.update(schema.staff).set({ active, ...(active ? {} : { calendarToken: newCalendarToken() }) }).where(eq(schema.staff.id, staffId)));
   await setFlash(active ? "Staff member reactivated" : "Staff member deactivated");
   revalidatePath(`/app/${slug}/staff`);
 }
@@ -421,9 +422,7 @@ export const savePay = formAction(
 export async function resetCalendarToken(formData: FormData) {
   const d = z.object({ slug: z.string(), staffId: z.string().min(1) }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "staff.manage");
-  const bytes = new Uint8Array(18);
-  crypto.getRandomValues(bytes);
-  await withTenant(ctx.business.id, (tx) => tx.update(schema.staff).set({ calendarToken: Buffer.from(bytes).toString("hex") }).where(eq(schema.staff.id, d.staffId)));
+  await withTenant(ctx.business.id, (tx) => tx.update(schema.staff).set({ calendarToken: newCalendarToken() }).where(eq(schema.staff.id, d.staffId)));
   await setFlash("Calendar link reset. Subscribe again with the new link.");
   revalidatePath(`/app/${d.slug}/staff/${d.staffId}`);
 }
@@ -454,4 +453,11 @@ async function recordPayChangeOrFieldError(input: Parameters<typeof recordPayCha
     if (e instanceof PayrollLockedError) throw new FormError(e.message, "effectiveFrom");
     throw e;
   }
+}
+
+/** A fresh calendar-feed secret (36 hex characters). */
+function newCalendarToken(): string {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return Buffer.from(bytes).toString("hex");
 }

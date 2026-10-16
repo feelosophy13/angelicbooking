@@ -1,8 +1,8 @@
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 import { db, schema, withJobs, withTenant } from "@angelic/db";
 import { appUrl } from "@/lib/stripe";
+import { esc, fold } from "@/lib/ics";
 
-const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 const stamp = (d: Date) => d.toISOString().replace(/[-:]|\.\d{3}/g, "");
 const DAYS_BACK = 30;
 const DAYS_AHEAD = 120;
@@ -18,7 +18,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   const token = raw.replace(/\.ics$/i, "");
   if (!/^[0-9a-f]{36}$/.test(token)) return new Response("Not found", { status: 404 });
   const person = await withJobs((tx) => tx.query.staff.findFirst({ where: eq(schema.staff.calendarToken, token) }));
-  if (!person) return new Response("Not found", { status: 404 });
+  // Someone who no longer works here keeps no window onto clients' names, phones and notes.
+  if (!person || !person.active) return new Response("Not found", { status: 404 });
   const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, person.businessId) });
   if (!business || business.suspendedAt) return new Response("Not found", { status: 404 });
   const now = Date.now();
@@ -66,7 +67,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
       `URL:${appUrl(`/app/${business.slug}/appointments/${appointmentId}`)}`,
       `STATUS:${cancelled ? "CANCELLED" : "CONFIRMED"}`,
       "END:VEVENT",
-    ].filter(Boolean).join("\r\n");
+    ].filter(Boolean).map(fold).join("\r\n");
   });
   const ics = [
     "BEGIN:VCALENDAR",
@@ -80,6 +81,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     "X-PUBLISHED-TTL:PT1H",
     ...events,
     "END:VCALENDAR",
-  ].join("\r\n");
+  ].map(fold).join("\r\n");
   return new Response(ics, { headers: { "Content-Type": "text/calendar; charset=utf-8", "Cache-Control": "private, max-age=300" } });
 }
