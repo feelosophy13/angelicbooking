@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
-import { finalizePayroll } from "@/server/payroll";
+import { finalizePayroll, getFinalizedRunIn } from "@/server/payroll";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 
@@ -15,9 +15,11 @@ export const addAdjustment = formAction(
     const ctx = await requireAction(d.slug, "payroll.view");
     const cents = Math.round(Number(d.amount.replace("$", "")) * 100);
     if (cents === 0) throw new FormError("Amount can't be zero", "amount");
-    await withTenant(ctx.business.id, (tx) =>
-      tx.insert(schema.payrollAdjustments).values({ businessId: ctx.business.id, staffId: d.staffId, periodStart: d.start, periodEnd: d.end, label: d.label, amountCents: cents, createdByUserId: ctx.user.id }),
-    );
+    await withTenant(ctx.business.id, async (tx) => {
+      if (await getFinalizedRunIn(tx, { start: d.start, end: d.end })) throw new FormError("This period is finalized. Add the adjustment to the current period instead.", "label");
+      const [row] = await tx.insert(schema.payrollAdjustments).values({ businessId: ctx.business.id, staffId: d.staffId, periodStart: d.start, periodEnd: d.end, label: d.label, amountCents: cents, createdByUserId: ctx.user.id }).returning();
+      await tx.insert(schema.auditLog).values({ businessId: ctx.business.id, actorUserId: ctx.user.id, action: "payroll.adjustment_add", entity: "payroll_adjustment", entityId: row!.id, diff: JSON.stringify({ staffId: d.staffId, period: `${d.start}_${d.end}`, label: d.label, cents }) });
+    });
     await setFlash("Adjustment added");
     revalidatePath(`/app/${d.slug}/payroll`);
     redirect(`/app/${d.slug}/payroll?start=${d.start}&end=${d.end}`);
@@ -27,7 +29,18 @@ export const addAdjustment = formAction(
 export async function deleteAdjustment(formData: FormData) {
   const d = z.object({ slug: z.string(), id: z.string().min(1) }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "payroll.view");
-  await withTenant(ctx.business.id, (tx) => tx.delete(schema.payrollAdjustments).where(eq(schema.payrollAdjustments.id, d.id)));
+  const outcome = await withTenant(ctx.business.id, async (tx) => {
+    const a = await tx.query.payrollAdjustments.findFirst({ where: eq(schema.payrollAdjustments.id, d.id) });
+    if (!a) return "gone";
+    if (await getFinalizedRunIn(tx, { start: a.periodStart, end: a.periodEnd })) return "locked";
+    await tx.delete(schema.payrollAdjustments).where(eq(schema.payrollAdjustments.id, a.id));
+    await tx.insert(schema.auditLog).values({ businessId: ctx.business.id, actorUserId: ctx.user.id, action: "payroll.adjustment_remove", entity: "payroll_adjustment", entityId: a.id, diff: JSON.stringify({ staffId: a.staffId, period: `${a.periodStart}_${a.periodEnd}`, label: a.label, cents: a.amountCents }) });
+    return "ok";
+  });
+  if (outcome === "locked") {
+    await setFlash("This period is finalized, so its adjustments can't be removed. Add a correcting adjustment to the current period.", "error");
+    return;
+  }
   await setFlash("Adjustment removed");
   revalidatePath(`/app/${d.slug}/payroll`);
 }

@@ -7,7 +7,7 @@ import { dateShort } from "@/lib/format";
 export const metadata: Metadata = { title: "Payroll" };
 import { can, instantToISODate, rateLabel } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
-import { defaultPeriod, getFinalizedRun, listPayrollRuns, runPayroll } from "@/server/payroll";
+import { defaultPeriod, driftFromSnapshot, getFinalizedRun, listPayrollRuns, runPayroll } from "@/server/payroll";
 import { formatDateLong, formatMoney } from "@/lib/utils";
 import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice, Checkbox } from "@/components/ui";
 import { deleteAdjustment, finalize } from "./actions";
@@ -32,6 +32,8 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   const active = result.employees.filter((e) => e.hasActivity);
   const unconfigured = result.employees.filter((e) => e.hasActivity && e.employee.payType === "commission" && e.employee.mainCommissionBps === 0 && e.mainRevenueCents > 0);
   const qs = `start=${start}&end=${end}&overtime=${overtime ? 1 : 0}${locationFilter ? `&location=${locationFilter}` : ""}`;
+  // A finalized period should not change; if it does (a tip added to an old ticket, an edit made before periods were locked), say who and by how much.
+  const drift = finalized && !locationFilter && finalized.overtime === overtime ? driftFromSnapshot(finalized.snapshot, result) : [];
   const totals = active.reduce((t, e) => ({ total: t.total + e.totalCents, tips: t.tips + e.cashTipsCents + e.cardTipsCents, rev: t.rev + e.serviceRevenueCents }), { total: 0, tips: 0, rev: 0 });
 
   return (
@@ -60,6 +62,14 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           Pay settings changed during this period: {result.rateChanges.map((c) => `${c.name} from ${formatDateLong(c.effectiveFrom)}`).join(", ")}. The whole period is paid at the settings in force on {formatDateLong(end)}.
         </p>
       ) : null}
+      {finalized && !locationFilter && finalized.overtime !== overtime ? (
+        <div className="mb-4"><Notice>This period was finalized with overtime {finalized.overtime ? "on" : "off"}; these figures have it {overtime ? "on" : "off"}.</Notice></div>
+      ) : null}
+      {drift.length ? (
+        <div className="mb-4"><Notice>
+          Changed since this period was finalized: {drift.map((d) => `${d.name} ${money(d.wasCents)} → ${money(d.nowCents)}`).join("; ")}. Pay the difference as an adjustment in the current period, or re-finalize if the snapshot was wrong.
+        </Notice></div>
+      ) : null}
       {unconfigured.length ? (
         <div className="mb-4"><Notice>{unconfigured.map((e) => e.employee.name).join(", ")} earned service revenue but {unconfigured.length > 1 ? "have" : "has"} no commission rate. Set it under Staff → Pay.</Notice></div>
       ) : null}
@@ -81,7 +91,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
               <input type="hidden" name="start" value={start} />
               <input type="hidden" name="end" value={end} />
               {overtime ? <input type="hidden" name="overtime" value="on" /> : null}
-              <ConfirmSubmit title={finalized ? "Re-finalize this period?" : "Finalize this pay period?"} body="A snapshot of these figures is saved for the record. You can re-run later if anything changes." confirmLabel={finalized ? "Re-finalize" : "Finalize"} variant="primary">{finalized ? "Re-finalize" : "Finalize period"}</ConfirmSubmit>
+              <ConfirmSubmit title={finalized ? "Re-finalize this period?" : "Finalize this pay period?"} body={finalized ? "This replaces the saved snapshot with today's figures. What changed, person by person, is kept in the activity log." : "A snapshot of these figures is saved. After this, hours, adjustments and pay rates inside the period are locked; refunds made later come off the next period."} confirmLabel={finalized ? "Re-finalize" : "Finalize"} variant="primary">{finalized ? "Re-finalize" : "Finalize period"}</ConfirmSubmit>
             </form>}
           </div>
         </div>
@@ -151,14 +161,14 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                     <dt className="font-semibold">Total check</dt><dd className="text-right font-semibold sm:col-span-2">{money(e.totalCents)}</dd>
                   </dl>
                 )}
-                {e.mainRows.length + e.miscRows.length + e.refundedRows.length > 0 ? (
+                {e.mainRows.length + e.miscRows.length > 0 ? (
                   <details className="mt-3 text-sm">
-                    <summary className="cursor-pointer text-brand-700">{e.mainRows.length + e.miscRows.length} transactions{e.refundedRows.length ? ` · ${e.refundedRows.length} refunded` : ""}</summary>
+                    <summary className="cursor-pointer text-brand-700">{e.mainRows.length + e.miscRows.length} transactions{[...e.mainRows, ...e.miscRows].some((l) => l.amtPaidCents < 0) ? ` · includes refunds` : ""}</summary>
                     <div className="overflow-x-auto"><table className="mt-2 w-full text-xs">
                       <thead className="text-left text-stone-500"><tr><th className="py-1 pr-2">Date</th><th className="py-1 pr-2">Customer</th><th className="py-1 pr-2">Item</th><th className="py-1 pr-2">Section</th><th className="py-1 pr-2 text-right">Cash</th><th className="py-1 pr-2 text-right">Cash tip</th><th className="py-1 pr-2 text-right">Card</th><th className="py-1 pr-2 text-right">CC tip</th><th className="py-1 pr-2 text-right">Disc</th><th className="py-1 text-right">Amt paid</th></tr></thead>
                       <tbody className="divide-y divide-stone-100">
-                        {[...e.miscRows, ...e.mainRows, ...e.refundedRows].map((l, i) => (
-                          <tr key={i} className={l.refunded ? "text-stone-400 line-through" : ""}>
+                        {[...e.miscRows, ...e.mainRows].map((l, i) => (
+                          <tr key={i} className={l.amtPaidCents < 0 ? "text-red-700" : ""}>
                             <td className="py-1 pr-2">{dateShort(l.date)}</td><td className="py-1 pr-2">{l.customer}</td><td className="py-1 pr-2">{l.name}</td><td className="py-1 pr-2">{l.kind === "service" ? "main" : "misc"}</td>
                             <td className="py-1 pr-2 text-right">{money(l.cashCents)}</td><td className="py-1 pr-2 text-right">{money(l.cashTipCents)}</td><td className="py-1 pr-2 text-right">{money(l.cardCents)}</td><td className="py-1 pr-2 text-right">{money(l.cardTipCents)}</td><td className="py-1 pr-2 text-right">{money(l.discountCents)}</td><td className="py-1 text-right">{money(l.amtPaidCents)}</td>
                           </tr>
@@ -201,7 +211,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
             )}
           </Card>
           <Card className="p-4 text-xs text-stone-500">
-            <p>Commission is figured on service money (amount paid minus tips, net of discount), credited to the appointment date. Products and packages earn the product rate on the tax-inclusive amount; memberships earn nothing. Card tips carry the card-tip fee; cash tips never do. Tax withholding for W-2 staff is left at $0 unless set on the staff member. <Link href={`/app/${slug}/staff`} className="underline">Set pay rules under Staff.</Link></p>
+            <p>Commission is figured on service money (amount paid minus tips, net of discount), credited to the appointment date. Products and packages earn the product rate on the tax-inclusive amount; memberships earn nothing. Card tips carry the card-tip fee; cash tips never do. Tax withholding for W-2 staff is left at $0 unless set on the staff member. A refund comes off pay on the day it is made ("Refund ·" rows), so one made after a period was paid reduces the next period. <Link href={`/app/${slug}/staff`} className="underline">Set pay rules under Staff.</Link></p>
           </Card>
         </div>
       </div>

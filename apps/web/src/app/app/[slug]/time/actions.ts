@@ -6,9 +6,10 @@ import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
 import { instantToISODate } from "@angelic/core";
 import { requireBusiness, requireAction } from "@/lib/tenant";
-import { f, formAction } from "@/lib/form";
+import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { openEntryFor, resetClockToken } from "@/server/time-clock";
+import { assertPeriodOpen, PayrollLockedError } from "@/server/payroll-lock";
 
 async function ownStaffId(businessId: string, userId: string) {
   return withTenant(businessId, async (tx) => (await tx.query.staff.findFirst({ where: eq(schema.staff.userId, userId) }))?.id ?? null);
@@ -39,9 +40,15 @@ export const addTimeEntry = formAction(
   z.object({ slug: z.string(), staffId: f.id(), date: f.isoDate(), hours: f.num(0.25, 24), note: f.optional(120) }),
   async (d) => {
     const ctx = await requireAction(d.slug, "staff.manage");
-    await withTenant(ctx.business.id, (tx) =>
-      tx.insert(schema.timeEntries).values({ businessId: ctx.business.id, staffId: d.staffId, date: d.date, minutes: Math.round(d.hours * 60), note: d.note, createdByUserId: ctx.user.id }),
-    );
+    try {
+      await withTenant(ctx.business.id, async (tx) => {
+        await assertPeriodOpen(tx, d.date, "Hours");
+        await tx.insert(schema.timeEntries).values({ businessId: ctx.business.id, staffId: d.staffId, date: d.date, minutes: Math.round(d.hours * 60), note: d.note, createdByUserId: ctx.user.id });
+      });
+    } catch (e) {
+      if (e instanceof PayrollLockedError) throw new FormError(e.message, "date");
+      throw e;
+    }
     await setFlash("Hours added");
     revalidatePath(`/app/${d.slug}/time`);
     redirect(`/app/${d.slug}/time`);
@@ -51,7 +58,19 @@ export const addTimeEntry = formAction(
 export async function deleteTimeEntry(formData: FormData) {
   const d = z.object({ slug: z.string(), id: z.string().min(1) }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "staff.manage");
-  await withTenant(ctx.business.id, (tx) => tx.delete(schema.timeEntries).where(eq(schema.timeEntries.id, d.id)));
+  try {
+    await withTenant(ctx.business.id, async (tx) => {
+      const entry = await tx.query.timeEntries.findFirst({ where: eq(schema.timeEntries.id, d.id), columns: { date: true } });
+      if (entry) await assertPeriodOpen(tx, entry.date, "This entry");
+      await tx.delete(schema.timeEntries).where(eq(schema.timeEntries.id, d.id));
+    });
+  } catch (e) {
+    if (e instanceof PayrollLockedError) {
+      await setFlash(e.message, "error");
+      return;
+    }
+    throw e;
+  }
   await setFlash("Entry removed");
   revalidatePath(`/app/${d.slug}/time`);
 }

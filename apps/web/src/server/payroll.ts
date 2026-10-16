@@ -1,5 +1,5 @@
-import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
-import { db, schema, withTenant } from "@angelic/db";
+import { and, asc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { db, schema, withTenant, type TenantDb } from "@angelic/db";
 import { CARD_FEE_METHODS, computePayroll, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type PayrollEmployee, type PayrollLine, type PayrollResult, type TipPart } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
 import { ratesForPeriod, syncCurrentRates } from "@/server/pay-rates";
@@ -20,6 +20,11 @@ function localDate(at: Date, tz: string) {
  * credited to the date the appointment happened (so deposits taken earlier
  * land in the right period); products and other lines to the checkout date.
  * Discounts, tax and tips are allocated per line so the sheet's columns add up.
+ *
+ * Refunds are events on the day they happen, not edits to the past: a sale is always credited in full on its own date, and each refund
+ * (to the card or as store credit) adds "Refund ·" rows with negative amounts on the refund's date, in proportion to the share of the
+ * sale's payments refunded (goods and tips alike). So a refund after a period was paid comes off the next period's pay instead of
+ * silently vanishing, and re-running a paid period gives the same numbers it gave then.
  */
 export async function buildPayrollLines(business: Business, period: PayrollPeriod, locationId?: string | null): Promise<PayrollLine[]> {
   const tz = business.timezone;
@@ -27,19 +32,49 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
   // can precede or follow checkout; narrow by credited date below.
   const from = zonedToInstant(shiftISODate(period.start, -183), "00:00", tz);
   const to = zonedToInstant(shiftISODate(period.end, 31), "00:00", tz);
+  // Refunds made in the period, whenever their sale was (a day of slack each side; narrowed by local date below).
+  const refundFrom = zonedToInstant(shiftISODate(period.start, -1), "00:00", tz);
+  const refundTo = zonedToInstant(shiftISODate(period.end, 2), "00:00", tz);
   return withTenant(business.id, async (tx) => {
+    const [cardRefunds, creditRefunds] = await Promise.all([
+      tx
+        .select({ saleId: schema.payments.saleId, cents: schema.refunds.amountCents, at: schema.refunds.createdAt })
+        .from(schema.refunds)
+        .innerJoin(schema.payments, eq(schema.payments.id, schema.refunds.paymentId))
+        .where(and(gte(schema.refunds.createdAt, refundFrom), lte(schema.refunds.createdAt, refundTo))),
+      tx
+        .select({ saleId: schema.storeCreditLedger.saleId, cents: schema.storeCreditLedger.deltaCents, at: schema.storeCreditLedger.createdAt })
+        .from(schema.storeCreditLedger)
+        .where(and(eq(schema.storeCreditLedger.reason, "refund"), sql`${schema.storeCreditLedger.saleId} is not null`, gte(schema.storeCreditLedger.createdAt, refundFrom), lte(schema.storeCreditLedger.createdAt, refundTo))),
+    ]);
+    const refundEvents = [...cardRefunds, ...creditRefunds]
+      .map((r) => ({ saleId: r.saleId!, cents: r.cents, date: localDate(r.at, tz) }))
+      .filter((r) => r.cents > 0 && r.date >= period.start && r.date <= period.end);
+    const refundSaleIds = [...new Set(refundEvents.map((r) => r.saleId))];
     const sales = await tx
       .select()
       .from(schema.sales)
-      .where(and(gte(schema.sales.closedAt, from), lte(schema.sales.closedAt, to), sql`${schema.sales.status} in ('paid','refunded')`, ...(locationId ? [eq(schema.sales.locationId, locationId)] : [])));
+      .where(
+        and(
+          sql`${schema.sales.status} in ('paid','refunded')`,
+          ...(locationId ? [eq(schema.sales.locationId, locationId)] : []),
+          refundSaleIds.length ? or(and(gte(schema.sales.closedAt, from), lte(schema.sales.closedAt, to)), inArray(schema.sales.id, refundSaleIds)) : and(gte(schema.sales.closedAt, from), lte(schema.sales.closedAt, to)),
+        ),
+      );
     if (!sales.length) return [];
     const saleIds = sales.map((s) => s.id);
-    const [lines, pays, clients, users, items] = await Promise.all([
+    const [lines, pays] = await Promise.all([
       tx.select().from(schema.saleLines).where(sql`${schema.saleLines.saleId} in ${saleIds}`).orderBy(asc(schema.saleLines.sortOrder)),
       tx.select().from(schema.payments).where(and(sql`${schema.payments.saleId} in ${saleIds}`, sql`${schema.payments.status} in ('succeeded','partially_refunded','refunded')`)),
-      tx.select({ id: schema.clients.id, first: schema.clients.firstName, last: schema.clients.lastName }).from(schema.clients),
-      db.select({ id: schema.user.id, name: schema.user.name }).from(schema.user),
-      tx.select({ id: schema.appointmentItems.id, startAt: schema.appointmentItems.startAt }).from(schema.appointmentItems),
+    ]);
+    // Only the names, users and visit times these sales need (not every row in the business, or every user on the platform).
+    const clientIds = [...new Set(sales.map((s) => s.clientId).filter((x): x is string => !!x))];
+    const userIds = [...new Set(sales.map((s) => s.createdByUserId).filter((x): x is string => !!x))];
+    const itemIds = [...new Set(lines.map((l) => l.appointmentItemId).filter((x): x is string => !!x))];
+    const [clients, users, items] = await Promise.all([
+      clientIds.length ? tx.select({ id: schema.clients.id, first: schema.clients.firstName, last: schema.clients.lastName }).from(schema.clients).where(inArray(schema.clients.id, clientIds)) : [],
+      userIds.length ? db.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, userIds)) : [],
+      itemIds.length ? tx.select({ id: schema.appointmentItems.id, startAt: schema.appointmentItems.startAt }).from(schema.appointmentItems).where(inArray(schema.appointmentItems.id, itemIds)) : [],
     ]);
     const clientName = new Map(clients.map((c) => [c.id, `${c.first} ${c.last}`.trim()]));
     const userName = new Map(users.map((u) => [u.id, u.name]));
@@ -59,9 +94,6 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       const cardPaid = sp.filter((p) => CARD_FEE_METHODS.has(p.method)).reduce((s, p) => s + p.amountCents, 0);
       const cashShare = paidTotal > 0 ? 1 - cardPaid / paidTotal : 0;
       const tipNoFeeShare = cashShare;
-      const fullyRefunded = sale.status === "refunded" || (sale.paidCents > 0 && sale.refundedCents >= sale.paidCents);
-      // Partial refunds reduce goods proportionally; tips are left whole.
-      const keep = fullyRefunded || sale.paidCents <= 0 ? 1 : Math.max(0, (sale.paidCents - sale.refundedCents) / sale.paidCents);
       const checkoutBy = sale.createdByUserId ? (userName.get(sale.createdByUserId) ?? null) : null;
       const customer = sale.clientId ? (clientName.get(sale.clientId) ?? "Walk-in") : "Walk-in";
       const checkoutDate = localDate(sale.closedAt ?? sale.createdAt, tz);
@@ -70,6 +102,7 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       const tipByStaff = new Map<string, TipPart[]>();
       for (const t of tips) if (t.staffId) tipByStaff.set(t.staffId, [...(tipByStaff.get(t.staffId) ?? []), { amountCents: t.amountCents, method: t.tipMethod === "cash" || t.tipMethod === "card" ? t.tipMethod : null }]);
 
+      const base: PayrollLine[] = [];
       const seenStaffTip = new Set<string>();
       for (const l of goods) {
         if (!l.staffId) continue;
@@ -77,7 +110,7 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         const tax = l.taxable && taxableTotal > 0 ? Math.round((sale.taxCents * l.amountCents) / taxableTotal) : 0;
         // A line covered by a package or membership credit carries its value in creditCents
         // (amountCents is 0 so the ticket adds up); the provider is still paid on it.
-        const net = Math.round((l.amountCents - disc + tax) * keep) + Math.round((l.creditCents ?? 0) * keep);
+        const net = l.amountCents - disc + tax + (l.creditCents ?? 0);
         let tip = 0;
         let cashTip = 0;
         let cardTip = 0;
@@ -93,13 +126,13 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         // A package or membership sold at the desk is its own sale-line kind (not a product named "package"), so map it directly; gift cards and fees are not commissionable.
         const kind: PayrollLine["kind"] = l.kind === "service" ? "service" : l.kind === "package" ? "package" : l.kind === "membership" ? "membership" : l.kind === "product" ? (/package/i.test(l.name) ? "package" : /membership/i.test(l.name) ? "membership" : "product") : "fee";
         const start = l.appointmentItemId ? itemStart.get(l.appointmentItemId) : null;
-        out.push({
+        base.push({
           staffId: l.staffId,
           kind,
-          refunded: fullyRefunded,
+          refunded: false,
           date: start ? localDate(start, tz) : checkoutDate,
           customer,
-          name: l.name + (fullyRefunded ? " (Refunded)" : ""),
+          name: l.name,
           checkoutBy,
           saleNumber: sale.number,
           cashCents: cash,
@@ -115,8 +148,18 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       for (const [staffId, parts] of tipByStaff) {
         if (seenStaffTip.has(staffId)) continue;
         const split = splitTips(parts, tipNoFeeShare);
-        const tip = split.totalCents;
-        out.push({ staffId, kind: "service", refunded: fullyRefunded, date: checkoutDate, customer, name: "Tip", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: split.cashCents, cardTipCents: split.cardCents, discountCents: 0, amtPaidCents: tip, locationId: sale.locationId });
+        base.push({ staffId, kind: "service", refunded: false, date: checkoutDate, customer, name: "Tip", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: split.cashCents, cardTipCents: split.cardCents, discountCents: 0, amtPaidCents: split.totalCents, locationId: sale.locationId });
+      }
+      out.push(...base);
+      // Each refund of this sale in the period takes back its share of every row, on the day it was refunded.
+      if (paidTotal > 0) {
+        for (const r of refundEvents.filter((e) => e.saleId === sale.id)) {
+          const f = Math.min(1, r.cents / paidTotal);
+          const back = (c: number) => -Math.round(c * f);
+          for (const b of base) {
+            out.push({ ...b, date: r.date, name: `Refund · ${b.name}`, cashCents: back(b.cashCents), cardCents: back(b.cardCents), cashTipCents: back(b.cashTipCents), cardTipCents: back(b.cardTipCents), discountCents: 0, amtPaidCents: back(b.amtPaidCents) });
+          }
+        }
       }
     }
     return out.filter((l) => l.date >= period.start && l.date <= period.end);
@@ -226,13 +269,33 @@ export async function payrollByLocation(business: Business, period: PayrollPerio
 }
 
 export async function getFinalizedRun(businessId: string, period: PayrollPeriod) {
-  return withTenant(businessId, (tx) =>
-    tx.query.payrollRuns.findFirst({ where: and(eq(schema.payrollRuns.periodStart, period.start), eq(schema.payrollRuns.periodEnd, period.end)) }),
-  );
+  return withTenant(businessId, (tx) => getFinalizedRunIn(tx, period));
+}
+
+export function getFinalizedRunIn(tx: TenantDb, period: PayrollPeriod) {
+  return tx.query.payrollRuns.findFirst({ where: and(eq(schema.payrollRuns.periodStart, period.start), eq(schema.payrollRuns.periodEnd, period.end)) });
+}
+
+/** Each person's total in a saved snapshot (staff id → cents). */
+export function snapshotTotals(snapshot: unknown): Map<string, number> {
+  const emps = ((snapshot as { employees?: { employee?: { staffId?: string }; totalCents?: number }[] })?.employees ?? []);
+  return new Map(emps.filter((e) => e.employee?.staffId).map((e) => [e.employee!.staffId!, Number(e.totalCents ?? 0)]));
+}
+
+/** Who would be paid differently now than the finalized snapshot says (late tips on old tickets, edits made before the locks existed). */
+export function driftFromSnapshot(snapshot: unknown, live: PayrollResult): { staffId: string; name: string; wasCents: number; nowCents: number }[] {
+  const was = snapshotTotals(snapshot);
+  const out: { staffId: string; name: string; wasCents: number; nowCents: number }[] = [];
+  for (const e of live.employees) {
+    const before = was.get(e.employee.staffId) ?? 0;
+    if (before !== e.totalCents && (e.hasActivity || before !== 0)) out.push({ staffId: e.employee.staffId, name: e.employee.name, wasCents: before, nowCents: e.totalCents });
+  }
+  return out;
 }
 
 export async function finalizePayroll(business: Business, period: PayrollPeriod, overtime: boolean, actorUserId: string) {
   const result = await runPayroll(business, period, overtime);
+  const previous = await getFinalizedRun(business.id, period);
   await withTenant(business.id, async (tx) => {
     await tx
       .insert(schema.payrollRuns)
@@ -241,7 +304,9 @@ export async function finalizePayroll(business: Business, period: PayrollPeriod,
         target: [schema.payrollRuns.businessId, schema.payrollRuns.periodStart, schema.payrollRuns.periodEnd],
         set: { snapshot: result as unknown as Record<string, unknown>, overtime, createdByUserId: actorUserId, createdAt: new Date() },
       });
-    await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "payroll.finalize", entity: "payroll_run", entityId: `${period.start}_${period.end}` });
+    // Re-finalizing replaces the snapshot, so the log keeps what changed, person by person.
+    const changes = previous ? driftFromSnapshot(previous.snapshot, result) : [];
+    await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: previous ? "payroll.refinalize" : "payroll.finalize", entity: "payroll_run", entityId: `${period.start}_${period.end}`, diff: previous ? JSON.stringify({ previouslyFinalizedAt: previous.createdAt, changes }) : null });
   });
   return result;
 }

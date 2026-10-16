@@ -25,7 +25,8 @@ export default async function StaffDetailLayout({ children, params }: { children
     { href: `${base}/hours`, label: "Weekly hours" },
     { href: `${base}/time-off`, label: "Time off" },
     { href: `${base}/services`, label: "Services" },
-    ...(can(permissions, "members.manage") ? [{ href: `${base}/pay`, label: "Pay" }, { href: `${base}/access`, label: "Access" }] : []),
+    ...(can(permissions, "payroll.view") ? [{ href: `${base}/pay`, label: "Pay" }] : []),
+    ...(can(permissions, "members.manage") ? [{ href: `${base}/access`, label: "Access" }] : []),
   ];
   const h = await headers();
   const current = h.get("x-pathname") ?? "";

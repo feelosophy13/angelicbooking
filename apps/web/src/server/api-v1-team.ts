@@ -9,6 +9,7 @@ import { shiftISODate } from "@/lib/utils";
 import { listPayRates, recordPayChange } from "@/server/pay-rates";
 import { applyStaffServices } from "@/server/stylist-pricing";
 import { staffScheduleApi } from "@/server/api-v1-more";
+import { finalizedPeriodOn, PayrollLockedError } from "./payroll-lock";
 
 /**
  * The team area of the public API: staff profiles, hours, time off, services, pay, the time clock and roles. It mirrors the staff app's actions
@@ -402,7 +403,12 @@ export async function putPayApi(ctx: ApiContext, req: Request, id: string) {
   if (rates.payType === "salary" && !rates.salaryPerPeriodCents) return ApiErrors.invalid("Enter the salary per period.", [{ path: "salary_per_period_cents", message: "Enter the salary per period." }]);
   // Position is descriptive, not pay: it changes on the record right away.
   if (d.position !== undefined) await withTenant(ctx.business.id, (tx) => tx.update(schema.staff).set({ position: d.position }).where(and(eq(schema.staff.id, id), eq(schema.staff.businessId, ctx.business.id))));
-  await recordPayChange({ businessId: ctx.business.id, timezone: ctx.business.timezone, staffId: id, effectiveFrom, note: d.note ?? null, actorUserId: ctx.actor, rates });
+  try {
+    await recordPayChange({ businessId: ctx.business.id, timezone: ctx.business.timezone, staffId: id, effectiveFrom, note: d.note ?? null, actorUserId: ctx.actor, rates });
+  } catch (e) {
+    if (e instanceof PayrollLockedError) return ApiErrors.conflict(e.message);
+    throw e;
+  }
   await apiAudit(ctx, "api.staff.pay.update", "staff", id, { effective_from: effectiveFrom, fields: Object.keys(d) });
   return NextResponse.json({ data: await payOf(ctx, id) });
 }
@@ -452,16 +458,24 @@ export async function addTimeEntryApi(ctx: ApiContext, req: Request) {
   const out = await withTenant(ctx.business.id, async (tx) => {
     const miss = await firstForeign(tx, ctx.business.id, [[schema.staff, d.staff_id, "staff member"]]);
     if (miss) return missing(miss);
+    const locked = await finalizedPeriodOn(tx, d.date);
+    if (locked) return { locked };
     const [row] = await tx.insert(schema.timeEntries).values({ businessId: ctx.business.id, staffId: d.staff_id, date: d.date, minutes: Math.round(d.hours * 60), note: blankToNull(d.note), createdByUserId: ctx.actor }).returning();
     return row!;
   });
   if (isMiss(out)) return ApiErrors.notFound(out.miss);
+  if ("locked" in out) return ApiErrors.conflict(`That date is in the pay period ${out.locked.periodStart} to ${out.locked.periodEnd}, which is finalized.`);
   await apiAudit(ctx, "api.time_entry.create", "time_entry", out.id, { staff_id: d.staff_id, date: d.date, minutes: out.minutes });
   return NextResponse.json({ data: serializeEntry(out) }, { status: 201 });
 }
 
 export async function deleteTimeEntryApi(ctx: ApiContext, id: string) {
-  const gone = await withTenant(ctx.business.id, (tx) => tx.delete(schema.timeEntries).where(and(eq(schema.timeEntries.id, id), eq(schema.timeEntries.businessId, ctx.business.id))).returning({ id: schema.timeEntries.id }));
+  const gone = await withTenant(ctx.business.id, async (tx) => {
+    const entry = await tx.query.timeEntries.findFirst({ where: and(eq(schema.timeEntries.id, id), eq(schema.timeEntries.businessId, ctx.business.id)), columns: { date: true } });
+    if (entry && (await finalizedPeriodOn(tx, entry.date))) return "locked" as const;
+    return tx.delete(schema.timeEntries).where(and(eq(schema.timeEntries.id, id), eq(schema.timeEntries.businessId, ctx.business.id))).returning({ id: schema.timeEntries.id });
+  });
+  if (gone === "locked") return ApiErrors.conflict("That entry is in a finalized pay period.");
   if (!gone.length) return ApiErrors.notFound("time entry");
   await apiAudit(ctx, "api.time_entry.delete", "time_entry", id);
   return NextResponse.json({ data: { id, deleted: true } });

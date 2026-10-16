@@ -18,6 +18,7 @@ import { ClockError, randomPin, setClockPin } from "@/server/time-clock";
 import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
 import { recordPayChange } from "@/server/pay-rates";
 import { applyStaffServices, parseMinutesField, parsePriceField, TermError } from "@/server/stylist-pricing";
+import { PayrollLockedError } from "@/server/payroll-lock";
 
 const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -386,13 +387,13 @@ export const savePay = formAction(
     note: f.optional(200),
   }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "members.manage");
+    const ctx = await requireAction(d.slug, "payroll.view");
     if (d.payType === "hourly" && !d.hourlyRate) throw new FormError("Enter an hourly rate", "hourlyRate");
     if (d.payType === "salary" && !d.salaryPerPeriod) throw new FormError("Enter the salary per period", "salaryPerPeriod");
     const today = instantToISODate(new Date(), ctx.business.timezone);
     // Position is descriptive, not pay: it changes on the record right away.
     await withTenant(ctx.business.id, (tx) => tx.update(schema.staff).set({ position: d.position }).where(eq(schema.staff.id, d.staffId)));
-    await recordPayChange({
+    await recordPayChangeOrFieldError({
       businessId: ctx.business.id,
       timezone: ctx.business.timezone,
       staffId: d.staffId,
@@ -443,4 +444,14 @@ export async function moveStaffAction(formData: FormData) {
   });
   revalidatePath(`/app/${d.slug}/staff`);
   revalidatePath(`/book/${d.slug}`);
+}
+
+/** A pay change that would rewrite a finalized period is shown on the date field. */
+async function recordPayChangeOrFieldError(input: Parameters<typeof recordPayChange>[0]) {
+  try {
+    await recordPayChange(input);
+  } catch (e) {
+    if (e instanceof PayrollLockedError) throw new FormError(e.message, "effectiveFrom");
+    throw e;
+  }
 }

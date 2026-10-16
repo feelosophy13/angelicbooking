@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, lte } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { instantToISODate } from "@angelic/core";
 import { rateAsOf, rateDiff, type PayRateRow } from "@/lib/pay-rates";
+import { assertRateChangeOpen } from "./payroll-lock";
 
 /**
  * Effective-dated pay settings. Every change is a history row; the staff record mirrors the row
@@ -20,6 +21,7 @@ export async function listPayRates(businessId: string, staffId: string) {
 /** Record a change. If it starts on or before today the staff record is updated now; later ones wait for their date. */
 export async function recordPayChange(input: { businessId: string; timezone: string; staffId: string; effectiveFrom: string; rates: PayRateInput; note: string | null; actorUserId: string }) {
   await withTenant(input.businessId, async (tx) => {
+    await assertRateChangeOpen(tx, input.effectiveFrom);
     const rows = await tx.select().from(schema.staffPayRates).where(eq(schema.staffPayRates.staffId, input.staffId));
     const before = rateAsOf(rows, input.effectiveFrom);
     // A second change on the same date replaces the earlier one instead of stacking.

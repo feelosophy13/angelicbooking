@@ -13,7 +13,7 @@ import { savePay } from "../../actions";
 
 export default async function StaffPayPage({ params }: { params: Promise<{ slug: string; staffId: string }> }) {
   const { slug, staffId } = await params;
-  const { business } = await requireAction(slug, "members.manage");
+  const { business } = await requireAction(slug, "payroll.view");
   const today = instantToISODate(new Date(), business.timezone);
   const person = await withTenant(business.id, async (tx) => {
     await syncCurrentRates(tx, today, [staffId]);

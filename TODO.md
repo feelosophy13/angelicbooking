@@ -108,7 +108,21 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Still open from consent: the booking form's new box wasn't clicked through in the browser (typechecked only); the Vagaro import maps
       `text_valid` to appointment texts (fine) but there is no way to carry over marketing consent from Vagaro; Resend rate limit (concurrency 8 vs
       ~2/s) and per-tenant fairness; a global suppression list across businesses was not added (per business only).
-- [ ] Next from the "Fix first" table: payroll snapshots and refund clawback, "We miss you" window and scan cost.
+- [x] Payroll batch, 2026-10-16:
+      - Refunds are booked on the day they happen: a sale is credited in full on its own date and each refund (card, cash or store credit)
+        adds negative "Refund ·" rows on the refund date, covering goods and tips in proportion. A refund after a period was paid comes off the
+        next one; paid periods re-run the same. Store-credit refunds now claw back commission (no more double pay when the credit is spent), and
+        a partly refunded tip is no longer paid in full.
+      - Finalized periods are locked: hours (web and API), adjustments, and pay changes starting on or before a finalized period's end are
+        refused with a pointer to the current period. Adjustments are audited. Re-finalizing logs who changed and by how much.
+      - The payroll page warns when live figures differ from the finalized snapshot (and when overtime differs from how it was finalized).
+      - Pay settings (Staff → Pay) need `payroll.view`, not `members.manage`.
+      - `buildPayrollLines` now loads only the clients, visits and users its sales need (it used to load every row, and every user on the platform).
+      - DB tests: `server/__tests__/payroll-clawback.test.ts`.
+- [ ] Still open from payroll: refunds are by amount, so refunding just a product still reduces service commission in proportion (needs
+      line-item refunds); a tip added to an old ticket after finalizing shows as drift rather than landing in the current period; overtime
+      (workweek alignment, commission in the regular rate, daily OT) and the 14-hour auto-close are unchanged; no "my earnings" view or 1099 YTD.
+- [ ] Next from the "Fix first" table: "We miss you" window and scan cost; then the per-area lists in `REVIEW-2026-10-16.md`.
 
 ### Platform admin app (`apps/admin`, built 2026-10-14: tenant list with filters and CSV, usage metrics, price book and custom pricing, suspend / comp / extend trial, audit log, health page, TOTP login)
 - [x] Deployed 2026-10-14 as Render service `angelic-admin` (srv-db7vr98n74is73d85io0, starter) at https://admin.angelicbooking.com
