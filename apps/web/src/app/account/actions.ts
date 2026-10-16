@@ -36,8 +36,12 @@ export async function resendVerification() {
 
 export async function revokeSession(formData: FormData) {
   await requireSession();
-  const token = String(formData.get("token"));
-  await auth.api.revokeSession({ headers: await headers(), body: { token } });
+  // The page only knows session ids; the token (a live credential) never leaves the server.
+  const id = String(formData.get("sessionId"));
+  const h = await headers();
+  const mine = await auth.api.listSessions({ headers: h });
+  const target = mine.find((s) => s.id === id);
+  if (target) await auth.api.revokeSession({ headers: h, body: { token: target.token } });
   await setFlash("Session signed out");
   revalidatePath("/account");
 }

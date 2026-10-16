@@ -9,7 +9,7 @@
  *    By hand (a write-off, a transfer) stock can never go below zero.
  *  - A refund gives money back; it does not put goods back on the shelf. Returns are recorded on purpose (`returnToShelf`).
  */
-import { and, asc, desc, eq, gte, ilike, inArray, lt, ne, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
 import { instantToISODate, isAction } from "@angelic/core";
 import { queueOneOff } from "@/lib/notify";
@@ -1217,7 +1217,8 @@ const localHour = (tz: string) => Number(new Intl.DateTimeFormat("en-US", { hour
  * Called from the reminders job; safe to run every few minutes (the day is claimed with one UPDATE).
  */
 export async function sendLowStockDigests(): Promise<{ checked: number; sent: number }> {
-  const businesses = await db.select().from(schema.businesses);
+  // A suspended business gets nothing sent on its behalf, internal emails included.
+  const businesses = await db.select().from(schema.businesses).where(isNull(schema.businesses.suspendedAt));
   let sent = 0;
   for (const b of businesses) {
     try {

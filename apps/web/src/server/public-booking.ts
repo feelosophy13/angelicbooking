@@ -4,7 +4,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { buildBookingSegments, canClientCancel, instantToISODate, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
 import { getStaffAvailability, getStaffAvailabilityForDates, staffForService, timingFor } from "./availability";
 import { bookAppointment, BookingError, rescheduleAppointment, rescheduleService, setAppointmentStatus } from "./booking";
-import { refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
+import { appointmentForIntent, refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
 import { findReferrer } from "./loyalty";
 import { validatePromo, PromoError } from "./promos";
 import { after } from "next/server";
@@ -475,6 +475,8 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
 /** A deposit was charged but the booking could not be made: give the money back before surfacing the error. */
 async function undoPayment(business: PublicBusiness, paid: VerifiedIntent | undefined) {
   if (paid?.kind !== "deposit") return;
+  // A double submit: the twin request already booked with this deposit (that's often why this one failed). Keep the money.
+  if (await appointmentForIntent(business.id, paid.paymentIntentId)) return;
   const pay = await paymentContextFor(business, paid.meta.locationId || null);
   if (!pay.accountId) return;
   try {
@@ -558,11 +560,29 @@ export async function rescheduleOnline(slug: string, token: string, newStartAt: 
   await alertBusiness(m.business, m.appt.id, "rescheduled");
 }
 
-export async function joinWaitlist(business: PublicBusiness, input: { serviceId: string; staffId: string | null; date: string; firstName: string; lastName: string; email: string | null; phone: string | null; notes: string | null; smsConsent?: boolean; locationId?: string | null }) {
-  const clientId = await findOrCreateClient(business.id, { ...input, startAt: new Date(), staffId: input.staffId ?? "" });
-  await withTenant(business.id, (tx) =>
-    tx.insert(schema.waitlist).values({ businessId: business.id, clientId, serviceId: input.serviceId, staffId: input.staffId, locationId: input.locationId ?? null, date: input.date, notes: input.notes }),
-  );
+/** Open waitlist entries one client may hold at a time. */
+export const WAITLIST_CAP = 5;
+
+/**
+ * Join the waitlist for a day. The service must be bookable online (and the stylist, if picked, must do it there), the day must be
+ * inside the online booking window, and one client holds at most WAITLIST_CAP open entries; asking again for the same day is a no-op.
+ */
+export async function joinWaitlist(business: PublicBusiness, input: { serviceId: string; staffId: string | null; date: string; firstName: string; lastName: string; email: string | null; phone: string | null; notes: string | null; smsConsent?: boolean; locationId?: string | null }, now = new Date()) {
+  const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: eq(schema.services.id, input.serviceId) }));
+  if (!service || !service.active || !service.bookableOnline) throw new BookingError("That service can't be booked online.");
+  if (input.locationId && !(await withTenant(business.id, (tx) => serviceOfferedAt(tx, input.serviceId, input.locationId)))) throw new BookingError("That service isn't offered at this location.");
+  if (input.staffId && !(await staffForService(business.id, input.serviceId, input.locationId)).some((s) => s.id === input.staffId)) throw new BookingError("That stylist doesn't offer this service.");
+  const loc = input.locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, input.locationId!) })) : null;
+  const tz = tzFor(business, loc ?? null);
+  const w = onlineBookingWindow(now, business);
+  if (input.date < instantToISODate(now, tz) || input.date > instantToISODate(w.notAfter, tz)) throw new BookingError("Pick a day inside the booking window.");
+  const clientId = await findOrCreateClient(business.id, { ...input, startAt: now, staffId: input.staffId ?? "" });
+  await withTenant(business.id, async (tx) => {
+    const open = await tx.select({ serviceId: schema.waitlist.serviceId, date: schema.waitlist.date }).from(schema.waitlist).where(and(eq(schema.waitlist.clientId, clientId), eq(schema.waitlist.status, "open"), gte(schema.waitlist.date, instantToISODate(now, tz))));
+    if (open.some((o) => o.serviceId === input.serviceId && o.date === input.date)) return;
+    if (open.length >= WAITLIST_CAP) throw new BookingError(`You're already on the waitlist for ${WAITLIST_CAP} days. We'll be in touch.`);
+    await tx.insert(schema.waitlist).values({ businessId: business.id, clientId, serviceId: input.serviceId, staffId: input.staffId, locationId: input.locationId ?? null, date: input.date, notes: input.notes });
+  });
 }
 
 export async function listWaitlist(businessId: string, timeZone: string) {

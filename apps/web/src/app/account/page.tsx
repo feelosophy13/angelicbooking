@@ -76,7 +76,7 @@ export default async function AccountPage() {
             </div>
             <ul className="divide-y divide-stone-100 text-sm">
               {sessions.map((s) => {
-                const current = s.token === session.session.token;
+                const current = s.id === session.session.id;
                 return (
                   <li key={s.id} className="flex items-center gap-3 py-2">
                     <Laptop className="h-4 w-4 text-stone-400" />
@@ -84,7 +84,7 @@ export default async function AccountPage() {
                       <p className="truncate">{describeAgent(s.userAgent)}{current ? <span className="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-brand-700">This device</span> : null}</p>
                       <p className="text-xs text-stone-500">{describeIp(s.ipAddress)} · active {relative(s.updatedAt)} · expires {relative(s.expiresAt)}</p>
                     </div>
-                    {!current ? <form action={revokeSession}><input type="hidden" name="token" value={s.token} /><Button size="sm" variant="ghost" type="submit">Sign out</Button></form> : null}
+                    {!current ? <form action={revokeSession}><input type="hidden" name="sessionId" value={s.id} /><Button size="sm" variant="ghost" type="submit">Sign out</Button></form> : null}
                   </li>
                 );
               })}

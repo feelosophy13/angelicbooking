@@ -6,9 +6,9 @@
  */
 import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { instantToISODate, seriesOccurrences } from "@angelic/core";
+import { buildBookingSegments, instantToISODate, seriesOccurrences } from "@angelic/core";
 import { bookAppointment, BookingError, setAppointmentStatus } from "./booking";
-import { getStaffAvailability } from "./availability";
+import { withinWorkingBlocks, workingBlocksFor } from "./availability";
 import { timingForStaff } from "./stylist-pricing";
 
 export const SERIES_INTERVALS = [1, 2, 3, 4, 5, 6, 8, 12] as const;
@@ -59,17 +59,11 @@ export async function createSeries(input: CreateSeriesInput): Promise<CreateSeri
   const result: CreateSeriesResult = { seriesId: series!.id, created: [], skipped: [] };
   const timing = await timingForStaff(input.businessId, service, input.staffId);
   for (const startAt of seriesOccurrences(input.firstStartAt, input.intervalWeeks, input.occurrences, input.timeZone)) {
-    // Respect working hours and time off for each date, not just the DB overlap check.
-    const slots = await getStaffAvailability({
-      businessId: input.businessId,
-      timeZone: input.timeZone,
-      slotIntervalMin: input.slotIntervalMin,
-      staffId: input.staffId,
-      date: instantToISODate(startAt, input.timeZone),
-      service: timing,
-      locationId: input.locationId,
-    });
-    if (!slots.some((s) => s.getTime() === startAt.getTime())) {
+    // Respect working hours and time off for each date. Any start inside them works (a custom 10:20 needn't sit on the slot grid);
+    // clashes with other bookings and classes are caught when booking.
+    const day = instantToISODate(startAt, input.timeZone);
+    const blocks = (await workingBlocksFor({ businessId: input.businessId, timeZone: input.timeZone, staffIds: [input.staffId], dates: [day], locationId: input.locationId })).get(`${input.staffId}:${day}`) ?? [];
+    if (!withinWorkingBlocks(blocks, buildBookingSegments(startAt, timing))) {
       result.skipped.push({ startAt, reason: "not available" });
       continue;
     }

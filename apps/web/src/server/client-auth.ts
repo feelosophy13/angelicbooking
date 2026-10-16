@@ -4,7 +4,7 @@
  * minutes and allow five attempts.
  */
 import { createHash, randomInt } from "node:crypto";
-import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { queueOneOff } from "@/lib/notify";
@@ -157,10 +157,41 @@ export async function removeSavedCard(business: PublicBusiness, clientId: string
     const pm = await stripe().paymentMethods.retrieve(paymentMethodId, {}, { stripeAccount: pay.accountId! }).catch(() => null);
     if (!pm) continue;
     if ((typeof pm.customer === "string" ? pm.customer : pm.customer?.id) !== customerId) throw new ClientAuthError("That card isn't yours.");
+    if (await cardInUse(business.id, clientId, pay.accountId!, paymentMethodId)) throw new ClientAuthError("That card is holding an upcoming booking or paying a membership. Call us to change it.");
     await stripe().paymentMethods.detach(paymentMethodId, {}, { stripeAccount: pay.accountId! });
     return;
   }
   throw new ClientAuthError("No saved cards.");
+}
+
+/** Whether an upcoming booking held with this card, or an auto-renewing membership charged to it, still depends on it. */
+async function cardInUse(businessId: string, clientId: string, accountId: string, paymentMethodId: string) {
+  const { held, subs } = await withTenant(businessId, async (tx) => ({
+    held: await tx
+      .select({ si: schema.appointments.cardSetupIntentId })
+      .from(schema.appointments)
+      .where(and(eq(schema.appointments.clientId, clientId), isNotNull(schema.appointments.cardSetupIntentId), inArray(schema.appointments.status, ["booked", "confirmed"]), sql`exists (select 1 from ${schema.appointmentItems} i where i.appointment_id = ${schema.appointments.id} and i.end_at > now())`)),
+    subs: await tx
+      .select({ sub: schema.clientMemberships.stripeSubscriptionId })
+      .from(schema.clientMemberships)
+      .where(and(eq(schema.clientMemberships.clientId, clientId), eq(schema.clientMemberships.autoRenew, true), eq(schema.clientMemberships.stripeAccountId, accountId), isNotNull(schema.clientMemberships.stripeSubscriptionId), isNull(schema.clientMemberships.cancelledAt))),
+  }));
+  const idOf = (v: string | { id: string } | null | undefined) => (typeof v === "string" ? v : v?.id ?? null);
+  for (const h of held) {
+    const si = await stripe().setupIntents.retrieve(h.si!, {}, { stripeAccount: accountId }).catch(() => null);
+    if (idOf(si?.payment_method) === paymentMethodId) return true;
+  }
+  for (const m of subs) {
+    const sub = await stripe().subscriptions.retrieve(m.sub!, {}, { stripeAccount: accountId }).catch(() => null);
+    if (!sub || sub.status === "canceled") continue;
+    // A subscription with no card of its own charges the customer's default, which may be this one: keep it while it is the client's only card.
+    if (idOf(sub.default_payment_method) === paymentMethodId) return true;
+    if (!sub.default_payment_method) {
+      const cards = await stripe().paymentMethods.list({ customer: idOf(sub.customer)!, type: "card", limit: 2 }, { stripeAccount: accountId }).catch(() => null);
+      if (cards && cards.data.length <= 1) return true;
+    }
+  }
+  return false;
 }
 
 /** The client's own settings. Ticking "offers by text" here is their written consent; a number that replied STOP stays off until START. */

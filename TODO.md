@@ -147,6 +147,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       re-sends "booked" messages like the new-booking alert. Online class seats must match their session's service (no free-service id
       carrying a paid seat) and the booking window; cancelling a class refunds every seat's deposit (failures flagged and logged). Tests:
       `reminder-timing.test.ts`, `classes-money.test.ts`.
+- [x] Booking and ops guards, 2026-10-16: a double-tapped online booking no longer refunds the deposit its twin request just booked with
+      (and lands on the confirmation); a client can't remove the saved card holding an upcoming booking or paying an auto-renewing
+      membership; waitlist entries need a bookable service (and a stylist who does it), a day inside the booking window, and at most 5
+      open per client; desk booking and drag refuse a time the provider is teaching a class; standing appointments at a custom time (off
+      the slot grid) book when inside working hours. `/api/health` checks Postgres (200 / 503): set it as the Render health check path.
+      Low-stock digests skip suspended businesses; `migrate-files` carries a cursor (`next` → `?after=`) past files that fail and counts
+      only rows it actually moved. The staff account page signs devices out by session id (tokens no longer rendered). Test:
+      `booking-guards.test.ts`.
 - [x] Sign-in hardening, 2026-10-16: a password reset signs every other device out; linking Google to an account whose email was never
       verified removes that account's password and sessions (closes the "pre-register someone's email" takeover); accepting an invitation
       needs a verified email (with a resend link that returns to the invite); dev mobile origins aren't trusted in production; an expired

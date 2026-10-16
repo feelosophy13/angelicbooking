@@ -75,6 +75,9 @@ export async function removeCard(formData: FormData) {
   const business = await getPublicBusiness(d.slug);
   const client = business ? await currentClient(business) : null;
   if (!business || !client) return;
-  await removeSavedCard(business, client.id, d.paymentMethodId).catch(() => {});
-  redirect(`/book/${d.slug}/account?cards=1`);
+  const kept = await removeSavedCard(business, client.id, d.paymentMethodId).then(
+    () => false,
+    (e) => e instanceof ClientAuthError && /holding an upcoming booking/.test(e.message),
+  );
+  redirect(`/book/${d.slug}/account?cards=1${kept ? "&card=in-use" : ""}`);
 }

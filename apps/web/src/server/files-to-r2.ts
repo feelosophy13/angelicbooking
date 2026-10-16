@@ -9,7 +9,7 @@ import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db, schema, withJobs, withTenant } from "@angelic/db";
 import { optimizeUpload } from "@/lib/images";
 import { PRIVATE_KINDS, SERVED_KINDS, visibilityOf } from "@/lib/files";
-import { publicObjectUrl, putObject, r2Config } from "@/lib/object-storage";
+import { deleteObject, publicObjectUrl, putObject, r2Config } from "@/lib/object-storage";
 import { randomUUID } from "node:crypto";
 
 /** File kinds that are pictures or client files. Anything else in `files` (staged imports) stays in Postgres. */
@@ -26,15 +26,28 @@ export async function filesLeftInDatabase() {
   return { files: Number(r?.n ?? 0), bytes: Number(r?.bytes ?? 0) };
 }
 
-export async function migrateFilesToR2(limit = 20, only?: string[]): Promise<{ moved: number; failed: number; bytesBefore: number; bytesAfter: number; left: { files: number; bytes: number } }> {
+/** Where the next batch starts: after this (created at, id). A file that fails stays behind the cursor, so a bad file can't stall the run. */
+export type FilesCursor = { createdAt: string; id: string };
+const msOf = sql`date_trunc('milliseconds', ${schema.files.createdAt})`;
+
+export async function migrateFilesToR2(
+  limit = 20,
+  only?: string[],
+  after?: FilesCursor | null,
+): Promise<{ moved: number; failed: number; bytesBefore: number; bytesAfter: number; next: FilesCursor | null; left: { files: number; bytes: number } }> {
   const cfg = r2Config();
   if (!cfg) throw new Error("R2 is not configured (set the R2_* variables).");
   const rows = await withJobs((tx) =>
     tx
       .select()
       .from(schema.files)
-      .where(and(eq(schema.files.storage, "db"), isNotNull(schema.files.data), inArray(schema.files.kind, MOVABLE), ...(only ? [inArray(schema.files.id, only)] : [])))
-      .orderBy(asc(schema.files.createdAt))
+      .where(and(eq(schema.files.storage, "db"), isNotNull(schema.files.data), inArray(schema.files.kind, MOVABLE),
+          ...(only ? [inArray(schema.files.id, only)] : []),
+          // Compared at millisecond precision, the precision the cursor carries.
+          ...(after ? [sql`(${msOf}, ${schema.files.id}) > (${after.createdAt}::timestamptz, ${after.id})`] : []),
+        ),
+      )
+      .orderBy(asc(msOf), asc(schema.files.id))
       .limit(limit),
   );
   let moved = 0;
@@ -53,7 +66,12 @@ export async function migrateFilesToR2(limit = 20, only?: string[]): Promise<{ m
       const ext = p.ext;
       const key = `${row.businessId}/${row.kind}/${randomUUID()}.${ext}`;
       await putObject(cfg, visibility, key, data, contentType, visibility === "public" ? IMMUTABLE : undefined);
-      await withTenant(row.businessId, (tx) => tx.update(schema.files).set({ storage: "r2", storageKey: key, contentType, size: data.length, data: null }).where(and(eq(schema.files.id, row.id), eq(schema.files.storage, "db"))));
+      const done = await withTenant(row.businessId, (tx) => tx.update(schema.files).set({ storage: "r2", storageKey: key, contentType, size: data.length, data: null }).where(and(eq(schema.files.id, row.id), eq(schema.files.storage, "db"))).returning({ id: schema.files.id }));
+      if (!done.length) {
+        // Another run moved (or someone deleted) it meanwhile: drop our copy and don't count it.
+        await deleteObject(cfg, visibility, key).catch(() => undefined);
+        continue;
+      }
       bytesBefore += row.size;
       bytesAfter += data.length;
       moved++;
@@ -76,5 +94,6 @@ export async function migrateFilesToR2(limit = 20, only?: string[]): Promise<{ m
     await db.update(schema.businesses).set({ logoUrl: r.url }).where(and(eq(schema.businesses.id, r.businessId), sql`${schema.businesses.logoUrl} like ${like}`));
     await db.update(schema.businesses).set({ coverUrl: r.url }).where(and(eq(schema.businesses.id, r.businessId), sql`${schema.businesses.coverUrl} like ${like}`));
   }
-  return { moved, failed, bytesBefore, bytesAfter, left: await filesLeftInDatabase() };
+  const last = rows.at(-1);
+  return { moved, failed, bytesBefore, bytesAfter, next: rows.length === limit && last ? { createdAt: last.createdAt.toISOString(), id: last.id } : null, left: await filesLeftInDatabase() };
 }

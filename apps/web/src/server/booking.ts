@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt, lt, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
 import { buildBookingSegments, instantToISODate, isInsideCancelWindow, rowsForDate, weekdayOf } from "@angelic/core";
 import { timingFor, withinWorkingBlocks, workingBlocksFor } from "./availability";
@@ -24,6 +24,7 @@ async function insertServiceItems(
   const timing = timingFor({ ...service, durationMin: override?.durationMinOverride ?? service.durationMin });
   const priceCents = override?.priceCentsOverride ?? service.priceCents;
   const segments = buildBookingSegments(input.startAt, timing);
+  await assertNoClassClash(tx, input.staffId, segments);
   await tx.insert(schema.appointmentItems).values(
     segments.map((seg, i) => ({
       businessId: input.businessId,
@@ -38,6 +39,18 @@ async function insertServiceItems(
     })),
   );
   return { service, segments };
+}
+
+/** The provider is teaching a scheduled class across any of these ranges. Classes aren't appointment items, so the DB constraint can't see them. */
+async function assertNoClassClash(tx: Tx, staffId: string, ranges: { start: Date; end: Date }[]) {
+  if (!ranges.length) return;
+  const from = new Date(Math.min(...ranges.map((r) => r.start.getTime())));
+  const to = new Date(Math.max(...ranges.map((r) => r.end.getTime())));
+  const classes = await tx
+    .select({ start: schema.classSessions.startAt, end: schema.classSessions.endAt })
+    .from(schema.classSessions)
+    .where(and(eq(schema.classSessions.staffId, staffId), eq(schema.classSessions.status, "scheduled"), lt(schema.classSessions.startAt, to), gt(schema.classSessions.endAt, from)));
+  if (classes.some((c) => ranges.some((r) => r.start < c.end && c.start < r.end))) throw new BookingError("That time overlaps a class this provider is teaching. Please pick another.");
 }
 
 /** When a service has an assigned-staff list, only those providers may take it. (No list = anyone.) */
@@ -245,6 +258,7 @@ export async function rescheduleService(input: {
         const when = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz }).format(moved[0]!.start);
         throw new BookingError(blocks.length ? `${target.displayName} isn't working at ${when}. Pick a time inside their hours, or change their hours under Staff.` : `${target.displayName} is off on ${when.split(",")[0]}.`);
       }
+      await assertNoClassClash(tx, staffId, moved);
       // A different provider charges their own price, and a single-block service takes their own length (a service with processing
       // time keeps its shape; its price still follows the provider).
       let priceFor: number | null = null;
@@ -309,6 +323,7 @@ export async function rescheduleAppointment(input: { businessId: string; appoint
         }
       }
       await tx.execute(sql`set constraints appointment_items_no_double_booking deferred`);
+      for (const staffId of staffIds) await assertNoClassClash(tx, staffId, moved.filter((m) => m.item.staffId === staffId));
       for (const m of moved) await tx.update(schema.appointmentItems).set({ startAt: m.start, endAt: m.end }).where(eq(schema.appointmentItems.id, m.item.id));
       await followProviderLocation(tx, input.businessId, input.appointmentId);
       await audit(tx, input.businessId, input.actorUserId, "appointment.reschedule", input.appointmentId, { from: items[0]!.startAt, to: input.newStartAt, items: items.length });

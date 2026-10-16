@@ -156,6 +156,8 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
     const r = await createOnlineBooking(business, { ...d, startAt }, new Date(), verified);
     token = r.token;
   } catch (e) {
+    const twin = await appointmentForIntent(business.id, intent.id);
+    if (twin) redirect(confirmedPath(d, twin.manageToken));
     if (e instanceof BookingError) return { error: intent.kind === "deposit" && /just taken|no longer/.test(e.message) ? `${e.message} Your deposit has been refunded.` : e.message };
     throw e;
   }
@@ -194,7 +196,12 @@ export async function joinWaitlistAction(_prev: PublicState, formData: FormData)
   if (!d.phone) return { error: "Enter your mobile number so we can reach you." };
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Online booking is not available." };
-  await joinWaitlist(business, { ...d, staffId: d.staffId && d.staffId !== "any" ? d.staffId : null });
+  try {
+    await joinWaitlist(business, { ...d, staffId: d.staffId && d.staffId !== "any" ? d.staffId : null });
+  } catch (e) {
+    if (e instanceof BookingError) return { error: e.message };
+    throw e;
+  }
   return { ok: true };
 }
 
