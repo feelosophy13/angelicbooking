@@ -384,6 +384,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `ContactFields` for the free and paid forms, with promo/referral codes behind "Have a code?"; paid form labelled
       Step 1/2 and 2/2 and uses the shared `Button`; waitlist pre-fills for signed-in clients; dead ends link to another
       service or a tel: link. Not yet walked live: the details form and the Stripe payment steps.
+- [x] 2026-10-16: shop and gift-card checkout now use the plain card field too (`PayStep` in `book/[slug]/shop/checkout.tsx`, `confirmCardPayment`); walked on demo-salon:
+      order #1521 paid with the test Visa. The booking manage page no longer assumes a live first service (`firstStaff`), so a fully cancelled booking cannot crash
+      it. Browser-pane note: after a while a long-lived pane tab stops hydrating pages (HMR websocket fails); a fresh tab works, so check there before suspecting the app.
 - [x] 2026-10-16: staff cancel with a paid deposit now asks what to do with it (appointment page -> Cancel): keep all of it, keep only the late fee it
       covers and refund the rest (inside the window, "deposit counts toward the fee" policy, deposit larger than the fee), or refund all (default outside the
       window). Refunding needs `reports.view` or `checkout.refund`; without it the deposit stays. `refundDeposit` takes an optional partial amount (the

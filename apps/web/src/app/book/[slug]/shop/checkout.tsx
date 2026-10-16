@@ -3,7 +3,7 @@ import { useHydrated } from "@/lib/use-hydrated";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { loadStripe } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
 import { Field, Input, Notice, Textarea } from "@/components/ui";
 import { finishOrderAction, startOrderAction, type StartOrderResult } from "./actions";
 
@@ -115,8 +115,9 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
     return (
       <div className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
         <p className="text-sm">Total <b>{money(started.totalCents, props.currency)}</b> · <button type="button" className="underline" onClick={() => setStarted(null)}>Edit order</button></p>
-        <Elements stripe={stripePromise} options={{ clientSecret: started.clientSecret, appearance: { theme: "stripe", variables: { colorPrimary: props.brand } } }}>
-          <PayStep slug={props.slug} saleId={started.saleId} brand={props.brand} total={money(started.totalCents, props.currency)} />
+        {/* Cards only: Stripe's plain card field (the Payment Element also draws Link's bank and buy-now-pay-later offers). */}
+        <Elements stripe={stripePromise}>
+          <PayStep slug={props.slug} saleId={started.saleId} clientSecret={started.clientSecret} buyer={buyer} brand={props.brand} total={money(started.totalCents, props.currency)} />
         </Elements>
       </div>
     );
@@ -195,7 +196,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
   );
 }
 
-function PayStep({ slug, saleId, brand, total }: { slug: string; saleId: string; brand: string; total: string }) {
+function PayStep({ slug, saleId, clientSecret, buyer, brand, total }: { slug: string; saleId: string; clientSecret: string; buyer: { firstName: string; lastName: string; email: string; phone: string }; brand: string; total: string }) {
   const stripe = useStripe();
   const elements = useElements();
   const router = useRouter();
@@ -206,7 +207,9 @@ function PayStep({ slug, saleId, brand, total }: { slug: string; saleId: string;
     if (!stripe || !elements) return;
     setBusy(true);
     setError(null);
-    const r = await stripe.confirmPayment({ elements, redirect: "if_required" });
+    const card = elements.getElement(CardElement);
+    if (!card) return;
+    const r = await stripe.confirmCardPayment(clientSecret, { payment_method: { card, billing_details: { name: `${buyer.firstName} ${buyer.lastName}`.trim() || undefined, email: buyer.email || undefined, phone: buyer.phone || undefined } } });
     if (r.error || r.paymentIntent?.status !== "succeeded") {
       setError(r.error?.message ?? `Payment ${r.paymentIntent?.status ?? "incomplete"}.`);
       setBusy(false);
@@ -222,7 +225,9 @@ function PayStep({ slug, saleId, brand, total }: { slug: string; saleId: string;
   }
   return (
     <form onSubmit={submit} className="space-y-3">
-      <PaymentElement options={{ layout: "tabs" }} />
+      <div className="rounded-lg border border-stone-300 bg-white px-3 py-3">
+        <CardElement options={{ style: { base: { fontSize: "16px", color: "#1c1917", "::placeholder": { color: "#a8a29e" } } } }} />
+      </div>
       {error ? <Notice>{error}</Notice> : null}
       <button type="submit" disabled={!stripe || busy} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: brand }}>{busy ? "Paying…" : `Pay ${total}`}</button>
     </form>

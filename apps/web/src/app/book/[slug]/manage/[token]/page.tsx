@@ -18,6 +18,8 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
   const day = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: tz }).format(m.start);
   const status = m.appt.status;
   const first = m.live[0];
+  // A booking whose services are all cancelled has no live first service; nothing below needs one then (rescheduling is off).
+  const firstStaff = first?.staffId ?? "";
   const service = first?.serviceId ?? null;
   const single = new Set(m.live.map((i) => i.serviceId)).size === 1;
   const canReschedule = m.canChange && !!service && !m.live.some((i) => i.classSessionId);
@@ -25,7 +27,7 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
   const locId = m.appt.locationId;
   // One service can change provider; a multi-service booking moves as a whole with the same people.
   const providers = canReschedule && single ? await publicProvidersFor(m.business, service!, locId) : [];
-  const staffChoice = single && (sp.staff === "any" || providers.some((s) => s.id === sp.staff)) ? sp.staff! : first!.staffId;
+  const staffChoice = single && (sp.staff === "any" || providers.some((s) => s.id === sp.staff)) ? sp.staff! : firstStaff;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : null;
   const apptDay = instantToISODate(m.start, tz);
   const monthStart = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? `${sp.month}-01` : `${(date ?? (apptDay > today && `${apptDay.slice(0, 7)}-01` <= shiftISODate(today, m.business.maxAdvanceDays) ? apptDay : today)).slice(0, 7)}-01`;
@@ -39,7 +41,7 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
   const slots = canReschedule && date ? await getPublicSlots(m.business, service!, staffChoice, date, new Date(), locId) : [];
   const qs = (extra: Record<string, string | undefined>) => {
     const u = new URLSearchParams();
-    for (const [k, v] of Object.entries({ staff: staffChoice !== first!.staffId ? staffChoice : undefined, month: sp.month, date: date ?? undefined, ...extra })) if (v) u.set(k, v);
+    for (const [k, v] of Object.entries({ staff: staffChoice !== firstStaff ? staffChoice : undefined, month: sp.month, date: date ?? undefined, ...extra })) if (v) u.set(k, v);
     return `?${u.toString()}`;
   };
   const money = (c: number) => formatMoney(c, m.business.currency);
@@ -82,8 +84,8 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
               <>
                 {providers.length > 1 ? (
                   <div className="flex flex-wrap gap-2" role="group" aria-label="Provider">
-                    {[...providers.map((s) => ({ id: s.id, name: s.id === first!.staffId ? `${s.displayName} (current)` : s.displayName })), { id: "any", name: "Any available" }].map((o) => (
-                      <Link key={o.id} href={qs({ staff: o.id === first!.staffId ? undefined : o.id, date: undefined })} scroll={false} aria-current={o.id === staffChoice ? "true" : undefined} className={cn("rounded-full border px-3 py-1 text-sm", o.id === staffChoice ? "border-stone-800 bg-stone-800 text-white" : "border-stone-300 bg-white hover:bg-stone-50")}>{o.name}</Link>
+                    {[...providers.map((s) => ({ id: s.id, name: s.id === firstStaff ? `${s.displayName} (current)` : s.displayName })), { id: "any", name: "Any available" }].map((o) => (
+                      <Link key={o.id} href={qs({ staff: o.id === firstStaff ? undefined : o.id, date: undefined })} scroll={false} aria-current={o.id === staffChoice ? "true" : undefined} className={cn("rounded-full border px-3 py-1 text-sm", o.id === staffChoice ? "border-stone-800 bg-stone-800 text-white" : "border-stone-300 bg-white hover:bg-stone-50")}>{o.name}</Link>
                     ))}
                   </div>
                 ) : null}
@@ -105,7 +107,7 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
                     ) : slots.length === 0 ? (
                       <p className="text-sm text-stone-500">No openings on {formatDateLong(date)}. Pick a highlighted day{m.business.phone ? <> or call <a className="underline" href={`tel:${m.business.phone}`}>{m.business.phone}</a></> : null}.</p>
                     ) : (
-                      <RescheduleForm slug={slug} token={token} staff={staffChoice !== first!.staffId ? staffChoice : undefined} showStaff={staffChoice === "any"} slots={slots.map((s) => ({ iso: s.at.toISOString(), label: formatTime(s.at, tz), staff: s.staffName }))} dateLabel={formatDateLong(date)} />
+                      <RescheduleForm slug={slug} token={token} staff={staffChoice !== firstStaff ? staffChoice : undefined} showStaff={staffChoice === "any"} slots={slots.map((s) => ({ iso: s.at.toISOString(), label: formatTime(s.at, tz), staff: s.staffName }))} dateLabel={formatDateLong(date)} />
                     )}
                   </div>
                 </div>
