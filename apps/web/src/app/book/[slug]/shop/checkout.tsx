@@ -1,4 +1,5 @@
 "use client";
+import { useHydrated } from "@/lib/use-hydrated";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { loadStripe } from "@stripe/stripe-js";
@@ -26,6 +27,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
   const [method, setMethod] = useState<"pickup" | "ship">("pickup");
   const [address, setAddress] = useState("");
   const [buyer, setBuyer] = useState({ firstName: props.defaults?.firstName ?? "", lastName: props.defaults?.lastName ?? "", email: props.defaults?.email ?? "", phone: props.defaults?.phone ?? "" });
+  const hydrated = useHydrated();
   const [started, setStarted] = useState<Started | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -122,6 +124,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
 
   return (
     <form
+      method="post"
       className="space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
@@ -185,7 +188,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
           <Field label="Mobile (optional)"><Input type="tel" value={buyer.phone} onChange={(e) => setBuyer({ ...buyer, phone: e.target.value })} /></Field>
           <p className="text-sm">Subtotal {money(subtotal, props.currency)}{shipping ? ` + shipping ${money(shipping, props.currency)}` : ""}{!isGift ? " · tax added at checkout where applicable" : ""}</p>
           {error ? <Notice>{error}</Notice> : null}
-          <button type="submit" disabled={pending || (isGift ? !(giftCents >= 500) : items.length === 0)} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: props.brand }}>{pending ? "One moment…" : "Continue to payment"}</button>
+          <button type="submit" disabled={!hydrated || pending || (isGift ? !(giftCents >= 500) : items.length === 0)} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: props.brand }}>{pending ? "One moment…" : "Continue to payment"}</button>
         </div>
       ) : null}
     </form>

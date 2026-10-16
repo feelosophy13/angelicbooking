@@ -410,8 +410,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       staff "Refund deposit" (`refundDeposit`) works. Reader checkout can save the card to the client (consent checkbox -> `allow_redisplay: always`,
       the reader's generated card appears in the client's saved cards). Text receipts: the app queues the SMS correctly (+1 normalised, body ok) but demo
       businesses never send; a direct Twilio send from the account's own local numbers came back undelivered (error 30034, unregistered 10DLC), so a real text
-      needs a verified toll-free number on a non-demo business. Found: the booking details form submits as a plain GET (personal data in the address bar)
-      when submitted before the page has hydrated. Still untested: a real reader. The shop/gift checkout still uses the Payment Element.
+      needs a verified toll-free number on a non-demo business. Found and fixed: the booking details form (and the shop checkout's) submitted as a plain GET, putting
+      name/phone/email in the address bar, when submitted before the page had hydrated; they are now `method="post"` with the submit button disabled until
+      hydration (`lib/use-hydrated.ts`). Still untested: a real reader. The shop/gift checkout still uses the Payment Element.
 - [x] 2026-10-15: platform admin accounts moved into the database (migration 0091 `admin_users`). Login, password reset, Google sign-in and the audit
       actor all use the table; the session cookie names the admin and `requireAdmin()` rechecks they still exist and are enabled. New Admins page
       (add by email with an emailed set-password link, disable/enable; not yourself, not the last one). `pnpm --filter @angelic/admin create-admin

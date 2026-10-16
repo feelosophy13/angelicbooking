@@ -4,6 +4,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
 import { Button, Notice } from "@/components/ui";
 import { ContactFields, type BookingDefaults } from "./forms";
+import { useHydrated } from "@/lib/use-hydrated";
 import { abandonOnlinePaymentAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
 
 type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null };
@@ -41,6 +42,7 @@ export function PaidBookingForm(props: {
   embed?: boolean;
 }) {
   const d = props.defaults;
+  const hydrated = useHydrated();
   const [fields, setFields] = useState<Record<string, string> | null>(null);
   const [intent, setIntent] = useState<Intent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +52,7 @@ export function PaidBookingForm(props: {
   if (!intent || !fields) {
     return (
       <form
+        method="post"
         className="space-y-3 rounded-xl border border-stone-200 bg-white p-4"
         onSubmit={(e) => {
           e.preventDefault();
@@ -80,7 +83,7 @@ export function PaidBookingForm(props: {
         <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} />
         {error ? <Notice>{error}</Notice> : null}
         {props.priceLabel ? <p className="text-sm font-medium text-stone-800">Price of this visit: {props.priceLabel}</p> : null}
-        <Button type="submit" disabled={pending} className="w-full" style={{ background: props.brand }}>
+        <Button type="submit" disabled={pending || !hydrated} className="w-full" style={{ background: props.brand }}>
           {pending ? "One moment…" : props.mode === "deposit" ? props.full ? `Continue to pay ${props.amountLabel}` : `Continue to pay ${props.amountLabel} deposit` : "Continue to add a card"}
         </Button>
         <p className="text-xs text-stone-500">
