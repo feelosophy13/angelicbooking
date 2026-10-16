@@ -388,8 +388,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       covers and refund the rest (inside the window, "deposit counts toward the fee" policy, deposit larger than the fee), or refund all (default outside the
       window). Refunding needs `reports.view` or `checkout.refund`; without it the deposit stays. `refundDeposit` takes an optional partial amount (the
       appointment's `deposit_cents` becomes what was kept, status stays "paid"). The amount is worked out on the server, not read from the form; if the refund
-      fails the appointment is still cancelled and the message points to "Refund deposit". Code and typecheck done; the dialog itself still to walk in the browser
-      (dev server needed a restart). Also seen once in the console: ManagePage "Cannot read properties of undefined (reading 'staffId')" around a client cancel.
+      fails the appointment is still cancelled and the message points to "Refund deposit". Walked in the browser on demo-salon (a $50 deposit booking inside the window, fee $25): the dialog
+      shows the three choices with "keep $25 for the late fee, refund $25" preselected, the confirm text repeats it, the appointment cancelled, `deposit_cents` became
+      2500 (status paid) and a $25.00 Stripe refund succeeded. "Keep all" is the old behaviour and "Refund all" uses the same full-refund path tested earlier; neither
+      was clicked separately, and the no-refund-permission view of the dialog was not looked at. Also seen once in the console: ManagePage "Cannot read properties of undefined (reading 'staffId')" around a client cancel.
 - [x] 2026-10-16: demo Stripe account. `DEMO_ACCOUNT_STRIPE_SECRET_TEST_KEY` / `..._PUBLISHABLE_TEST_KEY` (local `.env`, test keys only, ignored in
       production) belong to a separate sandbox ("Angelic Beauty sandbox") that is NOT connected to the platform, so `lib/stripe-demo.ts` routes any request
       for that account through its own key (an HTTP-client shim used only when the vars are set) and hands the browser its publishable key.
