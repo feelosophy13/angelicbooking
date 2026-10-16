@@ -17,7 +17,22 @@ export function rateLimit(key: string, limit: number, windowMs: number): { ok: b
   return { ok: b.count <= limit, remaining: Math.max(0, limit - b.count), retryAfterSec: Math.ceil((b.resetAt - now) / 1000) };
 }
 
+/**
+ * The caller's address as our proxy saw it: the LAST X-Forwarded-For entry. Render's proxy (the only hop in front of the app;
+ * app.angelicbooking.com is DNS-only on Cloudflare) appends the address it accepted the connection from; everything before it
+ * was written by the caller and is ignored, so a forged header can't dodge a rate limit. "local" in development.
+ */
+export function clientIpFrom(h: Headers): string {
+  const parts = (h.get("x-forwarded-for") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  return parts.at(-1) ?? h.get("x-real-ip")?.trim() ?? "local";
+}
+
 export function clientIp(req: Request): string {
-  const h = req.headers;
-  return (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "local").trim();
+  return clientIpFrom(req.headers);
+}
+
+/** The address recorded on a signed form (evidence of who signed): the trusted hop, or null in development. */
+export function formIp(h: Headers): string | null {
+  const ip = clientIpFrom(h);
+  return ip === "local" ? null : ip;
 }

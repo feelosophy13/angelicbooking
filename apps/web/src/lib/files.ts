@@ -19,8 +19,12 @@ const IMMUTABLE = "public, max-age=31536000, immutable";
 
 export class FileError extends Error {}
 
-/** Kinds that only a signed-in member or the client who owns them may read. */
-export const PRIVATE_KINDS = new Set(["form", "signature", "visit"]);
+/** Branding and catalog pictures: anyone may read them, and with R2 they live on the public CDN. */
+export const PUBLIC_KINDS = new Set(["logo", "cover", "product", "package", "service", "category", "staff"]);
+/** Kinds that only a signed-in member (or, for form files, the client who submitted them) may read. Client photos are faces. */
+export const PRIVATE_KINDS = new Set(["form", "signature", "visit", "client"]);
+/** Every kind that is a served picture or client file; anything else in `files` (staged imports) is never served. */
+export const SERVED_KINDS = [...PUBLIC_KINDS, ...PRIVATE_KINDS];
 export const visibilityOf = (kind: string): Visibility => (PRIVATE_KINDS.has(kind) ? "private" : "public");
 
 /** Store bytes in R2 when configured (else Postgres) and return the file id and the address to use. */

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireAction } from "@/lib/tenant";
 import { answersFromFormData, FormSubmitError, getForm, submitForm } from "@/server/forms";
 import type { FillState } from "@/components/form-fill";
+import { formIp } from "@/lib/rate-limit";
 
 /** Front desk: a staff member completes a form with the client on the salon's device. */
 export async function submitFormAsStaff(_prev: FillState, formData: FormData): Promise<FillState> {
@@ -14,7 +15,7 @@ export async function submitFormAsStaff(_prev: FillState, formData: FormData): P
   const { answers, files } = answersFromFormData(form.fields, formData);
   const h = await headers();
   try {
-    await submitForm({ businessId: ctx.business.id, formId: form.id, clientId: d.clientId, appointmentId: d.appointmentId || null, answers, files, signatureName: d.signatureName || null, signatureImage: d.signatureImage || null, ipAddress: (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "").trim() || null, assistedByUserId: ctx.user.id });
+    await submitForm({ businessId: ctx.business.id, formId: form.id, clientId: d.clientId, appointmentId: d.appointmentId || null, answers, files, signatureName: d.signatureName || null, signatureImage: d.signatureImage || null, ipAddress: formIp(h), assistedByUserId: ctx.user.id });
   } catch (e) {
     if (e instanceof FormSubmitError) return { error: e.message, field: e.field };
     throw e;

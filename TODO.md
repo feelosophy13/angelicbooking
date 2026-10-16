@@ -54,6 +54,28 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ## 2. Before real customers
 
+### Full review 2026-10-16 (`REVIEW-2026-10-16.md` has every finding; the "Fix first" table is the order)
+- [x] Security and privacy batch, 2026-10-16:
+      - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
+        (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
+        never replace them; the manage-link forms page prefills earlier answers only for the signed-in client; the confirmed page masks the email.
+      - Migration 0095 revokes `admin_users` from `angelic_app` (0091 missed it). **Run migrations on Render** (the deploy does this).
+      - Roles: nobody but an owner can change their own role's permissions or their own role, or add, remove, assign or delete permissions
+        their role lacks; invites likewise. Role and member changes are now in the audit log. API keys can only carry scopes the creator's
+        role covers (`scopesBeyond`). Better Auth's `/api/auth/organization/*` endpoints are closed to the browser (proxy.ts), which also
+        closes one-call business deletion.
+      - Rate limits and form IPs use the last X-Forwarded-For hop. Client sign-in codes: 5 per hour per email/phone, 15 guesses per hour,
+        crypto-random codes, and the same client record chosen every time when duplicates exist.
+      - Client photos are private (`client` kind; the files route now shares the kind sets with `lib/files.ts`), so they load again without
+        R2 and won't go to the public bucket once R2 is on. `migrate-files` moves them too.
+      - Mobile API follows the web calendar rules (own-calendar roles see and change only their own appointments), cancel needs a reason
+        (the app shows the list instead of cancelling on one tap), a cancelled visit can't be revived there, a repeat status is a no-op.
+- [ ] Still open from the security batch: Turnstile on booking/waitlist/OTP/shared forms; Better Auth's own in-memory limiter still keys on the
+      first X-Forwarded-For entry (our proxy limit covers `/api/auth`); `requireEmailVerification` + `revokeSessionsOnPasswordReset`;
+      trial-expired not enforced on mobile/API; dev origins in `trustedOrigins`; providers seeing every sale (scope Sales for own-calendar roles).
+- [ ] Next from the "Fix first" table: money flows (deposit vs no-show fee, fee tickets, void re-ring, Stripe calls inside transactions,
+      membership renewal refunds, orphan deposits), then consent/opt-out (TCPA), payroll snapshots, campaign sending.
+
 ### Platform admin app (`apps/admin`, built 2026-10-14: tenant list with filters and CSV, usage metrics, price book and custom pricing, suspend / comp / extend trial, audit log, health page, TOTP login)
 - [x] Deployed 2026-10-14 as Render service `angelic-admin` (srv-db7vr98n74is73d85io0, starter) at https://admin.angelicbooking.com
       (Cloudflare `CNAME admin`, DNS only). Production web deploy 236c5ed ran migrations 0067-0075. Login secrets are in the local `.env`
@@ -108,8 +130,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       addresses (the proxy's last X-Forwarded-For entry) and per-key requests per minute. Keys made before this keep every ability (scope_version 1,
       expanded on use; checked route by route: none lost, none gained). Rule for new routes: pick the narrowest scope that fits; a body field that
       sets money, consent or private data goes in `fields` of `route(...)`.
-- [ ] Not done: limiting a key to one location or one staff member (every query would need the filter); a per-key usage log; the shared first-entry
-      `clientIp` used by the failed-sign-in throttle still trusts the first X-Forwarded-For entry (harmless with 256-bit keys, but the allowlist uses the last).
+- [ ] Not done: limiting a key to one location or one staff member (every query would need the filter); a per-key usage log. (The first-entry
+      `clientIp` was fixed 2026-10-16: every rate limit and recorded form IP now uses the last X-Forwarded-For entry.)
 - [ ] Later: webhooks to subscribers, idempotency keys, per-plan gating of the API if wanted. Rule for new API tests: import `packages/db/src/env` first (guarded by api-test-guard.test.ts).
 
 ## 3. Product backlog
@@ -408,7 +430,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `setAppointmentStatus` records reason id, who cancelled (client/staff) and whether it fell inside the cancellation window (at that moment, so policy changes don't rewrite history).
       Appointment page shows it; the API has `cancellation_reason_id`, `cancelled_by`, `cancelled_late` and `POST /appointments/:id/cancel` takes optional `reason_id`. Reports: "Cancellations by
       reason" (count, by client, inside window, booked value lost, deposits kept, late fees collected). Test: `cancellation-reasons.test.ts`. Still open: cancellations made by other paths
-      (calendar quick status, mobile API, class/series cancel) record no reason id and show as "No reason given"; old cancellations have none; no-shows are not in this report.
+      (calendar quick status, API without `reason_id`, class/series cancel) record no reason id (the mobile API requires one since 2026-10-16) and show as "No reason given"; old cancellations have none; no-shows are not in this report.
 - [x] 2026-10-16: staff cancel with a paid deposit now asks what to do with it (appointment page -> Cancel): keep all of it, keep only the late fee it
       covers and refund the rest (inside the window, "deposit counts toward the fee" policy, deposit larger than the fee), or refund all (default outside the
       window). Refunding needs `reports.view` or `checkout.refund`; without it the deposit stays. `refundDeposit` takes an optional partial amount (the

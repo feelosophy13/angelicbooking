@@ -112,6 +112,12 @@ async function submitFormTx(input: {
   signatureImage?: string | null;
   ipAddress: string | null;
   assistedByUserId?: string | null;
+  /**
+   * Whoever filled it is known to be this client (staff at the desk, or a signed-in client), so mapped email/phone answers may replace
+   * the record's. Otherwise (a manage link or an anonymous shared form) they only fill blanks: a form must never be a way to point
+   * someone else's record at your own email and then sign in as them.
+   */
+  trustedContact?: boolean;
 }) {
   return withTenant(input.businessId, async (tx) => {
     const form = await tx.query.forms.findFirst({ where: and(eq(schema.forms.id, input.formId), eq(schema.forms.active, true)) });
@@ -184,13 +190,13 @@ async function submitFormTx(input: {
         formSnapshot: { name: form.name, fields: form.fields, description: form.description },
       })
       .returning();
-    await applyAnswersToClient(tx, input.clientId, form, clean);
+    await applyAnswersToClient(tx, input.clientId, form, clean, Boolean(input.trustedContact || input.assistedByUserId));
     return row!;
   });
 }
 
 /** Copy mapped answers onto the client record: contact fields, notes and tags. */
-async function applyAnswersToClient(tx: TenantDb, clientId: string, form: { name: string; fields: FormFieldDef[] }, answers: Record<string, FormAnswer>) {
+async function applyAnswersToClient(tx: TenantDb, clientId: string, form: { name: string; fields: FormFieldDef[] }, answers: Record<string, FormAnswer>, trustedContact: boolean) {
   const mapped = form.fields.filter((f) => f.mapTo);
   if (!mapped.length) return;
   const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
@@ -202,8 +208,11 @@ async function applyAnswersToClient(tx: TenantDb, clientId: string, form: { name
     const v = answers[f.id];
     if (v === undefined) continue;
     const text = answerText(f, v);
-    if (f.mapTo === "email" && typeof v === "string" && v) patch.email = v.toLowerCase();
-    else if (f.mapTo === "phone" && typeof v === "string" && v) patch.phone = normalizePhone(v) ?? v;
+    if (f.mapTo === "email" && typeof v === "string" && v) {
+      if (trustedContact || !client.email) patch.email = v.toLowerCase();
+    } else if (f.mapTo === "phone" && typeof v === "string" && v) {
+      if (trustedContact || !client.phone) patch.phone = normalizePhone(v) ?? v;
+    }
     else if (f.mapTo === "birthday" && typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) patch.birthday = v;
     else if (f.mapTo === "tag") {
       const tag = (f.tag || f.label).trim().slice(0, 40);

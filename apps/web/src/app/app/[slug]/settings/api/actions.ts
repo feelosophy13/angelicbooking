@@ -4,7 +4,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { generateKey } from "@/lib/api";
-import { DEFAULT_RATE_LIMIT_PER_MIN, isApiScope, isValidIpEntry, RATE_LIMIT_CHOICES } from "@/lib/api-scopes";
+import { DEFAULT_RATE_LIMIT_PER_MIN, isApiScope, isValidIpEntry, RATE_LIMIT_CHOICES, scopesBeyond } from "@/lib/api-scopes";
 import type { FormState } from "@/lib/form";
 
 const MAX_ACTIVE_KEYS = 20;
@@ -29,7 +29,9 @@ export async function createApiKey(_prev: FormState | undefined, fd: FormData): 
   else if (allowedIps.length > 20) fieldErrors.allowedIps = "Up to 20 addresses.";
   if (!(RATE_LIMIT_CHOICES as readonly number[]).includes(rate)) fieldErrors.rateLimit = "Pick a limit from the list.";
   if (name.length < 2 || name.length > 60) fieldErrors.name = "Give the key a short name, like \"Website\" or \"Zapier\".";
+  const beyond = scopesBeyond(scopes, ctx.permissions as { has(a: string): boolean }, ctx.role === "owner");
   if (!scopes.length) fieldErrors.scopes = "Pick at least one thing the key may do.";
+  else if (beyond.length) fieldErrors.scopes = `Your role can't grant ${beyond.join(", ")}. Ask an owner to create this key.`;
   if (![0, 30, 90, 365].includes(days)) fieldErrors.expiresInDays = "Pick an expiry.";
   // Echo what was typed: the form is cleared when an action finishes, so without this a typo would cost the person everything they entered.
   const echo = { name, expiresInDays: String(days), allowedIps: allowedIps.join("\n"), rateLimit: String(rate) };

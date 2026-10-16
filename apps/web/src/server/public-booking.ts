@@ -15,6 +15,7 @@ import { appUrl } from "@/lib/stripe";
 import { businessAccess, publishBlockedReason } from "./access";
 import { formatMoney, shiftISODate } from "@/lib/utils";
 import { overridesForService, priceForStaff, termsOf } from "./stylist-pricing";
+import { sameClientName } from "@/lib/client-match";
 import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt, tzFor } from "./locations";
 
 export type PublicBusiness = typeof schema.businesses.$inferSelect;
@@ -259,15 +260,35 @@ export interface OnlineBookingInput {
   extraServiceIds?: string[] | null;
 }
 
-/** Find a client by phone or email, else create one. Runs inside the tenant tx. */
+/** The signed-in client for this business, if there is a request with a client session (never throws outside a request). */
+async function signedInClientId(businessId: string): Promise<string | null> {
+  try {
+    const { getClientSessionId } = await import("@/lib/client-session");
+    return await getClientSessionId(businessId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The client for a public booking, form or order: the signed-in client when there is one; else an existing client with the same
+ * phone or email AND the same name; else a new client. A same-contact, different-name visitor gets their own record (staff can merge
+ * real duplicates) rather than being filed under, and seeing details of, someone else.
+ */
 export async function findOrCreateClient(businessId: string, input: OnlineBookingInput) {
   let created: string | null = null;
+  const signedIn = await signedInClientId(businessId);
   const clientId = await withTenant(businessId, async (tx) => {
+    if (signedIn) {
+      const me = await tx.query.clients.findFirst({ where: eq(schema.clients.id, signedIn), columns: { id: true } });
+      if (me) return me.id;
+    }
     const phone = normalizePhone(input.phone) ?? input.phone;
     const conds = [];
     if (phone) conds.push(eq(schema.clients.phone, phone));
     if (input.email) conds.push(sql`lower(${schema.clients.email}) = ${input.email.toLowerCase()}`);
-    const existing = conds.length ? await tx.query.clients.findFirst({ where: or(...conds) }) : null;
+    const candidates = conds.length ? await tx.query.clients.findMany({ where: or(...conds), orderBy: [asc(schema.clients.createdAt), asc(schema.clients.id)], limit: 25 }) : [];
+    const existing = candidates.find((c) => sameClientName(c, input));
     if (existing) {
       // Fill in gaps without overwriting what the business already has.
       await tx

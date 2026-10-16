@@ -3,15 +3,13 @@ import { db, schema } from "@angelic/db";
 import { getSession } from "@/lib/session";
 import { getClientSessionId } from "@/lib/client-session";
 import { getObject, publicObjectUrl, r2Config } from "@/lib/object-storage";
-
-const PUBLIC_KINDS = new Set(["logo", "cover", "product", "package", "service", "category", "staff"]);
-const PRIVATE_KINDS = new Set(["form", "signature", "visit"]);
+import { PRIVATE_KINDS, PUBLIC_KINDS } from "@/lib/files";
 
 /**
  * Serve an uploaded file. Branding, product, service and category images are public and immutable
  * (cacheable for a year); one that lives in R2 is redirected to its CDN address, so old links keep
- * working. Form attachments and signatures are private: only a member of the business or the client
- * who signed may view them, never cached by intermediaries, and they are read from the private bucket
+ * working. Form attachments, signatures, visit photos and client photos are private: only a member of
+ * the business (or, for form files, the client who signed) may view them, never cached by intermediaries, and they are read from the private bucket
  * here. Anything else stored in `files` (e.g. staged imports) is not served at all.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -22,7 +20,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const isPublic = PUBLIC_KINDS.has(row.kind);
   if (!isPublic) {
     if (!PRIVATE_KINDS.has(row.kind)) return new Response("Not found", { status: 404 });
-    if (!(await mayViewPrivate(row.businessId, row.id))) return new Response("Not found", { status: 404 });
+    if (!(await mayViewPrivate(row.businessId, row.id, row.kind))) return new Response("Not found", { status: 404 });
   }
   let data: Uint8Array | null = row.data ? new Uint8Array(row.data) : null;
   if (row.storage === "r2" && row.storageKey) {
@@ -45,12 +43,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   });
 }
 
-async function mayViewPrivate(businessId: string, fileId: string): Promise<boolean> {
+async function mayViewPrivate(businessId: string, fileId: string, kind: string): Promise<boolean> {
   const session = await getSession();
   if (session) {
     const member = await db.query.member.findFirst({ where: and(eq(schema.member.organizationId, businessId), eq(schema.member.userId, session.user.id)), columns: { id: true } });
     if (member) return true;
   }
+  // Client photos and visit photos are staff-only; a signed-in client may only see their own form files.
+  if (kind !== "form" && kind !== "signature") return false;
   const clientId = await getClientSessionId(businessId);
   if (!clientId) return false;
   // The client may see files attached to their own submissions (answers hold file ids; signatures are a column).

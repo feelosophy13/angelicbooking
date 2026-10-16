@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { requireAction } from "@/lib/tenant";
+import { requireAction, roleActor } from "@/lib/tenant";
 import { createRole, deleteRole, RoleError, updateRole } from "@/server/roles";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
@@ -18,7 +18,7 @@ export const createRoleAction = formAction(fields, async (d, fd) => {
   const perms = permissionsFrom(fd);
   if (perms.length === 0) throw new FormError("Pick at least one permission.");
   try {
-    await createRole(ctx.business.id, { name: d.name, description: d.description, permissions: perms });
+    await createRole(ctx.business.id, { name: d.name, description: d.description, permissions: perms }, roleActor(ctx));
   } catch (e) {
     if (e instanceof RoleError) throw new FormError(e.message);
     throw e;
@@ -33,7 +33,7 @@ export const updateRoleAction = formAction(fields, async (d, fd) => {
   const perms = permissionsFrom(fd);
   if (perms.length === 0) throw new FormError("Pick at least one permission.");
   try {
-    await updateRole(ctx.business.id, d.roleId ?? "", { name: d.name, description: d.description, permissions: perms });
+    await updateRole(ctx.business.id, d.roleId ?? "", { name: d.name, description: d.description, permissions: perms }, roleActor(ctx));
   } catch (e) {
     if (e instanceof RoleError) throw new FormError(e.message);
     throw e;
@@ -47,7 +47,7 @@ export async function deleteRoleAction(formData: FormData) {
   const d = z.object({ slug: z.string(), roleId: z.string().min(1) }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "members.manage");
   try {
-    await deleteRole(ctx.business.id, d.roleId);
+    await deleteRole(ctx.business.id, d.roleId, roleActor(ctx));
   } catch (e) {
     if (e instanceof RoleError) {
       await setFlash(e.message, "error");

@@ -8,12 +8,12 @@
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { optimizeUpload } from "@/lib/images";
-import { PRIVATE_KINDS, visibilityOf } from "@/lib/files";
+import { PRIVATE_KINDS, SERVED_KINDS, visibilityOf } from "@/lib/files";
 import { publicObjectUrl, putObject, r2Config } from "@/lib/object-storage";
 import { randomUUID } from "node:crypto";
 
 /** File kinds that are pictures or client files. Anything else in `files` (staged imports) stays in Postgres. */
-const MOVABLE = ["logo", "cover", "product", "package", "service", "category", "staff", "form", "signature", "visit"];
+const MOVABLE = SERVED_KINDS;
 const IMMUTABLE = "public, max-age=31536000, immutable";
 
 export async function filesLeftInDatabase() {

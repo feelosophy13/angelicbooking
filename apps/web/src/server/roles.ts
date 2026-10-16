@@ -78,8 +78,38 @@ export function slugifyKey(name: string): string {
 
 export class RoleError extends Error {}
 
-export async function createRole(businessId: string, input: { name: string; description: string | null; permissions: string[] }) {
+/** Who is changing roles or access: their real role and what it allows. */
+export type RoleActor = { userId: string; role: string; permissions: Permissions };
+
+/**
+ * Nobody hands out more than they hold. An owner may do anything; anyone else may only grant, remove or assign permissions their
+ * own role has, so a manager can't give themselves (or a friend) Stripe, billing or payroll.
+ */
+function assertWithinActor(actor: RoleActor, perms: Iterable<string>, message: string) {
+  if (actor.role === "owner") return;
+  for (const p of perms) if (!actor.permissions.has(p as Action)) throw new RoleError(message);
+}
+
+async function permissionsOfRoleKey(businessId: string, roleKey: string): Promise<Set<string>> {
+  return new Set(await permissionsForRole(businessId, roleKey));
+}
+
+/** For invitations: the role must be one of ours, not the owner role, and within what the inviter holds. */
+export async function assertMayAssignRole(businessId: string, roleKey: string, actor: RoleActor) {
+  if (roleKey === "owner") throw new RoleError("Only an owner can make someone an owner.");
+  const roles = await listRoles(businessId);
+  const role = roles.find((r) => r.key === roleKey);
+  if (!role) throw new RoleError("Unknown role.");
+  assertWithinActor(actor, role.permissions, "You can't give someone a role with permissions your own role doesn't have.");
+}
+
+async function audit(businessId: string, actorUserId: string, action: string, entity: string, entityId: string | null, diff: unknown) {
+  await withTenant(businessId, (tx) => tx.insert(schema.auditLog).values({ businessId, actorUserId, action, entity, entityId, diff: JSON.stringify(diff) }));
+}
+
+export async function createRole(businessId: string, input: { name: string; description: string | null; permissions: string[] }, actor: RoleActor) {
   const perms = input.permissions.filter(isAction);
+  assertWithinActor(actor, perms, "A new role can only have permissions your own role has.");
   let key = slugifyKey(input.name) || "role";
   const taken = await withTenant(businessId, (tx) => tx.select({ key: schema.roles.key }).from(schema.roles));
   const keys = new Set(taken.map((t) => t.key));
@@ -93,18 +123,26 @@ export async function createRole(businessId: string, input: { name: string; desc
   const [row] = await withTenant(businessId, (tx) =>
     tx.insert(schema.roles).values({ businessId, key, name: input.name, description: input.description, permissions: perms, isSystem: false, sortOrder: 100 }).returning(),
   );
+  await audit(businessId, actor.userId, "role.create", "role", row!.id, { name: input.name, permissions: perms });
   return row!;
 }
 
-export async function updateRole(businessId: string, id: string, input: { name: string; description: string | null; permissions: string[] }) {
+export async function updateRole(businessId: string, id: string, input: { name: string; description: string | null; permissions: string[] }, actor: RoleActor) {
   const role = await getRole(businessId, id);
   if (!role) throw new RoleError("Role not found.");
   if (role.key === "owner") throw new RoleError("The Owner role can't be changed.");
   const perms = input.permissions.filter(isAction);
+  if (actor.role !== "owner" && role.key === actor.role) throw new RoleError("You can't change the permissions of your own role. Ask an owner.");
+  const before = new Set(role.permissions);
+  const after = new Set<string>(perms);
+  const added = perms.filter((p) => !before.has(p));
+  const removed = role.permissions.filter((p) => !after.has(p));
+  assertWithinActor(actor, [...added, ...removed], "You can only add or remove permissions your own role has.");
   if (role.key !== "owner" && !role.isSystem) {
     await syncOrgRole(businessId, role.key, perms);
   }
   await withTenant(businessId, (tx) => tx.update(schema.roles).set({ name: input.name, description: input.description, permissions: perms }).where(eq(schema.roles.id, id)));
+  if (added.length || removed.length || role.name !== input.name) await audit(businessId, actor.userId, "role.update", "role", id, { name: input.name, added, removed });
 }
 
 /** Keep Better Auth's dynamic role in step with ours (create if missing). */
@@ -118,15 +156,17 @@ async function syncOrgRole(businessId: string, key: string, perms: string[]) {
   }
 }
 
-export async function deleteRole(businessId: string, id: string) {
+export async function deleteRole(businessId: string, id: string, actor: RoleActor) {
   const role = await getRole(businessId, id);
   if (!role) throw new RoleError("Role not found.");
+  assertWithinActor(actor, role.permissions, "You can't delete a role with permissions your own role doesn't have.");
   if (role.isSystem) throw new RoleError("Built-in roles can't be deleted. You can edit their permissions instead.");
   const [cnt] = await db.select({ n: sql<number>`count(*)` }).from(schema.member).where(and(eq(schema.member.organizationId, businessId), eq(schema.member.role, role.key)));
   const n = Number(cnt?.n ?? 0);
   if (n > 0) throw new RoleError(`${n} member(s) still have this role. Move them to another role first.`);
   await auth.api.deleteOrgRole({ headers: await headers(), body: { organizationId: businessId, roleName: role.key } }).catch(() => undefined);
   await withTenant(businessId, (tx) => tx.delete(schema.roles).where(eq(schema.roles.id, id)));
+  await audit(businessId, actor.userId, "role.delete", "role", id, { name: role.name, permissions: role.permissions });
 }
 
 /** Members of the business with their login details, for the access screens. */
@@ -139,33 +179,40 @@ export async function listMembers(businessId: string) {
     .orderBy(asc(schema.user.name));
 }
 
-export async function setMemberRole(businessId: string, memberId: string, roleKey: string, actorUserId: string) {
+export async function setMemberRole(businessId: string, memberId: string, roleKey: string, actor: RoleActor) {
   const members = await listMembers(businessId);
   const target = members.find((m) => m.id === memberId);
   if (!target) throw new RoleError("Member not found.");
   const owners = members.filter((m) => m.role === "owner");
   if (target.role === "owner" && roleKey !== "owner" && owners.length <= 1) throw new RoleError("A business needs at least one owner.");
-  const actor = members.find((m) => m.userId === actorUserId);
-  if (roleKey === "owner" && actor?.role !== "owner") throw new RoleError("Only an owner can make someone an owner.");
-  if (target.role === "owner" && actor?.role !== "owner") throw new RoleError("Only an owner can change another owner's role.");
+  if (roleKey === "owner" && actor.role !== "owner") throw new RoleError("Only an owner can make someone an owner.");
+  if (target.role === "owner" && actor.role !== "owner") throw new RoleError("Only an owner can change another owner's role.");
+  if (target.userId === actor.userId && actor.role !== "owner") throw new RoleError("You can't change your own role. Ask an owner.");
   const roles = await listRoles(businessId);
-  if (!roles.some((r) => r.key === roleKey)) throw new RoleError("Unknown role.");
+  const role = roles.find((r) => r.key === roleKey);
+  if (!role) throw new RoleError("Unknown role.");
+  assertWithinActor(actor, role.permissions, "You can't give someone a role with permissions your own role doesn't have.");
+  assertWithinActor(actor, await permissionsOfRoleKey(businessId, target.role), "You can't change the role of someone whose access is wider than yours.");
   // Write directly: our own guards above are the policy; Better Auth's endpoint would also
   // re-check the actor's org permissions, which built-in roles already satisfy.
   await db.update(schema.member).set({ role: roleKey }).where(and(eq(schema.member.id, memberId), eq(schema.member.organizationId, businessId)));
+  await audit(businessId, actor.userId, "member.role_change", "member", memberId, { user: target.email, from: target.role, to: roleKey });
 }
 
-export async function removeMember(businessId: string, memberId: string, actorUserId: string) {
+export async function removeMember(businessId: string, memberId: string, actor: RoleActor) {
   const members = await listMembers(businessId);
   const target = members.find((m) => m.id === memberId);
   if (!target) throw new RoleError("Member not found.");
-  if (target.userId === actorUserId) throw new RoleError("You can't remove your own access.");
+  if (target.userId === actor.userId) throw new RoleError("You can't remove your own access.");
   if (target.role === "owner" && members.filter((m) => m.role === "owner").length <= 1) throw new RoleError("A business needs at least one owner.");
+  if (target.role === "owner" && actor.role !== "owner") throw new RoleError("Only an owner can remove an owner.");
+  assertWithinActor(actor, await permissionsOfRoleKey(businessId, target.role), "You can't remove someone whose access is wider than yours.");
   await db.transaction(async (tx) => {
     await tx.delete(schema.member).where(and(eq(schema.member.id, memberId), eq(schema.member.organizationId, businessId)));
     await tx.execute(sql`select set_config('app.business_id', ${businessId}, true)`);
     await tx.update(schema.staff).set({ userId: null }).where(eq(schema.staff.userId, target.userId));
   });
+  await audit(businessId, actor.userId, "member.remove", "member", memberId, { user: target.email, role: target.role });
 }
 
 export const ALL_ACTIONS = ACTIONS;

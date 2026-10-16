@@ -3,7 +3,7 @@
  * the email or mobile number already on their record. Codes expire after ten
  * minutes and allow five attempts.
  */
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
@@ -15,12 +15,20 @@ import { customerIdFor, savedCardsFor } from "./stripe-connect";
 import { readyAccountsOf } from "./locations";
 import { stripe } from "@/lib/stripe";
 import { pointsBalance, ensureReferralCode } from "./loyalty";
+import { sharedRateLimit } from "@/lib/shared-rate-limit";
 import type { PublicBusiness } from "./public-booking";
 
 export class ClientAuthError extends Error {}
 
 const CODE_TTL_MS = 10 * 60_000;
 const MAX_ATTEMPTS = 5;
+/** Per destination, per business, per hour: codes sent, and guesses across all of them (the per-IP limit alone can be dodged). */
+const MAX_CODES_PER_HOUR = 5;
+const MAX_GUESSES_PER_HOUR = 15;
+const HOUR_MS = 60 * 60_000;
+
+/** The same record every time for a typed email/phone, even when an import left duplicates (oldest wins). */
+const clientOrder = [schema.clients.createdAt, schema.clients.id];
 
 function hashCode(businessId: string, code: string): string {
   return createHash("sha256").update(`${process.env.BETTER_AUTH_SECRET ?? ""}:${businessId}:${code}`).digest("hex");
@@ -31,8 +39,10 @@ export async function requestLoginCode(business: PublicBusiness, typed: string):
   const phone = normalizePhone(typed);
   const email = typed.includes("@") ? typed.trim().toLowerCase() : null;
   if (!phone && !email) throw new ClientAuthError("Enter the email or mobile number you book with.");
+  // Checked before the lookup so the answer is the same whether or not they are a client.
+  if (!(await sharedRateLimit(`client-code:${business.id}:${email ?? phone}`, MAX_CODES_PER_HOUR, HOUR_MS)).ok) throw new ClientAuthError("Too many codes requested. Please try again in an hour.");
   const client = await withTenant(business.id, (tx) =>
-    tx.query.clients.findFirst({ where: or(phone ? eq(schema.clients.phone, phone) : sql`false`, email ? sql`lower(${schema.clients.email}) = ${email}` : sql`false`) }),
+    tx.query.clients.findFirst({ where: or(phone ? eq(schema.clients.phone, phone) : sql`false`, email ? sql`lower(${schema.clients.email}) = ${email}` : sql`false`), orderBy: clientOrder }),
   );
   if (!client) return { channel: "none" };
   const channel: "email" | "sms" = email ? "email" : "sms";
@@ -46,7 +56,7 @@ export async function requestLoginCode(business: PublicBusiness, typed: string):
   } else if (!emailConfigured() && process.env.NODE_ENV === "production") {
     throw new ClientAuthError("Email sign-in isn't available right now. Please try again later.");
   }
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const code = String(randomInt(100000, 1000000));
   if (!emailConfigured() && process.env.NODE_ENV !== "production") console.log(`[client-login] code for ${client.firstName} (${channel === "email" ? email : phone}): ${code}`);
   await withTenant(business.id, (tx) =>
     tx.insert(schema.clientLoginCodes).values({ businessId: business.id, clientId: client.id, channel, destination: channel === "email" ? email! : phone!, codeHash: hashCode(business.id, code), expiresAt: new Date(Date.now() + CODE_TTL_MS) }),
@@ -71,8 +81,9 @@ export async function verifyLoginCode(business: PublicBusiness, typed: string, c
   const email = typed.includes("@") ? typed.trim().toLowerCase() : null;
   const destination = email ?? phone;
   if (!destination || !/^\d{6}$/.test(code)) throw new ClientAuthError("Enter the 6-digit code.");
+  if (!(await sharedRateLimit(`client-guess:${business.id}:${destination}`, MAX_GUESSES_PER_HOUR, HOUR_MS)).ok) throw new ClientAuthError("Too many attempts. Please try again in an hour.");
   return withTenant(business.id, async (tx) => {
-    const client = await tx.query.clients.findFirst({ where: or(phone ? eq(schema.clients.phone, phone) : sql`false`, email ? sql`lower(${schema.clients.email}) = ${email}` : sql`false`) });
+    const client = await tx.query.clients.findFirst({ where: or(phone ? eq(schema.clients.phone, phone) : sql`false`, email ? sql`lower(${schema.clients.email}) = ${email}` : sql`false`), orderBy: clientOrder });
     if (!client) throw new ClientAuthError("That code isn't right. Request a new one.");
     const row = await tx.query.clientLoginCodes.findFirst({ where: and(eq(schema.clientLoginCodes.clientId, client.id), isNull(schema.clientLoginCodes.consumedAt)), orderBy: desc(schema.clientLoginCodes.createdAt) });
     if (!row || row.expiresAt < new Date()) throw new ClientAuthError("That code has expired. Request a new one.");

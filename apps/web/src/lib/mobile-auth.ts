@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { db, schema } from "@angelic/db";
+import { db, schema, withTenant } from "@angelic/db";
 import { auth } from "@/lib/auth";
 import { permissionsForRole } from "@/server/roles";
 
@@ -23,5 +23,7 @@ export async function mobileContext(req: Request, slug: string | null) {
   if (slug && !business) return { error: NextResponse.json({ error: "not a member" }, { status: 404 }) } as const;
   const bizRow = business ? await db.query.businesses.findFirst({ where: and(eq(schema.businesses.id, business.id)) }) : null;
   const permissions = business ? await permissionsForRole(business.id, business.role) : new Set<never>();
-  return { session, memberships, business: bizRow ?? null, role: business?.role ?? null, permissions } as const;
+  // The staff member this login works as, for "own calendar only" roles (same rule as the web app).
+  const me = business ? await withTenant(business.id, (tx) => tx.query.staff.findFirst({ where: eq(schema.staff.userId, session.user.id), columns: { id: true } })) : null;
+  return { session, memberships, business: bizRow ?? null, role: business?.role ?? null, permissions, myStaffId: me?.id ?? null } as const;
 }

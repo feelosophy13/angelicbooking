@@ -41,7 +41,7 @@ export default async function ConfirmedPage({ params }: { params: Promise<{ slug
         {phone ? <p className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-stone-400" aria-hidden /><a href={`tel:${phone}`} className="underline">{phone}</a></p> : null}
       </div>
       {m.business.bookingPolicy ? <p className="mx-auto mt-3 max-w-xs text-xs text-stone-500">{m.business.bookingPolicy}</p> : null}
-      <p className="mt-4 text-sm text-stone-500">{m.client?.email ? `A confirmation is on its way to ${m.client.email}.` : m.client?.phone ? "A confirmation text is on its way." : "Keep this page: it is your confirmation."} You can change or cancel from the link below.</p>
+      <p className="mt-4 text-sm text-stone-500">{m.client?.email ? `A confirmation is on its way to ${maskEmail(m.client.email)}.` : m.client?.phone ? "A confirmation text is on its way." : "Keep this page: it is your confirmation."} You can change or cancel from the link below.</p>
       <div className="mt-4 flex flex-wrap justify-center gap-2 text-sm">
         <a href={gcalUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-3 py-1.5 hover:bg-stone-50"><CalendarPlus className="h-4 w-4" /> Google Calendar</a>
         <a href={`/book/${slug}/manage/${token}/calendar.ics`} {...top} className="inline-flex items-center gap-1 rounded-lg border border-stone-300 bg-white px-3 py-1.5 hover:bg-stone-50"><CalendarPlus className="h-4 w-4" /> Apple / Outlook (.ics)</a>
@@ -50,4 +50,10 @@ export default async function ConfirmedPage({ params }: { params: Promise<{ slug
       <div className="mt-6"><Link href={embed ? `/embed/${slug}` : `/book/${slug}`} className="text-sm text-stone-500 underline">Book another appointment</Link></div>
     </div>
   );
+}
+
+/** "jane.doe@gmail.com" → "j•••@gmail.com": enough to recognise, not enough to learn someone's address from a booking. */
+function maskEmail(email: string): string {
+  const [user, domain] = email.split("@");
+  return domain ? `${user!.slice(0, 1)}•••@${domain}` : "your email";
 }

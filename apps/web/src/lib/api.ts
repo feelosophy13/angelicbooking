@@ -29,12 +29,6 @@ export function needScopes(ctx: ApiContext, ...scopes: ApiScope[]): NextResponse
   return missing ? apiError(403, "insufficient_scope", `This key does not have the "${missing}" scope, which this request needs.`) : null;
 }
 
-/** The caller's address as our proxy saw it: the LAST X-Forwarded-For entry (one proxy hop, as on Render). Falls back to "local" in development. */
-export function trustedClientIp(req: Request): string {
-  const parts = (req.headers.get("x-forwarded-for") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-  return parts.at(-1) ?? req.headers.get("x-real-ip")?.trim() ?? "local";
-}
-
 export function hashKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
 }
@@ -92,7 +86,7 @@ export async function authenticate(req: Request, scope: ApiScope): Promise<{ ctx
   if (!business || business.suspendedAt) return bad();
   // A key restricted to certain addresses answers like any other bad key from anywhere else. The address is the one our proxy saw (the last
   // X-Forwarded-For entry): the first entry is whatever the caller wrote, so it proves nothing.
-  if (!ipAllowed(found.allowedIps, trustedClientIp(req))) return bad();
+  if (!ipAllowed(found.allowedIps, clientIp(req))) return bad();
   const limit = found.rateLimitPerMin ?? DEFAULT_RATE_LIMIT_PER_MIN;
   const rate = await sharedRateLimit(`api-key:${found.id}`, limit, 60_000);
   if (!rate.ok) return { error: apiError(429, "rate_limited", `Rate limit is ${limit} requests per minute for this key.`, undefined, { "Retry-After": String(rate.retryAfterSec) }), rate };

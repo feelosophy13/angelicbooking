@@ -109,6 +109,46 @@ export function expandScopes(stored: readonly string[], version: number): ApiSco
   return [...new Set(stored.flatMap((s) => (Object.hasOwn(LEGACY_SCOPES, s) ? LEGACY_SCOPES[s]! : [])))];
 }
 
+/**
+ * The role permission someone needs before they may put a scope on a key (owners may grant every scope). A key acts with no person
+ * behind it, so without this anyone who can manage the business could mint a key for payroll or roles their own role can't touch.
+ */
+const SCOPE_NEEDS: [prefix: string, action: string][] = [
+  ["pay:", "payroll.view"],
+  ["time:", "payroll.view"],
+  ["roles:", "members.manage"],
+  ["staff:write", "staff.manage"],
+  ["client-notes:", "clients.read"],
+  ["clients:read", "clients.read"],
+  ["clients:balances", "clients.read"],
+  ["clients:", "clients.write"],
+  ["forms:read", "clients.read"],
+  ["forms:", "clients.write"],
+  ["messages:read", "clients.read"],
+  ["messages:", "clients.write"],
+  ["marketing:", "clients.write"],
+  ["campaigns:", "clients.write"],
+  ["appointments:read", "appointments.read.any"],
+  ["appointments:", "appointments.write.any"],
+  ["waitlist:", "appointments.write.any"],
+  ["classes:", "appointments.write.any"],
+  ["sales:", "reports.view"],
+  ["catalog:", "services.manage"],
+  ["pricing:", "services.manage"],
+  ["inventory:", "inventory.manage"],
+  ["purchasing:", "inventory.manage"],
+  ["supplies:", "inventory.log"],
+];
+
+/** Scopes in `scopes` that a person with these role permissions may not grant. */
+export function scopesBeyond(scopes: readonly string[], permissions: { has(a: string): boolean }, isOwner: boolean): string[] {
+  if (isOwner) return [];
+  return scopes.filter((s) => {
+    const need = SCOPE_NEEDS.find(([prefix]) => s.startsWith(prefix))?.[1];
+    return need ? !permissions.has(need) : false;
+  });
+}
+
 export const API_KEY_PREFIX = "ab_live_";
 
 /** Requests per minute a key may make unless it sets its own. */

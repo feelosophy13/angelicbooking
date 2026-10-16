@@ -5,6 +5,7 @@ import { getPublicBusiness, findOrCreateClient } from "@/server/public-booking";
 import { currentClient } from "@/server/client-auth";
 import { answersFromFormData, FormSubmitError, getForm, submitForm } from "@/server/forms";
 import { rateLimit } from "@/lib/rate-limit";
+import { formIp } from "@/lib/rate-limit";
 
 export type SharedFormState = { error?: string; field?: string | null; ok?: boolean } | undefined;
 
@@ -29,7 +30,7 @@ export async function submitSharedForm(_prev: SharedFormState, formData: FormDat
   const business = await getPublicBusiness(d.slug);
   if (!business) return { error: "Not available." };
   const h = await headers();
-  const ip = (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "").trim() || null;
+  const ip = formIp(h);
   if (!rateLimit(`shared-form:${ip ?? "unknown"}`, 20, 10 * 60_000).ok) return { error: "Too many submissions. Please try again in a few minutes." };
   const form = await getForm(business.id, d.formId);
   if (!form || !form.active) return { error: "This form is no longer available." };
@@ -48,7 +49,7 @@ export async function submitSharedForm(_prev: SharedFormState, formData: FormDat
   }
   const { answers, files } = answersFromFormData(form.fields, formData);
   try {
-    await submitForm({ businessId: business.id, formId: form.id, clientId, appointmentId: null, answers, files, signatureName: d.signatureName || null, signatureImage: d.signatureImage || null, ipAddress: ip });
+    await submitForm({ businessId: business.id, formId: form.id, clientId, appointmentId: null, answers, files, signatureName: d.signatureName || null, signatureImage: d.signatureImage || null, ipAddress: ip, trustedContact: Boolean(me) });
   } catch (e) {
     if (e instanceof FormSubmitError) return { error: e.message, field: e.field };
     throw e;

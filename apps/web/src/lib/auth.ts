@@ -12,6 +12,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { DEFAULT_ROLE_META, DEFAULT_ROLE_PERMISSIONS, worksOwnCalendar } from "@angelic/core";
 import { sql } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
+import { formIp } from "./rate-limit";
 
 // Organization-management permissions (invite/remove members etc.) per role.
 // Business-level permissions live in @angelic/core `can()`.
@@ -96,7 +97,7 @@ export const auth = betterAuth({
     // Bot check on email sign-up (Cloudflare Turnstile). The browser sends the token in a header.
     before: createAuthMiddleware(async (ctx) => {
       if (ctx.path !== "/sign-up/email") return;
-      const ip = ctx.headers?.get("cf-connecting-ip") ?? ctx.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+      const ip = ctx.headers ? formIp(ctx.headers) : null;
       if (!(await verifyTurnstile(ctx.headers?.get("x-turnstile-token"), ip))) throw new APIError("BAD_REQUEST", { message: "Please complete the check below to create your account." });
     }),
   },

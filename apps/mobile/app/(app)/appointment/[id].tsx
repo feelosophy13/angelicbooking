@@ -3,20 +3,29 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import { api } from "@/lib/auth-client";
 
-type Detail = { appointment: { id: string; status: string; notes: string | null }; client: { firstName: string; lastName: string; phone: string | null } | null; items: { id: string; serviceName: string; staffName: string; startAt: string; endAt: string; priceCents: number; status: string }[] };
+type Detail = {
+  appointment: { id: string; status: string; notes: string | null };
+  client: { firstName: string; lastName: string; phone: string | null } | null;
+  items: { id: string; serviceName: string; staffName: string; startAt: string; endAt: string; priceCents: number; status: string }[];
+  can: { write: boolean; cancel: boolean };
+  cancelReasons: { id: string; name: string }[];
+};
 const STATUSES = ["confirmed", "checked_in", "in_progress", "completed", "no_show", "cancelled"] as const;
 
 export default function Appointment() {
   const { id, slug } = useLocalSearchParams<{ id: string; slug: string }>();
   const [d, setD] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const load = () => api<Detail>(`/api/mobile/appointments/${id}?slug=${slug}`).then(setD).catch((e) => setError(e.message));
   useEffect(() => {
     load();
   }, [id]);
-  async function setStatus(status: string) {
+  async function setStatus(status: string, reasonId?: string) {
     try {
-      await api(`/api/mobile/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ slug, status }) });
+      setError(null);
+      await api(`/api/mobile/appointments/${id}`, { method: "PATCH", body: JSON.stringify({ slug, status, reasonId }) });
+      setCancelling(false);
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -36,13 +45,27 @@ export default function Appointment() {
         </View>
       ))}
       {d.appointment.notes ? <Text style={s.notes}>{d.appointment.notes}</Text> : null}
-      <View style={s.row}>
-        {STATUSES.filter((x) => x !== d.appointment.status).map((x) => (
-          <Pressable key={x} style={[s.btn, x === "cancelled" && { backgroundColor: "#dc2626" }]} onPress={() => setStatus(x)}>
-            <Text style={s.btnText}>{x.replace("_", " ")}</Text>
+      {cancelling ? (
+        <View style={{ gap: 8, marginTop: 8 }}>
+          <Text style={{ fontWeight: "600" }}>Why is it being cancelled?</Text>
+          {d.cancelReasons.map((r) => (
+            <Pressable key={r.id} style={[s.btn, { backgroundColor: "#dc2626" }]} onPress={() => setStatus("cancelled", r.id)}>
+              <Text style={s.btnText}>{r.name}</Text>
+            </Pressable>
+          ))}
+          <Pressable style={[s.btn, { backgroundColor: "#78716c" }]} onPress={() => setCancelling(false)}>
+            <Text style={s.btnText}>Keep appointment</Text>
           </Pressable>
-        ))}
-      </View>
+        </View>
+      ) : d.appointment.status === "cancelled" ? null : (
+        <View style={s.row}>
+          {STATUSES.filter((x) => x !== d.appointment.status && (x === "cancelled" ? d.can.cancel : d.can.write)).map((x) => (
+            <Pressable key={x} style={[s.btn, x === "cancelled" && { backgroundColor: "#dc2626" }]} onPress={() => (x === "cancelled" ? setCancelling(true) : setStatus(x))}>
+              <Text style={s.btnText}>{x.replace("_", " ")}</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
       {error ? <Text style={{ color: "#b91c1c" }}>{error}</Text> : null}
       <Pressable onPress={() => router.back()} style={{ padding: 12, alignItems: "center" }}><Text style={{ color: "#6d28d9" }}>Back to today</Text></Pressable>
     </ScrollView>

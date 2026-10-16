@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { z } from "zod";
 import { getPublicBusiness } from "@/server/public-booking";
 import { answersFromFormData, formsForManageToken, FormSubmitError, submitForm } from "@/server/forms";
+import { formIp } from "@/lib/rate-limit";
 
 export type FormState = { error?: string; field?: string | null; ok?: boolean } | undefined;
 
@@ -17,7 +18,7 @@ export async function submitPublicForm(_prev: FormState, formData: FormData): Pr
   const { answers, files } = answersFromFormData(due.form.fields, formData);
   const h = await headers();
   try {
-    await submitForm({ businessId: business.id, formId: d.formId, clientId: m.client.id, appointmentId: m.appt.id, answers, files, signatureName: d.signatureName || null, signatureImage: d.signatureImage || null, ipAddress: (h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "").trim() || null });
+    await submitForm({ businessId: business.id, formId: d.formId, clientId: m.client.id, appointmentId: m.appt.id, answers, files, signatureName: d.signatureName || null, signatureImage: d.signatureImage || null, ipAddress: formIp(h) });
   } catch (e) {
     if (e instanceof FormSubmitError) return { error: e.message, field: e.field };
     throw e;

@@ -14,6 +14,10 @@ const APP_HOSTS = new Set(
  * 2. Cheap optimistic redirect for signed-out visitors on protected paths.
  */
 export function proxy(request: NextRequest) {
+  // Better Auth's organization endpoints (invite, change role, remove member, edit roles, delete the business…) are only for our
+  // own server code, which calls auth.api directly and applies our role rules first. Over HTTP they would skip those rules, so the
+  // browser never reaches them.
+  if (request.nextUrl.pathname.startsWith("/api/auth/organization/")) return new NextResponse("Not found", { status: 404 });
   // Rate limits: sign-in/up and other auth endpoints, public booking submits, webhook/jobs.
   if (request.method === "POST") {
     const ip = clientIp(request);

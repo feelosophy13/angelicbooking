@@ -83,3 +83,8 @@ export async function listMyBusinesses(userId: string) {
     .innerJoin(schema.businesses, eq(schema.businesses.id, schema.member.organizationId))
     .where(eq(schema.member.userId, userId));
 }
+
+/** The acting person, for role and access changes (server/roles.ts checks nobody grants more than this). */
+export function roleActor(ctx: TenantContext) {
+  return { userId: ctx.user.id, role: String(ctx.role), permissions: ctx.permissions };
+}

@@ -8,11 +8,11 @@ import { schema, withTenant } from "@angelic/db";
 import { instantToISODate, isAction, mondayOf, worksOwnCalendar } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
 import { auth } from "@/lib/auth";
-import { requireAction } from "@/lib/tenant";
+import { requireAction, roleActor } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { queueOneOff } from "@/lib/notify";
-import { listRoles } from "@/server/roles";
+import { assertMayAssignRole, listRoles, RoleError } from "@/server/roles";
 import { inviteEmail } from "@/lib/notify/templates";
 import { ClockError, randomPin, setClockPin } from "@/server/time-clock";
 import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
@@ -306,6 +306,12 @@ export async function inviteStaff(_prev: InviteState, formData: FormData): Promi
   const roles = await listRoles(ctx.business.id);
   const chosen = roles.find((r) => r.key === parsed.data.role);
   if (!chosen || parsed.data.role === "owner") return { error: "Pick a role from the list." };
+  try {
+    await assertMayAssignRole(ctx.business.id, chosen.key, roleActor(ctx));
+  } catch (e) {
+    if (e instanceof RoleError) return { error: e.message };
+    throw e;
+  }
   // Someone whose role only sees their own calendar is a bookable stylist; desk and management roles are not (editable per person under Staff).
   const worksCalendar = worksOwnCalendar(new Set(chosen.permissions.filter(isAction)));
   const h = await headers();
