@@ -147,9 +147,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       added to an old ticket on a later day is paid in the period it was added ("Tip (added later)"), so a finalized period no longer
       drifts; sale lines now record when they were added (existing lines: when their sale closed). Tests: core `payroll.test.ts`,
       `payroll-clawback.test.ts`.
-- [ ] Still open from payroll: the 14-hour auto-close is unchanged; no "my earnings" view or 1099 YTD; adjustments are not counted in the
-      overtime rate (a bonus entered as an adjustment would be); California's meal/rest-break premiums and split-shift pay aren't computed;
-      overtime is still ticked per run rather than defaulting on for hourly staff; salary is flat per run.
+- [ ] Still open from payroll: the 14-hour auto-close is unchanged; no "my earnings" view or 1099 YTD; California's meal/rest-break
+      premiums and split-shift pay aren't computed; salary is flat per run. (Bonuses in the overtime rate and overtime on by default: done.)
 - [x] Scheduled automations, 2026-10-16 (migration 0099): "We miss you" (no visit) only reaches clients whose last visit was N to N+7 days
       ago, so turning it on or importing years of history never messages every lapsed client at once; its page shows how many it would reach.
       Birthday and no-visit workflows are scanned once a day (`workflows.last_scan_on`) with one query that skips clients already messaged,
