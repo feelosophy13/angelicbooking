@@ -279,8 +279,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] 2026-10-17: online store orders authorize, then capture only if the stock is still there (`capture_method: manual`). Sold out
       meanwhile: the authorization is released, the order voided and the buyer told their card wasn't charged. Orders whose page closed
       after authorizing are settled by the 5-minute jobs run after 15 minutes (`sweepAuthorizedOrders`); checkouts never paid are
-      canceled and voided after 24 hours. The 60-minute cart hold stays. Test: `store-capture` (Stripe mocked; not yet run against real
-      Stripe, see the store item under end-to-end tests).
+      canceled and voided after 24 hours. The 60-minute cart hold stays. Test: `store-capture` (Stripe mocked). Checked in the Stripe sandbox
+      2026-10-17: authorize → capture (full amount), a capture replay with the same key, and cancel-after-capture / capture-after-cancel
+      both refused with `payment_intent_unexpected_state` (which the code handles). Not yet checked: manual capture with a platform fee on
+      a real connected account (the demo sandbox is a standalone account and takes no fee).
 - [ ] Still open from the review (2026-10-17 audit): bonuses entered as adjustments don't count in the overtime rate (needs a "counts as
       pay" flag, a migration); no client merge tool (the duplicate warning is there; the client page could show "possible duplicate");
       the quick "new client" in the client picker has no duplicate check; eslint + config for apps/web (then make CI lint blocking);
