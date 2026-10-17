@@ -29,6 +29,8 @@ export type AgendaItem = {
   depositStatus?: string | null;
   /** Class sessions: seats taken and the size of the group. */
   seats?: { booked: number; capacity: number } | null;
+  /** Booked over another visit on purpose ("Book anyway"). */
+  allowOverlap?: boolean;
 };
 
 /** Active staff plus every appointment item starting within [fromDate, fromDate + days). */
@@ -58,6 +60,7 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
           notes: schema.appointments.notes,
           locationId: schema.appointments.locationId,
           kind: schema.appointments.kind,
+          allowOverlap: schema.appointmentItems.allowOverlap,
         })
         .from(schema.appointmentItems)
         .innerJoin(schema.appointments, eq(schema.appointments.id, schema.appointmentItems.appointmentId))

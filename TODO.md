@@ -253,10 +253,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (422). Online bookings save the cancellation policy the client saw ("By booking, you agree to this policy"), when, and from which
       address; staff see it on the appointment as "Cancellation policy agreed". A class blocks its service's cleanup time; a 24:00 close
       ends at midnight (no lost last slot). Tests: core `payroll.test.ts` and `availability.test.ts`, `booking-guards`, API scope tests.
+- [x] Deliberate double-booking, 2026-10-17: when a desk booking clashes with another visit or a class, anyone with "Manage any
+      appointment" gets "Book anyway (double-book)"; the new services are saved with `allow_overlap` (the DB constraint already skips
+      those rows), blocked time still wins, online booking never sets it, the log records `appointment.double_booked`, and the calendar
+      hover card says "Double-booked on purpose". Single visits only (a series still skips clashing dates). Test: `double-booking`.
 - [ ] Still open from the review (2026-10-17 audit), highest impact first: overtime should default on for hourly staff (and bonuses entered
       as adjustments count in the overtime rate); store orders could authorize then capture only if stock remains (instead of a time
-      hold); dragging a multi-service visit moves only the dragged service; online booking picks the time before add-ons; no deliberate
-      double-booking (`allowOverlap` unused) or warning when time off covers bookings; audit gaps (clock PIN, payroll export, settings,
+      hold); dragging a multi-service visit moves only the dragged service; online booking picks the time before add-ons; no warning
+      when time off covers bookings; audit gaps (clock PIN, payroll export, settings,
       domains; no audit filters); catalog small items (bulk blank cost saves $0, `applyCount` overwrites sales during a count, flat
       deposit above price accepted, category/supplier ids unchecked); custom-domain salons get app.angelicbooking.com links in emails;
       `/suspended` is a dead end; mobile `apiUrl` hard-coded, no Expo auth plugin, CI doesn't lint or gate deploys; Vagaro import in one
