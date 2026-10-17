@@ -7,6 +7,7 @@ import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { BackLink, Card, PageHeader } from "@/components/ui";
 import { clientThread, numberThread, unreadFor } from "@/server/inbound";
+import { smsAvailableFor } from "@/server/messaging";
 import { AddClient } from "./add-client";
 import { MarkRead } from "./mark-read";
 import { ReplyBox } from "./reply-box";
@@ -23,6 +24,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
   if (!isNumber && !client) notFound();
   const unread = (await unreadFor(business.id, key)) > 0;
   const thread = client ? await clientThread(business.id, client.id, 200) : await numberThread(business.id, key.slice(4), 200);
+  const smsReady = write ? await smsAvailableFor(business.id) : false;
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
   const name = client ? `${client.firstName} ${client.lastName}`.trim() : key.slice(4);
   return (
@@ -49,9 +51,12 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
           </ul>
         )}
         <div className="mt-4 border-t border-stone-100 pt-4">
-          {client && write && client.phone ? <ReplyBox slug={slug} clientId={client.id} optedOut={!client.smsOptIn} />
-            : !client ? (write ? <AddClient slug={slug} number={key.slice(4)} /> : <p className="text-sm text-stone-500">This number is not on a client record.</p>)
-            : <p className="text-sm text-stone-500">{write ? "This client has no mobile number." : "You can read texts but not send them."}</p>}
+          {!client ? (write ? <AddClient slug={slug} number={key.slice(4)} /> : <p className="text-sm text-stone-500">This number is not on a client record.</p>)
+            : !write ? <p className="text-sm text-stone-500">You can read texts but not send them.</p>
+            : !client.phone ? <p className="text-sm text-stone-500">This client has no mobile number.</p>
+            : !client.smsOptIn ? <p className="text-sm text-stone-500">This client has opted out of texts, so nothing can be sent.</p>
+            : !smsReady ? <p className="text-sm text-stone-500">Replies need a verified text number. <Link href={`/app/${slug}/settings/messaging`} className="underline">Settings → Text number</Link></p>
+            : <ReplyBox slug={slug} clientId={client.id} />}
         </div>
       </Card>
     </>

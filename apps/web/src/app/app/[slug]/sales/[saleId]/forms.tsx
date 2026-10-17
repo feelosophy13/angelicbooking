@@ -1,32 +1,82 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useActionState } from "react";
-import { Button, Field, Input, Notice, Select, MoneyInput } from "@/components/ui";
+import { Button, Checkbox, Field, Input, Notice, Select, MoneyInput } from "@/components/ui";
 import { ConfirmSubmit, SubmitButton } from "@/components/form";
 import type { SaleActionState } from "./actions";
 
 type Action = (prev: SaleActionState, fd: FormData) => Promise<SaleActionState>;
 
-export function DiscountForm({ action, slug, saleId, currentCents, current, note }: { action: Action; slug: string; saleId: string; currentCents: number; current: { type: "amount" | "percent"; value: number } | null; note: string | null }) {
-  const [state, act, pending] = useActionState(action, undefined);
-  const type = current?.type ?? (currentCents > 0 ? "amount" : "none");
-  const value = current ? (current.type === "percent" ? String(current.value) : (current.value / 100).toFixed(2)) : currentCents > 0 ? (currentCents / 100).toFixed(2) : "";
+/** A row of choices where exactly one is picked (payment method, what to add). Buttons, not tabs: nothing navigates. */
+export function Segmented<T extends string>({ options, value, onChange, label, className }: { options: { value: T; label: React.ReactNode }[]; value: T; onChange: (v: T) => void; label: string; className?: string }) {
   return (
-    <form action={act} className="space-y-2">
+    <div className={`flex flex-wrap gap-1 rounded-lg border border-stone-300 bg-white p-0.5 text-sm ${className ?? ""}`} role="group" aria-label={label}>
+      {options.map((o) => (
+        <button key={o.value} type="button" onClick={() => onChange(o.value)} aria-pressed={value === o.value} className={`flex-1 whitespace-nowrap rounded-md px-3 py-1 ${value === o.value ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-100"}`}>{o.label}</button>
+      ))}
+    </div>
+  );
+}
+
+type DiscountKind = "none" | "amount" | "percent" | "promo";
+
+/**
+ * One discount on the ticket: nothing, an amount, a percent, or a promo code. Only the fields for the chosen
+ * kind are shown; "No discount" shows just the way to remove what is applied.
+ */
+export function DiscountForm({ action, promoAction, removePromoAction, slug, saleId, canDiscount, current, note, promo }: { action: Action; promoAction: Action; removePromoAction: (fd: FormData) => Promise<void>; slug: string; saleId: string; canDiscount: boolean; current: { type: "amount" | "percent"; value: number } | null; note: string | null; promo: string | null }) {
+  const [state, act, pending] = useActionState(action, undefined);
+  const [promoState, applyPromo, promoPending] = useActionState(promoAction, undefined);
+  const [kind, setKind] = useState<DiscountKind>(promo ? "promo" : current?.type ?? "none");
+  const value = current ? (current.type === "percent" ? String(current.value) : (current.value / 100).toFixed(2)) : "";
+  const ids = (
+    <>
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
-      <div className="grid grid-cols-[7rem_1fr] gap-2">
-        <Select name="type" defaultValue={type}>
-          <option value="none">No discount</option>
-          <option value="amount">$ off</option>
-          <option value="percent">% off</option>
-        </Select>
-        <Input name="value" placeholder="10" defaultValue={value} inputMode="decimal" />
-      </div>
-      <Input name="note" placeholder="Reason (optional)" defaultValue={note ?? ""} />
-      {state?.error ? <Notice>{state.error}</Notice> : null}
-      <Button type="submit" size="sm" variant="secondary" disabled={pending}>Apply discount</Button>
-    </form>
+    </>
+  );
+  return (
+    <div className="space-y-2">
+      <Select value={kind} onChange={(e) => setKind(e.target.value as DiscountKind)} aria-label="Discount" className="w-44">
+        <option value="none">No discount</option>
+        {canDiscount ? <option value="amount">$ off</option> : null}
+        {canDiscount ? <option value="percent">% off</option> : null}
+        <option value="promo">Promo code</option>
+      </Select>
+      {kind === "none" && promo ? (
+        <form action={removePromoAction}>{ids}<Button type="submit" size="sm" variant="secondary">Remove code {promo}</Button></form>
+      ) : kind === "none" && current ? (
+        <form action={act}>{ids}<input type="hidden" name="type" value="none" /><Button type="submit" size="sm" variant="secondary" disabled={pending}>Remove discount</Button></form>
+      ) : kind === "amount" || kind === "percent" ? (
+        <form action={act} className="space-y-2">
+          {ids}
+          <input type="hidden" name="type" value={kind} />
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={kind === "percent" ? "Percent off" : "Amount off"}>
+              {kind === "percent" ? <Input name="value" placeholder="10" defaultValue={current?.type === "percent" ? value : ""} inputMode="decimal" /> : <MoneyInput name="value" defaultValue={current?.type === "amount" ? value : ""} />}
+            </Field>
+            <Field label="Reason"><Input name="note" placeholder="Optional" defaultValue={note ?? ""} /></Field>
+          </div>
+          {state?.error ? <Notice>{state.error}</Notice> : null}
+          <Button type="submit" size="sm" variant="secondary" disabled={pending}>{current ? "Update discount" : "Apply discount"}</Button>
+        </form>
+      ) : kind === "promo" && promo ? (
+        <form action={removePromoAction} className="flex items-center justify-between gap-2 text-sm">
+          {ids}
+          <span>Code <span className="font-mono">{promo}</span> applied</span>
+          <Button type="submit" size="sm" variant="secondary">Remove code</Button>
+        </form>
+      ) : kind === "promo" ? (
+        <form action={applyPromo} className="space-y-2">
+          {ids}
+          <div className="flex gap-2">
+            <Input name="code" placeholder="Promo code" className="font-mono uppercase" required aria-label="Promo code" />
+            <Button type="submit" size="sm" variant="secondary" disabled={promoPending}>{promoPending ? "…" : "Apply code"}</Button>
+          </div>
+          {promoState?.error ? <Notice>{promoState.error}</Notice> : null}
+        </form>
+      ) : null}
+    </div>
   );
 }
 
@@ -143,7 +193,7 @@ export function ManualPayForm({ action, slug, saleId, dueCents, currency = "USD"
           ) : null}
         </div>
       ) : null}
-      <Input name="note" placeholder="Note (e.g. Venmo, gift)" />
+      {method === "other" ? <Input name="note" placeholder="How it was paid, e.g. Venmo, gift" aria-label="Note" /> : null}
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <SubmitButton size="sm" pendingText="Recording…">Record payment</SubmitButton>
     </form>
@@ -178,6 +228,7 @@ export type RefundLineOption = { id: string; name: string; kind: string; product
 
 export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons, goods = [], items = [] }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[]; /** Products this sale took off the shelf that haven't come back, so a returned item can go back on it. */ goods?: { productId: string; name: string; left: number }[]; /** Ticket lines with money left to refund: choosing them refunds exactly those (and takes exactly them back from the stylist's pay). */ items?: RefundLineOption[] }) {
   const [state, act, pending] = useActionState(action, undefined);
+  const [open, setOpen] = useState(false);
   const [to, setTo] = useState<"original" | "store_credit">("original");
   // lineId → amount typed (dollars) and how many; a line is chosen when it has an amount.
   const [picked, setPicked] = useState<Record<string, { amount: string; qty: number }>>({});
@@ -195,6 +246,8 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
       else delete next[l.id];
       return next;
     });
+  // Refunds are rare: the payment row stays a single line until someone asks to refund it.
+  if (!open) return <Button type="button" size="sm" variant="ghost" className="mt-1" onClick={() => setOpen(true)}>Refund…</Button>;
   return (
     <form action={act} className="mt-2 flex flex-wrap items-end gap-2">
       <input type="hidden" name="slug" value={slug} />
@@ -207,10 +260,7 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
             const p = picked[l.id];
             return (
               <div key={l.id} className="space-y-1.5">
-                <label className="flex items-start gap-2">
-                  <input type="checkbox" className="mt-1" checked={!!p} onChange={(e) => toggle(l, e.target.checked)} />
-                  <span className="min-w-0 flex-1">{l.name} <span className="whitespace-nowrap text-xs text-stone-500">· up to ${(l.remainingCents / 100).toFixed(2)}</span></span>
-                </label>
+                <Checkbox checked={!!p} onChange={(e) => toggle(l, e.target.checked)} label={<>{l.name} <span className="whitespace-nowrap text-xs text-stone-500">· up to ${(l.remainingCents / 100).toFixed(2)}</span></>} />
                 {p ? (
                   <div className="flex items-center gap-2 pl-6">
                     {l.quantity > 1 ? (
@@ -221,10 +271,7 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
                     <MoneyInput name={`item:${l.id}`} value={p.amount} onChange={(e) => setPicked((c) => ({ ...c, [l.id]: { ...p, amount: e.target.value } }))} className="w-28" aria-label={`Refund for ${l.name}`} />
                     {/* A returned product: back into stock with the refund (unticked when it never arrived or was a goodwill refund). */}
                     {l.kind === "product" && l.productId && shelf.has(l.productId) ? (
-                      <label className="flex items-center gap-1.5 text-xs text-stone-600">
-                        <input type="checkbox" name={`back:${l.productId}`} value={Math.min(p.qty, shelf.get(l.productId)!)} />
-                        Back on the shelf
-                      </label>
+                      <Checkbox name={`back:${l.productId}`} value={Math.min(p.qty, shelf.get(l.productId)!)} label="Back on the shelf" className="text-xs text-stone-600" />
                     ) : null}
                   </div>
                 ) : null}
@@ -238,10 +285,12 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
       ) : (
         <MoneyInput name="amount" defaultValue={(maxCents / 100).toFixed(2)} className="w-28" aria-label="Refund amount" />
       )}
-      <Select name="to" value={to} onChange={(e) => setTo(e.target.value as "original" | "store_credit")} className="w-44" aria-label="Refund to">
-        <option value="original">To original payment</option>
-        <option value="store_credit" disabled={!creditAllowed}>As store credit{creditAllowed ? "" : " (needs a client)"}</option>
-      </Select>
+      {creditAllowed ? (
+        <Select name="to" value={to} onChange={(e) => setTo(e.target.value as "original" | "store_credit")} className="w-44" aria-label="Refund to">
+          <option value="original">To original payment</option>
+          <option value="store_credit">As store credit</option>
+        </Select>
+      ) : <input type="hidden" name="to" value="original" />}
       <Select name="reasonId" defaultValue="" required className="w-44" aria-label="Reason">
         <option value="" disabled>Reason…</option>
         {reasons.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -269,6 +318,7 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
       >
         {to === "store_credit" ? "Give credit" : "Refund"}
       </ConfirmSubmit>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
       {state?.error ? <Notice>{state.error}</Notice> : null}
     </form>
   );
@@ -344,29 +394,6 @@ export function PointsPayForm({ action, slug, saleId, balance, pointValueCents, 
   );
 }
 
-export function PromoForm({ action, slug, saleId, applied, removeAction }: { action: Action; slug: string; saleId: string; applied: string | null; removeAction: (fd: FormData) => Promise<void> }) {
-  const [state, act, pending] = useActionState(action, undefined);
-  if (applied) {
-    return (
-      <form action={removeAction} className="flex items-center justify-between gap-2 text-sm">
-        <input type="hidden" name="slug" value={slug} />
-        <input type="hidden" name="saleId" value={saleId} />
-        <span>Code <span className="font-mono">{applied}</span> applied</span>
-        <Button type="submit" size="sm" variant="secondary">Remove code</Button>
-      </form>
-    );
-  }
-  return (
-    <form action={act} className="space-y-2">
-      <input type="hidden" name="slug" value={slug} />
-      <input type="hidden" name="saleId" value={saleId} />
-      <Input name="code" placeholder="Promo code" className="font-mono uppercase" required />
-      {state?.error ? <Notice>{state.error}</Notice> : null}
-      <Button type="submit" size="sm" variant="secondary" disabled={pending}>{pending ? "…" : "Apply code"}</Button>
-    </form>
-  );
-}
-
 /** Send the receipt of a paid sale by email or text, to the client's details or anything typed in. */
 export function SendReceiptForm({ action, slug, saleId, email, phone }: { action: (fd: FormData) => Promise<void>; slug: string; saleId: string; email: string | null; phone: string | null }) {
   const [channel, setChannel] = useState<"email" | "sms">(email || !phone ? "email" : "sms");
@@ -377,11 +404,7 @@ export function SendReceiptForm({ action, slug, saleId, email, phone }: { action
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
       <input type="hidden" name="channel" value={channel} />
-      <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Send the receipt by">
-        {([["email", "Email"], ["sms", "Text"]] as const).map(([k, l]) => (
-          <button key={k} type="button" onClick={() => pick(k)} aria-pressed={channel === k} className={`flex-1 rounded-md px-3 py-1 ${channel === k ? "bg-stone-900 text-white" : "text-stone-700"}`}>{l}</button>
-        ))}
-      </div>
+      <Segmented label="Send the receipt by" value={channel} onChange={pick} options={[{ value: "email", label: "Email" }, { value: "sms", label: "Text" }]} />
       <Input name="to" type={channel === "email" ? "email" : "tel"} value={to} onChange={(e) => setTo(e.target.value)} placeholder={channel === "email" ? "name@example.com" : "Mobile number"} required aria-label={channel === "email" ? "Email address" : "Mobile number"} />
       <SubmitButton size="sm" variant="secondary" pendingText="Sending…">Send receipt</SubmitButton>
     </form>

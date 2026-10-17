@@ -3,7 +3,7 @@ import { Input, Select, Textarea, Checkbox } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { FieldBuilder } from "./builder";
 import { OfferedAt } from "@/components/offered-at";
-import { ServiceCheckboxes } from "@/components/service-checkboxes";
+import { WhoCompletes } from "./who-completes";
 import type { ServiceTreeNode } from "@/server/service-groups";
 
 type Action = Parameters<typeof ActionForm>[0]["action"];
@@ -30,12 +30,7 @@ export function FormEditor({ action, slug, form, tree, locations = [], submitLab
         <FieldBuilder initial={form?.fields ?? []} description={form?.description ?? null} requireSignature={form?.requireSignature ?? true} />
       </div>
       <Checkbox name="requireSignature" defaultChecked={form?.requireSignature ?? true} label="Require a typed signature" />
-      <fieldset className="rounded-lg border border-stone-200 p-3">
-        <legend className="px-1 text-sm font-medium text-stone-700">Who has to complete it</legend>
-        <Checkbox name="applyToAll" defaultChecked={form?.applyToAll ?? false} label="Every client, before any visit" />
-        <p className="mb-1 mt-2 text-xs text-stone-500">…or only before these services:</p>
-        <ServiceCheckboxes name="serviceIds" tree={tree} selected={form?.serviceIds ?? []} />
-      </fieldset>
+      <WhoCompletes tree={tree} applyToAll={form?.applyToAll ?? false} serviceIds={form?.serviceIds ?? []} />
       <OfferedAt locations={locations} selected={form?.locationIds ?? []} legend="Required at" hint="Untick a location if visits there don't need this form (e.g. a different legal entity with its own waiver)." />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Ask again after (days)" name="renewDays" hint="Blank = sign once, valid forever."><Input name="renewDays" type="number" min={1} defaultValue={form?.renewDays ?? ""} placeholder="365" /></Field>

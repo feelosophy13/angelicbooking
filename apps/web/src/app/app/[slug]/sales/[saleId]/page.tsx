@@ -32,13 +32,11 @@ import { ServicePicker } from "@/components/service-picker";
 import { schema, withTenant } from "@angelic/db";
 import { asc, eq } from "drizzle-orm";
 import { instantToISODate } from "@angelic/core";
-import { DiscountForm, GiftCardPayForm, LateTipForm, ManualPayForm, PointsPayForm, PromoForm, RefundForm, RefundReasonEditor, SaleNoteForm, SavedCardForm, SendReceiptForm, StoreCreditPayForm, TipsForm } from "./forms";
-import { SaleProductPicker } from "@/components/sale-product-picker";
+import { DiscountForm, LateTipForm, RefundForm, RefundReasonEditor, SaleNoteForm, SendReceiptForm, TipsForm } from "./forms";
+import { AddToTicket, TakePayment } from "./add-and-pay";
 import { pointsBalance } from "@/server/loyalty";
 import { storeCreditBalance } from "@/server/store-credit";
 import { listRefundReasons } from "@/server/refund-reasons";
-import { CardPayment } from "./card-payment";
-import { TerminalPayment } from "./terminal-payment";
 import { saleStockLocation, saleStockState, stockLevels } from "@/server/inventory";
 import { productLabel } from "@/lib/inventory";
 
@@ -209,91 +207,22 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
 
           {open ? (
             <div className="space-y-3">
-              <Disclosure title="Add to this ticket" hint="product, retail or an extra service" defaultOpen={goods.length === 0}>
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="mb-2 text-sm font-medium text-stone-700">Product</h3>
-                    {products.length === 0 ? (
-                      <p className="text-sm text-stone-500">No products yet. Add some under <Link className="underline" href={`/app/${slug}/products`}>Products</Link>.</p>
-                    ) : (
-                      <form action={addProduct} className="space-y-2">
-                        <input type="hidden" name="slug" value={slug} />
-                        <input type="hidden" name="saleId" value={sale.id} />
-                        <SaleProductPicker
-                          autoFocus={goods.length === 0}
-                          products={products.map((p) => ({ id: p.id, label: productLabel(p), category: p.category ?? "Other", priceLabel: money(p.priceCents), stock: p.trackStock ? ((stockHere.get(p.id) ?? 0) <= 0 ? "none in stock" : `${stockHere.get(p.id)} in stock`) : null, out: !!p.trackStock && (stockHere.get(p.id) ?? 0) <= 0, imageUrl: p.imageUrl }))}
-                        />
-                        <div className="grid grid-cols-[5rem_1fr] gap-2">
-                          <input name="quantity" type="number" min={1} max={99} defaultValue={1} className="h-10 rounded-lg border border-stone-300 px-3 text-sm" aria-label="Quantity" />
-                          {/* No default: whoever sold it has to be chosen, so commission never lands on a guess. "No staff credit" is a deliberate choice. */}
-                          <Select name="staffId" defaultValue="" required aria-label="Who gets credit">
-                            <option value="" disabled>Who gets credit?</option>
-                            {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
-                            <option value="none">No staff credit</option>
-                          </Select>
-                        </div>
-                        <p className="text-xs text-stone-500">Choose who gets credit, then tap a product (or scan one) to add it with this quantity.</p>
-                        <div className="flex gap-2">
-                          <Input name="code" placeholder="Scan a barcode or type a SKU" aria-label="Barcode or SKU" autoComplete="off" className="min-w-0 flex-1" />
-                          <button type="submit" formAction={addProductByCode} className="inline-flex h-10 items-center rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium hover:bg-stone-50">Add</button>
-                        </div>
-                      </form>
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="mb-2 text-sm font-medium text-stone-700">Service</h3>
-                    <form action={addServiceToSale} className="space-y-2">
-                      <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />
-                      <ServicePicker name="serviceId" groups={serviceGroupsForSale} value={null} />
-                      <div className="grid grid-cols-2 gap-2">
-                        <Select name="staffId" defaultValue="" required aria-label="Who performed it">
-                          <option value="" disabled>Who gets credit?</option>
-                          {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
-                          <option value="none">No staff credit</option>
-                        </Select>
-                        <MoneyInput name="price" placeholder="Price (optional)" />
-                      </div>
-                      <Button type="submit" size="sm" variant="secondary">Add service</Button>
-                    </form>
-                  </div>
-                </div>
+              <Disclosure title="Add to this ticket" defaultOpen={goods.length === 0}>
+                <AddToTicket
+                  slug={slug}
+                  saleId={sale.id}
+                  staff={staff.map((s) => ({ id: s.id, name: s.displayName }))}
+                  products={products.map((p) => ({ id: p.id, label: productLabel(p), category: p.category ?? "Other", priceLabel: money(p.priceCents), stock: p.trackStock ? ((stockHere.get(p.id) ?? 0) <= 0 ? "none in stock" : `${stockHere.get(p.id)} in stock`) : null, out: !!p.trackStock && (stockHere.get(p.id) ?? 0) <= 0, imageUrl: p.imageUrl }))}
+                  productsHref={`/app/${slug}/products`}
+                  autoFocus={goods.length === 0}
+                  groups={serviceGroupsForSale}
+                  packages={(catalog?.packages ?? []).filter((p) => p.active).map((p) => ({ id: p.id, label: `${p.name} · ${money(p.priceCents)}` }))}
+                  plans={client ? (catalog?.plans ?? []).filter((p) => p.active).map((p) => ({ id: p.id, label: `${p.name} · ${money(p.priceCents)} / ${periodNoun(isMembershipInterval(p.interval) ? p.interval : "month", p.intervalCount)}` })) : []}
+                  actions={{ addProduct, addProductByCode, addService: addServiceToSale, addOffer }}
+                />
               </Disclosure>
-              <Disclosure title="Discount or promo code" hint={promo ? `code ${promo.code} applied` : sale.discountCents > 0 ? `${money(sale.discountCents)} off` : undefined} open={!!promo || sale.discountCents > 0}>
-                <div className="grid gap-6 md:grid-cols-2">
-                  <div>
-                    <h3 className="mb-2 text-sm font-medium text-stone-700">Discount</h3>
-                    {canDiscount ? <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}:${sale.promoCodeId ?? ""}`} action={applyDiscount} slug={slug} saleId={sale.id} currentCents={sale.promoCodeId ? 0 : sale.discountCents} current={typedDiscount} note={sale.promoCodeId ? null : sale.discountNote} /> : null}
-                  </div>
-                  <div>
-                    <h3 className="mb-2 text-sm font-medium text-stone-700">Promo code</h3>
-                    <PromoForm key={`promo${sale.promoCodeId ?? ""}`} action={applyPromo} slug={slug} saleId={sale.id} applied={promo?.code ?? null} removeAction={removePromo} />
-                  </div>
-                </div>
-              </Disclosure>
-              <Disclosure title="Sell a gift card, package or membership">
-                <div className="grid gap-4 md:grid-cols-3">
-                  <form action={addOffer} className="space-y-2">
-                    <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="kind" value="gift_card" />
-                    <MoneyInput name="amount" placeholder="Gift card amount" required />
-                    <Input name="recipientName" placeholder="Recipient (optional)" />
-                    <Button type="submit" size="sm" variant="secondary">Add gift card</Button>
-                  </form>
-                  <form action={addOffer} className="space-y-2">
-                    <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="kind" value="package" />
-                    <Select name="refId" required>{(catalog?.packages ?? []).filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)}</option>)}</Select>
-                    <Select name="staffId" defaultValue="" required aria-label="Who sold it">
-                      <option value="" disabled>Who sold it?</option>
-                      {staff.map((x) => <option key={x.id} value={x.id}>{x.displayName}</option>)}
-                      <option value="none">No staff credit</option>
-                    </Select>
-                    <Button type="submit" size="sm" variant="secondary" disabled={!catalog?.packages.some((p) => p.active)}>Add package</Button>
-                  </form>
-                  <form action={addOffer} className="space-y-2">
-                    <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="kind" value="membership" />
-                    <Select name="refId" required>{(catalog?.plans ?? []).filter((p) => p.active).map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.priceCents)} / {periodNoun(isMembershipInterval(p.interval) ? p.interval : "month", p.intervalCount)}</option>)}</Select>
-                    <Button type="submit" size="sm" variant="secondary" disabled={!client || !catalog?.plans.some((p) => p.active)}>Add membership{!client ? " (needs client)" : ""}</Button>
-                  </form>
-                </div>
+              <Disclosure title="Discount" hint={promo ? `code ${promo.code} applied` : sale.discountCents > 0 ? `${money(sale.discountCents)} off` : undefined} open={!!promo || sale.discountCents > 0}>
+                <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}:${sale.promoCodeId ?? ""}`} action={applyDiscount} promoAction={applyPromo} removePromoAction={removePromo} slug={slug} saleId={sale.id} canDiscount={canDiscount} current={typedDiscount} note={sale.promoCodeId ? null : sale.discountNote} promo={promo?.code ?? null} />
               </Disclosure>
               {goods.length > 0 ? (
                 <Card className="p-4">
@@ -362,49 +291,22 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                     ) : null}
                   </div>
                 ) : (
-                  <div className="space-y-5">
-                    <div>
-                      <h3 className="mb-1 text-sm font-medium text-stone-700">Cash / other</h3>
-                      <ManualPayForm key={due} currency={cur} action={payManual} slug={slug} saleId={sale.id} dueCents={due} />
-                    </div>
-                    <div className="border-t border-stone-200 pt-4">
-                      <h3 className="mb-1 text-sm font-medium text-stone-700">Gift card</h3>
-                      <GiftCardPayForm key={`gc${due}`} action={payWithGiftCard} slug={slug} saleId={sale.id} dueCents={due} />
-                    </div>
-                    {client && storeCredit > 0 ? (
-                      <div className="border-t border-stone-200 pt-4">
-                        <h3 className="mb-1 text-sm font-medium text-stone-700">Store credit</h3>
-                        <StoreCreditPayForm key={`sc${due}`} action={payWithStoreCreditAction} slug={slug} saleId={sale.id} balanceCents={storeCredit} dueCents={due} />
-                      </div>
+                  <div className="space-y-3">
+                    <TakePayment
+                      slug={slug}
+                      saleId={sale.id}
+                      dueCents={due}
+                      currency={cur}
+                      hasClient={!!client}
+                      savedCards={savedCards.map((c) => ({ id: c.id, brand: c.brand, last4: c.last4, expMonth: c.expMonth, expYear: c.expYear }))}
+                      stripe={stripeReady ? { publishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? null, test: (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "").startsWith("pk_test") } : null}
+                      storeCredit={client ? storeCredit : 0}
+                      points={business.loyaltyEnabled && client && points >= business.loyaltyMinRedeemPoints ? { balance: points, pointValueCents: business.loyaltyPointValueCents, minPoints: business.loyaltyMinRedeemPoints } : null}
+                      actions={{ payManual, payWithGiftCard, payWithSavedCard, payWithStoreCredit: payWithStoreCreditAction, payWithPoints }}
+                    />
+                    {!stripeReady && can(permissions, "business.manage") ? (
+                      <p className="text-xs text-stone-500">To take cards, connect Stripe under <Link className="underline" href={`/app/${slug}/settings/payments`}>Settings → Payments</Link>.</p>
                     ) : null}
-                    {business.loyaltyEnabled && client && points > 0 ? (
-                      <div className="border-t border-stone-200 pt-4">
-                        <h3 className="mb-1 text-sm font-medium text-stone-700">Loyalty points</h3>
-                        <PointsPayForm key={`pt${due}`} action={payWithPoints} slug={slug} saleId={sale.id} balance={points} pointValueCents={business.loyaltyPointValueCents} dueCents={due} minPoints={business.loyaltyMinRedeemPoints} />
-                      </div>
-                    ) : null}
-                    <div className="border-t border-stone-200 pt-4">
-                      <h3 className="mb-1 text-sm font-medium text-stone-700">Card</h3>
-                      {!stripeReady ? (
-                        <p className="text-sm text-stone-500">
-                          {can(permissions, "business.manage") ? <>Connect Stripe under <Link className="underline" href={`/app/${slug}/settings/payments`}>Settings → Payments</Link> to take cards.</> : "Card payments aren't set up yet."}
-                        </p>
-                      ) : (
-                        <div className="space-y-4">
-                          {savedCards.length > 0 ? (
-                            <SavedCardForm key={due} action={payWithSavedCard} slug={slug} saleId={sale.id} dueCents={due} cards={savedCards} />
-                          ) : null}
-                          <div>
-                            <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-500">Card reader</h4>
-                            <TerminalPayment slug={slug} saleId={sale.id} dueCents={due} hasClient={!!client} test={(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "").startsWith("pk_test")} />
-                          </div>
-                          <div className="border-t border-stone-100 pt-3">
-                            <h4 className="mb-1 text-xs font-medium uppercase tracking-wide text-stone-500">Type in a card</h4>
-                          </div>
-                          <CardPayment slug={slug} saleId={sale.id} dueCents={due} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? null} hasClient={!!client} />
-                        </div>
-                      )}
-                    </div>
                   </div>
                 )}
                 <div className="mt-4 border-t border-stone-200 pt-3 text-sm">
@@ -420,11 +322,10 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
             </Card>
           )}
           {sale.status === "paid" && goods.length > 0 ? (
-            <Card className="p-4 text-sm">
-              <h2 className="mb-1 font-medium">Add a tip</h2>
-              <p className="mb-2 text-xs text-stone-500">For a tip that comes after the sale was paid. It is added to the sale and the stylist&apos;s pay.{savedCards.length === 0 ? " To charge it to a card, attach a client who has a card on file." : ""}</p>
+            <Disclosure title="Add a tip" hint="after the sale was paid">
+              <p className="mb-2 text-xs text-stone-500">Added to the sale and the stylist&apos;s pay.{savedCards.length === 0 ? " To charge it to a card, attach a client who has a card on file." : ""}</p>
               <LateTipForm action={addLateTip} slug={slug} saleId={sale.id} staff={tipStaff.length ? tipStaff : staff.map((x) => ({ id: x.id, name: x.displayName }))} cards={savedCards.map((c) => ({ id: c.id, brand: c.brand, last4: c.last4 }))} />
-            </Card>
+            </Disclosure>
           ) : null}
           {!open && sale.status !== "void" ? (
             <Card className="p-4 text-sm">
@@ -433,14 +334,12 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
             </Card>
           ) : null}
           {open || sale.notes ? (
-            <Card className="p-4 text-sm">
-              <h2 className="mb-2 font-medium">Note</h2>
+            <Disclosure title="Note" hint={sale.notes ? undefined : "private, not on the receipt"} open={!!sale.notes}>
               <SaleNoteForm action={saveSaleNote} slug={slug} saleId={sale.id} notes={sale.notes} />
-            </Card>
+            </Disclosure>
           ) : null}
           {canStock && [...stockState.entries()].some(([, v]) => v.sold > 0) ? (
-            <Card className="p-4 text-sm">
-              <h2 className="mb-1 font-medium">Goods back on the shelf</h2>
+            <Disclosure title="Goods back on the shelf">
               <p className="mb-2 text-xs text-stone-500">A refund gives money back; it doesn't change the stock, because the product may be gone (never arrived, goodwill). If a client really brought something back, put it back here.</p>
               <form action={putBackOnShelf} className="space-y-2">
                 <input type="hidden" name="slug" value={slug} />
@@ -458,7 +357,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 <Input name="note" placeholder="Why (optional), e.g. unopened, returned" aria-label="Note" />
                 <Button type="submit" size="sm" variant="secondary">Put back on the shelf</Button>
               </form>
-            </Card>
+            </Disclosure>
           ) : null}
           {sale.fulfillment ? (
             <Card className="p-4 text-sm">
@@ -492,7 +391,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
           ) : open ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-1 font-medium">Client</h2>
-              <p className="mb-2 text-xs text-stone-500">Walk-in. Attach a client for loyalty points, saved cards and an emailed receipt.</p>
+              <p className="mb-2 text-xs text-stone-500">Walk-in. Attach a client for loyalty points, saved cards, memberships and an emailed receipt.</p>
               <form action={attachClient} className="space-y-2">
                 <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />
                 <ClientPicker slug={slug} initial={null} canCreate={can(permissions, "clients.write")} createClient={quickCreateClient} allowWalkIn={false} />

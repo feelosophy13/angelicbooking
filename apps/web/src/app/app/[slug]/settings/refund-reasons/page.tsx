@@ -21,17 +21,23 @@ export default async function RefundReasonsPage({ params }: { params: Promise<{ 
           <ul className="divide-y divide-stone-100 text-sm">
             {reasons.map((r, i) => (
               <li key={r.id} className={`flex flex-wrap items-center gap-2 py-2 ${r.active ? "" : "text-stone-400"}`}>
-                <ActionForm action={renameRefundReasonAction} className="flex min-w-0 flex-1 items-center gap-2">
-                  <input type="hidden" name="slug" value={slug} />
-                  <input type="hidden" name="id" value={r.id} />
-                  <Input name="name" defaultValue={r.name} className="h-8 min-w-0 flex-1" aria-label={`Rename ${r.name}`} disabled={!r.active} />
-                  {r.active ? <SubmitButton size="sm" variant="ghost" pendingText="…">Rename</SubmitButton> : null}
-                </ActionForm>
-                <form action={moveRefundReasonAction} className="flex gap-0.5">
-                  <input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={r.id} />
-                  <button name="dir" value="up" disabled={i === 0} aria-label={`Move ${r.name} up`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↑</button>
-                  <button name="dir" value="down" disabled={i === reasons.length - 1} aria-label={`Move ${r.name} down`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↓</button>
-                </form>
+                {r.active ? (
+                  <ActionForm action={renameRefundReasonAction} className="flex min-w-0 flex-1 items-center gap-2">
+                    <input type="hidden" name="slug" value={slug} />
+                    <input type="hidden" name="id" value={r.id} />
+                    <Input name="name" defaultValue={r.name} className="h-8 min-w-0 flex-1" aria-label={`Rename ${r.name}`} />
+                    <SubmitButton size="sm" variant="ghost" pendingText="…">Rename</SubmitButton>
+                  </ActionForm>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate px-3">{r.name} · retired</span>
+                )}
+                {r.active ? (
+                  <form action={moveRefundReasonAction} className="flex gap-0.5">
+                    <input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={r.id} />
+                    <button name="dir" value="up" disabled={i === 0} aria-label={`Move ${r.name} up`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↑</button>
+                    <button name="dir" value="down" disabled={i === reasons.length - 1} aria-label={`Move ${r.name} down`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↓</button>
+                  </form>
+                ) : null}
                 <form action={setRefundReasonActiveAction}>
                   <input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={r.id} /><input type="hidden" name="active" value={r.active ? "0" : "1"} />
                   <button className="text-xs text-stone-500 underline hover:text-stone-800">{r.active ? "Retire" : "Restore"}</button>

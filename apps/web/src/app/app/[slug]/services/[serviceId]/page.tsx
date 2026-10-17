@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
+import { isStripeConfigured } from "@/lib/stripe";
 import { listCategories } from "@/server/categories";
 import { FormPage } from "@/components/ui";
 import { PricesByStylist } from "./prices-by-stylist";
@@ -34,7 +35,7 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
       <ActionForm action={updateService}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="serviceId" value={service.id} />
-        <ServiceFields service={service} categories={categories} locations={locations} offeredAt={offeredAt.map((r) => r.locationId)} currency={business.currency} />
+        <ServiceFields service={service} categories={categories} locations={locations} offeredAt={offeredAt.map((r) => r.locationId)} currency={business.currency} stripeReady={isStripeConfigured() && business.stripeChargesEnabled} slug={slug} />
         <SubmitButton pendingText="Saving…">Save service</SubmitButton>
       </ActionForm>
     </FormPage>

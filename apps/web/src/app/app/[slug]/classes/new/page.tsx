@@ -38,11 +38,13 @@ export default async function NewClassPage({ params, searchParams }: { params: P
                   {services.map((s) => <option key={s.id} value={s.id}>{s.name} · {duration(s.durationMin + s.gapMin + s.finishMin)} · up to {s.capacity}</option>)}
                 </Select>
               </Field>
-              <Field label="Instructor">
-                <Select name="staffId" defaultValue={staffId ?? ""}>
-                  {eligible.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
-                </Select>
-              </Field>
+              {eligible.length > 1 ? (
+                <Field label="Instructor">
+                  <Select name="staffId" defaultValue={staffId ?? ""}>
+                    {eligible.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                  </Select>
+                </Field>
+              ) : eligible[0] ? <p className="text-sm text-stone-600">Instructor: {eligible[0].displayName}</p> : null}
               <Field label="Date"><Input name="date" type="date" defaultValue={date} /></Field>
               <Button type="submit" variant="secondary" className="w-full">Find times</Button>
             </form>

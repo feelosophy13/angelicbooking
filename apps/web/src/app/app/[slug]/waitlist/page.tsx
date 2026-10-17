@@ -1,18 +1,19 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Waitlist" };
+import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { listWaitlist } from "@/server/public-booking";
 import { dateLong as formatDateLong } from "@/lib/format";
-import { Button, Card, PageHeader, Empty } from "@/components/ui";
+import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
 import { updateWaitlist } from "./actions";
 
 export default async function WaitlistPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "appointments.read.any");
+  const { business, permissions } = await requireAction(slug, "appointments.read.any");
   const rows = await listWaitlist(business.id, business.timezone);
+  const write = can(permissions, "appointments.write.any");
   return (
     <>
       <PageHeader title="Waitlist" />
@@ -25,13 +26,17 @@ export default async function WaitlistPage({ params }: { params: Promise<{ slug:
                   <p className="font-medium">{w.clientFirst} {w.clientLast} <span className="font-normal text-stone-500">{w.clientPhone}</span></p>
                   <p className="text-xs text-stone-500">{formatDateLong(w.date)} · {w.serviceName ?? "any service"}{w.staffName ? ` · ${w.staffName}` : ""}{w.locationName ? ` · ${w.locationName}` : ""}{w.notes ? ` · ${w.notes}` : ""}</p>
                 </div>
-                <Link href={`/app/${slug}/appointments/new?date=${w.date}${w.clientId ? `&clientId=${w.clientId}` : ""}${w.serviceId ? `&serviceId=${w.serviceId}` : ""}${w.locationId ? `&location=${w.locationId}` : ""}`} className="text-brand-700 underline">Book</Link>
-                <form action={updateWaitlist} className="flex gap-1">
-                  <input type="hidden" name="slug" value={slug} />
-                  <input type="hidden" name="id" value={w.id} />
-                  <Button name="status" value="booked" size="sm" variant="secondary" type="submit">Booked</Button>
-                  <ConfirmSubmit name="status" value="closed" title="Remove from the waitlist?" confirmLabel="Remove" variant="ghost">Remove</ConfirmSubmit>
-                </form>
+                {write ? (
+                  <>
+                    <LinkButton href={`/app/${slug}/appointments/new?date=${w.date}${w.clientId ? `&clientId=${w.clientId}` : ""}${w.serviceId ? `&serviceId=${w.serviceId}` : ""}${w.locationId ? `&location=${w.locationId}` : ""}`} size="sm">Book</LinkButton>
+                    <form action={updateWaitlist} className="flex gap-1">
+                      <input type="hidden" name="slug" value={slug} />
+                      <input type="hidden" name="id" value={w.id} />
+                      <Button name="status" value="booked" size="sm" variant="ghost" type="submit">Booked</Button>
+                      <ConfirmSubmit name="status" value="closed" title="Remove from the waitlist?" confirmLabel="Remove" variant="ghost">Remove</ConfirmSubmit>
+                    </form>
+                  </>
+                ) : null}
               </li>
             ))}
           </ul>

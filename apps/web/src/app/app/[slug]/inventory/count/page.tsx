@@ -34,10 +34,12 @@ export default async function CountPage({ params, searchParams }: { params: Prom
         {multi ? (
           <Select name="loc" defaultValue={loc} aria-label="Location" className="h-9 w-auto">{locations.map((l) => <option key={l.id} value={l.id}>{l.name.replace(`${business.name} - `, "")}</option>)}</Select>
         ) : null}
-        <Select name="cat" defaultValue={sp.cat ?? ""} aria-label="Category" className="h-9 w-auto">
-          <option value="">All categories</option>
-          {cats.map((c) => <option key={c} value={c}>{c}</option>)}
-        </Select>
+        {cats.length > 1 ? (
+          <Select name="cat" defaultValue={sp.cat ?? ""} aria-label="Category" className="h-9 w-auto">
+            <option value="">All categories</option>
+            {cats.map((c) => <option key={c} value={c}>{c}</option>)}
+          </Select>
+        ) : null}
         <label className="flex items-center gap-1.5 text-sm text-stone-700"><input type="checkbox" name="blind" value="1" defaultChecked={blind} className="h-4 w-4" /> Hide what the book says (blind count)</label>
       </AutoSubmitForm>
       <Card className="p-4">

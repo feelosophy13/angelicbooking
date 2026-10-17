@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { requireAction } from "@/lib/tenant";
 import { listLocations, listSuppliers } from "@/server/inventory";
 import { FormPage, Input, Select, Textarea } from "@/components/ui";
@@ -15,9 +16,13 @@ export default async function NewOrderPage({ params }: { params: Promise<{ slug:
     <FormPage title="New order" backHref={`/app/${slug}/inventory/orders`} backLabel="Orders">
       <ActionForm action={newOrder}>
         <input type="hidden" name="slug" value={slug} />
-        <Field label="Supplier" name="supplierId" hint={suppliers.length ? undefined : "Add suppliers under Inventory → Suppliers."}>
-          <Select name="supplierId" defaultValue=""><option value="">No supplier yet</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
-        </Field>
+        {suppliers.length ? (
+          <Field label="Supplier" name="supplierId">
+            <Select name="supplierId" defaultValue=""><option value="">No supplier yet</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
+          </Field>
+        ) : (
+          <p className="text-xs text-stone-500">No suppliers yet. Add them under <Link href={`/app/${slug}/inventory/suppliers`} className="underline">Inventory → Suppliers</Link> to put one on an order.</p>
+        )}
         {locations.length > 1 ? (
           <Field label="Deliver to" name="locationId"><Select name="locationId" defaultValue={locations.find((l) => l.isDefault)?.id}>{locations.map((l) => <option key={l.id} value={l.id}>{l.name.replace(`${business.name} - `, "")}</option>)}</Select></Field>
         ) : null}

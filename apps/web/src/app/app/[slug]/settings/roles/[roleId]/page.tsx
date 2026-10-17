@@ -23,8 +23,11 @@ export default async function EditRolePage({ params }: { params: Promise<{ slug:
   const locked = role.key === "owner";
   return (
     <FormPage title={role.name} backHref={`/app/${slug}/settings/roles`} backLabel="Roles & permissions" width="max-w-3xl">
-      {locked ? <div className="mb-4"><Notice kind="success">Owners always have every permission. This role can't be edited or deleted.</Notice></div> : null}
-      <RoleForm action={updateRoleAction} slug={slug} roleId={role.id} defaults={{ name: role.name, description: role.description, permissions: role.permissions }} locked={locked} submitLabel="Save role" />
+      {locked ? (
+        <div className="mb-4"><Notice kind="success">Owners always have every permission. This role can't be edited or deleted.</Notice></div>
+      ) : (
+        <RoleForm action={updateRoleAction} slug={slug} roleId={role.id} defaults={{ name: role.name, description: role.description, permissions: role.permissions }} submitLabel="Save role" />
+      )}
       <Card className="mt-6 p-4 text-sm">
         <h2 className="mb-2 font-medium">Who has this role</h2>
         {holders.length === 0 ? <p className="text-stone-500">Nobody yet. Assign it from a staff member's Access tab.</p> : (
@@ -34,11 +37,15 @@ export default async function EditRolePage({ params }: { params: Promise<{ slug:
         )}
       </Card>
       {!role.isSystem ? (
-        <form action={deleteRoleAction} className="mt-6">
-          <input type="hidden" name="slug" value={slug} />
-          <input type="hidden" name="roleId" value={role.id} />
-          <ConfirmSubmit title={`Delete the ${role.name} role?`} body={holders.length ? `Move the ${holders.length} member(s) to another role first.` : "This can't be undone."} confirmLabel="Delete role" variant="danger">Delete role</ConfirmSubmit>
-        </form>
+        holders.length === 0 ? (
+          <form action={deleteRoleAction} className="mt-6">
+            <input type="hidden" name="slug" value={slug} />
+            <input type="hidden" name="roleId" value={role.id} />
+            <ConfirmSubmit title={`Delete the ${role.name} role?`} body="This can't be undone." confirmLabel="Delete role" variant="ghost">Delete role</ConfirmSubmit>
+          </form>
+        ) : (
+          <p className="mt-6 text-xs text-stone-500">To delete this role, move its {holders.length === 1 ? "member" : `${holders.length} members`} to another role first.</p>
+        )
       ) : null}
     </FormPage>
   );

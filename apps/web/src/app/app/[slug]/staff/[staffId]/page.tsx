@@ -8,6 +8,7 @@ import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { generateClockPin, resetCalendarToken, updateStaffProfile } from "../actions";
 import { ConfirmSubmit } from "@/components/form";
 import { Disclosure } from "@/components/disclosure";
+import { CalendarFields } from "./calendar-fields";
 import { appUrl } from "@/lib/stripe";
 
 export default async function StaffProfilePage({ params }: { params: Promise<{ slug: string; staffId: string }> }) {
@@ -53,8 +54,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
             </Select>
           </Field>
         ) : null}
-        <Checkbox name="takesAppointments" defaultChecked={person.takesAppointments} label="Takes appointments" hint="Has a calendar column. Untick for front desk, managers or an owner login that doesn't see clients." />
-        <Checkbox name="bookableOnline" defaultChecked={person.bookableOnline} label="Bookable online" />
+        <CalendarFields takesAppointments={person.takesAppointments} bookableOnline={person.bookableOnline} />
         <Checkbox name="active" defaultChecked={person.active} label="Active (shown on the calendar)" />
         <details className="rounded-lg border border-stone-200 p-3">
           <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">Clock-in PIN <span className="font-normal text-stone-500">· {person.clockPinHash ? "set" : "not set"}</span></summary>

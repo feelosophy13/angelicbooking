@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Bell, BellRing, ChevronDown, Clock, Coins, Mail, MessageSquare, Plus, Star, Tag, Trash2 } from "lucide-react";
 import type { WorkflowStep, WorkflowTrigger } from "@angelic/db";
 import { Input, Select, Textarea } from "@/components/ui";
+import { Field } from "@/components/form";
 import { APPOINTMENT_TRIGGERS, newStepId, placeholdersFor, STEP_LABELS } from "@/lib/workflows-logic";
 import { cn } from "@/lib/utils";
 
@@ -99,11 +100,13 @@ export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; tri
                       <div className="flex flex-wrap items-center gap-2 text-sm">
                         <Input type="number" min={0} max={8760} value={s.hours} onChange={(e) => update(i, { hours: Number(e.target.value) })} className="h-9 w-24" aria-label="Hours" />
                         <span>hours</span>
-                        <Select value={s.mode} onChange={(e) => update(i, { mode: e.target.value as "delay" })} className="h-9 w-auto" aria-label="Counted from">
-                          <option value="delay">after the previous step</option>
-                          {hasAppt && trigger === "appointment_booked" ? <option value="before_appointment">before the appointment</option> : null}
-                          {hasAppt ? <option value="after_appointment">after the appointment ends</option> : null}
-                        </Select>
+                        {hasAppt ? (
+                          <Select value={s.mode} onChange={(e) => update(i, { mode: e.target.value as "delay" })} className="h-9 w-auto" aria-label="Counted from">
+                            <option value="delay">after the previous step</option>
+                            {trigger === "appointment_booked" ? <option value="before_appointment">before the appointment</option> : null}
+                            <option value="after_appointment">after the appointment ends</option>
+                          </Select>
+                        ) : <span>after the previous step</span>}
                         {s.hours >= 24 ? <span className="text-xs text-stone-500">= {(s.hours / 24).toFixed(s.hours % 24 ? 1 : 0)} days</span> : null}
                       </div>
                     ) : null}
@@ -115,12 +118,10 @@ export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; tri
                     ) : null}
                     {s.type === "email" ? (
                       <>
-                        <Input value={s.subject} onChange={(e) => update(i, { subject: e.target.value })} placeholder="Subject" maxLength={150} aria-label="Subject" />
-                        <Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="Message. Blank lines make paragraphs; your logo, colours and an unsubscribe link are added." />
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <Placeholders />
-                          <Input value={s.ctaLabel ?? ""} onChange={(e) => update(i, { ctaLabel: e.target.value || null })} placeholder="Button label (optional)" maxLength={40} aria-label="Button label" className="h-8 w-56 text-xs" />
-                        </div>
+                        <Field label="Subject"><Input value={s.subject} onChange={(e) => update(i, { subject: e.target.value })} maxLength={150} /></Field>
+                        <Field label="Message" hint="Blank lines make paragraphs; your logo, colours and an unsubscribe link are added."><Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} /></Field>
+                        <Field label="Button label (optional)" className="max-w-xs"><Input value={s.ctaLabel ?? ""} onChange={(e) => update(i, { ctaLabel: e.target.value || null })} maxLength={40} /></Field>
+                        <Placeholders />
                       </>
                     ) : null}
                     {s.type === "reminder" ? <p className="text-sm text-stone-600">The standard reminder: appointment details, manage link, outstanding forms and the “before your visit” notes of the services booked, by email and text to clients who allow each. Wording lives under Settings → Messages; prep notes on each service or category.</p> : null}
@@ -135,10 +136,12 @@ export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; tri
                     ) : null}
                     {s.type === "notify_staff" ? (
                       <>
-                        <Select value={s.to} onChange={(e) => update(i, { to: e.target.value as "owner" })} className="h-9 max-w-xs" aria-label="Who">
-                          <option value="owner">Email the business address</option>
-                          {hasAppt ? <option value="provider">Email the provider of the visit</option> : null}
-                        </Select>
+                        {hasAppt ? (
+                          <Select value={s.to} onChange={(e) => update(i, { to: e.target.value as "owner" })} className="h-9 max-w-xs" aria-label="Who">
+                            <option value="owner">Email the business address</option>
+                            <option value="provider">Email the provider of the visit</option>
+                          </Select>
+                        ) : null}
                         <Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="What the team should know" />
                         <Placeholders />
                       </>

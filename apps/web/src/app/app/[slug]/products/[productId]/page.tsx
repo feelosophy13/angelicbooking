@@ -6,10 +6,11 @@ import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireAction, requireBusiness } from "@/lib/tenant";
 import { listCategories } from "@/server/categories";
-import { Card, FormPage, Input, LinkButton, Select } from "@/components/ui";
+import { Button, Card, FormPage, Input, LinkButton, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { Disclosure } from "@/components/disclosure";
 import { ProductFields } from "@/components/product-fields";
+import { CategoryPicker } from "@/components/categories";
 import { undoReceiptAction } from "../../inventory/actions";
 import { ConfirmSubmit } from "@/components/form";
 import { addProductBarcode, adjustStock, deleteProductBarcode, makeProductOptions, transferStockAction, updateProduct } from "../actions";
@@ -72,11 +73,11 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
           <ActionForm action={adjustStock}>
             <input type="hidden" name="slug" value={slug} />
             <input type="hidden" name="productId" value={product.id} />
-            <div className={`grid gap-2 ${multi ? "grid-cols-[1fr_5rem] sm:grid-cols-[14rem_10rem_5rem_1fr]" : "grid-cols-[1fr_5rem] sm:grid-cols-[14rem_5rem_1fr]"}`}>
-              <Select name="reason" defaultValue="received" aria-label="What happened">{MANUAL_REASONS.map((r) => <option key={r} value={r}>{REASON_CHOICES[r]}</option>)}</Select>
-              {multi ? <Select name="locationId" defaultValue={locations.find((l) => l.isDefault)?.id} aria-label="Where">{locations.map((l) => <option key={l.id} value={l.id}>{l.name.replace(`${business.name} - `, "")}</option>)}</Select> : null}
-              <Field label="" name="delta"><Input name="delta" inputMode="numeric" placeholder="12" aria-label="How many" /></Field>
-              <Input name="note" placeholder="Invoice #, what happened…" aria-label="Note" className={multi ? "col-span-2 sm:col-span-1" : "col-span-2 sm:col-span-1"} />
+            <div className={`grid gap-2 ${multi ? "sm:grid-cols-[14rem_10rem_5rem_1fr]" : "sm:grid-cols-[14rem_5rem_1fr]"}`}>
+              <Field label="What happened" name="reason"><Select name="reason" defaultValue="received">{MANUAL_REASONS.map((r) => <option key={r} value={r}>{REASON_CHOICES[r]}</option>)}</Select></Field>
+              {multi ? <Field label="Where" name="locationId"><Select name="locationId" defaultValue={locations.find((l) => l.isDefault)?.id}>{locations.map((l) => <option key={l.id} value={l.id}>{l.name.replace(`${business.name} - `, "")}</option>)}</Select></Field> : null}
+              <Field label="How many" name="delta"><Input name="delta" inputMode="numeric" /></Field>
+              <Field label="Note" name="note"><Input name="note" placeholder="Invoice #, what happened…" /></Field>
             </div>
             <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Record</SubmitButton>
           </ActionForm>
@@ -127,7 +128,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
                     <input type="hidden" name="slug" value={slug} />
                     <input type="hidden" name="productId" value={product.id} />
                     <input type="hidden" name="id" value={c.id} />
-                    <button className="text-xs text-stone-500 underline hover:text-red-600">Remove</button>
+                    <Button size="sm" variant="ghost" type="submit">Remove</Button>
                   </form>
                 </li>
               ))}
@@ -161,7 +162,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
           <ActionForm action={updateProduct}>
             <input type="hidden" name="slug" value={slug} />
             <input type="hidden" name="productId" value={product.id} />
-            <ProductFields mode={product.groupId ? "option" : "plain"} product={product} categories={categories} suppliers={suppliers} currency={business.currency} />
+            <ProductFields mode={product.groupId ? "option" : "plain"} product={product} category={<CategoryPicker name="categoryId" categories={categories} value={product.categoryId} />} suppliers={suppliers} currency={business.currency} storeOn={business.storeEnabled} slug={slug} />
             <SubmitButton pendingText="Saving…">Save {product.groupId ? "option" : "product"}</SubmitButton>
           </ActionForm>
         </>

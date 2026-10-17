@@ -9,6 +9,7 @@ import { normalizePhone } from "@angelic/core";
 import { FormPage, Input, Notice, Select, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { submitVerificationAction } from "../actions";
+import { BusinessTypeFields } from "./business-type";
 
 export const metadata: Metadata = { title: "Carrier verification" };
 
@@ -43,16 +44,7 @@ export default async function VerifyPage({ params, searchParams }: { params: Pro
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Legal business name" name="businessName" required><Input name="businessName" defaultValue={v.businessName} required /></Field>
           <Field label="Website" name="businessWebsite" required hint="Your site, or your booking page if you don't have one."><Input name="businessWebsite" defaultValue={v.businessWebsite} required /></Field>
-          <Field label="Business type" name="businessType">
-            <Select name="businessType" defaultValue={v.businessType}>
-              <option value="PRIVATE_PROFIT">Private company (LLC, Inc., partnership)</option>
-              <option value="SOLE_PROPRIETOR">Sole proprietor (no EIN)</option>
-              <option value="PUBLIC_PROFIT">Publicly traded company</option>
-              <option value="NON_PROFIT">Non-profit</option>
-              <option value="GOVERNMENT">Government</option>
-            </Select>
-          </Field>
-          <Field label="EIN" name="businessRegistrationNumber" hint="9 digits, e.g. 12-3456789. Leave blank for sole proprietors."><Input name="businessRegistrationNumber" defaultValue={v.businessRegistrationNumber ?? ""} placeholder="12-3456789" /></Field>
+          <BusinessTypeFields type={v.businessType} ein={v.businessRegistrationNumber ?? ""} />
           <Field label="Street address" name="businessStreetAddress" className="sm:col-span-2"><Input name="businessStreetAddress" defaultValue={v.businessStreetAddress ?? ""} /></Field>
           <Field label="City" name="businessCity"><Input name="businessCity" defaultValue={v.businessCity ?? ""} /></Field>
           <div className="grid grid-cols-2 gap-3">

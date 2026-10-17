@@ -30,11 +30,13 @@ export default async function BlockTimePage({ params, searchParams }: { params: 
       <ActionForm action={createBlock}>
         <input type="hidden" name="slug" value={slug} />
         {location ? <input type="hidden" name="locationId" value={location.id} /> : null}
-        <Field label="Staff member" name="staffId" required>
-          <Select name="staffId" defaultValue={staff.some((s) => s.id === sp.staffId) ? sp.staffId : staff[0]?.id} required>
-            {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
-          </Select>
-        </Field>
+        {staff.length === 1 ? <input type="hidden" name="staffId" value={staff[0]!.id} /> : (
+          <Field label="Staff member" name="staffId" required>
+            <Select name="staffId" defaultValue={staff.some((s) => s.id === sp.staffId) ? sp.staffId : staff[0]?.id} required>
+              {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+            </Select>
+          </Field>
+        )}
         <Field label="Date" name="date" required><Input name="date" type="date" defaultValue={date} required /></Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="From" name="start" required><Input name="start" type="time" defaultValue={start} required /></Field>

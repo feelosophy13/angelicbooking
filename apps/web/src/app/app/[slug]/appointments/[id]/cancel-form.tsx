@@ -1,7 +1,7 @@
 "use client";
 import { useActionState, useState } from "react";
 import { cancelAppointment, type ActionState } from "./actions";
-import { Checkbox, Input, Notice, Select } from "@/components/ui";
+import { Checkbox, Field, Input, Notice, Select } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
 
 /**
@@ -26,11 +26,15 @@ export function CancelForm(props: { slug: string; appointmentId: string; late: n
           {l.chargeCents > 0 ? (
             props.cards.length ? (
               <div className="mt-2 space-y-2">
-                <Checkbox name="chargeFee" checked={charge} onChange={(e) => setCharge(e.target.checked)} label={`Charge ${l.chargeLabel} to the saved card`} className="text-xs" />
+                <Checkbox name="chargeFee" checked={charge} onChange={(e) => setCharge(e.target.checked)} label={`Charge ${l.chargeLabel} to the saved card${props.cards.length === 1 ? ` (${props.cards[0]!.brand.toUpperCase()} •••• ${props.cards[0]!.last4})` : ""}`} className="text-xs" />
                 {charge ? (
-                  <Select name="paymentMethodId" className="h-8 max-w-xs text-xs">
-                    {props.cards.map((c) => <option key={c.id} value={c.id}>{c.brand.toUpperCase()} •••• {c.last4}</option>)}
-                  </Select>
+                  props.cards.length === 1 ? (
+                    <input type="hidden" name="paymentMethodId" value={props.cards[0]!.id} />
+                  ) : (
+                    <Select name="paymentMethodId" aria-label="Card" className="h-8 max-w-xs text-xs">
+                      {props.cards.map((c) => <option key={c.id} value={c.id}>{c.brand.toUpperCase()} •••• {c.last4}</option>)}
+                    </Select>
+                  )
                 ) : null}
               </div>
             ) : (
@@ -60,11 +64,13 @@ export function CancelForm(props: { slug: string; appointmentId: string; late: n
           )}
         </fieldset>
       ) : null}
-      <Select name="reasonId" required defaultValue="" aria-label="Why is it being cancelled?">
-        <option value="" disabled>Why is it being cancelled?</option>
-        {props.reasons.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-      </Select>
-      <Input name="reason" placeholder="Note (optional)" />
+      <Field label="Reason" required>
+        <Select name="reasonId" required defaultValue="">
+          <option value="" disabled>Choose a reason</option>
+          {props.reasons.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </Select>
+      </Field>
+      <Field label="Note (optional)"><Input name="reason" /></Field>
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <ConfirmSubmit title="Cancel this appointment?" body={`The client is notified if they have messages turned on. The time becomes available again.${l && charge && l.chargeCents > 0 ? ` The saved card is charged ${l.chargeLabel}.` : ""}${props.deposit?.canRefund ? (depositChoice === "refund_all" ? ` The ${props.deposit.totalLabel} deposit is refunded to the client.` : depositChoice === "fee_only" && props.deposit.feeOnly ? ` ${props.deposit.feeOnly.refundLabel} of the deposit is refunded; the salon keeps ${props.deposit.feeOnly.keepLabel}.` : ` The salon keeps the ${props.deposit.totalLabel} deposit.`) : ""}`} confirmLabel={l && charge && l.chargeCents > 0 ? `Cancel and charge ${l.chargeLabel}` : "Cancel appointment"} variant="danger" className="w-full">{pending ? "Cancelling…" : "Cancel appointment"}</ConfirmSubmit>
     </form>

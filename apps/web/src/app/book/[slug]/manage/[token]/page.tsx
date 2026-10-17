@@ -50,6 +50,7 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
   const deadline = new Date(m.start.getTime() - m.business.cancelWindowHours * 3_600_000);
   const deadlineText = `${new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: tz }).format(deadline)} at ${formatTime(deadline, tz)}`;
   const depositPaid = m.appt.depositStatus === "paid";
+  const past = status === "completed" || status === "no_show" || m.start.getTime() < Date.now();
 
   return (
     <div className="space-y-4">
@@ -67,6 +68,10 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
       {status === "cancelled" ? (
         <div className="rounded-xl border border-stone-200 bg-white p-5 text-sm text-stone-600">
           This appointment was cancelled. <Link href={`/book/${slug}`} className="text-brand-700 underline">Book a new one</Link>.
+        </div>
+      ) : past ? (
+        <div className="rounded-xl border border-stone-200 bg-white p-5 text-sm text-stone-600">
+          This appointment has already taken place. <Link href={`/book/${slug}`} className="text-brand-700 underline">Book another</Link>.
         </div>
       ) : !m.canChange ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">

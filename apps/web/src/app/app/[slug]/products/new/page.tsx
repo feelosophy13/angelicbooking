@@ -7,6 +7,7 @@ import { listSuppliers } from "@/server/inventory";
 import { FormPage } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/form";
 import { ProductFields } from "@/components/product-fields";
+import { CategoryPicker } from "@/components/categories";
 import { createProduct } from "../actions";
 
 export const metadata: Metadata = { title: "New product" };
@@ -26,7 +27,7 @@ export default async function NewProductPage({ params, searchParams }: { params:
     <FormPage title={source ? `New option of ${source.name}` : "New product"} backHref={`/app/${slug}/products`} backLabel="Products">
       <ActionForm action={createProduct}>
         <input type="hidden" name="slug" value={slug} />
-        <ProductFields mode="new" product={start} categories={categories} suppliers={suppliers} currency={business.currency} />
+        <ProductFields mode="new" product={start} category={<CategoryPicker name="categoryId" categories={categories} value={start?.categoryId ?? null} />} suppliers={suppliers} currency={business.currency} storeOn={business.storeEnabled} slug={slug} />
         <SubmitButton pendingText="Saving…">Create product</SubmitButton>
       </ActionForm>
     </FormPage>

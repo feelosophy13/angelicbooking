@@ -6,6 +6,7 @@ import { attachBarcodeAction, countScannedAction, createProductFromScanAction, c
 import { CameraScanner } from "@/components/camera-scanner";
 import { useBeeps } from "@/components/use-beeps";
 import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui";
 
 export type ScanItem = { id: string; label: string; barcode: string | null; sku: string | null; category: string | null; onHand: number; tracked: boolean; codes: { code: string; units: number }[]; groupId?: string | null; groupName?: string | null };
 type Mode = "receive" | "count" | "order";
@@ -55,6 +56,7 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
   const box = useRef<HTMLInputElement>(null);
   const beeps = useBeeps();
   const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const hasGroups = products.some((p) => p.groupId);
   const progress = useMemo(() => (order ? orderProgress(order.lines, s.lines) : null), [order, s.lines]);
 
   const focusBox = () => box.current?.focus();
@@ -215,7 +217,7 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
             <button type="button" onClick={closeUnknown} aria-label="Skip this scan" className="rounded p-1 text-amber-900 hover:bg-amber-100"><X className="h-4 w-4" /></button>
           </div>
           <div className="flex gap-1 rounded-lg bg-amber-100 p-0.5 text-sm" role="tablist">
-            {([["existing", "A product I have"], ["option", "A new size or shade"], ["new", "A new product"]] as const).map(([k, label]) => (
+            {([["existing", "A product I have"], ["option", "A new size or shade"], ["new", "A new product"]] as const).filter(([k]) => k !== "option" || hasGroups).map(([k, label]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => { setTab(k); setProblem(null); setPick(""); setOptionOf(null); }} className={cn("flex-1 rounded-md px-3 py-1.5", tab === k ? "bg-white font-medium shadow-sm" : "text-amber-900")}>{label}</button>
             ))}
           </div>
@@ -290,10 +292,12 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
                   <option value="retail">Sold to clients</option>
                   <option value="backbar">Used in services (back-bar)</option>
                 </select>
-                <select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} aria-label="Category" className={field}>
-                  <option value="">No category</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+                {categories.length ? (
+                  <select value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })} aria-label="Category" className={field}>
+                    <option value="">No category</option>
+                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                ) : null}
                 {form.kind === "retail" ? <input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} inputMode="decimal" placeholder="Price" aria-label="Price" className={field} /> : null}
                 <input value={form.cost} onChange={(e) => setForm({ ...form, cost: e.target.value })} inputMode="decimal" placeholder="Cost (optional)" aria-label="Cost per unit" className={field} />
               </div>
@@ -368,10 +372,7 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
       ) : null}
 
       {mode === "count" ? (
-        <label className="flex items-start gap-2 text-sm text-stone-700">
-          <input type="checkbox" checked={zeroRest} onChange={(e) => setZeroRest(e.target.checked)} className="mt-1 h-4 w-4" />
-          <span>Anything I didn't scan is none<span className="block text-xs text-stone-500">Use for a full count of this location: the {trackedCount ?? 0} tracked products you didn't scan are set to 0. Otherwise they're left alone.</span></span>
-        </label>
+        <Checkbox checked={zeroRest} onChange={(e) => setZeroRest(e.target.checked)} label="Anything I didn't scan is none" hint={`Use for a full count of this location: the ${trackedCount ?? 0} tracked products you didn't scan are set to 0. Otherwise they're left alone.`} />
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">

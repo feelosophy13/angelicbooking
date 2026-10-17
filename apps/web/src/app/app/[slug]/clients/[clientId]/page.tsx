@@ -40,6 +40,8 @@ import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextFor } from "@/server/locations";
 import { canWriteLashMaps, lashMapsFor } from "@/server/lash-maps";
 import { LashMapEyes } from "@/components/lash-map";
+import { smsAvailableFor } from "@/server/messaging";
+import { Disclosure } from "@/components/disclosure";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -89,13 +91,14 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const latestLash = lashMaps[0];
   const stopped = await withTenant(business.id, (tx) => isSmsSuppressed(tx, client.phone));
   const activeForms = (await listForms(business.id)).filter((f) => f.active);
-  const [submissions, loyalty, reviews, thread, storeCredit, referrals, referredBy] = await Promise.all([
+  const [submissions, loyalty, reviews, thread, storeCredit, referrals, smsReady, referredBy] = await Promise.all([
     listSubmissionsForClient(business.id, clientId),
     business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null),
     reviewsForClient(business.id, clientId),
     clientThread(business.id, clientId),
     getClientStoreCredit(business.id, clientId),
     withTenant(business.id, (tx) => referralsOf(tx, clientId)),
+    smsAvailableFor(business.id),
     client.referredByClientId ? withTenant(business.id, async (tx) => { const r = await tx.query.clients.findFirst({ where: eq(schema.clients.id, client.referredByClientId!), columns: { id: true, firstName: true, lastName: true } }); return r ? { id: r.id, name: `${r.firstName} ${r.lastName ?? ""}`.trim() } : null; }) : Promise.resolve(null),
   ]);
   // Cards are shown for the client's home location's Stripe account (else the default site's).
@@ -114,6 +117,10 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const past = visits.filter((v) => v.startAt < new Date() || done.has(v.status));
   const money = (c: number) => formatMoney(c, business.currency);
   const write = can(permissions, "clients.write");
+  const bills = can(permissions, "checkout.take");
+  // A text can go out only to a number that takes them, from a business that has one to send from.
+  const canText = write && !!client.phone && client.smsOptIn && smsReady;
+  const referralsOn = business.referralBonusPoints > 0 || business.referralFriendBonusPoints > 0;
   // One timeline: past visits carry their ticket and rating; sales with no visit (retail, gift cards, open tickets) are rows too.
   const reviewFor = new Map(reviews.filter((r) => r.appointmentId).map((r) => [r.appointmentId!, r]));
   const saleFor = new Map(sales.filter((s) => s.appointmentId).map((s) => [s.appointmentId!, s]));
@@ -316,7 +323,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               </details>
             ) : null}
           </Card>
-          {storeCredit.balance > 0 || storeCredit.history.length > 0 || write ? (
+          {storeCredit.balance > 0 || storeCredit.history.length > 0 ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-1 font-medium">Store credit</h2>
               <p className="text-2xl font-semibold">{money(storeCredit.balance)}</p>
@@ -334,18 +341,14 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               {write ? (
                 <details className="mt-3 border-t border-stone-200 pt-3">
                   <summary className="cursor-pointer select-none text-xs text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">Adjust store credit</summary>
-                  <ActionForm action={adjustClientStoreCredit} className="mt-2">
-                    <input type="hidden" name="slug" value={slug} />
-                    <input type="hidden" name="clientId" value={client.id} />
-                    <div className="grid grid-cols-[6rem_1fr] gap-2">
-                      <Field label="Amount" name="amount" hint="Negative removes"><MoneyInput name="amount" /></Field>
-                      <Field label="Reason" name="note"><Input name="note" placeholder="Goodwill after a late start" /></Field>
-                    </div>
-                    <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Apply</SubmitButton>
-                  </ActionForm>
+                  <StoreCreditForm slug={slug} clientId={client.id} />
                 </details>
               ) : null}
             </Card>
+          ) : write ? (
+            <Disclosure title="Give store credit" hint="none yet">
+              <StoreCreditForm slug={slug} clientId={client.id} />
+            </Disclosure>
           ) : null}
           {loyalty ? (
             <Card className="p-4 text-sm">
@@ -370,77 +373,85 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                   </ActionForm>
                 </details>
               ) : null}
-              <div className="mt-3 border-t border-stone-200 pt-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-xs text-stone-500">Referral code</p>
-                    {client.referralCode ? <p className="font-mono text-sm">{client.referralCode}</p> : write ? (
-                      <form action={createReferralCode}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><button className="text-xs text-brand-700 underline">Create a referral code</button></form>
-                    ) : <p className="text-xs text-stone-400">None yet</p>}
-                  </div>
-                  {write ? (
-                    <div className="flex gap-1">
-                      {client.phone ? <form action={sendReferralCodeAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="channel" value="sms" /><Button type="submit" size="sm" variant="secondary">Text it</Button></form> : null}
-                      {client.email ? <form action={sendReferralCodeAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="channel" value="email" /><Button type="submit" size="sm" variant="secondary">Email it</Button></form> : null}
+              {referralsOn || client.referralCode || referrals.length || referredBy ? (
+                <div className="mt-3 border-t border-stone-200 pt-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs text-stone-500">Referral code</p>
+                      {client.referralCode ? <p className="font-mono text-sm">{client.referralCode}</p> : write ? (
+                        <form action={createReferralCode}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><button className="text-xs text-brand-700 underline">Create a referral code</button></form>
+                      ) : <p className="text-xs text-stone-400">None yet</p>}
                     </div>
+                    {write && (canText || (client.email && client.emailOptIn)) ? (
+                      <div className="flex gap-1">
+                        {canText ? <form action={sendReferralCodeAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="channel" value="sms" /><Button type="submit" size="sm" variant="secondary">Text it</Button></form> : null}
+                        {client.email && client.emailOptIn ? <form action={sendReferralCodeAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="clientId" value={client.id} /><input type="hidden" name="channel" value="email" /><Button type="submit" size="sm" variant="secondary">Email it</Button></form> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 text-xs text-stone-500">{business.referralBonusPoints > 0 ? `${business.referralBonusPoints} points to them after each friend's first paid visit` : "No referrer bonus set"}{business.referralFriendBonusPoints > 0 ? ` · ${business.referralFriendBonusPoints} points to the friend` : ""}.</p>
+                  {referredBy ? <p className="mt-1 text-xs text-stone-500">Referred by <Link href={`/app/${slug}/clients/${referredBy.id}`} className="underline">{referredBy.name}</Link>{client.referralRewardedAt ? ` · bonus paid ${fmtDate.format(client.referralRewardedAt)}` : " · bonus after first paid visit"}</p> : null}
+                  <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-stone-500">Referred {referrals.length ? `${referrals.length} ${referrals.length === 1 ? "client" : "clients"}` : "nobody yet"}</p>
+                  {referrals.length ? (
+                    <ul className="mt-1 space-y-0.5 text-xs text-stone-600">
+                      {referrals.map((r) => (
+                        <li key={r.id} className="flex justify-between gap-2">
+                          <Link href={`/app/${slug}/clients/${r.id}`} className="truncate underline">{r.name}</Link>
+                          <span className="shrink-0 text-stone-500">{r.rewardedAt ? `first visit ${fmtDate.format(r.rewardedAt)} · bonus paid` : `joined ${fmtDate.format(r.joinedAt)} · not visited yet`}</span>
+                        </li>
+                      ))}
+                    </ul>
                   ) : null}
                 </div>
-                <p className="mt-1 text-xs text-stone-500">{business.referralBonusPoints > 0 ? `${business.referralBonusPoints} points to them after each friend's first paid visit` : "No referrer bonus set"}{business.referralFriendBonusPoints > 0 ? ` · ${business.referralFriendBonusPoints} points to the friend` : ""}.</p>
-                {referredBy ? <p className="mt-1 text-xs text-stone-500">Referred by <Link href={`/app/${slug}/clients/${referredBy.id}`} className="underline">{referredBy.name}</Link>{client.referralRewardedAt ? ` · bonus paid ${fmtDate.format(client.referralRewardedAt)}` : " · bonus after first paid visit"}</p> : null}
-                <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-stone-500">Referred {referrals.length ? `${referrals.length} ${referrals.length === 1 ? "client" : "clients"}` : "nobody yet"}</p>
-                {referrals.length ? (
-                  <ul className="mt-1 space-y-0.5 text-xs text-stone-600">
-                    {referrals.map((r) => (
-                      <li key={r.id} className="flex justify-between gap-2">
-                        <Link href={`/app/${slug}/clients/${r.id}`} className="truncate underline">{r.name}</Link>
-                        <span className="shrink-0 text-stone-500">{r.rewardedAt ? `first visit ${fmtDate.format(r.rewardedAt)} · bonus paid` : `joined ${fmtDate.format(r.joinedAt)} · not visited yet`}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
+              ) : null}
             </Card>
           ) : null}
-          <Card className="p-4 text-sm">
-            <h2 className="mb-2 font-medium">Text messages</h2>
-            {thread.length === 0 ? <p className="text-stone-500">No texts yet.</p> : (
-              <ul className="max-h-64 space-y-1.5 overflow-y-auto">
-                {thread.map((m) => (
-                  <li key={`${m.dir}${m.id}`} className={m.dir === "in" ? "mr-6" : "ml-6 text-right"}>
-                    <span className={`inline-block rounded-lg px-2 py-1 text-left text-xs ${m.dir === "in" ? "bg-stone-100 text-stone-800" : "bg-brand-50 text-brand-900"}`}>{m.body}</span>
-                    <span className="block text-[10px] text-stone-400">{fmtDate.format(m.at)} · {m.dir === "in" ? "client" : m.status}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {write && client.phone ? (
-              <details className="mt-2" open={thread.length > 0}>
-                <summary className="cursor-pointer select-none text-xs text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">{thread.length ? "Reply" : "Send a text"}</summary>
-                <ActionForm action={replyToClient} className="mt-2">
-                  <input type="hidden" name="slug" value={slug} />
-                  <input type="hidden" name="clientId" value={client.id} />
-                  <Field label="" name="body"><Textarea name="body" rows={4} placeholder={client.smsOptIn ? "Reply by text…" : "Client opted out of texts"} disabled={!client.smsOptIn} /></Field>
-                  <SubmitButton size="sm" variant="secondary" pendingText="Sending…" disabled={!client.smsOptIn}>Send text</SubmitButton>
-                </ActionForm>
-              </details>
-            ) : null}
-          </Card>
-          <Card className="p-4 text-sm">
-            <h2 className="mb-2 font-medium">Forms</h2>
-            {submissions.length === 0 ? <p className="text-stone-500">Nothing signed yet.</p> : (
-              <ul className="space-y-1">
-                {submissions.map(({ s: sub, formName }) => <li key={sub.id} className={sub.voidedAt ? "text-stone-400 line-through" : ""}><Link href={`/app/${slug}/settings/forms/submissions/${sub.id}`} className="hover:underline">{formName}</Link> <span className="text-xs text-stone-500">· {fmtDate.format(sub.createdAt)}{sub.voidedAt ? " · voided" : sub.signatureName ? " · signed" : ""}{sub.assistedByUserId ? " · at the desk" : ""}</span></li>)}
-              </ul>
-            )}
-            {write && activeForms.length ? (
-              <p className="mt-2 text-xs text-stone-500">
-                Complete here: {activeForms.map((f, i) => <span key={f.id}>{i ? " · " : ""}<Link href={`/app/${slug}/forms/fill/${f.id}?clientId=${client.id}`} className="text-brand-700 underline">{f.name}</Link></span>)}
-              </p>
-            ) : null}
-          </Card>
+          {thread.length || canText ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-2 font-medium">Text messages</h2>
+              {thread.length === 0 ? <p className="text-stone-500">No texts yet.</p> : (
+                <ul className="max-h-64 space-y-1.5 overflow-y-auto">
+                  {thread.map((m) => (
+                    <li key={`${m.dir}${m.id}`} className={m.dir === "in" ? "mr-6" : "ml-6 text-right"}>
+                      <span className={`inline-block rounded-lg px-2 py-1 text-left text-xs ${m.dir === "in" ? "bg-stone-100 text-stone-800" : "bg-brand-50 text-brand-900"}`}>{m.body}</span>
+                      <span className="block text-[10px] text-stone-400">{fmtDate.format(m.at)} · {m.dir === "in" ? "client" : m.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {canText ? (
+                <details className="mt-2" open={thread.length > 0}>
+                  <summary className="cursor-pointer select-none text-xs text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">{thread.length ? "Reply" : "Send a text"}</summary>
+                  <ActionForm action={replyToClient} className="mt-2">
+                    <input type="hidden" name="slug" value={slug} />
+                    <input type="hidden" name="clientId" value={client.id} />
+                    <Field label="" name="body"><Textarea name="body" rows={4} placeholder="Reply by text…" /></Field>
+                    <SubmitButton size="sm" variant="secondary" pendingText="Sending…">Send text</SubmitButton>
+                  </ActionForm>
+                </details>
+              ) : write ? (
+                <p className="mt-2 text-xs text-stone-500">{!client.phone ? "No mobile number to reply to." : !client.smsOptIn ? "Opted out of texts, so nothing can be sent." : <>Replies need a verified text number. <Link href={`/app/${slug}/settings/messaging`} className="underline">Settings → Text number</Link></>}</p>
+              ) : null}
+            </Card>
+          ) : null}
+          {submissions.length || (write && activeForms.length) ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-2 font-medium">Forms</h2>
+              {submissions.length === 0 ? <p className="text-stone-500">Nothing signed yet.</p> : (
+                <ul className="space-y-1">
+                  {submissions.map(({ s: sub, formName }) => <li key={sub.id} className={sub.voidedAt ? "text-stone-400 line-through" : ""}><Link href={`/app/${slug}/settings/forms/submissions/${sub.id}`} className="hover:underline">{formName}</Link> <span className="text-xs text-stone-500">· {fmtDate.format(sub.createdAt)}{sub.voidedAt ? " · voided" : sub.signatureName ? " · signed" : ""}{sub.assistedByUserId ? " · at the desk" : ""}</span></li>)}
+                </ul>
+              )}
+              {write && activeForms.length ? (
+                <p className="mt-2 text-xs text-stone-500">
+                  Complete here: {activeForms.map((f, i) => <span key={f.id}>{i ? " · " : ""}<Link href={`/app/${slug}/forms/fill/${f.id}?clientId=${client.id}`} className="text-brand-700 underline">{f.name}</Link></span>)}
+                </p>
+              ) : null}
+            </Card>
+          ) : null}
+          {packs.length || memberships.length ? (
           <Card className="p-4 text-sm">
             <h2 className="mb-2 font-medium">Packages &amp; memberships</h2>
-            {packs.length === 0 && memberships.length === 0 ? <p className="text-stone-500">None.</p> : null}
             {packs.map((p) => <p key={p.id}>{p.name} · {p.remaining} session{p.remaining === 1 ? "" : "s"} left{p.expiresAt ? ` · expires ${fmtDate.format(p.expiresAt)}` : ""}</p>)}
             {memberships.map((m) => {
               const period = periodNoun(isMembershipInterval(m.interval) ? m.interval : "month", m.intervalCount);
@@ -457,7 +468,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 <div key={m.id} className="mt-1 rounded-lg border border-stone-200 p-2">
                   <p>{line}</p>
                   {m.paymentFailedAt && !frozen ? <p className="text-xs text-red-700">Last renewal payment failed {fmtDate.format(m.paymentFailedAt)}. Pick a card below to turn auto-renew on again.</p> : null}
-                  {write && live ? (
+                  {bills && live ? (
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                       {frozen ? (
                         <form action={resumeMembershipAction}>
@@ -486,16 +497,31 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                           <select name="paymentMethodId" className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-xs">{savedCards.map((c) => <option key={c.id} value={c.id}>{c.brand.toUpperCase()} •••• {c.last4}</option>)}</select>
                           <button className="rounded-lg border border-stone-300 bg-white px-2 py-1 text-xs hover:bg-stone-50">Auto-renew with this card</button>
                         </form>
-                      ) : <p className="text-xs text-stone-500">{stripeReady ? "Save a card at checkout to turn on auto-renew." : "Connect Stripe to auto-renew memberships."}</p>}
+                      ) : <p className="text-xs text-stone-500">{stripeReady ? "Save a card at checkout to turn on auto-renew." : <>Auto-renew needs card payments. <Link href={`/app/${slug}/settings/payments`} className="underline">Settings → Card payments</Link></>}</p>}
                     </div>
                   ) : null}
                 </div>
               );
             })}
           </Card>
+          ) : null}
           <p className="text-xs text-stone-400">Client since {fmtDate.format(client.createdAt)}{client.tags.length ? ` · ${client.tags.join(", ")}` : ""}</p>
         </div>
       </div>
     </>
+  );
+}
+
+function StoreCreditForm({ slug, clientId }: { slug: string; clientId: string }) {
+  return (
+    <ActionForm action={adjustClientStoreCredit} className="mt-2">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="clientId" value={clientId} />
+      <div className="grid grid-cols-[6rem_1fr] gap-2">
+        <Field label="Amount" name="amount" hint="Negative removes"><MoneyInput name="amount" /></Field>
+        <Field label="Reason" name="note"><Input name="note" placeholder="Goodwill after a late start" /></Field>
+      </div>
+      <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Apply</SubmitButton>
+    </ActionForm>
   );
 }

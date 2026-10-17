@@ -47,7 +47,6 @@ export default async function LocationsPage({ params }: { params: Promise<{ slug
                     <form action={deleteLocation}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={l.id} /><ConfirmSubmit title={`Remove ${l.name}?`} body="Staff assigned here become unassigned; past appointments keep their records." confirmLabel="Remove" variant="ghost">Remove</ConfirmSubmit></form>
                   </>
                 ) : null}
-                <LinkButton href={`/app/${slug}/settings/locations/${l.id}`} size="sm" className="ml-1">Edit</LinkButton>
               </div>
             </li>
           ))}

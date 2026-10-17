@@ -53,6 +53,7 @@ type PickItem = { id: string; name: string; depth?: number };
  */
 function Picker({ name, label, groups, selected }: { name: string; label: string; groups: PickItem[][]; selected?: string[] }) {
   const all = groups.flat();
+  if (all.length === 0) return null;
   const n = (selected ?? []).filter((id) => all.some((x) => x.id === id)).length;
   return (
     <details className="group rounded-lg border border-stone-200 bg-white" open={n > 0}>
@@ -65,7 +66,6 @@ function Picker({ name, label, groups, selected }: { name: string; label: string
             ))}
           </div>
         ))}
-        {all.length === 0 ? <p className="text-xs text-stone-500">None yet.</p> : null}
       </div>
     </details>
   );

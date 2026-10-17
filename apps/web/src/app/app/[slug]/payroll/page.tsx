@@ -9,8 +9,9 @@ import { can, instantToISODate, rateLabel } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { defaultPeriod, driftFromSnapshot, getFinalizedRun, listPayrollRuns, runPayroll } from "@/server/payroll";
 import { formatDateLong, formatMoney } from "@/lib/utils";
-import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice, Checkbox } from "@/components/ui";
+import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice } from "@/components/ui";
 import { deleteAdjustment, finalize, setOvertimeRule } from "./actions";
+import { OvertimeOptions } from "./overtime-options";
 import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
 import { and, gte, ilike, lte } from "drizzle-orm";
@@ -29,7 +30,6 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   // The form sends "0" before the checkbox, so the last value is the box's state.
   const otParam = Array.isArray(sp.overtime) ? sp.overtime.at(-1) : sp.overtime;
   const overtime = otParam !== "0";
-  const daily = business.overtimeRule === "daily";
   const period = { start, end };
   const locations = await listLocations(business.id);
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
@@ -65,19 +65,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <details className="relative">
             <summary className="cursor-pointer select-none rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden">Options{overtime ? " · overtime on" : ""}</summary>
             <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-stone-200 bg-white p-3 text-sm shadow-lg">
-              <input type="hidden" name="overtime" value="0" />
-              <Checkbox name="overtime" value="1" defaultChecked={overtime} label={daily ? "Overtime, California rules" : "Overtime at 1.5× over 40 h/week"} hint={'for hourly staff set to "follow the payroll run"'} />
-              <div className="mt-3 border-t border-stone-100 pt-3">
-                <label className="mb-1 block text-xs font-medium text-stone-600" htmlFor="ot-rule-select">Count overtime</label>
-                <div className="flex gap-2">
-                  <select id="ot-rule-select" name="rule" form="ot-rule" defaultValue={business.overtimeRule} className="h-8 min-w-0 flex-1 rounded-md border border-stone-300 bg-white px-2 text-sm">
-                    <option value="weekly">Weekly: 1.5× over 40 h</option>
-                    <option value="daily">Daily (California)</option>
-                  </select>
-                  <Button type="submit" form="ot-rule" variant="secondary" size="sm">Save</Button>
-                </div>
-                <p className="mt-1 text-xs text-stone-500">{daily ? "1.5× over 8 h a day or 40 h a week, 2× over 12 h, and the 7th day in a row." : "Daily rules (California) pay 1.5× over 8 h a day and 2× over 12 h."} Commission counts toward the overtime rate.</p>
-              </div>
+              <OvertimeOptions overtime={overtime} rule={business.overtimeRule} />
             </div>
           </details>
         </form>
@@ -120,7 +108,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
       <Card className="mb-6 overflow-x-auto">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-2">
           <h2 className="text-sm font-semibold text-stone-600">Summary</h2>
-          <div className="flex gap-2">
+          {active.length ? <div className="flex gap-2">
             <LinkButton href={`/app/${slug}/payroll/export?${qs}`} size="sm"><Download className="h-4 w-4" /> Workbook (.xlsx)</LinkButton>
             <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=w2`} size="sm"><Download className="h-4 w-4" /> W-2 summary</LinkButton>
             {locationFilter ? null : <form action={finalize}>
@@ -130,7 +118,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
               {overtime ? <input type="hidden" name="overtime" value="on" /> : null}
               <ConfirmSubmit title={finalized ? "Re-finalize this period?" : "Finalize this pay period?"} body={finalized ? "This replaces the saved snapshot with today's figures. What changed, person by person, is kept in the activity log." : "A snapshot of these figures is saved. After this, hours, adjustments and pay rates inside the period are locked; refunds made later come off the next period."} confirmLabel={finalized ? "Re-finalize" : "Finalize"} variant="primary">{finalized ? "Re-finalize" : "Finalize period"}</ConfirmSubmit>
             </form>}
-          </div>
+          </div> : null}
         </div>
         {active.length === 0 ? <div className="p-4"><Empty title="No pay activity in this period" body="Closed sales, hours and adjustments drive payroll." /></div> : (
           <div className="overflow-x-auto"><table className="w-full text-sm">

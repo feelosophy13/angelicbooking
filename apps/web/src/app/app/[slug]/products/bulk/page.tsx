@@ -22,7 +22,7 @@ export default async function BulkProductsPage({ params }: { params: Promise<{ s
         <div className="overflow-x-auto">
           <table className="w-full min-w-[56rem] text-sm">
             <thead className="text-left text-xs text-stone-500">
-              <tr><th className="py-1 pr-2">Product</th><th className="py-1 pr-2">Price</th><th className="py-1 pr-2">Cost</th><th className="py-1 pr-2">Low at</th><th className="py-1 pr-2">Order up to</th><th className="py-1 pr-2">Supplier</th><th className="py-1 pr-2 text-center">Shown</th></tr>
+              <tr><th className="py-1 pr-2">Product</th><th className="py-1 pr-2">Price</th><th className="py-1 pr-2">Cost</th><th className="py-1 pr-2">Low at</th><th className="py-1 pr-2">Order up to</th>{suppliers.length ? <th className="py-1 pr-2">Supplier</th> : null}<th className="py-1 pr-2 text-center">Shown</th></tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
               {products.map((p) => (
@@ -32,7 +32,7 @@ export default async function BulkProductsPage({ params }: { params: Promise<{ s
                   <td className="w-28 py-1.5 pr-2"><MoneyInput name={`cost:${p.id}`} currency={business.currency} defaultValue={money(p.costCents)} aria-label={`Cost of ${productLabel(p)}`} /></td>
                   <td className="w-20 py-1.5 pr-2"><Input name={`low:${p.id}`} type="number" min={0} defaultValue={p.lowStockThreshold} aria-label={`Low-stock level of ${productLabel(p)}`} /></td>
                   <td className="w-24 py-1.5 pr-2"><Input name={`upto:${p.id}`} type="number" min={0} defaultValue={p.reorderUpTo ?? ""} aria-label={`Order up to for ${productLabel(p)}`} /></td>
-                  <td className="w-44 py-1.5 pr-2"><Select name={`supplier:${p.id}`} defaultValue={p.supplierId ?? ""} aria-label={`Supplier of ${productLabel(p)}`}><option value="">None</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></td>
+                  {suppliers.length ? <td className="w-44 py-1.5 pr-2"><Select name={`supplier:${p.id}`} defaultValue={p.supplierId ?? ""} aria-label={`Supplier of ${productLabel(p)}`}><option value="">None</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></td> : null}
                   <td className="py-1.5 pr-2 text-center"><input type="checkbox" name={`active:${p.id}`} defaultChecked={p.active} aria-label={`${productLabel(p)} is shown`} className="h-4 w-4" /></td>
                 </tr>
               ))}

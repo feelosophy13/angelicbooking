@@ -258,7 +258,6 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         <Steps labels={classLabels} current={3} hrefs={[q({ service: undefined, session: undefined }), q({ session: undefined }), null]} />
         <StepTitle title="Your details" />
         <Summary imageUrl={service.imageUrl} title={service.name} rows={[{ label: "When", value: `${formatDateLong(sessionDate)} at ${formatTime(chosen.startAt, tz)}`, href: q({ session: undefined }) }, { label: "With", value: chosen.staffName }, { label: "Per person", value: formatMoney(service.priceCents, business.currency) }, { label: "Seats left", value: String(chosen.seatsLeft) }]} />
-        {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">{req.full ? `Payment of ${formatMoney(req.amountCents, business.currency)} in full is due now.` : `A ${formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.`}</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold your seat. Nothing is charged now.</p> : null}
         {req.mode === "none" ? (
           <BookingForm priceLabel={money(service.priceCents)} slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         ) : (
@@ -328,12 +327,14 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           </div>
         ) : null}
         <ul className="grid gap-3 sm:grid-cols-2">
-          <li>
-            <Link href={q({ staff: "any" })} className="flex h-full items-center gap-3 rounded-2xl border-2 border-dashed border-stone-300 bg-white p-4 transition hover:border-[var(--brand)] hover:shadow-md">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white" style={{ background: "var(--brand)" }}>✦</span>
-              <span><span className="block font-semibold text-stone-900">Any available provider</span><span className="block text-xs text-stone-500">{pickTime ? "Whoever is free at this time" : "Shows the most openings"}{priceVaries ? ` · ${shownPrice}` : ""}</span>{earliest && !pickTime ? <span className="mt-0.5 block text-xs text-stone-500">{openText(earliest)}</span> : null}</span>
-            </Link>
-          </li>
+          {pool.length > 1 ? (
+            <li>
+              <Link href={q({ staff: "any" })} className="flex h-full items-center gap-3 rounded-2xl border-2 border-dashed border-stone-300 bg-white p-4 transition hover:border-[var(--brand)] hover:shadow-md">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white" style={{ background: "var(--brand)" }}>✦</span>
+                <span><span className="block font-semibold text-stone-900">Any available provider</span><span className="block text-xs text-stone-500">{pickTime ? "Whoever is free at this time" : "Shows the most openings"}{priceVaries ? ` · ${shownPrice}` : ""}</span>{earliest && !pickTime ? <span className="mt-0.5 block text-xs text-stone-500">{openText(earliest)}</span> : null}</span>
+              </Link>
+            </li>
+          ) : null}
           {ordered.map((s) => {
             const rating = ratings.get(s.id);
             return (
@@ -459,12 +460,12 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     );
   }
   // ---- Add another service to this visit: same provider, straight after the first
+  const taken = new Set([service.id, ...extraIds]);
+  const [mapRows, mine] = await withTenant(business.id, async (tx) => [await tx.select({ serviceId: schema.staffServices.serviceId, staffId: schema.staffServices.staffId }).from(schema.staffServices), await overridesForStaff(tx, slot.staffId)] as const);
+  const restricted = new Set(mapRows.map((r) => r.serviceId));
+  const performs = new Set(mapRows.filter((r) => r.staffId === slot.staffId).map((r) => r.serviceId));
+  const options = extraIds.length < 4 ? services.filter((s) => !taken.has(s.id) && s.capacity === 1 && (!restricted.has(s.id) || performs.has(s.id))) : [];
   if (sp.add) {
-    const taken = new Set([service.id, ...extraIds]);
-    const [mapRows, mine] = await withTenant(business.id, async (tx) => [await tx.select({ serviceId: schema.staffServices.serviceId, staffId: schema.staffServices.staffId }).from(schema.staffServices), await overridesForStaff(tx, slot.staffId)] as const);
-    const restricted = new Set(mapRows.map((r) => r.serviceId));
-    const performs = new Set(mapRows.filter((r) => r.staffId === slot.staffId).map((r) => r.serviceId));
-    const options = services.filter((s) => !taken.has(s.id) && s.capacity === 1 && (!restricted.has(s.id) || performs.has(s.id)));
     const who = staff.find((s) => s.id === slot.staffId)?.displayName ?? slot.staffName;
     return (
       <>
@@ -534,8 +535,8 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         </div>
       ) : (
         <>
-          {sp.time ? <p className="mb-3 text-sm"><Link href={q({ time: sp.time, staff: slot.staffId, add: "1" })} className="underline" style={{ color: "var(--brand-dark)" }}>+ Add another service with {slot.staffName.split(" ")[0]}</Link></p> : null}
-          {req.mode === "deposit" ? <p className="mb-3 text-xs text-stone-600">{req.full ? `Payment of ${formatMoney(req.amountCents, business.currency)} in full is due now.` : `A ${formatMoney(req.amountCents, business.currency)} deposit is due now and comes off your bill.`}</p> : req.mode === "card" ? <p className="mb-3 text-xs text-stone-600">A card is needed to hold this booking. Nothing is charged now.</p> : depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
+          {options.length ? <p className="mb-3 text-sm"><Link href={q({ time: sp.time, staff: slot.staffId, add: "1" })} className="underline" style={{ color: "var(--brand-dark)" }}>+ Add another service with {slot.staffName.split(" ")[0]}</Link></p> : null}
+          {req.mode === "none" && depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
           {req.mode === "none" ? (
             <BookingForm priceLabel={money(visitPrice)} extraServiceIds={extrasParam} slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={ownPrice} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
           ) : (

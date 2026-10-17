@@ -9,13 +9,13 @@ import { getGroup } from "@/server/product-groups";
 import { groupSummary, priceRange } from "@/lib/variants";
 import { productLabel, stockStatus } from "@/lib/inventory";
 import { formatMoney } from "@/lib/utils";
-import { BackLink, Button, Card, Input, MoneyInput, PageHeader, Select, Textarea, Checkbox } from "@/components/ui";
+import { BackLink, Button, Card, MoneyInput, PageHeader, Textarea } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { ImageField } from "@/components/image-field";
 import { CategoryPicker } from "@/components/categories";
 import { rowClass, RowLink } from "@/components/row";
 import { Thumb } from "@/components/thumb";
 import { addGroupOptions, saveGroup, toggleGroupActive } from "../../actions";
+import { GroupSharedFields } from "./shared-fields";
 
 export const metadata: Metadata = { title: "Product options" };
 
@@ -104,24 +104,7 @@ export default async function ProductGroupPage({ params }: { params: Promise<{ s
             <ActionForm action={saveGroup}>
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="groupId" value={group.id} />
-              <Field label="Name" name="name" required><Input name="name" defaultValue={group.name} required /></Field>
-              <Field label="What it is" name="kind">
-                <Select name="kind" defaultValue={group.kind}>
-                  <option value="retail">Sold to clients</option>
-                  <option value="backbar">Used in services (back-bar)</option>
-                </Select>
-              </Field>
-              <Field label="Category" name="categoryIdNew"><CategoryPicker name="categoryId" categories={categories} value={group.categoryId} /></Field>
-              <Checkbox name="taxable" defaultChecked={group.taxable} label="Taxable" />
-              <Checkbox name="sellOnline" defaultChecked={group.sellOnline} label="Sell online" />
-              <Field label="Description" name="description"><Textarea name="description" rows={4} defaultValue={group.description ?? ""} /></Field>
-              <Field label="Photo" name="image"><ImageField name="image" removeName="removeImage" current={group.imageUrl} /></Field>
-              <Field label="Usual supplier" name="supplierId" hint="Applies to every option.">
-                <Select name="supplierId" defaultValue={group.supplierId ?? ""}>
-                  <option value="">None</option>
-                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </Select>
-              </Field>
+              <GroupSharedFields group={group} category={<CategoryPicker name="categoryId" categories={categories} value={group.categoryId} />} suppliers={suppliers} storeOn={business.storeEnabled} slug={slug} />
               <SubmitButton pendingText="Saving…">Save for every option</SubmitButton>
             </ActionForm>
           </Card>

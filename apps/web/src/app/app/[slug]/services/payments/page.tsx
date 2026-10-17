@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
+import { isStripeConfigured } from "@/lib/stripe";
 import { buildTree, flattenTree, pathTo } from "@/server/categories";
 import { formatMoney } from "@/lib/utils";
 import { depositLabel } from "@/server/online-payments";
@@ -27,7 +28,7 @@ export default async function BulkPaymentsPage({ params }: { params: Promise<{ s
       <p className="mb-4 text-sm text-stone-600">Tick the services, choose what booking them online collects up front, and apply it once.</p>
       <ActionForm action={applyOnlinePayment}>
         <input type="hidden" name="slug" value={slug} />
-        <OnlinePaymentField type="flat" depositCents={0} percent={0} currency={business.currency} />
+        <OnlinePaymentField type="flat" depositCents={0} percent={0} currency={business.currency} stripeReady={isStripeConfigured() && business.stripeChargesEnabled} slug={slug} />
         <div className="space-y-4">
           {groups.map((g) => (
             <section key={g.id}>

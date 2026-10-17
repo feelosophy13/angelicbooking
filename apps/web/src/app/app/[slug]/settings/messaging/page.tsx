@@ -141,7 +141,7 @@ function NumberCard({ number, slug, tz, label }: { number: MessagingNumber; slug
         {number.status === "unverified" || number.status === "rejected" ? (
           <LinkButton href={`/app/${slug}/settings/messaging/verify?number=${number.id}`}>{number.status === "rejected" ? "Fix and resubmit" : "Submit verification"}</LinkButton>
         ) : null}
-        {number.verificationSid ? (
+        {number.verificationSid && number.status !== "verified" ? (
           <ActionForm action={refreshVerificationAction} className="inline">
             <input type="hidden" name="slug" value={slug} />
             <input type="hidden" name="numberId" value={number.id} />

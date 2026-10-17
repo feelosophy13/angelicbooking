@@ -1,18 +1,20 @@
+"use client";
+import { useState } from "react";
 import { MEMBERSHIP_INTERVALS } from "@angelic/core";
-import { Input, Select, Textarea } from "@/components/ui";
+import { Input, MoneyInput, Select, Textarea } from "@/components/ui";
 import { Field } from "@/components/form";
 import { ServicePicker, type ServiceGroup } from "@/components/service-picker";
 
 type Plan = { name: string; priceCents: number; interval: string; intervalCount: number; includedServiceId: string | null; includedSessions: number; rolloverCap: number; cycleCount: number | null; discountBps: number; description: string | null };
 
-/** The shared body of the new / edit membership plan forms. */
-export function PlanFields({ plan, groups }: { plan?: Plan; groups: ServiceGroup[] }) {
-
+/** The shared body of the new / edit membership plan forms. Session fields only apply once a service is included. */
+export function PlanFields({ plan, groups, currency }: { plan?: Plan; groups: ServiceGroup[]; currency: string }) {
+  const [serviceId, setServiceId] = useState(plan?.includedServiceId ?? "");
   return (
     <>
       <Field label="Name" name="name" required><Input name="name" defaultValue={plan?.name} required placeholder="Lash Club" autoFocus /></Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Price" name="price" required><Input name="price" inputMode="decimal" defaultValue={plan ? (plan.priceCents / 100).toFixed(2) : undefined} required placeholder="99" /></Field>
+        <Field label="Price" name="price" required><MoneyInput name="price" currency={currency} defaultValue={plan ? (plan.priceCents / 100).toFixed(2) : undefined} required /></Field>
         <Field label="Billed every" name="intervalCount" required hint="Up to 52 weeks, 12 months or 1 year apart">
           <div className="flex gap-2">
             <Input name="intervalCount" type="number" min={1} max={52} defaultValue={plan?.intervalCount ?? 1} required className="w-20" />
@@ -20,13 +22,20 @@ export function PlanFields({ plan, groups }: { plan?: Plan; groups: ServiceGroup
           </div>
         </Field>
       </div>
-      <Field label="Included service" name="includedServiceId"><ServicePicker name="includedServiceId" groups={groups} value={plan?.includedServiceId ?? null} placeholder="None" noneLabel="None" /></Field>
+      <Field label="Included service" name="includedServiceId" hint="Members get sessions of this service each billing period. Leave it at None for a discount-only plan."><ServicePicker name="includedServiceId" groups={groups} value={plan?.includedServiceId ?? null} placeholder="None" noneLabel="None" onPick={setServiceId} /></Field>
+      {serviceId ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Sessions per billing period" name="includedSessions"><Input name="includedSessions" type="number" min={1} defaultValue={plan?.includedSessions || 1} /></Field>
+          <Field label="Unused sessions that carry over" name="rolloverCap" hint="0 means they expire at renewal"><Input name="rolloverCap" type="number" min={0} max={99} defaultValue={plan?.rolloverCap ?? 0} /></Field>
+        </div>
+      ) : (
+        <>
+          <input type="hidden" name="includedSessions" value="0" />
+          <input type="hidden" name="rolloverCap" value="0" />
+        </>
+      )}
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Sessions per billing period" name="includedSessions"><Input name="includedSessions" type="number" min={0} defaultValue={plan?.includedSessions ?? 1} /></Field>
-        <Field label="Unused sessions that carry over" name="rolloverCap" hint="0 means they expire at renewal"><Input name="rolloverCap" type="number" min={0} max={99} defaultValue={plan?.rolloverCap ?? 0} /></Field>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Discount on other services (%)" name="discountPct"><Input name="discountPct" type="number" min={0} max={100} defaultValue={plan ? plan.discountBps / 100 : 0} /></Field>
+        <Field label={serviceId ? "Discount on other services (%)" : "Discount on services (%)"} name="discountPct"><Input name="discountPct" type="number" min={0} max={100} defaultValue={plan ? plan.discountBps / 100 : 0} /></Field>
         <Field label="Ends after (billing periods)" name="cycleCount" hint="0 means ongoing until cancelled"><Input name="cycleCount" type="number" min={0} max={120} defaultValue={plan?.cycleCount ?? 0} /></Field>
       </div>
       <Field label="Description" name="description"><Textarea name="description" rows={4} defaultValue={plan?.description ?? ""} /></Field>

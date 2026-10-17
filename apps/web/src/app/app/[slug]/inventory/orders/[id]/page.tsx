@@ -53,7 +53,7 @@ export default async function OrderPage({ params }: { params: Promise<{ slug: st
                 <input type="hidden" name="slug" value={slug} />
                 <input type="hidden" name="orderId" value={po.id} />
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Field label="Supplier" name="supplierId"><Select name="supplierId" defaultValue={po.supplierId ?? ""}><option value="">None</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
+                  {suppliers.length ? <Field label="Supplier" name="supplierId"><Select name="supplierId" defaultValue={po.supplierId ?? ""}><option value="">None</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field> : <input type="hidden" name="supplierId" value={po.supplierId ?? ""} />}
                   {locations.length > 1 ? <Field label="Deliver to" name="locationId"><Select name="locationId" defaultValue={po.locationId ?? ""}>{locations.map((l) => <option key={l.id} value={l.id}>{l.name.replace(`${business.name} - `, "")}</option>)}</Select></Field> : <input type="hidden" name="locationId" value={po.locationId ?? ""} />}
                   <Field label="Expected on" name="expectedOn"><Input type="date" name="expectedOn" defaultValue={po.expectedOn ?? ""} /></Field>
                   <Field label="Supplier's reference" name="reference" hint="Their order or invoice number."><Input name="reference" defaultValue={po.reference ?? ""} /></Field>
@@ -141,7 +141,7 @@ export default async function OrderPage({ params }: { params: Promise<{ slug: st
               <Card className="space-y-2 p-4">
                 <h2 className="text-sm font-medium text-stone-700">Send it</h2>
                 <p className="text-xs text-stone-500">Place the order with your supplier, then mark it ordered so it counts as on its way and isn't suggested again.</p>
-                {mail ? <a href={mail} className="inline-flex h-9 items-center rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium text-stone-800 hover:bg-stone-50">Email {supplier?.name}</a> : <p className="text-xs text-stone-500">Add an email to the supplier to write to them from here.</p>}
+                {mail ? <a href={mail} className="inline-flex h-9 items-center rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium text-stone-800 hover:bg-stone-50">Email {supplier?.name}</a> : supplier ? <p className="text-xs text-stone-500">Add an email to {supplier.name} to write to them from here.</p> : null}
                 <form action={orderAction}>
                   <input type="hidden" name="slug" value={slug} />
                   <input type="hidden" name="orderId" value={po.id} />
@@ -150,7 +150,7 @@ export default async function OrderPage({ params }: { params: Promise<{ slug: st
                 </form>
               </Card>
             ) : null}
-            <Card className="p-4">
+            {lines.length ? <Card className="p-4">
               <h2 className="mb-2 text-sm font-medium text-stone-700">Receive a delivery</h2>
               <LinkButton href={`/app/${slug}/inventory/orders/${po.id}/scan`} variant="primary" size="sm" className="mb-3"><ScanBarcode className="h-4 w-4" /> Scan the delivery</LinkButton>
               {remaining.length === 0 ? <p className="text-sm text-stone-500">Everything on this order has arrived.</p> : (
@@ -171,7 +171,7 @@ export default async function OrderPage({ params }: { params: Promise<{ slug: st
                   <SubmitButton pendingText="Receiving…">Add to stock</SubmitButton>
                 </ActionForm>
               )}
-            </Card>
+            </Card> : null}
             <form action={orderAction}>
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="orderId" value={po.id} />

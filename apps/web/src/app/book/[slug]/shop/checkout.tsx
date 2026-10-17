@@ -5,7 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { loadStripe } from "@stripe/stripe-js";
 import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
-import { Field, Input, Notice, Textarea } from "@/components/ui";
+import { Checkbox, Field, Input, Notice, Textarea } from "@/components/ui";
 import { finishOrderAction, startOrderAction, type StartOrderResult } from "./actions";
 
 export type CartProduct = { id: string; name: string; groupId?: string | null; groupName?: string | null; optionLabel?: string | null; priceCents: number; description: string | null; imageUrl: string | null; category: string | null; stockQty: number; trackStock: boolean };
@@ -25,6 +25,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
   const [giftAmount, setGiftAmount] = useState<number>(props.gift?.presets[1] ?? 5000);
   const [giftCustom, setGiftCustom] = useState("");
   const [gift, setGift] = useState({ recipientName: "", recipientEmail: "", message: "" });
+  const [forSomeone, setForSomeone] = useState(false);
   const [method, setMethod] = useState<"pickup" | "ship">("pickup");
   const [address, setAddress] = useState("");
   const [buyer, setBuyer] = useState({ firstName: props.defaults?.firstName ?? "", lastName: props.defaults?.lastName ?? "", email: props.defaults?.email ?? "", phone: props.defaults?.phone ?? "" });
@@ -133,7 +134,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
         setError(null);
         const botToken = new FormData(e.currentTarget).get("cf-turnstile-response");
         start(async () => {
-          const r = await startOrderAction({ botToken: typeof botToken === "string" ? botToken : null, slug: props.slug, items, giftCard: isGift ? { amountCents: giftCents, ...gift } : null, buyer, method: canShip ? method : "pickup", address, locationId: props.locationId ?? null });
+          const r = await startOrderAction({ botToken: typeof botToken === "string" ? botToken : null, slug: props.slug, items, giftCard: isGift ? { amountCents: giftCents, ...(forSomeone ? gift : { recipientName: "", recipientEmail: "", message: "" }) } : null, buyer, method: canShip ? method : "pickup", address, locationId: props.locationId ?? null });
           if ("error" in r) setError(r.error);
           else setStarted(r);
         });
@@ -148,11 +149,16 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
             ))}
             <Input value={giftCustom} onChange={(e) => setGiftCustom(e.target.value)} inputMode="decimal" placeholder="Other" className="w-24" />
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Recipient's name"><Input value={gift.recipientName} onChange={(e) => setGift({ ...gift, recipientName: e.target.value })} /></Field>
-            <Field label="Send to (email)"><Input type="email" value={gift.recipientEmail} onChange={(e) => setGift({ ...gift, recipientEmail: e.target.value })} placeholder="Leave blank to send it to you" /></Field>
-          </div>
-          <Field label="Message (optional)"><Textarea rows={4} value={gift.message} onChange={(e) => setGift({ ...gift, message: e.target.value })} /></Field>
+          <Checkbox checked={forSomeone} onChange={(e) => setForSomeone(e.target.checked)} label="This is a gift for someone else" hint="Otherwise we'll email the card to you." />
+          {forSomeone ? (
+            <div className="mt-3 space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Recipient's name"><Input value={gift.recipientName} onChange={(e) => setGift({ ...gift, recipientName: e.target.value })} /></Field>
+                <Field label="Recipient's email" hint="Leave blank and we'll email it to you to pass on."><Input type="email" value={gift.recipientEmail} onChange={(e) => setGift({ ...gift, recipientEmail: e.target.value })} /></Field>
+              </div>
+              <Field label="Message (optional)"><Textarea rows={4} value={gift.message} onChange={(e) => setGift({ ...gift, message: e.target.value })} /></Field>
+            </div>
+          ) : null}
         </div>
       ) : (
         <ul className="divide-y divide-stone-200 overflow-hidden rounded-xl border border-stone-200 bg-white">

@@ -9,6 +9,7 @@ import { seesOwnOnly } from "@/lib/appointment-access";
 import { listLocations } from "@/server/locations";
 import { formatMoney, shiftISODate, cn } from "@/lib/utils";
 import { Button, Card, Empty, Input, PageHeader, Select } from "@/components/ui";
+import { Field } from "@/components/form";
 import { LinkRow } from "@/components/table-row";
 import { StatusBadge } from "@/components/status-badge";
 import { ClientPicker } from "@/components/client-picker";
@@ -60,9 +61,11 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
             <p className="text-sm font-medium">Sell a product or gift card</p>
             <ClientPicker slug={slug} initial={null} canCreate={can(permissions, "clients.write")} createClient={quickCreateClient} placeholder="Client (optional, blank for a walk-in)" />
             {locations.length > 1 ? (
-              <Select name="locationId" defaultValue={locations.find((l) => l.isDefault)?.id ?? ""}>
-                {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-              </Select>
+              <Field label="Location" name="locationId">
+                <Select name="locationId" defaultValue={locations.find((l) => l.isDefault)?.id ?? ""}>
+                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </Select>
+              </Field>
             ) : null}
             <Button type="submit" size="sm" className="w-full"><Plus className="h-4 w-4" /> Start sale</Button>
           </form>

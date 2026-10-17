@@ -39,9 +39,10 @@ export default async function AccountPage() {
             <h2 className="mb-3 font-medium">Profile</h2>
             <ActionForm action={updateName}>
               <Field label="Name" name="name" required><Input name="name" defaultValue={user.name} required /></Field>
-              <Field label="Email" hint="Email changes are handled by support for now."><Input value={user.email} readOnly className="bg-stone-50 text-stone-500" /></Field>
-              <div className="flex items-center gap-2 text-sm">
-                {user.emailVerified ? <><MailCheck className="h-4 w-4 text-emerald-600" /> <span className="text-emerald-700">Email verified</span></> : <><MailWarning className="h-4 w-4 text-amber-600" /> <span className="text-amber-700">Email not verified</span></>}
+              <div className="text-sm">
+                <p className="mb-1 font-medium text-stone-700">Email</p>
+                <p className="flex items-center gap-2">{user.email} {user.emailVerified ? <><MailCheck className="h-4 w-4 text-emerald-600" /> <span className="text-emerald-700">Verified</span></> : <><MailWarning className="h-4 w-4 text-amber-600" /> <span className="text-amber-700">Not verified</span></>}</p>
+                <p className="mt-1 text-xs text-stone-500">To change it, contact support.</p>
               </div>
               <SubmitButton variant="secondary" pendingText="Saving…">Save</SubmitButton>
             </ActionForm>

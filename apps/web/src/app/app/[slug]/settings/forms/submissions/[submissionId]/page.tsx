@@ -31,13 +31,14 @@ export default async function SubmissionPage({ params }: { params: Promise<{ slu
       </Card>
       {write ? (
         <div className="mt-4 max-w-2xl space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
+          {row.client.email ? (
             <form action={emailSubmissionAction}>
               <input type="hidden" name="slug" value={slug} /><input type="hidden" name="submissionId" value={row.s.id} />
-              <Button type="submit" size="sm" variant="secondary" disabled={!row.client.email}>Email a copy to the client</Button>
+              <Button type="submit" size="sm" variant="secondary">Email a copy to the client</Button>
             </form>
-            {!row.client.email ? <span className="text-xs text-stone-500">No email on file.</span> : null}
-          </div>
+          ) : (
+            <p className="text-xs text-stone-500">No email on file, so a copy can&apos;t be emailed. Add one on <Link href={`/app/${slug}/clients/${row.client.id}`} className="text-brand-700 underline">the client&apos;s page</Link>.</p>
+          )}
           {!row.s.voidedAt ? (
             <Disclosure title="Correct this record" hint="void it or move it to another client" className="text-sm">
               <form action={reassignSubmissionAction} className="mb-4 space-y-2">

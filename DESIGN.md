@@ -79,6 +79,14 @@ wrong: fix the page.
 - `Disclosure` (collapsed card with a title and optional hint) for secondary panels: add a service to a visit,
   discount or promo code on a ticket, edit client details, the clock-in PIN, export menus.
 - A disclosure opens itself when it already holds something (a discount is applied, a filter is set).
+- **Only what applies is on screen.** A control earns its place in the current state or it is not drawn. When a
+  choice decides which fields matter (discount: none / $ / % / promo code; pay by: card / cash / gift card; time off:
+  whole day / custom hours), the choice comes first and only that choice's fields follow (`Segmented` in the sale
+  page's forms, or a `Select`, with the rest rendered conditionally). Several things that can be added or paid in
+  one place share one chooser, never a stack of every form at once. A feature that is off, empty or unavailable to
+  this record (no client, no Stripe, no packages, too few points) is not offered at all; at most one grey line with a
+  link says how to turn it on. Never a disabled control with its excuse in the label ("Add membership (needs
+  client)"), never a select with one option, never an empty select.
 - Destructive flows (cancel appointment, delete) start from a quiet link that reveals the reason field and the red
   confirm button, never from a red button sitting on the page.
 - Setup and onboarding help is one line with a "show steps" affordance and a way to hide it for good.

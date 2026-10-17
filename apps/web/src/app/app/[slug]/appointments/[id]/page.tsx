@@ -78,6 +78,10 @@ export default async function AppointmentPage({
   const canChange = canWriteAny || (access === "own" && can(permissions, "appointments.change.own"));
   const canCancel = canWriteAny || (access === "own" && can(permissions, "appointments.cancel.own"));
   const canBook = !!bookingAccess(permissions, staffId ?? null);
+  // Someone working their own calendar can only add or move services onto themselves, so there is no one to choose.
+  const ownStaff = access === "own" ? (staffId ?? null) : null;
+  const canCheckout = canEdit && can(permissions, "checkout.take");
+  const canFillForms = can(permissions, "clients.write");
   const { appointment, items, client, services, staff } = data;
   const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, id), ne(schema.sales.status, "void")), orderBy: desc(schema.sales.createdAt) }));
   // The rating request for this visit, if one went out: submitted or still waiting.
@@ -108,6 +112,10 @@ export default async function AppointmentPage({
   const total = live.reduce((s, i) => s + i.priceCents, 0);
   const locked = ["completed", "cancelled", "no_show"].includes(appointment.status);
   const self = `/app/${slug}/appointments/${id}`;
+  // A cancelled visit stays cancelled, so no status buttons for it; everything else needs the update permission.
+  const showStatusButtons = canEdit && appointment.status !== "cancelled";
+  const showCancel = canCancel && appointment.status !== "cancelled";
+  const showNoShowFee = !locked && !existingSale && savedCards.length > 0 && canCancel;
   // What a late cancellation would cost right now, for the cancel form.
   const latePolicy = { feeType: business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: business.lateCancelFeeValue, deposit: business.lateCancelDeposit as "toward" | "extra" };
   const lateFee = first && latePolicy.feeType !== "none" && !locked && appointment.kind !== "block" && isInsideCancelWindow(first.startAt, business.cancelWindowHours) ? lateCancelFee(latePolicy, total, appointment.depositStatus === "paid" ? appointment.depositCents : 0) : null;
@@ -136,7 +144,7 @@ export default async function AppointmentPage({
 
   // --- Add service panel state (driven by query string so it stays a server page)
   const addSvc = services.find((s) => s.id === sp.addServiceId) ?? null;
-  const addStaffId = staff.some((s) => s.id === sp.addStaffId) ? sp.addStaffId! : (first?.staffId ?? staff[0]?.id);
+  const addStaffId = ownStaff ?? (staff.some((s) => s.id === sp.addStaffId) ? sp.addStaffId! : (first?.staffId ?? staff[0]?.id));
   const addDate = /^\d{4}-\d{2}-\d{2}$/.test(sp.addDate ?? "") ? sp.addDate! : apptDate;
   const addSlots =
     addSvc && addStaffId
@@ -156,7 +164,7 @@ export default async function AppointmentPage({
   // --- Move service panel state
   const moveItem = items.find((i) => i.id === sp.moveItemId && i.status !== "cancelled") ?? null;
   const moveSvc = moveItem ? services.find((s) => s.id === moveItem.serviceId) ?? null : null;
-  const moveStaffId = staff.some((s) => s.id === sp.moveStaffId) ? sp.moveStaffId! : moveItem?.staffId;
+  const moveStaffId = ownStaff ?? (staff.some((s) => s.id === sp.moveStaffId) ? sp.moveStaffId! : moveItem?.staffId);
   const moveDate = /^\d{4}-\d{2}-\d{2}$/.test(sp.moveDate ?? "") ? sp.moveDate! : apptDate;
   const moveSlots =
     moveItem && moveSvc && moveStaffId
@@ -173,6 +181,7 @@ export default async function AppointmentPage({
 
   if (appointment.kind === "block") {
     const blockItem = items[0];
+    const canRemoveBlock = canWriteAny || (access === "own" && can(permissions, "appointments.block.own"));
     return (
       <>
         <div className="mb-2"><BackLink href={`/app/${slug}?date=${apptDate}`}>Calendar</BackLink></div>
@@ -180,7 +189,7 @@ export default async function AppointmentPage({
         <Card className="max-w-lg p-4 text-sm">
           <p className="font-medium">{appointment.notes || "Blocked time"}</p>
           {blockItem ? <p className="text-stone-600">{staff.find((s) => s.id === blockItem.staffId)?.displayName} · {formatDateLong(apptDate)} · {formatTime(blockItem.startAt, tz)} – {formatTime(blockItem.endAt, tz)}</p> : null}
-          {appointment.status === "cancelled" ? <p className="mt-2 text-stone-500">This block was removed.</p> : canWriteAny || (access === "own" && can(permissions, "appointments.block.own")) ? (
+          {appointment.status === "cancelled" ? <p className="mt-2 text-stone-500">This block was removed.</p> : canRemoveBlock ? (
             <form action={changeStatus} className="mt-3">
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="appointmentId" value={id} />
@@ -188,7 +197,7 @@ export default async function AppointmentPage({
               <Button type="submit" variant="secondary">Remove block</Button>
             </form>
           ) : null}
-          <p className="mt-3 text-xs text-stone-500">Drag the block on the calendar to move it.</p>
+          {appointment.status !== "cancelled" && canRemoveBlock ? <p className="mt-3 text-xs text-stone-500">Drag the block on the calendar to move it.</p> : null}
         </Card>
       </>
     );
@@ -199,13 +208,14 @@ export default async function AppointmentPage({
       <div className="mb-2"><BackLink href={`/app/${slug}?date=${apptDate}`}>Calendar</BackLink></div>
       <PageHeader title={client ? `${client.firstName} ${client.lastName}`.trim() : "Walk-in"}>
         {client && first && canBook ? (
-          <Link
+          <LinkButton
             href={`/app/${slug}/appointments/new?clientId=${client.id}${first.serviceId ? `&serviceId=${first.serviceId}` : ""}&staffId=${first.staffId}&date=${shiftISODate(apptDate, 28)}${multiLocation && pay.location ? `&location=${pay.location.id}` : ""}`}
-            className="inline-flex h-8 items-center gap-1 rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-700 hover:bg-stone-50"
+            variant="secondary"
+            size="sm"
             title="Book this client's next visit (same service and provider, four weeks out)"
           >
             <CalendarPlus className="h-4 w-4" /> Rebook
-          </Link>
+          </LinkButton>
         ) : null}
       </PageHeader>
 
@@ -256,13 +266,15 @@ export default async function AppointmentPage({
           {moveItem && canChange ? (
             <Card className="p-4 ring-2 ring-brand-200">
               <h2 className="mb-1 font-medium">Move {moveItem.serviceName.replace(" (finish)", "")}</h2>
-              <form className="mb-3 grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+              <form className={`mb-3 grid items-end gap-2 ${ownStaff ? "grid-cols-[1fr_auto]" : "grid-cols-[1fr_1fr_auto]"}`}>
                 <input type="hidden" name="moveItemId" value={moveItem.id} />
-                <Field label="Staff">
-                  <Select name="moveStaffId" defaultValue={moveStaffId}>
-                    {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
-                  </Select>
-                </Field>
+                {ownStaff ? <input type="hidden" name="moveStaffId" value={ownStaff} /> : (
+                  <Field label="Staff">
+                    <Select name="moveStaffId" defaultValue={moveStaffId}>
+                      {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                    </Select>
+                  </Field>
+                )}
                 <Field label="Date"><Input type="date" name="moveDate" defaultValue={moveDate} /></Field>
                 <Button type="submit" variant="secondary">Find times</Button>
               </form>
@@ -279,15 +291,17 @@ export default async function AppointmentPage({
 
           {!locked && canChange ? (
             <Disclosure title="Add a service" hint="another service on this visit" open={!!addSvc}>
-              <form className="mb-3 grid grid-cols-[2fr_1fr_1fr_auto] items-end gap-2">
+              <form className={`mb-3 grid items-end gap-2 ${ownStaff ? "grid-cols-[2fr_1fr_auto]" : "grid-cols-[2fr_1fr_1fr_auto]"}`}>
                 <Field label="Service">
                   <ServicePicker name="addServiceId" groups={addGroups} value={addSvc?.id ?? null} placeholder="Choose a service" />
                 </Field>
-                <Field label="Staff">
-                  <Select name="addStaffId" defaultValue={addStaffId}>
-                    {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
-                  </Select>
-                </Field>
+                {ownStaff ? <input type="hidden" name="addStaffId" value={ownStaff} /> : (
+                  <Field label="Staff">
+                    <Select name="addStaffId" defaultValue={addStaffId}>
+                      {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                    </Select>
+                  </Field>
+                )}
                 <Field label="Date"><Input type="date" name="addDate" defaultValue={addDate} /></Field>
                 <Button type="submit" variant="secondary">Find times</Button>
               </form>
@@ -307,12 +321,14 @@ export default async function AppointmentPage({
 
           <Card className="p-4">
             <h2 className="mb-2 font-medium">Notes</h2>
-            <form action={saveNotes} className="space-y-2">
-              <input type="hidden" name="slug" value={slug} />
-              <input type="hidden" name="appointmentId" value={id} />
-              <Textarea name="notes" rows={5} defaultValue={appointment.notes ?? ""} placeholder="Anything the team should know for this visit" />
-              <Button type="submit" size="sm" variant="secondary">Save notes</Button>
-            </form>
+            {canEdit ? (
+              <form action={saveNotes} className="space-y-2">
+                <input type="hidden" name="slug" value={slug} />
+                <input type="hidden" name="appointmentId" value={id} />
+                <Textarea name="notes" rows={5} defaultValue={appointment.notes ?? ""} placeholder="Anything the team should know for this visit" />
+                <Button type="submit" size="sm" variant="secondary">Save notes</Button>
+              </form>
+            ) : appointment.notes ? <p className="whitespace-pre-line text-sm text-stone-700">{appointment.notes}</p> : <p className="text-sm text-stone-500">No notes for this visit.</p>}
           </Card>
 
           {showLash && lash && client ? (
@@ -336,20 +352,23 @@ export default async function AppointmentPage({
         </div>
 
         <div className="space-y-6">
-          <Card className="p-4">
-            <h2 className="mb-2 font-medium">Checkout</h2>
-            {existingSale ? (
-              <Link href={`/app/${slug}/sales/${existingSale.id}`} className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700">
+          {existingSale && can(permissions, "checkout.take") ? (
+            <Card className="p-4">
+              <h2 className="mb-2 font-medium">Checkout</h2>
+              <LinkButton href={`/app/${slug}/sales/${existingSale.id}`} variant="primary" className="w-full">
                 {existingSale.status === "open" ? `Continue checkout (#${existingSale.number})` : `View sale #${existingSale.number}`}
-              </Link>
-            ) : appointment.status !== "cancelled" ? (
-              forms.some((f) => !f.current) ? (
+              </LinkButton>
+            </Card>
+          ) : !existingSale && canCheckout && appointment.status !== "cancelled" ? (
+            <Card className="p-4">
+              <h2 className="mb-2 font-medium">Checkout</h2>
+              {forms.some((f) => !f.current) ? (
                 <div className="space-y-2">
                   <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                     {forms.filter((f) => !f.current).length} required form{forms.filter((f) => !f.current).length === 1 ? "" : "s"} outstanding: {forms.filter((f) => !f.current).map((f) => f.form.name).join(", ")}.
                   </p>
-                  {client ? (
-                    <Link href={`/app/${slug}/forms/fill/${forms.find((f) => !f.current)!.form.id}?clientId=${client.id}&appointmentId=${appointment.id}`} className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-brand-600 px-4 text-sm font-medium text-white hover:bg-brand-700">Complete forms now</Link>
+                  {client && canFillForms ? (
+                    <LinkButton href={`/app/${slug}/forms/fill/${forms.find((f) => !f.current)!.form.id}?clientId=${client.id}&appointmentId=${appointment.id}`} variant="primary" className="w-full">Complete forms now</LinkButton>
                   ) : null}
                   <form action={startCheckout}>
                     <input type="hidden" name="slug" value={slug} />
@@ -364,40 +383,42 @@ export default async function AppointmentPage({
                   <input type="hidden" name="appointmentId" value={id} />
                   <Button type="submit" className="w-full">Check out · {formatMoney(total, business.currency)}</Button>
                 </form>
-              )
-            ) : (
-              <p className="text-sm text-stone-500">Cancelled appointments can&apos;t be checked out.</p>
-            )}
-          </Card>
+              )}
+            </Card>
+          ) : null}
 
-          <Card className="p-4">
-            <h2 className="mb-3 font-medium">Status</h2>
-            <form action={changeStatus} className="flex flex-wrap gap-1.5">
-              <input type="hidden" name="slug" value={slug} />
-              <input type="hidden" name="appointmentId" value={id} />
-              {(["confirmed", "checked_in", "in_progress", "completed", "no_show"] as const)
-                .filter((s) => s !== appointment.status)
-                .map((s) => (
-                  s === "no_show" ? (
-                    <ConfirmSubmit key={s} name="status" value={s} title="Mark as no-show?" body="This counts against the client's history. Use the no-show fee card below to charge a saved card." confirmLabel="Mark no-show" variant="secondary">{STATUS_LABEL[s]}</ConfirmSubmit>
-                  ) : (
-                  <Button key={s} name="status" value={s} size="sm" variant="secondary" type="submit" disabled={appointment.status === "cancelled"}>
-                    {STATUS_LABEL[s]}
-                  </Button>)
-                ))}
-            </form>
-            {appointment.status === "cancelled" ? (
-              <p className="mt-3 text-sm text-stone-500">
-                Cancelled{appointment.cancelledBy === "client" ? " by the client" : ""}{appointment.cancelledLate ? ", inside the cancellation window" : ""}
-                {cancelReasonName ? `: ${cancelReasonName}` : ""}{appointment.cancellationReason ? ` (${appointment.cancellationReason})` : ""}.
-              </p>
-            ) : canCancel ? (
-              <details className="group mt-3 border-t border-stone-200 pt-3">
-                <summary className="cursor-pointer select-none text-sm text-stone-500 hover:text-stone-800 marker:content-none [&::-webkit-details-marker]:hidden">Cancel this appointment…</summary>
-                <CancelForm slug={slug} appointmentId={id} late={lateCancel} cards={savedCards} reasons={(await listCancellationReasons(business.id)).map((r) => ({ id: r.id, name: r.name }))} deposit={depositChoice} />
-              </details>
-            ) : null}
-          </Card>
+          {showStatusButtons || showCancel || appointment.status === "cancelled" ? (
+            <Card className="p-4">
+              <h2 className={showStatusButtons ? "mb-3 font-medium" : "mb-1 font-medium"}>Status</h2>
+              {showStatusButtons ? (
+                <form action={changeStatus} className="flex flex-wrap gap-1.5">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="appointmentId" value={id} />
+                  {(["confirmed", "checked_in", "in_progress", "completed", "no_show"] as const)
+                    .filter((s) => s !== appointment.status)
+                    .map((s) => (
+                      s === "no_show" ? (
+                        <ConfirmSubmit key={s} name="status" value={s} title="Mark as no-show?" body={`This counts against the client's history.${showNoShowFee ? " To charge the saved card as well, use No-show fee below." : ""}`} confirmLabel="Mark no-show" variant="secondary">{STATUS_LABEL[s]}</ConfirmSubmit>
+                      ) : (
+                      <Button key={s} name="status" value={s} size="sm" variant="secondary" type="submit">
+                        {STATUS_LABEL[s]}
+                      </Button>)
+                    ))}
+                </form>
+              ) : null}
+              {appointment.status === "cancelled" ? (
+                <p className="text-sm text-stone-500">
+                  Cancelled{appointment.cancelledBy === "client" ? " by the client" : ""}{appointment.cancelledLate ? ", inside the cancellation window" : ""}
+                  {cancelReasonName ? `: ${cancelReasonName}` : ""}{appointment.cancellationReason ? ` (${appointment.cancellationReason})` : ""}.
+                </p>
+              ) : showCancel ? (
+                <details className={showStatusButtons ? "group mt-3 border-t border-stone-200 pt-3" : "group"}>
+                  <summary className="cursor-pointer select-none text-sm text-stone-500 hover:text-stone-800 marker:content-none [&::-webkit-details-marker]:hidden">Cancel this appointment…</summary>
+                  <CancelForm slug={slug} appointmentId={id} late={lateCancel} cards={savedCards} reasons={(await listCancellationReasons(business.id)).map((r) => ({ id: r.id, name: r.name }))} deposit={depositChoice} />
+                </details>
+              ) : null}
+            </Card>
+          ) : null}
 
           {forms.length ? (
             <Card className="p-4 text-sm">
@@ -408,7 +429,7 @@ export default async function AppointmentPage({
                     <span>{f.current ? "✓" : "○"} {f.form.name}</span>
                     <span className="flex items-center gap-2 text-xs">
                       {f.submission ? <Link href={`/app/${slug}/settings/forms/submissions/${f.submission.id}`} className="text-brand-700 underline">{f.current ? "View" : "Expired · view"}</Link> : null}
-                      {!f.current && client ? <Link href={`/app/${slug}/forms/fill/${f.form.id}?clientId=${client.id}&appointmentId=${appointment.id}`} className="rounded border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-brand-800">Complete here</Link> : !f.submission ? <span className="text-stone-400">not yet</span> : null}
+                      {!f.current && client && canFillForms ? <Link href={`/app/${slug}/forms/fill/${f.form.id}?clientId=${client.id}&appointmentId=${appointment.id}`} className="rounded border border-brand-300 bg-brand-50 px-1.5 py-0.5 text-brand-800">Complete here</Link> : !f.submission ? <span className="text-stone-400">not yet</span> : null}
                     </span>
                   </li>
                 ))}
@@ -486,12 +507,11 @@ export default async function AppointmentPage({
             </Card>
           ) : null}
 
-          {!locked && !existingSale && savedCards.length > 0 && canCancel ? (
-            <Card className="p-4">
-              <h2 className="mb-1 font-medium">No-show fee</h2>
+          {showNoShowFee ? (
+            <Disclosure title="No-show fee" hint="charge the saved card">
               <p className="mb-2 text-xs text-stone-500">Charges the client&apos;s saved card and marks the appointment as a no-show.</p>
               <NoShowFeeForm slug={slug} appointmentId={id} defaultAmount={((business.noShowFeeCents || Math.min(total, 2500)) / 100).toFixed(2)} cards={savedCards} />
-            </Card>
+            </Disclosure>
           ) : null}
 
           <Card className="p-4">

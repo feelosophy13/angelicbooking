@@ -208,16 +208,18 @@ export default async function NewAppointmentPage({
                 <ServicePicker name="extra" groups={serviceGroups.map((g) => ({ ...g, services: g.services.filter((s) => s.id !== service?.id) })).filter((g) => g.services.length)} value={x?.id ?? null} placeholder="None" noneLabel={x ? "Remove this one" : "None"} />
               </Field>
             ))}
-            <Field label="Staff">
-              <Select name="staffId" defaultValue={anyMode ? "any" : (staffId ?? "")} disabled={!service}>
-                {canAny ? <option value="any">Any available</option> : null}
-                {eligibleStaff.map((s) => {
-                  const t = service ? termsOf(service, svcOverrides.get(s.id)) : null;
-                  const note = t ? [t.priceCustom ? formatMoney(t.priceCents, business.currency) : null, t.durationCustom ? duration(t.durationMin) : null].filter(Boolean).join(" · ") : "";
-                  return <option key={s.id} value={s.id}>{s.displayName}{note ? ` · ${note}` : ""}</option>;
-                })}
-              </Select>
-            </Field>
+            {service && eligibleStaff.length > 0 ? (
+              <Field label="Staff">
+                <Select name="staffId" defaultValue={anyMode ? "any" : (staffId ?? "")}>
+                  {canAny ? <option value="any">Any available</option> : null}
+                  {eligibleStaff.map((s) => {
+                    const t = termsOf(service, svcOverrides.get(s.id));
+                    const note = [t.priceCustom ? formatMoney(t.priceCents, business.currency) : null, t.durationCustom ? duration(t.durationMin) : null].filter(Boolean).join(" · ");
+                    return <option key={s.id} value={s.id}>{s.displayName}{note ? ` · ${note}` : ""}</option>;
+                  })}
+                </Select>
+              </Field>
+            ) : null}
             <Field label="Date">
               <div className="flex items-center gap-2">
                 <Link href={linkWith({ date: shiftISODate(date, -1) })} aria-label="Previous day" className="inline-flex h-10 w-9 shrink-0 items-center justify-center rounded-lg border border-stone-300 bg-white text-stone-600 hover:bg-stone-50">‹</Link>

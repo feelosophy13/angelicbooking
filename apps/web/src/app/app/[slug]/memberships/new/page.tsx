@@ -18,7 +18,7 @@ export default async function NewPlanPage({ params }: { params: Promise<{ slug: 
     <FormPage title="New membership plan" backHref={`/app/${slug}/memberships`} backLabel="Membership plans">
       <ActionForm action={createPlan}>
         <input type="hidden" name="slug" value={slug} />
-        <PlanFields groups={groups} />
+        <PlanFields groups={groups} currency={business.currency} />
         <ValidAt locations={locations} what="membership credits and discounts" />
         <SubmitButton pendingText="Creating…">Create plan</SubmitButton>
       </ActionForm>

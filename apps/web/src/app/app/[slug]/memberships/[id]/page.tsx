@@ -29,7 +29,7 @@ export default async function EditPlanPage({ params }: { params: Promise<{ slug:
       <ActionForm action={updatePlan}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="id" value={p.id} />
-        <PlanFields plan={p} groups={groups} />
+        <PlanFields plan={p} groups={groups} currency={business.currency} />
         <ValidAt locations={locations} selected={p.validLocationIds} what="membership credits and discounts" />
         <SubmitButton pendingText="Saving…">Save plan</SubmitButton>
       </ActionForm>

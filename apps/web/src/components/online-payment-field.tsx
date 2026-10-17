@@ -1,17 +1,27 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { Input, MoneyInput, Select } from "@/components/ui";
 import { Field } from "@/components/form";
 
 type Mode = "none" | "flat" | "percent" | "full";
 
 /** What booking this service online collects up front: nothing, a flat deposit, a percent of the price, or the full price. */
-export function OnlinePaymentField({ type, depositCents, percent, currency }: { type: string; depositCents: number; percent: number; currency: string }) {
+export function OnlinePaymentField({ type, depositCents, percent, currency, stripeReady, slug }: { type: string; depositCents: number; percent: number; currency: string; /** Cards can be charged; without it nothing can be collected online, so only a pointer to Settings → Payments is shown. */ stripeReady: boolean; slug: string }) {
   const [mode, setMode] = useState<Mode>(type === "full" ? "full" : type === "percent" && percent > 0 ? "percent" : type === "flat" && depositCents > 0 ? "flat" : "none");
+  if (!stripeReady) {
+    return (
+      <>
+        <input type="hidden" name="depositType" value="flat" />
+        <input type="hidden" name="depositMode" value="none" />
+        <p className="text-xs text-stone-500">To collect a deposit or payment when clients book online, connect Stripe under <Link className="underline" href={`/app/${slug}/settings/payments`}>Settings → Payments</Link>.</p>
+      </>
+    );
+  }
   return (
     <>
       <input type="hidden" name="depositType" value={mode === "none" ? "flat" : mode} />
-      <Field label="Payment when booking online" name="depositMode" hint="Needs Stripe. What is paid comes off the bill at checkout and is refunded on cancellations inside the policy window.">
+      <Field label="Payment when booking online" name="depositMode" hint="What is paid comes off the bill at checkout and is refunded on cancellations inside the policy window.">
         <Select name="depositMode" value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
           <option value="none">Nothing up front</option>
           <option value="flat">A fixed deposit</option>

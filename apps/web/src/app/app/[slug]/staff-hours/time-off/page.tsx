@@ -5,6 +5,7 @@ import { requireAction } from "@/lib/tenant";
 import { FormPage, Input, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { addOverride } from "../../staff/actions";
+import { OverrideFields } from "../../staff/[staffId]/time-off/override-fields";
 
 export const metadata: Metadata = { title: "Add time off" };
 
@@ -34,16 +35,7 @@ export default async function AddTimeOffPage({ params, searchParams }: { params:
           <Field label="First day" name="date" required><Input type="date" name="date" defaultValue={date} required className="px-2" /></Field>
           <Field label="Last day" name="to" hint="Blank for one day"><Input type="date" name="to" className="px-2" /></Field>
         </div>
-        <Field label="Type" name="kind">
-          <Select name="kind" defaultValue="off">
-            <option value="off">Time off</option>
-            <option value="hours">Custom hours</option>
-          </Select>
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Start" name="start" hint="Custom hours only"><Input type="time" name="start" className="px-2" /></Field>
-          <Field label="End" name="end"><Input type="time" name="end" className="px-2" /></Field>
-        </div>
+        <OverrideFields />
         <Field label="Note" name="note"><Input name="note" placeholder="Vacation, training…" /></Field>
         <SubmitButton pendingText="Adding…">Add time off</SubmitButton>
       </ActionForm>

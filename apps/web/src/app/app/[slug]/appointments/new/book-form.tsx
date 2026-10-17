@@ -1,7 +1,7 @@
 "use client";
 import { useActionState, useState } from "react";
 import { book } from "./actions";
-import { Button, Card, Field, Input, Notice, Select, Textarea } from "@/components/ui";
+import { Button, Card, Checkbox, Field, Input, Notice, Select, Textarea } from "@/components/ui";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -163,10 +163,7 @@ export function BookForm(props: {
           </div>
         ) : null}
         {props.canConfirm ? (
-          <label className="flex items-start gap-2 text-sm text-stone-700">
-            <input type="checkbox" name="sendConfirmation" defaultChecked className="mt-0.5 h-4 w-4 rounded border-stone-300" />
-            <span>Send the client a confirmation<span className="block text-xs text-stone-500">{props.confirmation}</span></span>
-          </label>
+          <Checkbox name="sendConfirmation" defaultChecked label="Send the client a confirmation" hint={props.confirmation} />
         ) : <p className="text-xs text-stone-500">{props.confirmation}</p>}
         {state?.error ? <Notice>{state.error}</Notice> : null}
         <div className="flex flex-wrap items-center gap-2">

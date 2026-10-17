@@ -3,9 +3,11 @@ import { schema, withTenant } from "@angelic/db";
 import { instantToISODate } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { dateLong } from "@/lib/format";
-import { Card, Input, Select, Empty } from "@/components/ui";
+import { Card, Input, Empty } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
+import { Disclosure } from "@/components/disclosure";
 import { addOverride, deleteOverride } from "../../actions";
+import { OverrideFields } from "./override-fields";
 
 type Override = typeof schema.staffScheduleOverrides.$inferSelect;
 interface Group { from: string; to: string; ids: string[]; isOff: boolean; startTime: string | null; endTime: string | null; note: string | null }
@@ -70,8 +72,7 @@ export default async function StaffTimeOffPage({ params }: { params: Promise<{ s
           </ul>
         )}
       </Card>
-      <Card className="p-5">
-        <h2 className="mb-3 font-medium">Add</h2>
+      <Disclosure title="Add time off or custom hours" defaultOpen={groups.length === 0} className="self-start">
         <ActionForm action={addOverride}>
           <input type="hidden" name="slug" value={slug} />
           <input type="hidden" name="staffId" value={staffId} />
@@ -79,20 +80,11 @@ export default async function StaffTimeOffPage({ params }: { params: Promise<{ s
             <Field label="First day" name="date" required><Input type="date" name="date" required className="px-2" /></Field>
             <Field label="Last day" name="to" hint="Blank for one day"><Input type="date" name="to" className="px-2" /></Field>
           </div>
-          <Field label="Type" name="kind">
-            <Select name="kind" defaultValue="off">
-              <option value="off">Time off</option>
-              <option value="hours">Custom hours</option>
-            </Select>
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Start" name="start" hint="Custom hours only"><Input type="time" name="start" className="px-2" /></Field>
-            <Field label="End" name="end"><Input type="time" name="end" className="px-2" /></Field>
-          </div>
+          <OverrideFields />
           <Field label="Note" name="note"><Input name="note" placeholder="Vacation, training…" /></Field>
           <SubmitButton variant="secondary" pendingText="Adding…">Add</SubmitButton>
         </ActionForm>
-      </Card>
+      </Disclosure>
     </div>
   );
 }

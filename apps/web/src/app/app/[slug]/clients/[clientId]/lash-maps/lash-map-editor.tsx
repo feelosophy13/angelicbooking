@@ -148,7 +148,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
         <Field label="Curl">
           <div className="flex flex-wrap items-center gap-2">
             <Chips options={LASH_CURLS.map((c) => ({ value: c, label: c }))} value={z.curl} onChange={(v) => patch({ curl: v === z.curl ? null : v })} />
-            {spike ? null : <ApplyAll onClick={() => applyToAll("curl")} disabled={z.curl == null} />}
+            {spike || z.curl == null ? null : <ApplyAll onClick={() => applyToAll("curl")} />}
           </div>
         </Field>
         <Field label="Thickness (mm)" hint={`Pick a common size or type one between ${LASH_THICKNESS_MIN} and ${LASH_THICKNESS_MAX}.`}>
@@ -166,13 +166,13 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
               className="w-24 tabular-nums"
               aria-label={`${label} custom thickness in millimetres`}
             />
-            {spike ? null : <ApplyAll onClick={() => applyToAll("thickness")} disabled={z.thickness == null} />}
+            {spike || z.thickness == null ? null : <ApplyAll onClick={() => applyToAll("thickness")} />}
           </div>
         </Field>
         <Field label="Type" hint="Classic, hybrid, or the fan size for volume.">
           <div className="flex flex-wrap items-center gap-2">
             <Chips options={LASH_TYPES.map((t) => ({ value: t, label: t }))} value={z.type ?? null} onChange={(v) => patch({ type: v === z.type ? null : v })} />
-            {spike ? null : <ApplyAll onClick={() => applyToAll("type")} disabled={!z.type} />}
+            {spike || !z.type ? null : <ApplyAll onClick={() => applyToAll("type")} />}
           </div>
         </Field>
         {spike ? null : (
@@ -207,6 +207,6 @@ function Chips({ options, value, onChange }: { options: { value: string; label: 
   );
 }
 
-function ApplyAll({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
-  return <button type="button" onClick={onClick} disabled={disabled} className="text-xs text-brand-700 hover:underline disabled:text-stone-400 disabled:no-underline">Use for all zones</button>;
+function ApplyAll({ onClick }: { onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="text-xs text-brand-700 hover:underline">Use for all zones</button>;
 }

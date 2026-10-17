@@ -25,7 +25,6 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
   const [flows, sms] = await Promise.all([listWorkflows(business), smsAvailableFor(business.id)]);
   const manage = can(permissions, "business.manage");
   const base = `/app/${slug}/marketing/automations`;
-  const usesSms = (steps: { type: string }[]) => steps.some((s) => s.type === "sms");
   return (
     <div className="space-y-8">
       <PageHeader title="Automations" />
@@ -58,7 +57,6 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
                   </div>
                   {w.description ? <p className="text-xs text-stone-500">{w.description}</p> : null}
                   <p className="mt-2 text-xs text-stone-700"><span className="font-medium">{triggerMeta(w.trigger).label}</span> → {summarizeSteps(w.steps) || "no steps"}</p>
-                  {!sms && usesSms(w.steps) ? <p className="mt-1 text-[11px] text-amber-700">Text steps skipped until a number is verified.</p> : null}
                   <p className="mt-2 text-[11px] text-stone-400">{w.sent30} sent in the last 30 days{w.active ? ` · ${w.active} in progress` : ""}{w.templateKey ? "" : " · custom"}</p>
                   {manage ? (
                     <div className={`mt-3 flex items-center gap-2 border-t border-stone-100 pt-3 ${rowControl}`}>

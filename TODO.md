@@ -364,6 +364,23 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       policy on Booking rules; overtime on Payroll; custom range and exports on Reports. The setup checklist is one
       line (expandable, hideable per device); Settings is a grouped directory with status chips and business basics
       moved to Business profile; staff pay shows only the fields for the chosen pay model.
+- [x] Clean-UI pass 2026-10-17 ("only what applies is on screen", rule added to DESIGN.md → Progressive disclosure), 65 files.
+      Sale page: one "Add to this ticket" chooser (product / service / gift card / package / membership; kinds with nothing
+      to offer are not listed), one Discount select (none / $ / % / promo code) that shows only that kind's fields, one
+      "Pay by" chooser (card on file / reader / typed, cash, gift card, store credit, points; only the methods this client can
+      use), refunds behind a "Refund…" button, note / late tip / goods-back as disclosures. Elsewhere: dependent fields
+      hidden until their switch is on (online booking, loyalty, store shipping, late-cancel fee type, overtime rule, time-off
+      custom hours, bookable-online, product retail/stock/supplier fields, membership sessions, service timing, promo
+      limits, campaign audience, EIN by business type, who-completes-a-form); feature-off / empty / permission-gated
+      controls hidden with at most one grey line and a link (Stripe, texting, store, referrals, suppliers, packages,
+      memberships, forms, exports, finalize, send campaign, delete role, status buttons, checkout on the visit); single-option
+      and empty selects replaced by hidden inputs or text; disabled-with-excuse buttons removed; public site: "Any provider"
+      only with 2+ providers, gift-card recipient fields behind "it's a gift", past visits on the manage page.
+      Left for a product decision: a `Radio` component (cancel-form deposit choice, store pick-up/ship still hand-written);
+      an inset `Disclosure` variant for panels inside a Card (client page, booking settings use hand-rolled details);
+      reopening a completed visit (every other status button still shows); skipping the provider step when one person
+      offers the service; the weekly-hours grid still greys out closed days' time boxes; Settings → Payments webhook card
+      is platform-operator text shown to every owner.
 - [ ] Work through `ENHANCEMENTS.md` (full page-by-page review, ~250 items, P1/P2/P3). P1s first: public
       `/api/files/[id]`, checkout refund/credit/discount math, reminders after cancellation, open redirect via
       `?next=`, role sync, waitlist/time-off UTC "today", client picker cap, calendar hours/overlap/drag validation,
