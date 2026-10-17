@@ -8,6 +8,7 @@ import { reconcileAllSubscriptions } from "@/server/billing";
 import { nudgeAbandonedSignups } from "@/server/onboarding-nudge";
 import { refreshPendingDomains } from "@/server/custom-domain";
 import { sweepOrphanDeposits } from "@/server/online-payments";
+import { sweepAuthorizedOrders } from "@/server/store";
 import { jobsAuthorized } from "@/lib/jobs-auth";
 import { sql } from "drizzle-orm";
 import { db, schema } from "@angelic/db";
@@ -40,16 +41,19 @@ export async function POST(req: Request) {
   const domains = await refreshPendingDomains().catch((e) => ({ checked: 0, active: 0, error: (e as Error).message }));
   // Deposits charged for a booking that was never saved (the client's page closed mid-way): refund them.
   const orphans = await sweepOrphanDeposits().catch((e) => ({ checked: 0, refunded: 0, failed: 1, error: (e as Error).message }));
+  // Online orders whose card was authorized but the buyer's page never came back: capture if the stock is still there, else release it.
+  // Before deliverDue, so the receipt and gift card emails of a captured order go out in this run.
+  const orders = await sweepAuthorizedOrders().catch((e) => ({ checked: 0, captured: 0, released: 0, abandoned: 0, failed: 1, error: (e as Error).message }));
   const r = await deliverDue();
   const v = await refreshPendingVerifications().catch((e) => ({ checked: 0, changed: 0, error: (e as Error).message }));
   const ms = Date.now() - started;
   // A step that failed is reported and makes the job answer 500, so the cron's `curl -f` notices instead of the job looking fine.
-  const failed = Object.entries({ workflows: a, workflowRuns: w, formsNudges: f, lowStock: inv, billing: bill, onboardingNudge: nudge, customDomains: domains, orphanDeposits: orphans, verifications: v })
+  const failed = Object.entries({ workflows: a, workflowRuns: w, formsNudges: f, lowStock: inv, billing: bill, onboardingNudge: nudge, customDomains: domains, orphanDeposits: orphans, authorizedOrders: orders, verifications: v })
     .filter(([, r]) => r && typeof r === "object" && "error" in r && (r as { error?: unknown }).error)
     .map(([k, r]) => `${k}: ${(r as { error: string }).error}`);
   if (failed.length) await reportError(`jobs/notifications: ${failed.length} step(s) failed`, undefined, { failed });
   console.log(`[jobs/notifications] processed=${r.processed} sent=${r.sent} failed=${r.failed} skipped=${r.skipped} workflowsStarted=${a.started} workflowsResumed=${w.resumed} formsNudges=${f.queued} lowStockEmails=${inv.sent} verifications=${v.checked}/${v.changed} in ${ms}ms`);
-  return NextResponse.json({ ...r, workflows: { ...a, ...w }, formsNudges: f, lowStock: inv, verifications: v, billing: bill, onboardingNudge: nudge, customDomains: domains, orphanDeposits: orphans, failed, ms }, { status: failed.length ? 500 : 200 });
+  return NextResponse.json({ ...r, workflows: { ...a, ...w }, formsNudges: f, lowStock: inv, verifications: v, billing: bill, onboardingNudge: nudge, customDomains: domains, orphanDeposits: orphans, authorizedOrders: orders, failed, ms }, { status: failed.length ? 500 : 200 });
 }
 
 /** Claim today's run of a once-a-day job (UTC day). True for exactly one caller per day, however many runs or instances there are. */

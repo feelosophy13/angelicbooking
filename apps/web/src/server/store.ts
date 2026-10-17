@@ -3,14 +3,21 @@
  * retail products for pickup or flat-rate shipping. An order is a normal sale
  * (source "online") paid with a PaymentIntent on the business's Stripe
  * account; closing it issues the gift card and emails the buyer.
+ *
+ * The card is authorized first and captured only once the stock is checked again
+ * (capture_method "manual"): a buyer who pays after their cart hold ran out, while
+ * the last one was sold, is never charged; the authorization is released and the
+ * order voided instead. A page closed after authorizing is settled by
+ * sweepAuthorizedOrders (the 5-minute jobs run) with the same decision.
  */
+import type Stripe from "stripe";
 import { after } from "next/server";
 import { browserStripe } from "@/lib/stripe-demo";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { and, asc, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
-import { stripe, appUrl } from "@/lib/stripe";
+import { stripe, appUrl, isStripeConfigured } from "@/lib/stripe";
 import { platformFeeBpsFor } from "./price-book";
 import { paymentContextFor, paymentContextForSale } from "./locations";
 import { ensureStripeCustomer } from "./stripe-connect";
@@ -129,7 +136,8 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
   try {
     const customer = client ? await ensureStripeCustomer({ accountId, businessId: business.id, client }) : undefined;
     const pi = await stripe().paymentIntents.create(
-      { amount: total, currency: business.currency, customer, allowed_payment_method_types: ["card"], description: `Order #${sale.number} · ${pay.name}`, receipt_email: input.buyer.email, metadata: { businessId: business.id, saleId: sale.id, paymentId: pending.id, kind: "order" }, ...(fee > 0 ? { application_fee_amount: fee } : {}) },
+      // Authorize only: the card is captured in finishOrder (or the sweep) once the stock is checked again.
+      { amount: total, currency: business.currency, customer, capture_method: "manual", allowed_payment_method_types: ["card"], description: `Order #${sale.number} · ${pay.name}`, receipt_email: input.buyer.email, metadata: { businessId: business.id, saleId: sale.id, paymentId: pending.id, kind: "order" }, ...(fee > 0 ? { application_fee_amount: fee } : {}) },
       { stripeAccount: accountId, idempotencyKey: `order_${pending.id}` },
     );
     await withTenant(business.id, (tx) => tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending.id)));
@@ -145,17 +153,165 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
   }
 }
 
-/** The browser confirmed the PaymentIntent: verify with Stripe, close the sale, email the buyer (and gift recipient). */
+/**
+ * The browser confirmed (authorized) the PaymentIntent: verify it with Stripe, capture it if the stock is still there and close the sale,
+ * email the buyer (and gift recipient). Sold out meanwhile: the authorization is released, the order voided, and the buyer told why.
+ */
 export async function finishOrder(business: PublicBusiness, saleId: string, paymentIntentId: string) {
   const accountId = (await paymentContextForSale(business, saleId)).accountId;
   if (!accountId) throw new StoreError("Payments aren't set up.");
   const pi = await stripe().paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] }, { stripeAccount: accountId });
   if (pi.metadata.saleId !== saleId || pi.metadata.businessId !== business.id) throw new StoreError("That payment doesn't match this order.");
-  if (pi.status !== "succeeded") throw new StoreError(`Payment ${pi.status.replace(/_/g, " ")}.`);
-  const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
-  await markCardPaymentSucceeded({ businessId: business.id, paymentIntentId: pi.id, chargeId: charge?.id ?? null, card: { brand: charge?.payment_method_details?.card?.brand ?? null, last4: charge?.payment_method_details?.card?.last4 ?? null }, taxRateBps: business.taxRateBps });
+  const out = await settleOrderPayment(business, saleId, pi, accountId);
+  if (out.status === "released") throw new StoreError(out.message);
   after(() => sendOrderEmailsOnce(business.id, saleId).catch((e) => console.error("[store] order emails failed", saleId, (e as Error).message)));
   return getOrder(business.id, saleId);
+}
+
+export type OrderSettlement = { status: "paid" } | { status: "released"; message: string };
+
+const NOT_CHARGED = "Your card wasn't charged.";
+const CANCELED = `The payment was canceled, so the order didn't go through. ${NOT_CHARGED}`;
+
+/**
+ * Settle an order's PaymentIntent.
+ * - Authorized (requires_capture): every product line is checked against what is left at the order's location (products locked, this
+ *   order's own hold left out). All there: capture, then close the sale. Something short: cancel (the authorization is released, nothing
+ *   is charged) and void the order.
+ * - Already captured: close the sale. Canceled: void the order. Anything else (not paid yet): an error.
+ * Stripe is called with no transaction open. Safe for the browser and the sweep to run at once on the same order: capture and cancel are
+ * idempotent per PaymentIntent, and when the other one got there first we follow what Stripe says happened.
+ */
+export async function settleOrderPayment(business: PublicBusiness, saleId: string, pi: Stripe.PaymentIntent, accountId: string): Promise<OrderSettlement> {
+  if (pi.status === "succeeded") return closePaidOrder(business, pi);
+  if (pi.status === "canceled") return voidOrder(business.id, saleId, pi.id, CANCELED);
+  if (pi.status !== "requires_capture") throw new StoreError(`Payment ${pi.status.replace(/_/g, " ")}.`);
+  const shortfall = await withTenant(business.id, async (tx) => {
+    const [sale] = await tx.select().from(schema.sales).where(eq(schema.sales.id, saleId)).for("update");
+    if (!sale) throw new StoreError("Order not found.");
+    if (sale.status === "void") return `This order was canceled. ${NOT_CHARGED}`;
+    if (sale.status !== "open") return null;
+    const lines = await tx.select().from(schema.saleLines).where(and(eq(schema.saleLines.saleId, saleId), eq(schema.saleLines.kind, "product"), isNotNull(schema.saleLines.productId)));
+    const wanted = new Map<string, { qty: number; name: string }>();
+    for (const l of lines) wanted.set(l.productId!, { qty: (wanted.get(l.productId!)?.qty ?? 0) + l.quantity, name: l.name });
+    // Locked: a concurrent order (or a second settle of this one) queues behind this check.
+    const available = await onlineAvailability(tx, sale.locationId, [...wanted.keys()], { lock: true, excludeSaleId: saleId });
+    for (const [productId, w] of wanted) {
+      const left = available.get(productId);
+      if (left != null && left < w.qty) return left <= 0 ? `${w.name} just sold out, so the order didn't go through. ${NOT_CHARGED}` : `Only ${left} of ${w.name} left, so the order didn't go through. ${NOT_CHARGED}`;
+    }
+    return null;
+  });
+  const opts = (op: "capture" | "cancel") => ({ stripeAccount: accountId, idempotencyKey: `order_${op}_${pi.id}` });
+  if (!shortfall) {
+    const done = await stripe().paymentIntents.capture(pi.id, { expand: ["latest_charge"] }, opts("capture")).catch((e) => settledInStripe(pi.id, accountId, e));
+    if (done.status === "canceled") return voidOrder(business.id, saleId, pi.id, CANCELED);
+    if (done.status !== "succeeded") throw new StoreError(`Payment ${done.status.replace(/_/g, " ")}.`);
+    return closePaidOrder(business, done);
+  }
+  const done = await stripe().paymentIntents.cancel(pi.id, {}, opts("cancel")).catch((e) => settledInStripe(pi.id, accountId, e));
+  // Captured first by the other settle: the money was taken, so the sale is recorded rather than lost.
+  if (done.status === "succeeded") return closePaidOrder(business, done);
+  return voidOrder(business.id, saleId, pi.id, shortfall);
+}
+
+/** After a capture or cancel failed: the PaymentIntent if it is already captured or canceled (someone else settled it), else the error. */
+async function settledInStripe(paymentIntentId: string, accountId: string, e: unknown): Promise<Stripe.PaymentIntent> {
+  const fresh = await stripe().paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] }, { stripeAccount: accountId });
+  if (fresh.status === "succeeded" || fresh.status === "canceled") return fresh;
+  throw e;
+}
+
+async function closePaidOrder(business: PublicBusiness, pi: Stripe.PaymentIntent): Promise<OrderSettlement> {
+  const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
+  await markCardPaymentSucceeded({
+    businessId: business.id,
+    paymentIntentId: pi.id,
+    chargeId: charge?.id ?? (typeof pi.latest_charge === "string" ? pi.latest_charge : null),
+    card: { brand: charge?.payment_method_details?.card?.brand ?? null, last4: charge?.payment_method_details?.card?.last4 ?? null },
+    taxRateBps: business.taxRateBps,
+    metadata: pi.metadata,
+  });
+  return { status: "paid" };
+}
+
+/** The card was never charged (authorization released, or canceled): fail the pending payment and void the order so it stops holding stock. */
+async function voidOrder(businessId: string, saleId: string, paymentIntentId: string, message: string): Promise<OrderSettlement> {
+  await withTenant(businessId, async (tx) => {
+    await tx.update(schema.payments).set({ status: "failed", note: message }).where(and(eq(schema.payments.saleId, saleId), eq(schema.payments.stripePaymentIntentId, paymentIntentId), inArray(schema.payments.status, ["pending", "failed"])));
+    const voided = await tx.update(schema.sales).set({ status: "void", closedAt: new Date() }).where(and(eq(schema.sales.id, saleId), eq(schema.sales.status, "open"))).returning({ id: schema.sales.id });
+    if (voided.length) await tx.insert(schema.auditLog).values({ businessId, actorUserId: null, action: "order.released", entity: "sale", entityId: saleId, diff: JSON.stringify({ paymentIntentId, why: message }) });
+  });
+  return { status: "released", message };
+}
+
+/** An order authorized and still open this long after checkout started: the buyer's page didn't come back, so the sweep settles it. */
+export const ORDER_SETTLE_AFTER_MINUTES = 15;
+/** An order never paid this long after checkout started is abandoned: its PaymentIntent is canceled and the order voided. */
+export const ORDER_ABANDONED_AFTER_HOURS = 24;
+
+/**
+ * Settle online orders whose buyer authorized the card but never came back (capture if the stock is still there, else release the
+ * authorization), and close out abandoned ones so they aren't looked at again. Businesses with the store or online gift cards on, up to 50
+ * orders each per run. Called by the 5-minute jobs run.
+ */
+export async function sweepAuthorizedOrders(opts: { businessIds?: string[] } = {}): Promise<{ checked: number; captured: number; released: number; abandoned: number; failed: number }> {
+  const out = { checked: 0, captured: 0, released: 0, abandoned: 0, failed: 0 };
+  if (!isStripeConfigured()) return out;
+  const businesses = await db
+    .select()
+    .from(schema.businesses)
+    .where(and(or(eq(schema.businesses.storeEnabled, true), eq(schema.businesses.giftCardsOnline, true)), opts.businessIds ? inArray(schema.businesses.id, opts.businessIds) : sql`true`));
+  const settleBefore = new Date(Date.now() - ORDER_SETTLE_AFTER_MINUTES * 60_000);
+  const abandonedBefore = new Date(Date.now() - ORDER_ABANDONED_AFTER_HOURS * 3_600_000);
+  // An authorization lasts about 7 days; older orders are left alone.
+  const since = new Date(Date.now() - 8 * 86_400_000);
+  for (const business of businesses) {
+    const rows = await withTenant(business.id, (tx) =>
+      tx
+        .select({ saleId: schema.sales.id, createdAt: schema.sales.createdAt, paymentIntentId: schema.payments.stripePaymentIntentId, accountId: schema.payments.stripeAccountId })
+        .from(schema.sales)
+        .innerJoin(schema.payments, eq(schema.payments.saleId, schema.sales.id))
+        .where(and(eq(schema.sales.source, "online"), eq(schema.sales.status, "open"), eq(schema.payments.method, "card"), inArray(schema.payments.status, ["pending", "failed"]), isNotNull(schema.payments.stripePaymentIntentId), isNotNull(schema.payments.stripeAccountId), lt(schema.sales.createdAt, settleBefore), gte(schema.sales.createdAt, since)))
+        .orderBy(asc(schema.sales.createdAt))
+        .limit(50),
+    );
+    for (const r of rows) {
+      out.checked++;
+      const accountId = r.accountId!;
+      try {
+        let pi = await stripe().paymentIntents.retrieve(r.paymentIntentId!, { expand: ["latest_charge"] }, { stripeAccount: accountId });
+        if (pi.metadata?.saleId !== r.saleId || pi.metadata?.businessId !== business.id) continue;
+        if (!["requires_capture", "succeeded", "canceled"].includes(pi.status)) {
+          if (r.createdAt >= abandonedBefore) continue; // The buyer may still be paying.
+          // Never paid: cancel it so it can't be paid later without a stock check. (Paid at the last moment: settled below like any other.)
+          pi = await stripe()
+            .paymentIntents.cancel(pi.id, {}, { stripeAccount: accountId, idempotencyKey: `order_cancel_${pi.id}` })
+            .catch(async (e) => {
+              const fresh = await stripe().paymentIntents.retrieve(pi.id, { expand: ["latest_charge"] }, { stripeAccount: accountId });
+              if (["requires_capture", "succeeded", "canceled"].includes(fresh.status)) return fresh;
+              throw e;
+            });
+          if (pi.status === "canceled") {
+            await voidOrder(business.id, r.saleId, pi.id, `Checkout was never finished. ${NOT_CHARGED}`);
+            out.abandoned++;
+            continue;
+          }
+        }
+        const s = await settleOrderPayment(business, r.saleId, pi, accountId);
+        if (s.status === "released") {
+          out.released++;
+          continue;
+        }
+        out.captured++;
+        await sendOrderEmailsOnce(business.id, r.saleId).catch((e) => console.error("[store] order emails failed", r.saleId, (e as Error).message));
+      } catch (e) {
+        out.failed++;
+        console.error("[store] settling order failed", r.saleId, (e as Error).message);
+      }
+    }
+  }
+  return out;
 }
 
 /** Unguessable key that lets the buyer (and only the buyer) open the order page; it is never emailed or stored. */

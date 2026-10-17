@@ -253,9 +253,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (422). Online bookings save the cancellation policy the client saw ("By booking, you agree to this policy"), when, and from which
       address; staff see it on the appointment as "Cancellation policy agreed". A class blocks its service's cleanup time; a 24:00 close
       ends at midnight (no lost last slot). Tests: core `payroll.test.ts` and `availability.test.ts`, `booking-guards`, API scope tests.
+- [x] 2026-10-17: online store orders authorize, then capture only if the stock is still there (`capture_method: manual`). Sold out
+      meanwhile: the authorization is released, the order voided and the buyer told their card wasn't charged. Orders whose page closed
+      after authorizing are settled by the 5-minute jobs run after 15 minutes (`sweepAuthorizedOrders`); checkouts never paid are
+      canceled and voided after 24 hours. The 60-minute cart hold stays. Test: `store-capture` (Stripe mocked; not yet run against real
+      Stripe, see the store item under end-to-end tests).
 - [ ] Still open from the review (2026-10-17 audit), highest impact first: overtime should default on for hourly staff (and bonuses entered
-      as adjustments count in the overtime rate); store orders could authorize then capture only if stock remains (instead of a time
-      hold); dragging a multi-service visit moves only the dragged service; online booking picks the time before add-ons; no deliberate
+      as adjustments count in the overtime rate); dragging a multi-service visit moves only the dragged service; online booking picks the time before add-ons; no deliberate
       double-booking (`allowOverlap` unused) or warning when time off covers bookings; audit gaps (clock PIN, payroll export, settings,
       domains; no audit filters); catalog small items (bulk blank cost saves $0, `applyCount` overwrites sales during a count, flat
       deposit above price accepted, category/supplier ids unchecked); custom-domain salons get app.angelicbooking.com links in emails;
@@ -948,7 +952,8 @@ runs several salons on separate accounts.
 - [ ] Online deposit + card on file at booking (test cards on a connected test account), including the
       automatic refund when a slot is taken after the charge and the refund on online cancellation.
 - [ ] Online store and gift card purchase (`/book/<slug>/shop`, `/book/<slug>/gift`): pay, order email,
-      gift card email, pickup status on the sale page.
+      gift card email, pickup status on the sale page. Includes authorize-then-capture: the card shows as authorized, the capture
+      happens on return, sold out after authorizing releases it (no charge), and a closed page is captured by the jobs run.
 - [ ] Membership auto-renew: subscription created on the connected account, renewal invoice → period
       extended + sale recorded, failed invoice → paused.
 - [ ] Inbound texts and STOP/START with a verified toll-free number.

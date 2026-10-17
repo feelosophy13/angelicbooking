@@ -65,6 +65,13 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<"processed
         }
         break;
       }
+      case "payment_intent.amount_capturable_updated": {
+        // An online order's card was authorized (capture_method "manual"). Nothing is closed on an authorization: the order is captured
+        // only after the stock is checked again (finishOrder, or sweepAuthorizedOrders if the buyer's page closed), and the sale closes
+        // on payment_intent.succeeded above.
+        outcome = "ignored";
+        break;
+      }
       case "payment_intent.payment_failed": {
         const pi = event.data.object;
         if (business) {
