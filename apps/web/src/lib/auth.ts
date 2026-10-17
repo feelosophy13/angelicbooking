@@ -1,4 +1,4 @@
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { verifyTurnstile } from "./turnstile";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -40,6 +40,30 @@ async function assertMayManageMembers(organizationId: string, userId: string | n
   const perms = await permissionsForRole(organizationId, membership.role);
   if (!perms.has("members.manage")) throw new APIError("FORBIDDEN", { message: "Your role can't manage team members." });
 }
+
+/**
+ * Mobile app origin. The Expo client (`@better-auth/expo/client`) keeps the session cookie and
+ * sends it back with an `expo-origin` header (`angelic://` in a store build), but React Native's
+ * fetch sends no Origin. Better Auth rejects any POST that carries a cookie and no Origin
+ * (MISSING_OR_NULL_ORIGIN), so without this the app signs in once but sign-out, and signing in
+ * again with a stale cookie, get a 403. This is the same request rewrite the official `expo()`
+ * server plugin from `@better-auth/expo` does; that package is only installed for apps/mobile, and
+ * the app signs in with email only, so the plugin's OAuth-redirect hook isn't needed. Browsers
+ * always send Origin on a cross-origin POST, so this never applies to them, and the copied value
+ * is still checked against trustedOrigins. The `/api/mobile/*` routes (mobile-auth.ts) read the
+ * session server-side and are not origin-checked.
+ */
+const expoOrigin = {
+  id: "expo-origin",
+  async onRequest(request) {
+    if (request.headers.get("origin")) return;
+    const origin = request.headers.get("expo-origin");
+    if (!origin) return;
+    const headers = new Headers(request.headers);
+    headers.set("origin", origin);
+    return { request: new Request(request, { headers }) };
+  },
+} satisfies BetterAuthPlugin;
 
 /**
  * Better Auth owns users, sessions, organizations and memberships.
@@ -240,7 +264,8 @@ export const auth = betterAuth({
       },
     }),
     twoFactor({ issuer: "Angelic Booking" }),
-    bearer(), // mobile: Authorization: Bearer <session token>
+    bearer(), // API clients may send Authorization: Bearer <session token>
+    expoOrigin, // mobile app: see above
     nextCookies(), // must be last
   ],
 });
