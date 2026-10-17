@@ -261,12 +261,15 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       deleted only after the save; a count keeps what sold while it was being taken (the sheet and scanner send when counting began).
       `/suspended` has the support email (when set), "Your other businesses" and Sign out. Tests: `import-clients`, `catalog-fixes`,
       `custom-domain`.
+- [x] Review per-area batch 4, 2026-10-17: dragging a visit to a new time in the same column moves the whole visit (each service keeps its
+      place); dropping it in another stylist's column still hands over just that service. Adding time off or custom hours lists the booked
+      visits that now fall outside them ("Move or cancel them on the calendar"); the bookings are left alone. Activity log: settings saves
+      record what changed (business, booking policy and fees, tax, receipt, loyalty), plus custom domain add/remove, Stripe disconnect,
+      clock PIN set/clear (never the PIN) and payroll exports; the log filters by area and person (`lib/audit.ts`). Tests: `booking-guards`.
 - [ ] Still open from the review (2026-10-17 audit), highest impact first: bonuses entered as adjustments don't count in the overtime rate
-      (needs a "counts as pay" flag on adjustments); store orders could authorize then capture only if stock remains (instead of a time
-      hold); dragging a multi-service visit moves only the dragged service; online booking picks the time before add-ons; no deliberate
-      double-booking (`allowOverlap` unused) or warning when time off covers bookings; audit gaps (clock PIN, payroll export, settings,
-      domains; no audit filters); mobile `apiUrl` hard-coded, no Expo auth plugin, CI doesn't lint or gate deploys; no client merge /
-      duplicate warning.
+      (needs a "counts as pay" flag on adjustments, a migration); store orders could authorize then capture only if stock remains
+      (instead of a time hold); online booking picks the time before add-ons; no deliberate double-booking (`allowOverlap` unused);
+      mobile `apiUrl` hard-coded, no Expo auth plugin, CI doesn't lint or gate deploys; no client merge / duplicate warning.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done, including Resend pacing/per-tenant fairness, except the items listed as still open above.
       Next: the per-area lists in that file.
 

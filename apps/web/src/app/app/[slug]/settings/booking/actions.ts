@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
+import { auditEvent, auditSettings } from "@/lib/audit";
 import { f, formAction, FormError } from "@/lib/form";
 
 export const saveBookingSettings = formAction(
@@ -31,9 +32,7 @@ export const saveBookingSettings = formAction(
     if (d.lateCancelFeeType !== "none" && (!Number.isFinite(raw) || raw <= 0)) throw new FormError(d.lateCancelFeeType === "flat" ? "Enter the fee amount" : "Enter the percent", "lateCancelFeeValue");
     if (d.lateCancelFeeType === "percent" && raw > 100) throw new FormError("At most 100%", "lateCancelFeeValue");
     const lateCancelFeeValue = d.lateCancelFeeType === "flat" ? Math.round(raw * 100) : d.lateCancelFeeType === "percent" ? Math.round(raw * 100) : 0;
-    await db
-      .update(schema.businesses)
-      .set({
+    const patch = {
         lateCancelFeeType: d.lateCancelFeeType,
         lateCancelFeeValue,
         lateCancelDeposit: d.lateCancelDeposit,
@@ -49,8 +48,9 @@ export const saveBookingSettings = formAction(
         depositRefundAs: d.depositRefundAs,
         bookingPolicy: d.bookingPolicy,
         addressLine: d.addressLine,
-      })
-      .where(eq(schema.businesses.id, ctx.business.id));
+      };
+    await db.update(schema.businesses).set(patch).where(eq(schema.businesses.id, ctx.business.id));
+    await auditSettings(ctx.business, ctx.user.id, "booking", patch);
     revalidatePath(`/app/${d.slug}/settings/booking`);
     return "Booking settings saved";
   },

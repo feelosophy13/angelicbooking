@@ -7,6 +7,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { disconnectConnectAccount, startConnectOnboarding, syncConnectAccount } from "@/server/stripe-connect";
 import { f, formAction } from "@/lib/form";
+import { auditEvent, auditSettings } from "@/lib/audit";
 import { setFlash } from "@/lib/flash";
 
 /** `locationId` in the form means "this location's own account"; absent means the business's main account. */
@@ -36,23 +37,26 @@ export async function refreshStripe(formData: FormData) {
 
 export async function disconnectStripe(formData: FormData) {
   const slug = String(formData.get("slug"));
-  const { business } = await requireAction(slug, "business.manage");
+  const { business, user } = await requireAction(slug, "business.manage");
   const location = await locationFrom(business.id, formData);
   await disconnectConnectAccount(business.id, location?.id);
+  await auditEvent(business.id, user.id, "settings.stripe_disconnect", location ? "location" : "business", location?.id ?? business.id);
   await setFlash(location ? `${location.name} now uses the main Stripe account` : "Stripe account disconnected");
   revalidatePath(`/app/${slug}/settings/payments`);
 }
 
 export const saveTax = formAction(z.object({ slug: z.string(), taxPct: f.num(0, 30) }), async (d) => {
-  const { business } = await requireAction(d.slug, "business.manage");
+  const { business, user } = await requireAction(d.slug, "business.manage");
   await db.update(schema.businesses).set({ taxRateBps: Math.round(d.taxPct * 100) }).where(eq(schema.businesses.id, business.id));
+  await auditSettings(business, user.id, "tax", { taxRateBps: Math.round(d.taxPct * 100) });
   revalidatePath(`/app/${d.slug}/settings/payments`);
   return "Tax rate saved";
 });
 
 export const saveReceiptFooter = formAction(z.object({ slug: z.string(), footer: z.string().max(400).optional() }), async (d) => {
-  const { business } = await requireAction(d.slug, "business.manage");
+  const { business, user } = await requireAction(d.slug, "business.manage");
   await db.update(schema.businesses).set({ receiptFooter: d.footer?.trim() || null }).where(eq(schema.businesses.id, business.id));
+  await auditSettings(business, user.id, "receipt", { receiptFooter: d.footer?.trim() || null });
   revalidatePath(`/app/${d.slug}/settings/payments`);
   return "Receipt footer saved";
 });

@@ -5,11 +5,12 @@ import { defaultPeriod, runPayroll } from "@/server/payroll";
 import { buildPayrollWorkbook, buildW2Workbook } from "@/server/payroll-xlsx";
 import { formatDateLong } from "@/lib/utils";
 import { eq } from "drizzle-orm";
+import { auditEvent } from "@/lib/audit";
 import { schema, withTenant } from "@angelic/db";
 
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "payroll.view");
+  const { business, user } = await requireAction(slug, "payroll.view");
   const url = new URL(req.url);
   const today = instantToISODate(new Date(), business.timezone);
   const isDate = (s: string | null) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -23,6 +24,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const locationName = locationId ? (await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId), columns: { name: true } })))?.name : null;
   const periodLabel = `${formatDateLong(start)} - ${formatDateLong(end)}${locationName ? ` - ${locationName}` : ""}`;
   const buf = kind === "w2" ? await buildW2Workbook(result, { salon: business.name, periodLabel }) : await buildPayrollWorkbook(result, { salon: business.name, periodLabel });
+  // Pay sheets carry everyone's pay: note who downloaded which.
+  await auditEvent(business.id, user.id, "payroll.export", "payroll", `${start}_${end}`, { kind, overtime, locationId });
   const name = `${start.replace(/-/g, "")}_${end.replace(/-/g, "")}_${kind === "w2" ? "W2_Summary" : business.slug}.xlsx`;
   return new NextResponse(new Uint8Array(buf), {
     headers: {

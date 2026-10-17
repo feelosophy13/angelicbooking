@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
+import { auditEvent, auditSettings } from "@/lib/audit";
 import { f, formAction } from "@/lib/form";
 
 export const saveLoyaltySettings = formAction(
@@ -24,6 +25,7 @@ export const saveLoyaltySettings = formAction(
       .set({ loyaltyEnabled: d.loyaltyEnabled, loyaltyPointsPerDollar: d.loyaltyPointsPerDollar, loyaltyPointsPerVisit: d.loyaltyPointsPerVisit, loyaltyPointValueCents: d.loyaltyPointValueCents, loyaltyMinRedeemPoints: d.loyaltyMinRedeemPoints, referralBonusPoints: d.referralBonusPoints, referralFriendBonusPoints: d.referralFriendBonusPoints })
       .where(eq(schema.businesses.id, ctx.business.id));
     revalidatePath(`/app/${d.slug}/settings/loyalty`);
+    await auditSettings(ctx.business, ctx.user.id, "loyalty", { loyaltyEnabled: d.loyaltyEnabled, loyaltyPointsPerDollar: d.loyaltyPointsPerDollar, loyaltyPointsPerVisit: d.loyaltyPointsPerVisit, loyaltyPointValueCents: d.loyaltyPointValueCents, loyaltyMinRedeemPoints: d.loyaltyMinRedeemPoints, referralBonusPoints: d.referralBonusPoints, referralFriendBonusPoints: d.referralFriendBonusPoints });
     return "Loyalty settings saved";
   },
 );

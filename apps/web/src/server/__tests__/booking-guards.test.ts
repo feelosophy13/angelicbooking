@@ -10,7 +10,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
 import { joinWaitlist, WAITLIST_CAP } from "@/server/public-booking";
-import { bookAppointment, rescheduleService } from "@/server/booking";
+import { bookAppointment, rescheduleService, visitsOutsideHours } from "@/server/booking";
 import { createSeries } from "@/server/series";
 import { policySnapshot } from "@/lib/policy-text";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
@@ -96,5 +96,14 @@ describe.skipIf(!up)("booking guards", () => {
     const a = (await withTenant(kit.A, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId) })))!;
     expect(a.policyText).toBe("You can cancel or reschedule online up to 24 hours before. Cancellations inside that window carry a fee of $25.00. Please arrive on time.");
     expect([!!a.policyAcceptedAt, a.policyAcceptedIp]).toEqual([true, "203.0.113.7"]);
+  });
+
+  it("finds the booked visits that new time off or shorter hours would cover", async () => {
+    await bookAppointment({ businessId: kit.A, clientId, serviceId: cut, staffId, startAt: at(13, "09:00"), createdByUserId: userId });
+    await bookAppointment({ businessId: kit.A, clientId, serviceId: cut, staffId, startAt: at(13, "16:00"), createdByUserId: userId });
+    const day = instantToISODate(at(13, "12:00"), tz);
+    expect((await visitsOutsideHours({ businessId: kit.A, staffId, dates: [day], timeZone: tz, off: true })).length).toBe(2);
+    const late = await visitsOutsideHours({ businessId: kit.A, staffId, dates: [day], timeZone: tz, off: false, start: "08:00", end: "14:00" });
+    expect(late.map((v) => v.time)).toEqual(["16:00"]);
   });
 });

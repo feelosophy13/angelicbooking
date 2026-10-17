@@ -5,7 +5,7 @@ import { z } from "zod";
 import { schema } from "@angelic/db";
 import { requireAction, requireBusiness } from "@/lib/tenant";
 import { modeForKind, requireAppointmentAccess } from "@/server/appointment-access";
-import { BookingError, rescheduleService, setAppointmentStatus } from "@/server/booking";
+import { BookingError, rescheduleAppointment, rescheduleService, setAppointmentStatus } from "@/server/booking";
 import { notifyAppointment } from "@/lib/notify";
 import { triggerAppointmentWorkflows } from "@/server/workflows";
 import { schema as dbSchema, withTenant } from "@angelic/db";
@@ -52,13 +52,25 @@ export async function moveAppointmentItem(input: {
   const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, await modeForKind(bizId, itemRow.appointmentId, "change"));
   if (ctx.access === "own" && parsed.data.newStaffId && parsed.data.newStaffId !== ctx.staffId) return { ok: false, error: "You can only move your own appointments to your own column." };
   try {
-    await rescheduleService({
-      businessId: ctx.business.id,
-      itemId: parsed.data.itemId,
-      newStartAt: new Date(parsed.data.newStartISO),
-      newStaffId: parsed.data.newStaffId ?? null,
-      actorUserId: ctx.user.id,
-    });
+    const newStartAt = new Date(parsed.data.newStartISO);
+    // A visit with several services moves as one when it is dragged to a new time in the same column (each service keeps its place
+    // relative to the others). Dropping it in another stylist's column hands over just that service.
+    const items = await withTenant(ctx.business.id, (tx) => tx.select().from(dbSchema.appointmentItems).where(eq(dbSchema.appointmentItems.appointmentId, itemRow.appointmentId)));
+    const live = items.filter((i) => i.status !== "cancelled" && i.status !== "completed" && i.status !== "no_show");
+    const dragged = live.find((i) => i.id === parsed.data.itemId);
+    const sameColumn = !parsed.data.newStaffId || parsed.data.newStaffId === dragged?.staffId;
+    if (dragged && sameColumn && live.length > 1 && !dragged.classSessionId) {
+      const first = live.reduce((a, b) => (a.startAt < b.startAt ? a : b));
+      await rescheduleAppointment({ businessId: ctx.business.id, appointmentId: itemRow.appointmentId, newStartAt: new Date(newStartAt.getTime() - (dragged.startAt.getTime() - first.startAt.getTime())), actorUserId: ctx.user.id });
+    } else {
+      await rescheduleService({
+        businessId: ctx.business.id,
+        itemId: parsed.data.itemId,
+        newStartAt,
+        newStaffId: parsed.data.newStaffId ?? null,
+        actorUserId: ctx.user.id,
+      });
+    }
     const item = await withTenant(ctx.business.id, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId) }));
     if (item) await notifyAppointment(ctx.business, item.appointmentId, "rescheduled");
   } catch (e) {

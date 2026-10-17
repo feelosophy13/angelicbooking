@@ -1,8 +1,9 @@
-import { and, eq, gt, lt, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
-import { buildBookingSegments, instantToISODate, isInsideCancelWindow, rowsForDate, weekdayOf } from "@angelic/core";
+import { buildBookingSegments, instantToISODate, instantToLocalTime, isInsideCancelWindow, rowsForDate, weekdayOf, zonedToInstant } from "@angelic/core";
 import { timingFor, withinWorkingBlocks, workingBlocksFor } from "./availability";
 import { refreshHomeLocation, serviceOfferedAt } from "./locations";
+import { shiftISODate } from "@/lib/utils";
 
 export class BookingError extends Error {}
 
@@ -522,4 +523,35 @@ export async function updateAppointmentNotes(businessId: string, appointmentId: 
     await tx.update(schema.appointments).set({ notes }).where(eq(schema.appointments.id, appointmentId));
     await audit(tx, businessId, actorUserId, "appointment.notes", appointmentId);
   });
+}
+
+/**
+ * Booked visits for a provider that fall outside new hours on these days: all of them for a day off, those outside start–end for custom
+ * hours. Used to warn when time off is added over bookings (the bookings themselves are left alone).
+ */
+export async function visitsOutsideHours(input: { businessId: string; staffId: string; dates: string[]; timeZone: string; off: boolean; start?: string | null; end?: string | null }): Promise<{ startAt: Date; date: string; time: string }[]> {
+  if (!input.dates.length) return [];
+  const sorted = [...input.dates].sort();
+  const from = zonedToInstant(sorted[0]!, "00:00", input.timeZone);
+  const to = zonedToInstant(shiftISODate(sorted.at(-1)!, 1), "00:00", input.timeZone);
+  const days = new Set(input.dates);
+  const rows = await withTenant(input.businessId, (tx) =>
+    tx
+      .select({ appointmentId: schema.appointmentItems.appointmentId, startAt: schema.appointmentItems.startAt, endAt: schema.appointmentItems.endAt })
+      .from(schema.appointmentItems)
+      .where(and(eq(schema.appointmentItems.staffId, input.staffId), inArray(schema.appointmentItems.status, ["booked", "confirmed", "checked_in"]), gte(schema.appointmentItems.startAt, from), lt(schema.appointmentItems.startAt, to))),
+  );
+  const seen = new Set<string>();
+  const out: { startAt: Date; date: string; time: string }[] = [];
+  for (const r of rows.sort((a, b) => a.startAt.getTime() - b.startAt.getTime())) {
+    const date = instantToISODate(r.startAt, input.timeZone);
+    if (!days.has(date) || seen.has(r.appointmentId)) continue;
+    const time = instantToLocalTime(r.startAt, input.timeZone);
+    const endTime = instantToLocalTime(r.endAt, input.timeZone);
+    const outside = input.off || (input.start && time < input.start) || (input.end && (endTime > input.end || endTime < time));
+    if (!outside) continue;
+    seen.add(r.appointmentId);
+    out.push({ startAt: r.startAt, date, time });
+  }
+  return out;
 }

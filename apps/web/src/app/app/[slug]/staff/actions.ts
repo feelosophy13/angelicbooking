@@ -18,6 +18,9 @@ import { ClockError, randomPin, setClockPin } from "@/server/time-clock";
 import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
 import { recordPayChange } from "@/server/pay-rates";
 import { applyStaffServices, parseMinutesField, parsePriceField, TermError } from "@/server/stylist-pricing";
+import { visitsOutsideHours } from "@/server/booking";
+import { tzFor } from "@/server/locations";
+import { auditEvent } from "@/lib/audit";
 import { PayrollLockedError } from "@/server/payroll-lock";
 
 const timeRe = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -106,10 +109,14 @@ export const updateStaffProfile = formAction(profileSchema, async (d, raw) => {
   );
   if (photoUrl !== undefined && current?.photoUrl) await deleteFileByUrl(current.photoUrl);
   for (const u of removedFiles) await deleteFileByUrl(u);
-  if (d.clearPin) await setClockPin(ctx.business.id, d.staffId, null);
-  else if (d.clockPin) {
+  if (d.clearPin) {
+    await setClockPin(ctx.business.id, d.staffId, null);
+    await auditEvent(ctx.business.id, ctx.user.id, "staff.clock_pin_clear", "staff", d.staffId);
+  } else if (d.clockPin) {
     try {
       await setClockPin(ctx.business.id, d.staffId, d.clockPin);
+      // Who set a PIN and when (never the PIN itself): a PIN lets someone clock in as that person.
+      await auditEvent(ctx.business.id, ctx.user.id, "staff.clock_pin_set", "staff", d.staffId);
     } catch (e) {
       if (e instanceof ClockError) throw new FormError(e.message, "clockPin");
       throw e;
@@ -129,6 +136,7 @@ export async function generateClockPin(formData: FormData) {
     const pin = randomPin();
     try {
       await setClockPin(ctx.business.id, staffId, pin);
+      await auditEvent(ctx.business.id, ctx.user.id, "staff.clock_pin_set", "staff", staffId, { generated: true });
       await setFlash(`Clock-in PIN is ${pin}. Write it down for them; it isn't shown again.`, "info");
       break;
     } catch (e) {
@@ -269,7 +277,16 @@ export const addOverride = formAction(overrideSchema, async (o) => {
   revalidatePath(`/app/${o.slug}/staff/${o.staffId}/time-off`);
   revalidatePath(`/app/${o.slug}/staff-hours`);
   const span = dates.length > 1 ? ` for ${dates.length} days` : "";
-  const message = o.kind === "off" ? `Time off added${span}` : `Custom hours added${span}`;
+  // The bookings themselves stay put: say which ones now fall outside the new hours, so someone can move or cancel them.
+  const staffLoc = await withTenant(ctx.business.id, async (tx) => {
+    const st = await tx.query.staff.findFirst({ where: eq(schema.staff.id, o.staffId), columns: { locationId: true } });
+    return st?.locationId ? tx.query.locations.findFirst({ where: eq(schema.locations.id, st.locationId) }) : null;
+  });
+  const tz = tzFor(ctx.business, staffLoc ?? null);
+  const clashes = await visitsOutsideHours({ businessId: ctx.business.id, staffId: o.staffId, dates, timeZone: tz, off: o.kind === "off", start: o.start, end: o.end });
+  const when = (c: { startAt: Date }) => new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: tz }).format(c.startAt);
+  const warning = clashes.length ? ` · ${clashes.length} booked visit${clashes.length === 1 ? " falls" : "s fall"} in this time (${clashes.slice(0, 3).map(when).join("; ")}${clashes.length > 3 ? "; …" : ""}). Move or cancel ${clashes.length === 1 ? "it" : "them"} on the calendar.` : "";
+  const message = (o.kind === "off" ? `Time off added${span}` : `Custom hours added${span}`) + warning;
   if (o.returnTo && o.returnTo.startsWith(`/app/${o.slug}/`)) {
     await setFlash(message);
     redirect(o.returnTo);

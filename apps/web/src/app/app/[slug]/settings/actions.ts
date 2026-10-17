@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db, schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { TIMEZONES } from "@/lib/utils";
+import { auditEvent, auditSettings } from "@/lib/audit";
 import { f, formAction } from "@/lib/form";
 
 export const updateBusiness = formAction(
@@ -22,6 +23,7 @@ export const updateBusiness = formAction(
       await tx.update(schema.businesses).set({ name: d.name, timezone: d.timezone, slotIntervalMin: d.slotIntervalMin, phone: d.phone, email: d.email }).where(eq(schema.businesses.id, ctx.business.id));
       await tx.update(schema.organization).set({ name: d.name }).where(eq(schema.organization.id, ctx.business.id));
     });
+    await auditSettings(ctx.business, ctx.user.id, "business", { name: d.name, timezone: d.timezone, slotIntervalMin: d.slotIntervalMin, phone: d.phone, email: d.email });
     revalidatePath(`/app/${d.slug}`, "layout");
     return "Settings saved";
   },
