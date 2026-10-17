@@ -2,55 +2,60 @@ import { formatLashThickness, formatLashType, LASH_LENGTH_MAX, sharedLashType, t
 import { cn } from "@/lib/utils";
 
 /**
- * An eye patch drawn as a crescent: the top edge is the lash line, the patch is cut into zones from the inner corner (left) to the outer
- * corner (right), and each zone shows its lashes at their length and thickness. Spikes sit on the dividers as one bold lash with their
+ * An eye patch drawn as a crescent, as the stylist sees it working from behind the client's head: the top edge is the lash line and the
+ * patch is cut into zones from the inner corner to the outer corner, each showing its lashes at their length and thickness. The inner
+ * corner is on the left (the right eye, or both eyes); `mirror` puts it on the right for the left eye. Spikes sit on the dividers as one bold lash with their
  * length above the lash line. Server-safe; the editor passes `selected`/`onSelect`, which also shows a + on each empty divider.
  */
 export type LashSelection = { kind: "zone" | "spike"; i: number };
 
 const W = 400;
 const H = 200;
-const TOP = { a: [24, 54], c: [200, 112], b: [376, 54] } as const; // lash line
-const BOTTOM = { a: [24, 54], c: [200, 304], b: [376, 54] } as const; // lower edge of the patch
+type Curve = { a: P; c: P; b: P };
+type Geo = { top: Curve; bottom: Curve; mirror: boolean };
+// t = 0 is the inner corner. Mirroring swaps the ends, so everything placed by t (zones, lashes, spikes, labels) flips with it.
+const GEO: Geo = { top: { a: [24, 54], c: [200, 112], b: [376, 54] }, bottom: { a: [24, 54], c: [200, 304], b: [376, 54] }, mirror: false };
+const GEO_MIRROR: Geo = { top: { a: GEO.top.b, c: GEO.top.c, b: GEO.top.a }, bottom: { a: GEO.bottom.b, c: GEO.bottom.c, b: GEO.bottom.a }, mirror: true };
 const DRAWN = 0.62; // the longest lash reaches this far down the patch
 
 type P = readonly [number, number];
-function bez(q: { a: P; c: P; b: P }, t: number): [number, number] {
+function bez(q: Curve, t: number): [number, number] {
   const u = 1 - t;
   return [u * u * q.a[0] + 2 * u * t * q.c[0] + t * t * q.b[0], u * u * q.a[1] + 2 * u * t * q.c[1] + t * t * q.b[1]];
 }
 const pt = (p: [number, number]) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`;
 const f1 = (v: number) => v.toFixed(1);
 
-function zonePath(i: number, n: number): string {
+function zonePath(g: Geo, i: number, n: number): string {
   const steps = 8;
   const top: string[] = [];
   const bottom: string[] = [];
   for (let s = 0; s <= steps; s++) {
     const t = (i + s / steps) / n;
-    top.push(pt(bez(TOP, t)));
-    bottom.unshift(pt(bez(BOTTOM, t)));
+    top.push(pt(bez(g.top, t)));
+    bottom.unshift(pt(bez(g.bottom, t)));
   }
   return `M${top.join(" L")} L${bottom.join(" L")} Z`;
 }
 
 /** A lash from the lash line at position t, drawn into the patch at its length and bent by its curl. */
-function lashPath(t: number, length: number, curl: string | null): string | null {
+function lashPath(g: Geo, t: number, length: number, curl: string | null): string | null {
   const frac = Math.min(1, length / (LASH_LENGTH_MAX + 2));
   if (!frac) return null;
-  const [x0, y0] = bez(TOP, t);
-  const [x1, y1] = bez(BOTTOM, t);
+  const [x0, y0] = bez(g.top, t);
+  const [x1, y1] = bez(g.bottom, t);
   const x2 = x0 + (x1 - x0) * frac * DRAWN;
   const y2 = y0 + (y1 - y0) * frac * DRAWN;
   // Curl bends the lash a little; tighter curls bend more.
-  const bend = curlBend(curl) * Math.hypot(x2 - x0, y2 - y0);
+  const bend = curlBend(curl) * Math.hypot(x2 - x0, y2 - y0) * (g.mirror ? -1 : 1);
   return `M${f1(x0)},${f1(y0)} Q${f1((x0 + x2) / 2 + bend)},${f1((y0 + y2) / 2)} ${f1(x2)},${f1(y2)}`;
 }
 
 /** Short type for the label under a zone ("3D", "Cl", "Hy") when zones don't all share one. */
 const typeShort = (t: string) => (t === "Classic" ? "Cl" : t === "Hybrid" ? "Hy" : t);
 
-export function LashMapDiagram({ zones, selected, onSelect, className }: { zones: LashZone[]; selected?: LashSelection | null; onSelect?: (s: LashSelection) => void; className?: string }) {
+export function LashMapDiagram({ zones, selected, onSelect, mirror = false, className }: { zones: LashZone[]; selected?: LashSelection | null; onSelect?: (s: LashSelection) => void; mirror?: boolean; className?: string }) {
+  const g = mirror ? GEO_MIRROR : GEO;
   const n = zones.length;
   const lashesPerZone = 6;
   const shared = sharedLashType(zones);
@@ -58,13 +63,13 @@ export function LashMapDiagram({ zones, selected, onSelect, className }: { zones
   return (
     <figure className={cn("w-full", className)}>
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full select-none" role="img" aria-label={`Lash map, ${n} zones from inner to outer corner`}>
-        <path d={`M${pt(bez(TOP, 0))} Q${TOP.c.join(",")} ${pt(bez(TOP, 1))} Q${BOTTOM.c.join(",")} ${pt(bez(BOTTOM, 0))} Z`} className="fill-stone-50 stroke-stone-300" strokeWidth={1.5} />
+        <path d={`M${pt(bez(g.top, 0))} Q${g.top.c.join(",")} ${pt(bez(g.top, 1))} Q${g.bottom.c.join(",")} ${pt(bez(g.bottom, 0))} Z`} className="fill-stone-50 stroke-stone-300" strokeWidth={1.5} />
         {zones.map((z, i) => {
           const active = isSel("zone", i);
           // Labels sit under the lash tips; the two corner zones are narrow at the tip, so theirs move toward the wider side.
           const mid = (i + (i === 0 ? 0.68 : i === n - 1 ? 0.32 : 0.5)) / n;
-          const [tx, ty] = bez(TOP, mid);
-          const [bx, by] = bez(BOTTOM, mid);
+          const [tx, ty] = bez(g.top, mid);
+          const [bx, by] = bez(g.bottom, mid);
           const k = i === 0 || i === n - 1 ? 0.5 : 0.52;
           const lx = tx + (bx - tx) * k;
           const ly = ty + (by - ty) * k;
@@ -72,9 +77,9 @@ export function LashMapDiagram({ zones, selected, onSelect, className }: { zones
           const second = [z.curl, z.thickness != null ? formatLashThickness(z.thickness) : null, !shared && z.type ? typeShort(z.type) : null].filter(Boolean).join(" ");
           return (
             <g key={i} onClick={onSelect ? () => onSelect({ kind: "zone", i }) : undefined} className={onSelect ? "cursor-pointer" : undefined}>
-              <path d={zonePath(i, n)} className={cn("stroke-stone-300 transition-colors", active ? "fill-brand-100" : "fill-transparent", onSelect && !active && "hover:fill-stone-100")} strokeWidth={1} />
+              <path d={zonePath(g, i, n)} className={cn("stroke-stone-300 transition-colors", active ? "fill-brand-100" : "fill-transparent", onSelect && !active && "hover:fill-stone-100")} strokeWidth={1} />
               {Array.from({ length: lashesPerZone }, (_, j) => {
-                const d = lashPath((i + (j + 0.5) / lashesPerZone) / n, z.length ?? 0, z.curl);
+                const d = lashPath(g, (i + (j + 0.5) / lashesPerZone) / n, z.length ?? 0, z.curl);
                 return d ? <path key={j} d={d} className="fill-none stroke-stone-700" strokeWidth={0.5 + (z.thickness ?? 0.07) * 8} strokeLinecap="round" opacity={0.6} /> : null;
               })}
               <text x={lx} y={ly} textAnchor="middle" className="pointer-events-none fill-stone-900 text-[15px] font-semibold tabular-nums" paintOrder="stroke" stroke="white" strokeWidth={4}>
@@ -91,11 +96,11 @@ export function LashMapDiagram({ zones, selected, onSelect, className }: { zones
         {/* Dividers: a spike is one bold lash on the line with its length above the lash line; in the editor an empty divider shows a +. */}
         {zones.slice(0, -1).map((z, i) => {
           const t = (i + 1) / n;
-          const [x0, y0] = bez(TOP, t);
+          const [x0, y0] = bez(g.top, t);
           const s = z.spike;
           if (!s && !onSelect) return null;
           const active = isSel("spike", i);
-          const d = s ? lashPath(t, s.length ?? 0, s.curl) : null;
+          const d = s ? lashPath(g, t, s.length ?? 0, s.curl) : null;
           return (
             <g key={`d${i}`} onClick={onSelect ? (e) => { e.stopPropagation(); onSelect({ kind: "spike", i }); } : undefined} className={onSelect ? "cursor-pointer" : undefined}>
               {onSelect ? <circle cx={x0} cy={y0 - 14} r={14} className="fill-transparent" /> : null}
@@ -114,8 +119,8 @@ export function LashMapDiagram({ zones, selected, onSelect, className }: { zones
             </g>
           );
         })}
-        <text x={20} y={22} className="fill-stone-500 text-[11px]">Inner corner</text>
-        <text x={W - 20} y={22} textAnchor="end" className="fill-stone-500 text-[11px]">Outer corner</text>
+        <text x={20} y={22} className="fill-stone-500 text-[11px]">{mirror ? "Outer corner" : "Inner corner"}</text>
+        <text x={W - 20} y={22} textAnchor="end" className="fill-stone-500 text-[11px]">{mirror ? "Inner corner" : "Outer corner"}</text>
       </svg>
       {shared ? <figcaption className="text-center text-xs text-stone-500">{formatLashType(shared)} throughout</figcaption> : null}
     </figure>
@@ -133,7 +138,10 @@ function curlBend(curl: string | null): number {
   }
 }
 
-/** A saved map for reading: one diagram for both eyes, or left above right when they differ (side by side they get too small to read). */
+/**
+ * A saved map for reading: one diagram for both eyes, or left above right when they differ (side by side they get too small to read),
+ * the left eye mirrored so each inner corner sits toward the nose.
+ */
 export function LashMapEyes({ zones, rightZones, className }: { zones: LashZone[]; rightZones: LashZone[] | null; className?: string }) {
   if (!rightZones) return <LashMapDiagram zones={zones} className={className} />;
   return (
@@ -141,7 +149,7 @@ export function LashMapEyes({ zones, rightZones, className }: { zones: LashZone[
       {([["Left eye", zones], ["Right eye", rightZones]] as const).map(([label, z]) => (
         <div key={label}>
           <p className="text-center text-xs font-medium text-stone-600">{label}</p>
-          <LashMapDiagram zones={z} />
+          <LashMapDiagram zones={z} mirror={label === "Left eye"} />
         </div>
       ))}
     </div>

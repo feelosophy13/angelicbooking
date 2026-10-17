@@ -63,7 +63,10 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
   const stepLength = (d: number) => patch({ length: Math.min(LASH_LENGTH_MAX, Math.max(LASH_LENGTH_MIN, (z.length ?? 10) + d)) });
   const isPreset = z.thickness != null && (LASH_THICKNESS_PRESETS as readonly number[]).includes(z.thickness);
   const spikeCount = zones.filter((x) => x.spike).length;
-  const sharedType = sharedLashType(zones);
+  const sharedType = sharedLashType(zones); // shown once under the diagram, so the chips leave it out
+  // The left eye is drawn mirrored (inner corner toward the nose), so the zone buttons and arrows under it run the same way.
+  const mirror = right != null && !onRight;
+  const order = mirror ? zones.map((_, i) => zones.length - 1 - i) : zones.map((_, i) => i);
   const toggleRight = (on: boolean) => {
     setRight(on ? left.map((x) => ({ ...x, spike: x.spike ? { ...x.spike } : null })) : null);
     setEye(on ? "right" : "left");
@@ -96,15 +99,16 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
       <datalist id="lash-style-ideas">{STYLE_IDEAS.map((s) => <option key={s} value={s} />)}</datalist>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Checkbox label="Right eye is set differently" hint={right ? undefined : "Starts as a copy of this map."} checked={right != null} onChange={(e) => toggleRight(e.target.checked)} />
+        <Checkbox label="Right eye is set differently" hint={right ? "Drawn as you see them from behind the client's head." : "Starts as a copy of this map."} checked={right != null} onChange={(e) => toggleRight(e.target.checked)} />
         {right ? <Chips options={[{ value: "left", label: "Left eye" }, { value: "right", label: "Right eye" }]} value={eye} onChange={(v) => switchEye(v as "left" | "right")} /> : null}
       </div>
 
       <div className="rounded-lg border border-stone-200 bg-white p-2">
         {right ? <p className="px-1 text-sm font-semibold text-stone-700">{onRight ? "Right eye" : "Left eye"}</p> : null}
-        <LashMapDiagram zones={zones} selected={sel} onSelect={select} />
+        <LashMapDiagram zones={zones} selected={sel} onSelect={select} mirror={mirror} />
         <ol className="mt-2 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${zones.length}, minmax(0, 1fr))` }}>
-          {zones.map((x, i) => {
+          {order.map((i) => {
+            const x = zones[i]!;
             const on = sel.kind === "zone" && sel.i === i;
             return (
               <li key={i}>
@@ -172,9 +176,9 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
           </div>
         </Field>
         {spike ? null : (
-          <div className="flex justify-between gap-2">
-            <button type="button" onClick={() => select({ kind: "zone", i: Math.max(0, sel.i - 1) })} disabled={sel.i === 0} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">← Zone {Math.max(1, sel.i)}</button>
-            <button type="button" onClick={() => select({ kind: "zone", i: Math.min(zones.length - 1, sel.i + 1) })} disabled={sel.i === zones.length - 1} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">Zone {Math.min(zones.length, sel.i + 2)} →</button>
+          <div className={cn("flex justify-between gap-2", mirror && "flex-row-reverse")}>
+            <button type="button" onClick={() => select({ kind: "zone", i: Math.max(0, sel.i - 1) })} disabled={sel.i === 0} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">{mirror ? `Zone ${Math.max(1, sel.i)} →` : `← Zone ${Math.max(1, sel.i)}`}</button>
+            <button type="button" onClick={() => select({ kind: "zone", i: Math.min(zones.length - 1, sel.i + 1) })} disabled={sel.i === zones.length - 1} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">{mirror ? `← Zone ${Math.min(zones.length, sel.i + 2)}` : `Zone ${Math.min(zones.length, sel.i + 2)} →`}</button>
           </div>
         )}
       </div>
