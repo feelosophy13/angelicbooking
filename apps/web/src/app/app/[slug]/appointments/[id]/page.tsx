@@ -29,7 +29,7 @@ import { listCancellationReasons } from "@/server/cancellation-reasons";
 import { CancelForm } from "./cancel-form";
 import { VisitPhotosCard, type PhotoGroup } from "./visit-photos-card";
 import { SuppliesCard } from "./supplies-card";
-import { LashMapDiagram } from "@/components/lash-map";
+import { LashMapEyes } from "@/components/lash-map";
 import { canWriteLashMaps, lashMapsFor } from "@/server/lash-maps";
 import { pairsForAppointment, photoTagsInUse } from "@/server/visit-photos";
 import { savedCardsFor } from "@/server/stripe-connect";
@@ -324,7 +324,7 @@ export default async function AppointmentPage({
               {lash.map ? (
                 <Link href={`/app/${slug}/clients/${client.id}/lash-maps/${lash.map.id}`} className="block rounded-lg hover:bg-stone-50">
                   <p className="text-sm">{lash.map.title} <span className="text-stone-500">· {fmtDay.format(lash.map.updatedAt)}</span></p>
-                  <LashMapDiagram zones={lash.map.zones} className="mx-auto max-w-md" />
+                  <LashMapEyes zones={lash.map.zones} rightZones={lash.map.rightZones} className="mx-auto max-w-2xl" />
                   {lash.map.notes ? <p className="whitespace-pre-line text-sm text-stone-700">{lash.map.notes}</p> : null}
                 </Link>
               ) : <p className="text-sm text-stone-500">No lash map yet. Record lengths, curls and thickness by zone so the next fill matches.</p>}

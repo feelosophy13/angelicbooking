@@ -1,6 +1,6 @@
 /**
- * Lash maps: how a stylist sets a client's lash extensions, zone by zone from the inner corner to the outer corner. One map applies to
- * both eyes (mirrored); anything asymmetric goes in the map's notes. A zone can also carry a spike: longer lashes on the divider after
+ * Lash maps: how a stylist sets a client's lash extensions, zone by zone from the inner corner to the outer corner. One map covers both
+ * eyes unless the right eye is set differently, when the map's zones are the left eye and `rightZones` the right. A zone can also carry a spike: longer lashes on the divider after
  * it (wispy and spiky styles), written on the line between two zones as printed lash maps do.
  */
 
@@ -90,20 +90,25 @@ function parseSet(o: Record<string, unknown>, label: string): LashSet {
   return { length, curl, thickness: thickness == null ? null : Math.round(thickness * 1000) / 1000, type };
 }
 
-/** Validate zones coming from a form (JSON). Throws LashMapError with a message a person can act on. */
-export function parseLashZones(raw: unknown): LashZone[] {
-  if (!Array.isArray(raw) || !(LASH_ZONE_COUNTS as readonly number[]).includes(raw.length)) throw new LashMapError("A lash map has 6 or 7 zones.");
+/**
+ * Validate zones coming from a form (JSON). Throws LashMapError with a message a person can act on. `eye` ("Left eye", "Right eye") prefixes
+ * the messages when the two eyes are mapped separately.
+ */
+export function parseLashZones(raw: unknown, eye?: string): LashZone[] {
+  const at = (label: string) => (eye ? `${eye}, ${label.charAt(0).toLowerCase()}${label.slice(1)}` : label);
+  if (!Array.isArray(raw) || !(LASH_ZONE_COUNTS as readonly number[]).includes(raw.length)) throw new LashMapError(`${eye ? `${eye}: a` : "A"} lash map has 6 or 7 zones.`);
   const zones = raw.map((z, i): LashZone => {
     const o = (z ?? {}) as Record<string, unknown>;
-    const set = parseSet(o, `Zone ${i + 1}`);
+    const set = parseSet(o, at(`Zone ${i + 1}`));
     let spike: LashSet | null = null;
     // The last zone has no divider after it, so a spike there is dropped rather than refused (the zone count may just have changed).
     if (i < raw.length - 1 && o.spike && typeof o.spike === "object") {
-      spike = parseSet(o.spike as Record<string, unknown>, `Spike between zones ${i + 1} and ${i + 2}`);
-      if (spike.length == null) throw new LashMapError(`Spike between zones ${i + 1} and ${i + 2}: give it a length, or remove it.`);
+      const label = at(`Spike between zones ${i + 1} and ${i + 2}`);
+      spike = parseSet(o.spike as Record<string, unknown>, label);
+      if (spike.length == null) throw new LashMapError(`${label}: give it a length, or remove it.`);
     }
     return { ...set, spike };
   });
-  if (zones.every((z) => isBlank(z) && !z.spike)) throw new LashMapError("Fill in at least one zone.");
+  if (zones.every((z) => isBlank(z) && !z.spike)) throw new LashMapError(eye ? `${eye}: fill in at least one zone.` : "Fill in at least one zone.");
   return zones;
 }

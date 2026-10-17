@@ -32,7 +32,7 @@ export default async function NewLashMapPage({ params, searchParams }: { params:
       <LashMapEditor
         slug={slug}
         clientId={clientId}
-        map={{ id: null, title: base?.title ?? "", notes: base?.notes ?? null, zones: base?.zones ?? starterLashZones(6) }}
+        map={{ id: null, title: base?.title ?? "", notes: base?.notes ?? null, zones: base?.zones ?? starterLashZones(6), rightZones: base?.rightZones ?? null }}
         appointmentId={visit?.id ?? null}
         returnTo={visit ? "appointment" : "client"}
         cancelHref={back.href}

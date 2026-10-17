@@ -132,3 +132,18 @@ function curlBend(curl: string | null): number {
     default: return 0.1;
   }
 }
+
+/** A saved map for reading: one diagram for both eyes, or left above right when they differ (side by side they get too small to read). */
+export function LashMapEyes({ zones, rightZones, className }: { zones: LashZone[]; rightZones: LashZone[] | null; className?: string }) {
+  if (!rightZones) return <LashMapDiagram zones={zones} className={className} />;
+  return (
+    <div className={cn("space-y-3", className)}>
+      {([["Left eye", zones], ["Right eye", rightZones]] as const).map(([label, z]) => (
+        <div key={label}>
+          <p className="text-center text-xs font-medium text-stone-600">{label}</p>
+          <LashMapDiagram zones={z} />
+        </div>
+      ))}
+    </div>
+  );
+}

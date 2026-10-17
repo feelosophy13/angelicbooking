@@ -20,13 +20,16 @@ const saveSchema = z.object({
   title: f.text(1, 80),
   notes: f.optional(2000),
   zones: z.string(),
+  /** Set only when the right eye differs; `zones` is then the left eye. */
+  rightZones: z.string().optional().transform((v) => v || null),
 });
 
 export const saveLashMap = formAction(saveSchema, async (d) => {
   const ctx = await requireAction(d.slug, "clients.read");
-  let zones;
+  let zones, rightZones;
   try {
-    zones = parseLashZones(JSON.parse(d.zones));
+    zones = parseLashZones(JSON.parse(d.zones), d.rightZones ? "Left eye" : undefined);
+    rightZones = d.rightZones ? parseLashZones(JSON.parse(d.rightZones), "Right eye") : null;
   } catch (e) {
     throw new FormError(e instanceof LashMapError ? e.message : "The lash map couldn't be read. Reload and try again.", "zones");
   }
@@ -39,12 +42,12 @@ export const saveLashMap = formAction(saveSchema, async (d) => {
     if (d.mapId) {
       const updated = await tx
         .update(schema.lashMaps)
-        .set({ title: d.title, notes: d.notes, zones, updatedAt: new Date() })
+        .set({ title: d.title, notes: d.notes, zones, rightZones, updatedAt: new Date() })
         .where(and(eq(schema.lashMaps.id, d.mapId), eq(schema.lashMaps.clientId, d.clientId)))
         .returning({ id: schema.lashMaps.id });
       if (!updated.length) throw new FormError("This lash map was deleted.");
     } else {
-      await tx.insert(schema.lashMaps).values({ businessId: ctx.business.id, clientId: d.clientId, appointmentId: d.appointmentId, authorUserId: ctx.user.id, title: d.title, notes: d.notes, zones });
+      await tx.insert(schema.lashMaps).values({ businessId: ctx.business.id, clientId: d.clientId, appointmentId: d.appointmentId, authorUserId: ctx.user.id, title: d.title, notes: d.notes, zones, rightZones });
     }
   });
   await setFlash(d.mapId ? "Lash map saved" : "Lash map added");

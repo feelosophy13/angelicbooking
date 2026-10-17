@@ -758,7 +758,8 @@ export const lashMaps = pgTable(
     authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
     title: text("title").notNull(), // the style: "Natural cat eye", "Doll eye volume"
     // A spike is the setting on the divider after a zone; type is Classic, Hybrid or a volume fan (see @angelic/core lash-map).
-    zones: jsonb("zones").$type<LashZoneJson[]>().notNull(),
+    zones: jsonb("zones").$type<LashZoneJson[]>().notNull(), // both eyes, or the left eye when rightZones is set
+    rightZones: jsonb("right_zones").$type<LashZoneJson[]>(), // only when the right eye is set differently
     notes: text("notes"),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

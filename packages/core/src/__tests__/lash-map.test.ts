@@ -54,6 +54,15 @@ describe("types and spikes", () => {
   });
 });
 
+describe("separate eyes", () => {
+  it("names the eye in every message when the eyes are mapped separately", () => {
+    const bad = starterLashZones(6).map((x, i) => (i === 1 ? { ...x, length: 30 } : i === 2 ? { ...x, spike: { length: null } } : x));
+    expect(() => parseLashZones(bad.map((x, i) => (i === 2 ? { ...x, spike: null } : x)), "Right eye")).toThrow(/^Right eye, zone 2: length/);
+    expect(() => parseLashZones(bad.map((x, i) => (i === 1 ? { ...x, length: 9 } : x)), "Left eye")).toThrow(/^Left eye, spike between zones 3 and 4/);
+    expect(() => parseLashZones([], "Right eye")).toThrow(/^Right eye: a lash map has 6 or 7 zones/);
+  });
+});
+
 describe("formatting", () => {
   it("writes thickness the way lash trays do", () => {
     expect(formatLashThickness(0.07)).toBe(".07");

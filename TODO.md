@@ -981,9 +981,13 @@ runs several salons on separate accounts.
       for wispy / spiky styles) with its own length, curl, thickness and type; it starts 2 mm longer than its
       neighbours. Zones and spikes take a type (Classic, Hybrid, 2D–10D); a type every zone shares shows once as
       "3D volume throughout". Stored inside the zones JSON, so no migration and older maps load unchanged.
-- [ ] Follow-ups: one map covers both eyes (asymmetry goes in notes, no separate right-eye map); spikes only sit
-      on dividers (two inside one zone go in notes); not shown in the client portal or the public API; not in
-      the demo seed.
+- [x] Right eye set differently (2026-10-17, migration 0111): "Right eye is set differently" copies the map to a
+      right eye with its own zones and spikes; a Left / Right switch picks which eye the editor shows. Saved maps
+      show left above right. Demo seed has five lash maps (classic, hybrid, wispy with spikes, volume with a
+      different right eye, and an older version of one).
+- [ ] Not built on purpose: spikes inside a zone (dividers cover wispy styles; notes cover the rest); lash maps
+      in the client portal (notes can hold remarks a client shouldn't see, so showing them should be a per-salon
+      choice) and the public API (nothing asks for it yet).
 
 ### Needs a real Stripe/Twilio run before relying on it (2026-10-10)
 - [ ] Online deposit + card on file at booking (test cards on a connected test account), including the

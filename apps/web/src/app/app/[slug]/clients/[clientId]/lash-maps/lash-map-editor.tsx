@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import { emptyLashZone, formatLashThickness, formatLashZone, LASH_CURLS, LASH_LENGTH_MAX, LASH_LENGTH_MIN, LASH_THICKNESS_MAX, LASH_THICKNESS_MIN, LASH_THICKNESS_PRESETS, LASH_TYPES, LASH_ZONE_COUNTS, newLashSpike, sharedLashType, type LashSet, type LashZone } from "@angelic/core";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { Input, Textarea } from "@/components/ui";
+import { Checkbox, Input, Textarea } from "@/components/ui";
 import { LashMapDiagram, type LashSelection } from "@/components/lash-map";
 import { cn } from "@/lib/utils";
 import { saveLashMap } from "./actions";
@@ -13,12 +13,18 @@ const STYLE_IDEAS = ["Natural", "Cat eye", "Doll eye", "Squirrel", "Open eye", "
 export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, cancelHref }: {
   slug: string;
   clientId: string;
-  map: { id: string | null; title: string; notes: string | null; zones: LashZone[] };
+  map: { id: string | null; title: string; notes: string | null; zones: LashZone[]; rightZones: LashZone[] | null };
   appointmentId: string | null;
   returnTo: "client" | "appointment";
   cancelHref: string;
 }) {
-  const [zones, setZones] = useState<LashZone[]>(map.zones);
+  // `left` is both eyes until the right eye is set differently; then it is the left eye and `right` the right.
+  const [left, setLeft] = useState<LashZone[]>(map.zones);
+  const [right, setRight] = useState<LashZone[] | null>(map.rightZones);
+  const [eye, setEye] = useState<"left" | "right">("left");
+  const onRight = eye === "right" && right != null;
+  const zones = onRight ? right : left;
+  const setZones = (fn: (cur: LashZone[]) => LashZone[]) => (onRight ? setRight((r) => fn(r ?? [])) : setLeft(fn));
   const [sel, setSel] = useState<LashSelection>({ kind: "zone", i: 0 });
   const [customThickness, setCustomThickness] = useState("");
   // Taps on chips change no input, so tell ActionForm's unsaved-changes guard about them through the hidden zones field.
@@ -27,11 +33,11 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
   useEffect(() => {
     if (firstRender.current) { firstRender.current = false; return; }
     zonesInput.current?.dispatchEvent(new Event("input", { bubbles: true }));
-  }, [zones]);
+  }, [left, right]);
 
   const spike = sel.kind === "spike";
   const z: LashSet = (spike ? zones[sel.i]?.spike : zones[sel.i]) ?? emptyLashZone();
-  const label = spike ? `Spike between zones ${sel.i + 1} and ${sel.i + 2}` : `Zone ${sel.i + 1}`;
+  const label = (right ? (onRight ? "Right eye, " : "Left eye, ") : "") + (spike ? `${right ? "s" : "S"}pike between zones ${sel.i + 1} and ${sel.i + 2}` : `${right ? "z" : "Z"}one ${sel.i + 1}`);
 
   const select = (s: LashSelection) => {
     setCustomThickness("");
@@ -57,7 +63,17 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
   const stepLength = (d: number) => patch({ length: Math.min(LASH_LENGTH_MAX, Math.max(LASH_LENGTH_MIN, (z.length ?? 10) + d)) });
   const isPreset = z.thickness != null && (LASH_THICKNESS_PRESETS as readonly number[]).includes(z.thickness);
   const spikeCount = zones.filter((x) => x.spike).length;
-  const sharedType = sharedLashType(zones); // shown once under the diagram, so the chips leave it out
+  const sharedType = sharedLashType(zones);
+  const toggleRight = (on: boolean) => {
+    setRight(on ? left.map((x) => ({ ...x, spike: x.spike ? { ...x.spike } : null })) : null);
+    setEye(on ? "right" : "left");
+    setSel({ kind: "zone", i: 0 });
+  };
+  const switchEye = (e: "left" | "right") => {
+    setEye(e);
+    setSel({ kind: "zone", i: 0 });
+    setCustomThickness("");
+  }; // shown once under the diagram, so the chips leave it out
 
   return (
     <ActionForm action={saveLashMap}>
@@ -66,7 +82,8 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
       {map.id ? <input type="hidden" name="mapId" value={map.id} /> : null}
       {appointmentId ? <input type="hidden" name="appointmentId" value={appointmentId} /> : null}
       <input type="hidden" name="returnTo" value={returnTo} />
-      <input ref={zonesInput} type="hidden" name="zones" value={JSON.stringify(zones)} />
+      <input ref={zonesInput} type="hidden" name="zones" value={JSON.stringify(left)} />
+      {right ? <input type="hidden" name="rightZones" value={JSON.stringify(right)} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Style" name="title" hint="What you'd call this look.">
@@ -78,7 +95,13 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
       </div>
       <datalist id="lash-style-ideas">{STYLE_IDEAS.map((s) => <option key={s} value={s} />)}</datalist>
 
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Checkbox label="Right eye is set differently" hint={right ? undefined : "Starts as a copy of this map."} checked={right != null} onChange={(e) => toggleRight(e.target.checked)} />
+        {right ? <Chips options={[{ value: "left", label: "Left eye" }, { value: "right", label: "Right eye" }]} value={eye} onChange={(v) => switchEye(v as "left" | "right")} /> : null}
+      </div>
+
       <div className="rounded-lg border border-stone-200 bg-white p-2">
+        {right ? <p className="px-1 text-sm font-semibold text-stone-700">{onRight ? "Right eye" : "Left eye"}</p> : null}
         <LashMapDiagram zones={zones} selected={sel} onSelect={select} />
         <ol className="mt-2 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${zones.length}, minmax(0, 1fr))` }}>
           {zones.map((x, i) => {

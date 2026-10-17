@@ -39,7 +39,7 @@ import { clientThread } from "@/server/inbound";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextFor } from "@/server/locations";
 import { canWriteLashMaps, lashMapsFor } from "@/server/lash-maps";
-import { LashMapDiagram } from "@/components/lash-map";
+import { LashMapEyes } from "@/components/lash-map";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -212,7 +212,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               <Link href={`/app/${slug}/clients/${client.id}/lash-maps/${latestLash.id}`} className="block px-4 pt-3 pb-2 hover:bg-stone-50">
                 <p className="text-sm font-medium">{latestLash.title}</p>
                 <p className="text-xs text-stone-500">{authorName(latestLash.authorUserId)} · {relative(latestLash.updatedAt)}</p>
-                <LashMapDiagram zones={latestLash.zones} className="mx-auto mt-1 max-w-md" />
+                <LashMapEyes zones={latestLash.zones} rightZones={latestLash.rightZones} className="mx-auto mt-1 max-w-2xl" />
                 {latestLash.notes ? <p className="mt-1 whitespace-pre-line text-sm text-stone-700">{latestLash.notes}</p> : null}
               </Link>
               {lashMaps.length > 1 ? (

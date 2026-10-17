@@ -6,7 +6,7 @@ import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { FormPage } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
-import { LashMapDiagram } from "@/components/lash-map";
+import { LashMapEyes } from "@/components/lash-map";
 import { canWriteLashMaps } from "@/server/lash-maps";
 import { relative } from "@/lib/format";
 import { LashMapEditor } from "../lash-map-editor";
@@ -30,7 +30,7 @@ export default async function LashMapPage({ params }: { params: Promise<{ slug: 
   if (!write) {
     return (
       <FormPage title={map.title} backHref={clientHref} backLabel={name}>
-        <LashMapDiagram zones={map.zones} />
+        <LashMapEyes zones={map.zones} rightZones={map.rightZones} />
         {map.notes ? <p className="mt-3 whitespace-pre-line text-sm text-stone-700">{map.notes}</p> : null}
         <p className="mt-3 text-xs text-stone-500">Updated {relative(map.updatedAt)}</p>
       </FormPage>
@@ -39,7 +39,7 @@ export default async function LashMapPage({ params }: { params: Promise<{ slug: 
   return (
     <>
       <FormPage title={`${map.title} · ${name}`} backHref={clientHref} backLabel={name}>
-        <LashMapEditor slug={slug} clientId={clientId} map={{ id: map.id, title: map.title, notes: map.notes, zones: map.zones }} appointmentId={null} returnTo="client" cancelHref={clientHref} />
+        <LashMapEditor slug={slug} clientId={clientId} map={{ id: map.id, title: map.title, notes: map.notes, zones: map.zones, rightZones: map.rightZones }} appointmentId={null} returnTo="client" cancelHref={clientHref} />
       </FormPage>
       <div className="mt-4 flex max-w-2xl items-center justify-between gap-3 text-sm">
         <Link href={`${clientHref}/lash-maps/new?from=${map.id}`} className="text-brand-700 hover:underline">Start a new map from this one</Link>

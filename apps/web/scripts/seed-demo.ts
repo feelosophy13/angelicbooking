@@ -17,7 +17,7 @@
  */
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db, getSql, schema, withTenant, type TenantDb } from "@angelic/db";
-import { zonedToInstant } from "@angelic/core";
+import { zonedToInstant, type LashZone } from "@angelic/core";
 import { auth } from "../src/lib/auth";
 import { ensureTemplates } from "../src/server/workflows";
 import { insertSeat } from "../src/server/classes";
@@ -780,6 +780,25 @@ async function main() {
       [11, "Pays with the card on file; tips cash.", false],
     ];
     for (const [i, [c, body, pinned]] of NOTES.entries()) await tx.insert(schema.clientNotes).values({ businessId, clientId: clientIds[c]!.id, authorUserId: user!.id, body, pinned, createdAt: agoDays(70 - i * 5) });
+
+    // --- Lash maps: one per lash client in the notes above, covering spikes, volume fans and a right eye set differently
+    const lashZones = (lengths: number[], curl: string, thickness: number, type: string | null, spikes: Record<number, number> = {}): LashZone[] =>
+      lengths.map((length, i) => ({ length, curl, thickness, type, spike: spikes[i] ? { length: spikes[i]!, curl, thickness, type } : null }));
+    const LASH_MAPS: { c: number; title: string; days: number; zones: LashZone[]; right?: LashZone[]; notes?: string }[] = [
+      { c: 5, title: "Natural cat eye", days: 75, zones: lashZones([8, 9, 10, 11, 11, 10], "C", 0.15, "Classic") },
+      { c: 5, title: "Natural cat eye", days: 20, zones: lashZones([8, 9, 11, 12, 11, 10], "C", 0.15, "Classic"), notes: "12 mm centre, 10 mm outer. Never longer." },
+      { c: 2, title: "Hybrid doll eye", days: 30, zones: lashZones([9, 10, 11, 12, 12, 11, 10], "CC", 0.07, "Hybrid"), notes: "Sensitive adhesive. Tape, not gel pads, on the lower lashes." },
+      { c: 3, title: "Soft wispy (bridal)", days: 14, zones: lashZones([8, 9, 10, 10.5, 11, 11, 10], "D", 0.05, "3D", { 2: 12, 4: 13 }), notes: "Trial look. Keep spikes subtle for the day." },
+      {
+        c: 9,
+        title: "Volume squirrel",
+        days: 9,
+        zones: lashZones([8, 10, 12, 12, 11, 10], "D", 0.05, "5D", { 2: 14 }),
+        right: lashZones([9, 10, 12, 12, 11, 10], "D", 0.05, "5D", { 2: 14 }),
+        notes: "Right eye sits lower: one size longer in zone 1 to even them out.",
+      },
+    ];
+    for (const m of LASH_MAPS) await tx.insert(schema.lashMaps).values({ businessId, clientId: clientIds[m.c]!.id, authorUserId: user!.id, title: m.title, zones: m.zones, rightZones: m.right ?? null, notes: m.notes ?? null, createdAt: agoDays(m.days), updatedAt: agoDays(m.days) });
 
     // --- Memberships (active, paused, ended, cancelled) and package balances
     const plan = (name: string) => planRows.find((r) => r.name === name)!.id;
