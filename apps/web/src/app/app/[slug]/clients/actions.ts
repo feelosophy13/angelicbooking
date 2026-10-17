@@ -106,10 +106,10 @@ export const updateClient = formAction(fields, async (d, raw) => {
   return "Client saved";
 });
 
-export type QuickClientResult = { id: string; name: string } | { error: string };
+export type QuickClientResult = { id: string; name: string } | { error: string } | { matches: { id: string; name: string; detail: string }[] };
 
 /** Inline "new client" from a picker (new appointment, sale): minimal fields, returns the row to select. */
-export async function quickCreateClient(input: { slug: string; firstName: string; lastName: string; phone: string; email: string }): Promise<QuickClientResult> {
+export async function quickCreateClient(input: { slug: string; firstName: string; lastName: string; phone: string; email: string; /** Staff saw the likely duplicates and want a new record anyway. */ confirmDuplicate?: boolean }): Promise<QuickClientResult> {
   const d = z
     .object({ slug: z.string(), firstName: z.string().trim().min(1, "First name is required").max(60), lastName: z.string().trim().max(60).default(""), phone: z.string().trim().max(30).default(""), email: z.string().trim().max(120).default("") })
     .safeParse(input);
@@ -119,6 +119,12 @@ export async function quickCreateClient(input: { slug: string; firstName: string
   if (d.data.phone && !phone) return { error: "Enter a valid mobile number" };
   const email = d.data.email ? d.data.email.toLowerCase() : null;
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: "Enter a valid email" };
+  // Same check as the New client page: offer the people already on file before adding another record.
+  if (!input.confirmDuplicate) {
+    const dupes = await withTenant(ctx.business.id, (tx) => likelyDuplicates(tx, { firstName: d.data.firstName, lastName: d.data.lastName, phone, email }));
+    const why = { phone: "Same phone", email: "Same email", name: "Same name" } as const;
+    if (dupes.length) return { matches: dupes.map((m) => ({ id: m.id, name: `${m.firstName} ${m.lastName}`.trim(), detail: [m.reasons.map((r) => why[r]).join(", "), maskPhone(m.phone), maskEmail(m.email)].filter(Boolean).join(" · ") })) };
+  }
   const [row] = await withTenant(ctx.business.id, async (tx) =>
     tx.insert(schema.clients).values({ businessId: ctx.business.id, firstName: d.data.firstName, lastName: d.data.lastName, phone, email, smsOptIn: !(await isSmsSuppressed(tx, phone)), emailOptIn: true }).returning({ id: schema.clients.id }),
   );

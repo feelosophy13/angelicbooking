@@ -17,7 +17,7 @@ export function ClientPicker(props: {
   name?: string;
   initial: { id: string; name: string } | null;
   canCreate: boolean;
-  createClient?: (input: { slug: string; firstName: string; lastName: string; phone: string; email: string }) => Promise<QuickClientResult>;
+  createClient?: (input: { slug: string; firstName: string; lastName: string; phone: string; email: string; confirmDuplicate?: boolean }) => Promise<QuickClientResult>;
   placeholder?: string;
   allowWalkIn?: boolean;
   /** Called after a pick (the hidden input is already updated). */
@@ -30,6 +30,9 @@ export function ClientPicker(props: {
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Likely duplicates of the client being added, and what was typed (to add them anyway).
+  const [matches, setMatches] = useState<{ id: string; name: string; detail: string }[] | null>(null);
+  const typed = useRef<{ firstName: string; lastName: string; phone: string; email: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const hidden = useRef<HTMLInputElement>(null);
@@ -75,20 +78,34 @@ export function ClientPicker(props: {
     setTimeout(() => hidden.current?.dispatchEvent(new Event("change", { bubbles: true })), 0);
   };
 
-  async function create(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    e.stopPropagation();
+  async function submitNew(fields: { firstName: string; lastName: string; phone: string; email: string }, confirmDuplicate = false) {
     if (!props.createClient) return;
-    const fd = new FormData(e.currentTarget);
     setBusy(true);
     setError(null);
-    const r = await props.createClient({ slug: props.slug, firstName: String(fd.get("firstName") ?? ""), lastName: String(fd.get("lastName") ?? ""), phone: String(fd.get("phone") ?? ""), email: String(fd.get("email") ?? "") });
+    const r = await props.createClient({ slug: props.slug, ...fields, confirmDuplicate });
     setBusy(false);
     if ("error" in r) {
       setError(r.error);
       return;
     }
+    if ("matches" in r) {
+      typed.current = fields;
+      setMatches(r.matches);
+      return;
+    }
+    setMatches(null);
     pick({ id: r.id, name: r.name });
+  }
+
+  // The picker often sits inside another form (a sale, a booking), and forms can't nest: read the fields directly instead.
+  const newBox = useRef<HTMLDivElement>(null);
+  async function create() {
+    const val = (n: string) => newBox.current?.querySelector<HTMLInputElement>(`input[data-field="${n}"]`)?.value ?? "";
+    if (!val("firstName").trim()) {
+      setError("First name is required");
+      return;
+    }
+    await submitNew({ firstName: val("firstName"), lastName: val("lastName"), phone: val("phone"), email: val("email") });
   }
 
   return (
@@ -100,19 +117,41 @@ export function ClientPicker(props: {
           <button type="button" onClick={() => pick(null)} className="inline-flex items-center gap-1 text-xs text-stone-500 hover:text-stone-800" aria-label="Change client"><X className="h-3.5 w-3.5" /> Change</button>
         </div>
       ) : creating ? (
-        <form onSubmit={create} className="space-y-2 rounded-lg border border-stone-300 bg-white p-3">
+        <div
+          ref={newBox}
+          className="space-y-2 rounded-lg border border-stone-300 bg-white p-3"
+          onKeyDown={(e) => {
+            // Enter adds the client rather than submitting the page's own form.
+            if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") {
+              e.preventDefault();
+              void create();
+            }
+          }}
+        >
           <div className="grid grid-cols-2 gap-2">
-            <Input name="firstName" placeholder="First name" required autoFocus />
-            <Input name="lastName" placeholder="Last name" />
+            <Input data-field="firstName" placeholder="First name" aria-label="First name" autoFocus />
+            <Input data-field="lastName" placeholder="Last name" aria-label="Last name" />
           </div>
-          <Input name="phone" type="tel" placeholder="Mobile" />
-          <Input name="email" type="email" placeholder="Email" />
+          <Input data-field="phone" type="tel" placeholder="Mobile" aria-label="Mobile" />
+          <Input data-field="email" type="email" placeholder="Email" aria-label="Email" />
           {error ? <Notice>{error}</Notice> : null}
-          <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={busy}>{busy ? "Adding…" : "Add client"}</Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
-          </div>
-        </form>
+          {matches ? (
+            <div className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 p-2 text-sm">
+              <p className="px-1 font-medium text-amber-900">Already on file? Pick them instead:</p>
+              {matches.map((m) => (
+                <button key={m.id} type="button" onClick={() => { setMatches(null); pick({ id: m.id, name: m.name }); }} className="block w-full rounded-md bg-white px-2 py-1.5 text-left hover:bg-stone-50">
+                  <span className="font-medium">{m.name}</span> <span className="text-xs text-stone-500">{m.detail}</span>
+                </button>
+              ))}
+              <button type="button" disabled={busy} onClick={() => typed.current && submitNew(typed.current, true)} className="px-1 text-xs text-stone-600 underline">Add as a new client anyway</button>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button type="button" size="sm" disabled={busy} onClick={() => void create()}>{busy ? "Adding…" : "Add client"}</Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => setCreating(false)}>Cancel</Button>
+            </div>
+          )}
+        </div>
       ) : (
         <>
           <Input
