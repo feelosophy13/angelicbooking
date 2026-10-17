@@ -741,6 +741,27 @@ export const clientNotes = pgTable(
   (t) => [index("client_notes_client_idx").on(t.businessId, t.clientId, t.createdAt)],
 );
 
+// How a stylist sets a client's lash extensions: 6 or 7 zones from the inner to the outer corner, each with length, curl and
+// thickness. A client keeps every map they've had, newest first; the visit it was made at is optional.
+export const lashMaps = pgTable(
+  "lash_maps",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
+    authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
+    title: text("title").notNull(), // the style: "Natural cat eye", "Doll eye volume"
+    zones: jsonb("zones").$type<{ length: number | null; curl: string | null; thickness: number | null }[]>().notNull(),
+    notes: text("notes"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("lash_maps_client_idx").on(t.businessId, t.clientId, t.createdAt)],
+);
+
 // A standing appointment ("every 4 weeks with Maria"). Each occurrence is a
 // normal appointment row pointing back here, so the calendar, checkout and
 // notifications need no special cases.

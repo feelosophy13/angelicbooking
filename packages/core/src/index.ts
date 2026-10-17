@@ -7,3 +7,4 @@ export * from "./payroll";
 export * from "./membership";
 export * from "./cancellation";
 export * from "./platform-pricing";
+export * from "./lash-map";

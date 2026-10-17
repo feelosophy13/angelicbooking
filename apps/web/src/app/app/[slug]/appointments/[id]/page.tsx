@@ -29,6 +29,8 @@ import { listCancellationReasons } from "@/server/cancellation-reasons";
 import { CancelForm } from "./cancel-form";
 import { VisitPhotosCard, type PhotoGroup } from "./visit-photos-card";
 import { SuppliesCard } from "./supplies-card";
+import { LashMapDiagram } from "@/components/lash-map";
+import { canWriteLashMaps, lashMapsFor } from "@/server/lash-maps";
 import { pairsForAppointment, photoTagsInUse } from "@/server/visit-photos";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForAppointment, tzFor } from "@/server/locations";
@@ -84,6 +86,9 @@ export default async function AppointmentPage({
   const activity = await appointmentActivity(business, id);
   const fmtDay = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
   const pinnedNotes = client ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
+  // The client's latest lash map, on any visit where they have one or a lash service is booked.
+  const lash = client && appointment.kind === "visit" ? await withTenant(business.id, async (tx) => ({ map: (await lashMapsFor(tx, client.id, 1))[0] ?? null, write: await canWriteLashMaps(tx, { permissions, staffId }, client.id) })) : null;
+  const showLash = !!lash && (!!lash.map || (lash.write && items.some((i) => /lash/i.test(i.serviceName))));
   const series = appointment.seriesId ? await getSeriesForAppointment(business.id, id) : null;
   const forms = await withTenant(business.id, (tx) => formsForAppointment(tx, id));
   const pay = await paymentContextForAppointment(business, id);
@@ -309,6 +314,22 @@ export default async function AppointmentPage({
               <Button type="submit" size="sm" variant="secondary">Save notes</Button>
             </form>
           </Card>
+
+          {showLash && lash && client ? (
+            <Card className="p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h2 className="font-medium">Lash map</h2>
+                {lash.write ? <Link href={`/app/${slug}/clients/${client.id}/lash-maps/new?appointmentId=${id}`} className="text-sm text-brand-700 hover:underline">{lash.map ? "Update for this visit" : "Add lash map"}</Link> : null}
+              </div>
+              {lash.map ? (
+                <Link href={`/app/${slug}/clients/${client.id}/lash-maps/${lash.map.id}`} className="block rounded-lg hover:bg-stone-50">
+                  <p className="text-sm">{lash.map.title} <span className="text-stone-500">· {fmtDay.format(lash.map.updatedAt)}</span></p>
+                  <LashMapDiagram zones={lash.map.zones} className="mx-auto max-w-md" />
+                  {lash.map.notes ? <p className="whitespace-pre-line text-sm text-stone-700">{lash.map.notes}</p> : null}
+                </Link>
+              ) : <p className="text-sm text-stone-500">No lash map yet. Record lengths, curls and thickness by zone so the next fill matches.</p>}
+            </Card>
+          ) : null}
 
           {appointment.kind === "visit" && canEdit && can(permissions, "inventory.log") ? <SuppliesCard slug={slug} businessId={business.id} appointmentId={id} /> : null}
           {appointment.kind === "visit" && canEdit ? <VisitPhotosCard slug={slug} appointmentId={id} groups={photoGroups} pairs={photoPairs} tagSuggestions={photoTags} /> : null}

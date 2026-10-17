@@ -38,6 +38,8 @@ import { replyToClient } from "./messages-actions";
 import { clientThread } from "@/server/inbound";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextFor } from "@/server/locations";
+import { canWriteLashMaps, lashMapsFor } from "@/server/lash-maps";
+import { LashMapDiagram } from "@/components/lash-map";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -48,7 +50,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function ClientPage({ params }: { params: Promise<{ slug: string; clientId: string }> }) {
   const { slug, clientId } = await params;
-  const { business, permissions } = await requireAction(slug, "clients.read");
+  const { business, permissions, staffId } = await requireAction(slug, "clients.read");
   const data = await withTenant(business.id, async (tx) => {
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
     if (!client) return null;
@@ -78,10 +80,13 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
         .innerJoin(schema.membershipPlans, eq(schema.membershipPlans.id, schema.clientMemberships.planId))
         .where(eq(schema.clientMemberships.clientId, clientId)),
     ]);
-    return { client, visits, sales, packs, memberships, notes };
+    const lashMaps = await lashMapsFor(tx, clientId);
+    const lashWrite = await canWriteLashMaps(tx, { permissions, staffId }, clientId);
+    return { client, visits, sales, packs, memberships, notes, lashMaps, lashWrite };
   });
   if (!data) notFound();
-  const { client, visits, sales, packs, memberships, notes } = data;
+  const { client, visits, sales, packs, memberships, notes, lashMaps, lashWrite } = data;
+  const latestLash = lashMaps[0];
   const stopped = await withTenant(business.id, (tx) => isSmsSuppressed(tx, client.phone));
   const activeForms = (await listForms(business.id)).filter((f) => f.active);
   const [submissions, loyalty, reviews, thread, storeCredit, referrals, referredBy] = await Promise.all([
@@ -99,7 +104,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const at = (v: { locationName: string | null }) => (multiLocation && v.locationName ? ` · ${v.locationName.replace(/^.*? - /, "")}` : "");
   const stripeReady = pay.ready;
   const savedCards = await savedCardsFor(business.id, pay, client.id);
-  const authorIds = [...new Set(notes.map((n) => n.authorUserId).filter((x): x is string => !!x))];
+  const authorIds = [...new Set([...notes, ...lashMaps].map((n) => n.authorUserId).filter((x): x is string => !!x))];
   const authors = authorIds.length ? await db.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, authorIds)) : [];
   const authorName = (id: string | null) => authors.find((a) => a.id === id)?.name ?? "Staff";
   const tz = business.timezone;
@@ -156,7 +161,10 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
           <Card>
-            <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Notes &amp; formulas</h2>
+            <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2">
+              <h2 className="text-sm font-semibold text-stone-600">Notes &amp; formulas</h2>
+              {lashWrite && lashMaps.length === 0 ? <Link href={`/app/${slug}/clients/${client.id}/lash-maps/new`} className="text-xs text-brand-700 hover:underline">Add lash map</Link> : null}
+            </div>
             {notes.length === 0 ? <p className="px-4 py-3 text-sm text-stone-500">No notes yet. Formulas, allergies, how they take their coffee.</p> : (
               <ul className="divide-y divide-stone-100">
                 {notes.map((n) => (
@@ -195,6 +203,32 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               </div>
             ) : null}
           </Card>
+          {latestLash ? (
+            <Card>
+              <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2">
+                <h2 className="text-sm font-semibold text-stone-600">Lash map</h2>
+                {lashWrite ? <Link href={`/app/${slug}/clients/${client.id}/lash-maps/new`} className="text-xs text-brand-700 hover:underline">New lash map</Link> : null}
+              </div>
+              <Link href={`/app/${slug}/clients/${client.id}/lash-maps/${latestLash.id}`} className="block px-4 pt-3 pb-2 hover:bg-stone-50">
+                <p className="text-sm font-medium">{latestLash.title}</p>
+                <p className="text-xs text-stone-500">{authorName(latestLash.authorUserId)} · {relative(latestLash.updatedAt)}</p>
+                <LashMapDiagram zones={latestLash.zones} className="mx-auto mt-1 max-w-md" />
+                {latestLash.notes ? <p className="mt-1 whitespace-pre-line text-sm text-stone-700">{latestLash.notes}</p> : null}
+              </Link>
+              {lashMaps.length > 1 ? (
+                <ul className="divide-y divide-stone-100 border-t border-stone-200">
+                  {lashMaps.slice(1).map((m) => (
+                    <li key={m.id} className={`${rowClass} flex items-center gap-3 px-4 py-2.5 text-sm`}>
+                      <div className="min-w-0 flex-1">
+                        <RowLink href={`/app/${slug}/clients/${client.id}/lash-maps/${m.id}`}>{m.title}</RowLink>
+                        <p className="truncate text-xs text-stone-500">{fmtDate.format(m.createdAt)} · {authorName(m.authorUserId)}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </Card>
+          ) : null}
           {photoViews.length ? (
             <Card>
               <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2">

@@ -953,6 +953,17 @@ runs several salons on separate accounts.
 - [ ] Follow-ups: no photo/geofence check (anyone with the PIN can punch from anywhere the QR is known); no
       break tracking; a manager can't see who is currently clocked in at a glance (only via the open entries).
 
+### Lash maps (built 2026-10-17, migration 0110)
+- [x] Per-client lash maps: an eye-patch diagram cut into 6 or 7 zones (inner to outer corner), each with length
+      (4–20 mm, half-mm steps), curl (B, C, CC, D, DD, J, L, L+, M, U) and thickness (.03–.20 presets or typed),
+      plus style name and notes. Client page shows the latest map and older ones; appointment page shows it on
+      any visit where the client has one or a lash service is booked ("Update for this visit" starts a new map
+      from the last one, tied to the visit). Desk (`clients.write`) and the provider who has seen the client can
+      write; providers otherwise can't edit client details.
+- [ ] Follow-ups: one map covers both eyes (asymmetry goes in notes, no separate right-eye map); no per-zone
+      "type" (classic / hybrid / volume fan size); not shown in the client portal or the public API; not in the
+      demo seed.
+
 ### Needs a real Stripe/Twilio run before relying on it (2026-10-10)
 - [ ] Online deposit + card on file at booking (test cards on a connected test account), including the
       automatic refund when a slot is taken after the charge and the refund on online cancellation.
