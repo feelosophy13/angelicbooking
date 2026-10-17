@@ -11,6 +11,7 @@ import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { deleteFileByUrl, FileError, uploadedImageFrom } from "@/lib/files";
 import { isSmsSuppressed, smsMarketingConsent } from "@/server/consent";
+import { likelyDuplicates, maskEmail, maskPhone } from "@/server/client-duplicates";
 
 const fields = z.object({
   slug: z.string(),
@@ -26,6 +27,7 @@ const fields = z.object({
   smsMarketingOptIn: f.checkbox(),
   emailMarketingOptIn: f.checkbox(),
   removePhoto: f.checkbox(),
+  confirmDuplicate: z.string().optional(),
 });
 
 async function photoOrFieldError(businessId: string, raw: FormData) {
@@ -40,6 +42,22 @@ async function photoOrFieldError(businessId: string, raw: FormData) {
 export const createClient = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "clients.write");
   if (d.phone && !normalizePhone(d.phone)) throw new FormError("Enter a valid mobile number", "phone");
+  // Someone already on file with the same phone, email or full name: show them first, and add a second record only when staff say so.
+  if (d.confirmDuplicate !== "1") {
+    const dupes = await withTenant(ctx.business.id, (tx) => likelyDuplicates(tx, { firstName: d.firstName, lastName: d.lastName, phone: d.phone, email: d.email }));
+    if (dupes.length) {
+      const why = { phone: "Same phone", email: "Same email", name: "Same name" } as const;
+      throw new FormError(
+        "This client may already be on file.",
+        undefined,
+        dupes.map((m) => ({
+          href: `/app/${d.slug}/clients/${m.id}`,
+          name: `${m.firstName} ${m.lastName}`.trim(),
+          detail: [m.reasons.map((r) => why[r]).join(", "), maskPhone(m.phone), maskEmail(m.email)].filter(Boolean).join(" · "),
+        })),
+      );
+    }
+  }
   const photoUrl = await photoOrFieldError(ctx.business.id, raw);
   // Appointment texts and emails are on (they gave the number for their bookings) unless the number replied STOP; marketing texts need
   // their written consent, recorded on the client's page.

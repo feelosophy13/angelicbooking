@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
-import { FormPage, Input, Textarea } from "@/components/ui";
+import { FormPage } from "@/components/ui";
 import { ImageField } from "@/components/image-field";
-import { ActionForm, Field, SubmitButton } from "@/components/form";
+import { ActionForm } from "@/components/form";
 import { createClient } from "../actions";
+import { NewClientFields, NewClientSubmit } from "./client-fields";
 
 export const metadata: Metadata = { title: "New client" };
 
@@ -15,15 +16,8 @@ export default async function NewClientPage({ params }: { params: Promise<{ slug
       <ActionForm action={createClient}>
         <input type="hidden" name="slug" value={slug} />
         <ImageField name="photo" current={null} shape="round" />
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="First name" name="firstName" required><Input name="firstName" required autoFocus /></Field>
-          <Field label="Last name" name="lastName"><Input name="lastName" /></Field>
-        </div>
-        <Field label="Mobile phone" name="phone" hint="Used for text confirmations and reminders."><Input name="phone" type="tel" /></Field>
-        <Field label="Email" name="email"><Input name="email" type="email" /></Field>
-        <Field label="Birthday" name="birthday" hint="Optional, for birthday messages."><Input name="birthday" type="date" /></Field>
-        <Field label="Notes" name="notes"><Textarea name="notes" rows={5} placeholder="Allergies, formulas, preferences" /></Field>
-        <SubmitButton pendingText="Creating…">Create client</SubmitButton>
+        <NewClientFields />
+        <NewClientSubmit />
       </ActionForm>
     </FormPage>
   );

@@ -8,10 +8,19 @@ export interface FormState {
   fieldErrors?: Record<string, string>;
   /** Echo of submitted values so fields keep what the user typed after an error. */
   values?: Record<string, string>;
+  /** Existing records the submit may duplicate (e.g. a client already on file); the form shows them and offers to go ahead anyway. */
+  matches?: FormMatch[];
+}
+
+export interface FormMatch {
+  href: string;
+  name: string;
+  /** Short, lightly masked detail: "Same phone · •••-•••-0177". */
+  detail: string;
 }
 
 export class FormError extends Error {
-  constructor(message: string, public field?: string) {
+  constructor(message: string, public field?: string, public matches?: FormMatch[]) {
     super(message);
   }
 }
@@ -53,6 +62,7 @@ export function formAction<S extends z.ZodTypeAny>(
       return { ok: true };
     } catch (e) {
       if (isNextControlFlow(e)) throw e;
+      if (e instanceof FormError && e.matches?.length) return { matches: e.matches, values: raw };
       if (e instanceof FormError) return e.field ? { fieldErrors: { [e.field]: e.message }, values: raw } : { error: e.message, values: raw };
       if (opts.knownErrors?.some((K) => e instanceof K)) return { error: (e as Error).message, values: raw };
       if (e instanceof Error && /permission/i.test(e.message)) return { error: e.message, values: raw };
