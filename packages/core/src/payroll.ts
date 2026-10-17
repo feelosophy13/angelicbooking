@@ -81,6 +81,8 @@ export interface Adjustment {
   staffId: string;
   label: string;
   amountCents: number;
+  /** A bonus or other pay for the work: counts toward the overtime regular rate like commission. */
+  countsAsPay?: boolean;
 }
 
 export interface PayrollInput {
@@ -351,8 +353,10 @@ export function computePayroll(input: PayrollInput): PayrollResult {
     // Service commission for anyone with a rate: the whole pay for commission providers,
     // a bonus on top of wages for employees.
     const mainCommissionCents = dated ? mainRows.reduce((s, l) => s + bps(serviceMoney(l), ratesOn(emp, l.date).mainCommissionBps), 0) : bps(mainRevenueCents, emp.mainCommissionBps);
-    // Commission is part of the regular rate for overtime (FLSA): spread over all hours worked, overtime adds half of it per hour on top.
-    const commissionCents = mainCommissionCents + productCommissionCents;
+    // Commission (and bonuses marked as pay) are part of the regular rate for overtime (FLSA): spread over all hours worked, overtime adds
+    // half of it per hour on top.
+    const bonusCents = input.adjustments.filter((a) => a.staffId === emp.staffId && a.countsAsPay && a.amountCents > 0).reduce((s, a) => s + a.amountCents, 0);
+    const commissionCents = mainCommissionCents + productCommissionCents + bonusCents;
     const overtimeOnCommissionCents =
       applyOt && paysHourly && commissionCents > 0 && hrs.totalMinutes > 0 && hrs.overtimeMinutes + hrs.doubleMinutes > 0
         ? roundCents((commissionCents / hrs.totalMinutes) * (0.5 * hrs.overtimeMinutes + hrs.doubleMinutes))

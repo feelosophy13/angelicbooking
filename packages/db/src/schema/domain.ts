@@ -981,6 +981,8 @@ export const payrollAdjustments = pgTable(
     periodEnd: date("period_end").notNull(),
     label: text("label").notNull(),
     amountCents: integer("amount_cents").notNull(),
+    // Pay for the work (a bonus, commission paid by hand): counts toward the overtime regular rate. Reimbursements don't.
+    countsAsPay: boolean("counts_as_pay").notNull().default(false),
     createdByUserId: text("created_by_user_id"),
     createdAt: createdAt(),
   },
