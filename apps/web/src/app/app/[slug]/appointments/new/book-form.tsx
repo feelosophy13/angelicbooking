@@ -56,6 +56,8 @@ export function BookForm(props: {
   const bookWith = picked ? (picked.staffId ?? props.staffId) : customStaff;
   const timeLabel = pickedLabel ?? custom;
   const withName = props.anyMode ? props.staffNames[bookWith] : null;
+  const o = state?.overlap;
+  const clashed = !!o && repeat === 0 && o.staffId === bookWith && o.startAt === (picked?.iso ?? "") && o.customTime === (picked ? "" : custom);
 
   const pick = (iso: string, staffId: string | null) => {
     setPicked({ iso, staffId });
@@ -167,9 +169,13 @@ export function BookForm(props: {
           </label>
         ) : <p className="text-xs text-stone-500">{props.confirmation}</p>}
         {state?.error ? <Notice>{state.error}</Notice> : null}
-        <Button type="submit" disabled={!ready || pending}>
-          {pending ? "Booking…" : ready ? `${repeat > 0 ? "Book series from" : "Book"} ${timeLabel}${withName ? ` with ${withName}` : ""}` : "Pick a time"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" disabled={!ready || pending}>
+            {pending ? "Booking…" : ready ? `${repeat > 0 ? "Book series from" : "Book"} ${timeLabel}${withName ? ` with ${withName}` : ""}` : "Pick a time"}
+          </Button>
+          {/* Offered only for the time and person that just clashed; picking anything else takes it away. */}
+          {clashed ? <Button type="submit" name="doubleBook" value="1" variant="secondary" disabled={pending}>Book anyway (double-book)</Button> : null}
+        </div>
       </form>
     </Card>
   );

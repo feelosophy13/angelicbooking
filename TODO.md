@@ -266,10 +266,20 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       visits that now fall outside them ("Move or cancel them on the calendar"); the bookings are left alone. Activity log: settings saves
       record what changed (business, booking policy and fees, tax, receipt, loyalty), plus custom domain add/remove, Stripe disconnect,
       clock PIN set/clear (never the PIN) and payroll exports; the log filters by area and person (`lib/audit.ts`). Tests: `booking-guards`.
-- [ ] Still open from the review (2026-10-17 audit), highest impact first: bonuses entered as adjustments don't count in the overtime rate
-      (needs a "counts as pay" flag on adjustments, a migration); store orders could authorize then capture only if stock remains
-      (instead of a time hold); online booking picks the time before add-ons; no deliberate double-booking (`allowOverlap` unused);
-      mobile `apiUrl` hard-coded, no Expo auth plugin, CI doesn't lint or gate deploys; no client merge / duplicate warning.
+- [x] Deliberate double-booking, 2026-10-17: when a desk booking clashes with another visit or a class, anyone with "Manage any
+      appointment" gets "Book anyway (double-book)"; the new services are saved with `allow_overlap` (the DB constraint already skips
+      those rows), blocked time still wins, online booking never sets it, the log records `appointment.double_booked`, and the calendar
+      hover card says "Double-booked on purpose". Single visits only (a series still skips clashing dates). Test: `double-booking`.
+- [x] Review per-area batch 5, 2026-10-17 (agents in worktrees, merged): online booking offers the times that day when the whole visit fits
+      when an added service doesn't fit after the picked time; creating a client warns about likely duplicates (same phone, email or full
+      name) and offers "Create anyway" (`server/client-duplicates.ts`); the mobile app's server comes from `EXPO_PUBLIC_API_URL` (else
+      production / localhost by build), and sign-out from the app works (Better Auth needs an Origin: the `expo-origin` header is copied in,
+      still checked against trustedOrigins); CI runs a lint step (non-blocking: eslint isn't installed or configured yet); docs-ops.md
+      explains making Render wait for CI.
+- [ ] Still open from the review (2026-10-17 audit): bonuses entered as adjustments don't count in the overtime rate (needs a "counts as
+      pay" flag, a migration); no client merge tool (the duplicate warning is there; the client page could show "possible duplicate");
+      the quick "new client" in the client picker has no duplicate check; eslint + config for apps/web (then make CI lint blocking);
+      mobile has no two-factor screen; Render "Auto-Deploy: After CI Checks Pass" is the owner's setting.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done, including Resend pacing/per-tenant fairness, except the items listed as still open above.
       Next: the per-area lists in that file.
 

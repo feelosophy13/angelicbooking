@@ -34,6 +34,7 @@ export type TipItem = {
   notes: string | null;
   classSessionId?: string | null;
   seats?: { booked: number; capacity: number } | null;
+  allowOverlap?: boolean;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -78,6 +79,7 @@ export function buildTip(items: TipItem[], ctx: { money: (cents: number) => stri
   const facts: string[] = [];
   if (first.source && SOURCE_LABEL[first.source]) facts.push(SOURCE_LABEL[first.source]!);
   if (first.depositCents && first.depositCents > 0) facts.push(`Deposit ${ctx.money(first.depositCents)}${first.depositStatus === "paid" ? " paid" : first.depositStatus && first.depositStatus !== "none" ? ` ${first.depositStatus}` : ""}`);
+  if (items.some((i) => i.allowOverlap)) facts.push("Double-booked on purpose");
   if (ctx.formsDue) facts.push("Forms due");
   return {
     kind: "visit",

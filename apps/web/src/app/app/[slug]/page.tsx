@@ -120,7 +120,7 @@ export default async function CalendarPage({
       appointmentId: i.appointmentId, serviceName: i.serviceName, staffName: staffById.get(i.staffId)?.displayName ?? "", startMin: minuteOf(i.startAt),
       endMin: minuteOf(i.endAt) <= minuteOf(i.startAt) ? 24 * 60 : minuteOf(i.endAt), priceCents: i.priceCents, status: i.status, kind: i.kind, clientName: i.clientName,
       clientPhone: i.clientPhone, clientTags: i.clientTags, source: i.source, depositCents: i.depositCents, depositStatus: i.depositStatus, notes: i.notes,
-      classSessionId: i.classSessionId, seats: i.seats,
+      classSessionId: i.classSessionId, seats: i.seats, allowOverlap: i.allowOverlap,
     };
     tipRows.set(i.appointmentId, [...(tipRows.get(i.appointmentId) ?? []), row]);
   }

@@ -6,13 +6,15 @@ import { refreshHomeLocation, serviceOfferedAt } from "./locations";
 import { shiftISODate } from "@/lib/utils";
 
 export class BookingError extends Error {}
+/** The time clashes with another visit or a class on that provider's calendar. The desk can book it anyway (allowOverlap). */
+export class OverlapError extends BookingError {}
 
 type Tx = TenantDb;
 
 /** Insert the time segments for one service into an existing appointment. */
 async function insertServiceItems(
   tx: Tx,
-  input: { businessId: string; appointmentId: string; serviceId: string; staffId: string; startAt: Date; sortOrderBase: number },
+  input: { businessId: string; appointmentId: string; serviceId: string; staffId: string; startAt: Date; sortOrderBase: number; allowOverlap?: boolean },
 ) {
   const service = await tx.query.services.findFirst({ where: eq(schema.services.id, input.serviceId) });
   if (!service || !service.active) throw new BookingError("That service is no longer available.");
@@ -25,7 +27,9 @@ async function insertServiceItems(
   const timing = timingFor({ ...service, durationMin: override?.durationMinOverride ?? service.durationMin });
   const priceCents = override?.priceCentsOverride ?? service.priceCents;
   const segments = buildBookingSegments(input.startAt, timing);
-  await assertNoClassClash(tx, input.staffId, segments);
+  // A deliberate double-booking skips the clash checks (other visits and classes) but never lands on blocked time.
+  if (input.allowOverlap) await assertNoBlock(tx, input.staffId, segments);
+  else await assertNoClassClash(tx, input.staffId, segments);
   await tx.insert(schema.appointmentItems).values(
     segments.map((seg, i) => ({
       businessId: input.businessId,
@@ -37,6 +41,7 @@ async function insertServiceItems(
       endAt: seg.end,
       priceCents: i === 0 ? priceCents : 0,
       sortOrder: input.sortOrderBase + i,
+      allowOverlap: input.allowOverlap === true,
     })),
   );
   return { service, segments };
@@ -64,7 +69,20 @@ async function assertNoClassClash(tx: Tx, staffId: string, ranges: { start: Date
     .leftJoin(schema.services, eq(schema.services.id, schema.classSessions.serviceId))
     // A class blocks its cleanup time too.
     .where(and(eq(schema.classSessions.staffId, staffId), eq(schema.classSessions.status, "scheduled"), lt(schema.classSessions.startAt, to), sql`${schema.classSessions.endAt} + make_interval(mins => coalesce(${schema.services.bufferAfterMin}, 0)::int) > ${from.toISOString()}::timestamptz`));
-  if (classes.some((c) => ranges.some((r) => r.start < c.end && c.start < r.end))) throw new BookingError("That time overlaps a class this provider is teaching. Please pick another.");
+  if (classes.some((c) => ranges.some((r) => r.start < c.end && c.start < r.end))) throw new OverlapError("That time overlaps a class this provider is teaching. Please pick another.");
+}
+
+/** Blocked time (lunch, time off) on these ranges. Only needed for a double-booking: otherwise the DB constraint already refuses it. */
+async function assertNoBlock(tx: Tx, staffId: string, ranges: { start: Date; end: Date }[]) {
+  for (const r of ranges) {
+    const [hit] = await tx
+      .select({ id: schema.appointmentItems.id })
+      .from(schema.appointmentItems)
+      .innerJoin(schema.appointments, eq(schema.appointments.id, schema.appointmentItems.appointmentId))
+      .where(and(eq(schema.appointmentItems.staffId, staffId), eq(schema.appointments.kind, "block"), sql`${schema.appointmentItems.status} <> 'cancelled'`, lt(schema.appointmentItems.startAt, r.end), gt(schema.appointmentItems.endAt, r.start)))
+      .limit(1);
+    if (hit) throw new BookingError("That time is blocked off on this provider's calendar. Remove the block first.");
+  }
 }
 
 /** When a service has an assigned-staff list, only those providers may take it. (No list = anyone.) */
@@ -88,7 +106,7 @@ async function audit(tx: Tx, businessId: string, actorUserId: string | null, act
 /** Translate a Postgres exclusion violation into a user-facing BookingError. */
 function translate(e: unknown): never {
   const code = (e as { code?: string; cause?: { code?: string } })?.code ?? (e as { cause?: { code?: string } })?.cause?.code;
-  if (code === "23P01") throw new BookingError("That time was just taken. Please pick another slot.");
+  if (code === "23P01") throw new OverlapError("That time was just taken. Please pick another slot.");
   throw e;
 }
 
@@ -122,6 +140,12 @@ export interface BookAppointmentInput {
   locationId?: string | null;
   /** More services booked in the same visit, with the same provider, each starting where the last one ends. */
   extras?: { serviceId: string; startAt: Date }[];
+  /**
+   * Double-book on purpose: the new services may overlap the provider's other visits and classes (a quick add-on while colour
+   * processes), but not blocked time. Desk only, for someone who can manage any appointment; always ignored online. Working hours
+   * aren't checked here either way (the desk may book outside them; online checks them before it gets here).
+   */
+  allowOverlap?: boolean;
 }
 
 /** The location an appointment belongs to when none was chosen explicitly. */
@@ -139,6 +163,8 @@ export async function resolveAppointmentLocation(tx: Tx, staffId: string, startA
 }
 
 export async function bookAppointment(input: BookAppointmentInput): Promise<{ appointmentId: string }> {
+  // Online bookings never double-book, whatever the caller passed. (A class seat isn't a one-to-one slot, so it doesn't apply.)
+  const allowOverlap = input.allowOverlap === true && input.source !== "online" && !input.classSessionId;
   if (input.classSessionId) {
     const { insertSeat } = await import("./classes");
     return withTenant(input.businessId, async (tx) => {
@@ -172,11 +198,11 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
           ...(input.policy ? { policyText: input.policy.text, policyAcceptedAt: new Date(), policyAcceptedIp: input.policy.ip } : {}),
         })
         .returning({ id: schema.appointments.id });
-      const firstItems = await insertServiceItems(tx, { ...input, appointmentId: appt!.id, sortOrderBase: 0 });
+      const firstItems = await insertServiceItems(tx, { ...input, allowOverlap, appointmentId: appt!.id, sortOrderBase: 0 });
       let order = firstItems.segments.length;
       for (const x of input.extras ?? []) {
         if (!(await serviceOfferedAt(tx, x.serviceId, locationId))) throw new BookingError("One of the added services isn't offered at this location.");
-        const r = await insertServiceItems(tx, { businessId: input.businessId, appointmentId: appt!.id, serviceId: x.serviceId, staffId: input.staffId, startAt: x.startAt, sortOrderBase: order });
+        const r = await insertServiceItems(tx, { businessId: input.businessId, appointmentId: appt!.id, serviceId: x.serviceId, staffId: input.staffId, startAt: x.startAt, sortOrderBase: order, allowOverlap });
         order += r.segments.length;
       }
       await refreshHomeLocation(tx, input.clientId);
@@ -187,6 +213,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
         ...(input.seriesId ? { seriesId: input.seriesId } : {}),
         ...(input.deposit ? { depositCents: input.deposit.cents } : {}),
       });
+      if (allowOverlap) await audit(tx, input.businessId, input.createdByUserId, "appointment.double_booked", appt!.id, { staffId: input.staffId, startAt: input.startAt });
       return { appointmentId: appt!.id };
     });
   } catch (e) {
@@ -202,6 +229,8 @@ export async function addServiceToAppointment(input: {
   staffId: string;
   startAt: Date;
   actorUserId: string;
+  /** Double-book on purpose (desk only), as in bookAppointment. */
+  allowOverlap?: boolean;
 }) {
   try {
     await withTenant(input.businessId, async (tx) => {
@@ -220,6 +249,7 @@ export async function addServiceToAppointment(input: {
         serviceId: input.serviceId,
         staffId: input.staffId,
         startAt: input.startAt,
+        ...(input.allowOverlap ? { doubleBooked: true } : {}),
       });
     });
   } catch (e) {
