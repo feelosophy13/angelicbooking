@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BackLink, Card, Input, PageHeader, Textarea, Checkbox, Select, MoneyInput } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
+import { Disclosure } from "@/components/disclosure";
 
 export const metadata: Metadata = { title: "Online booking" };
 import { saveBookingSettings } from "./actions";
@@ -52,15 +53,17 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
                 <option value="fewest_bookings">Give it to whoever has the fewest bookings that day</option>
               </Select>
             </Field>
-            <details className="rounded-lg border border-stone-200 p-3" open={business.requireCardOnline || business.noShowFeeCents > 0 || business.lateCancelFeeType !== "none"}>
-              <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">
-                Fees, deposits and cards <span className="font-normal text-stone-500">· {[
-                  business.noShowFeeCents > 0 ? `$${(business.noShowFeeCents / 100).toFixed(0)} no-show` : null,
-                  business.lateCancelFeeType === "flat" ? `$${(business.lateCancelFeeValue / 100).toFixed(0)} late cancel` : business.lateCancelFeeType === "percent" ? `${business.lateCancelFeeValue / 100}% late cancel` : null,
-                  business.requireCardOnline ? "card required" : null,
-                ].filter(Boolean).join(" · ") || "no fees"}</span>
-              </summary>
-              <div className="mt-3 space-y-4">
+            <Disclosure
+              variant="inset"
+              title="Fees, deposits and cards"
+              hint={[
+                business.noShowFeeCents > 0 ? `$${(business.noShowFeeCents / 100).toFixed(0)} no-show` : null,
+                business.lateCancelFeeType === "flat" ? `$${(business.lateCancelFeeValue / 100).toFixed(0)} late cancel` : business.lateCancelFeeType === "percent" ? `${business.lateCancelFeeValue / 100}% late cancel` : null,
+                business.requireCardOnline ? "card required" : null,
+              ].filter(Boolean).join(" · ") || "no fees"}
+              open={business.requireCardOnline || business.noShowFeeCents > 0 || business.lateCancelFeeType !== "none"}
+            >
+              <div className="space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="No-show fee" name="noShowFee" hint="Charged to a saved card from the appointment page.">
                     <MoneyInput name="noShowFee" defaultValue={business.noShowFeeCents ? (business.noShowFeeCents / 100).toFixed(2) : ""} />
@@ -91,10 +94,9 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
                 <Checkbox name="requireCardOnline" defaultChecked={business.requireCardOnline} label="Require a card on file to book online" hint="Needs Stripe. Nothing is charged at booking; the card is kept for fees." />
                 <p className="text-xs text-stone-500">Deposits themselves are set per service.</p>
               </div>
-            </details>
-            <details className="rounded-lg border border-stone-200 p-3" open={!!business.bookingPolicy || business.clientAccountsEnabled}>
-              <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">Policy, address and client accounts</summary>
-              <div className="mt-3 space-y-3">
+            </Disclosure>
+            <Disclosure variant="inset" title="Policy, address and client accounts" open={!!business.bookingPolicy || business.clientAccountsEnabled}>
+              <div className="space-y-3">
                 <Field label="Booking policy" name="bookingPolicy" hint={business.lateCancelFeeType !== "none" ? "Shown to clients when they book. The late cancellation fee above is added for you, so there is no need to repeat it." : "Shown to clients when they book."}><Textarea name="bookingPolicy" rows={5} defaultValue={business.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
                 {policyCheck.conflicts.length ? (
                   <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">Your policy says &ldquo;{policyCheck.conflicts[0]}&rdquo; but the late cancellation fee is set to {feeLabel}. Clients see both, and the fee above is the one that is charged. Edit the policy text so they agree.</p>
@@ -102,7 +104,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
                 <Field label="Address shown on the booking page and in messages" name="addressLine"><Input name="addressLine" defaultValue={business.addressLine ?? ""} placeholder="123 Main St, Springfield" /></Field>
                 <Checkbox name="clientAccountsEnabled" defaultChecked={business.clientAccountsEnabled} label="Client accounts on the booking page" hint="Clients sign in with a code by email or text to see upcoming visits, rebook, and use saved cards and points." />
               </div>
-            </details>
+            </Disclosure>
             <p className="text-xs text-stone-500">Reminder timing and wording live under <Link href={`/app/${slug}/marketing/automations`} className="text-brand-700 underline">Automations → Appointment reminder</Link>.</p>
             <SubmitButton pendingText="Saving…">Save</SubmitButton>
           </ActionForm>
@@ -115,9 +117,8 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
           <img src={qr} alt="QR code for your booking link" className="mt-3 h-40 w-40 rounded-lg border border-stone-200" />
           <a href={qr} download={`book-${business.slug}.png`} className="mt-1 block text-xs text-brand-700 underline">Download QR code</a>
           {perLocation.length ? (
-            <details className="mt-4 border-t border-stone-200 pt-3">
-              <summary className="cursor-pointer select-none text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">Per-location links</summary>
-              <div className="mt-2 space-y-3">
+            <Disclosure variant="inset" title="Per-location links" className="mt-4">
+              <div className="space-y-3">
               <p className="text-xs text-stone-500">Skips the &ldquo;choose a location&rdquo; step. Use the right one on each site&apos;s Google listing, signage and social accounts.</p>
               {perLocation.map((l) => (
                 <div key={l.id} className="flex items-start gap-3">
@@ -130,11 +131,10 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
                 </div>
               ))}
               </div>
-            </details>
+            </Disclosure>
           ) : null}
-          <details className="mt-4 border-t border-stone-200 pt-3">
-            <summary className="cursor-pointer select-none text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">Where to put the link</summary>
-          <div className="mt-2 space-y-2 text-xs text-stone-600">
+          <Disclosure variant="inset" title="Where to put the link" className="mt-4">
+          <div className="space-y-2 text-xs text-stone-600">
             <p><b>Instagram:</b> Edit profile → Links → add the link. Business accounts: Edit profile → Action buttons → Book now → “Other” → paste the link.</p>
             <p><b>Facebook page:</b> Add action button → Book now → Link to website → paste the link.</p>
             <p><b>Google Business Profile:</b> Edit profile → Booking → Add appointment link → paste the link. Google shows a Book button on your listing.</p>
@@ -142,7 +142,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
             <textarea readOnly rows={3} value={embed} className="w-full rounded border border-stone-300 bg-stone-50 p-2 font-mono text-[11px]" />
             {business.giftCardsOnline ? <p><b>Gift cards:</b> {appUrl(`/book/${business.slug}/gift`)}</p> : null}
           </div>
-          </details>
+          </Disclosure>
         </Card>
       </div>
     </>

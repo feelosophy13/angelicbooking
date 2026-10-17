@@ -1,7 +1,7 @@
 "use client";
 import { useActionState, useState } from "react";
 import { cancelAppointment, type ActionState } from "./actions";
-import { Checkbox, Input, Notice, Select } from "@/components/ui";
+import { Checkbox, Input, Notice, Radio, RadioGroup, Select } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
 
 /**
@@ -40,8 +40,7 @@ export function CancelForm(props: { slug: string; appointmentId: string; late: n
         </div>
       ) : null}
       {props.deposit ? (
-        <fieldset className="space-y-1.5 rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700">
-          <legend className="px-1 text-xs font-medium text-stone-800">The {props.deposit.totalLabel} deposit</legend>
+        <RadioGroup legend={`The ${props.deposit.totalLabel} deposit`} className="rounded-lg border border-stone-200 px-3 py-2 text-xs text-stone-700">
           {props.deposit.canRefund ? (
             <>
               {([
@@ -49,16 +48,13 @@ export function CancelForm(props: { slug: string; appointmentId: string; late: n
                 ...(props.deposit.feeOnly ? [["fee_only", `Keep ${props.deposit.feeOnly.keepLabel} for the late fee, refund ${props.deposit.feeOnly.refundLabel}`] as const] : []),
                 ["refund_all", `Refund all ${props.deposit.totalLabel} (the salon cancelled, or waive the fee)`] as const,
               ]).map(([value, label]) => (
-                <label key={value} className="flex items-start gap-2">
-                  <input type="radio" name="deposit" value={value} checked={depositChoice === value} onChange={() => setDepositChoice(value)} className="mt-0.5" />
-                  <span>{label}</span>
-                </label>
+                <Radio key={value} name="deposit" value={value} checked={depositChoice === value} onChange={() => setDepositChoice(value)} label={label} />
               ))}
             </>
           ) : (
             <p>The salon keeps it. Giving a deposit back needs the refund permission; ask the owner or manager.</p>
           )}
-        </fieldset>
+        </RadioGroup>
       ) : null}
       <Select name="reasonId" required defaultValue="" aria-label="Why is it being cancelled?">
         <option value="" disabled>Why is it being cancelled?</option>

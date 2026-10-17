@@ -1,7 +1,7 @@
 "use client";
 import { useActionState, useState } from "react";
 import { cancelBooking, rescheduleBooking, type PublicState } from "../../actions";
-import { Button, Notice } from "@/components/ui";
+import { Button, Notice, Radio, RadioGroup } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
 export function CancelForm({ slug, token, reasons }: { slug: string; token: string; reasons: { id: string; name: string }[] }) {
@@ -18,12 +18,9 @@ export function CancelForm({ slug, token, reasons }: { slug: string; token: stri
       ) : (
         <div className="space-y-2">
           {reasons.length ? (
-            <fieldset className="space-y-1 text-sm text-stone-700">
-              <legend className="mb-1 text-xs text-stone-500">Why are you cancelling? (optional)</legend>
-              {reasons.map((r) => (
-                <label key={r.id} className="flex items-center gap-2"><input type="radio" name="reasonId" value={r.id} /> {r.name}</label>
-              ))}
-            </fieldset>
+            <RadioGroup legend="Why are you cancelling?" hint="(optional)">
+              {reasons.map((r) => <Radio key={r.id} name="reasonId" value={r.id} label={r.name} />)}
+            </RadioGroup>
           ) : null}
           <div className="flex items-center gap-2">
             <Button type="submit" variant="danger" disabled={pending}>{pending ? "…" : "Yes, cancel it"}</Button>
