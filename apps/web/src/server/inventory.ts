@@ -242,8 +242,11 @@ export async function findProductByCode(businessId: string, code: string) {
 /** Online carts held open this long count against the shelf, so two buyers can't both take the last one. */
 export const ONLINE_HOLD_MINUTES = 60;
 
-/** For each product: what the online store may still sell (on hand at that location, less unpaid online orders). Untracked products are absent. */
-export async function onlineAvailability(tx: TenantDb, locationId: string | null, productIds: string[], opts: { lock?: boolean } = {}) {
+/**
+ * For each product: what the online store may still sell (on hand at that location, less unpaid online orders). Untracked products are absent.
+ * `excludeSaleId`: leave that order's own hold out (an order being captured checks its lines against everyone else's).
+ */
+export async function onlineAvailability(tx: TenantDb, locationId: string | null, productIds: string[], opts: { lock?: boolean; excludeSaleId?: string } = {}) {
   const out = new Map<string, number>();
   if (!productIds.length) return out;
   const loc = locationId ?? (await mainLocationId(tx));
@@ -258,7 +261,7 @@ export async function onlineAvailability(tx: TenantDb, locationId: string | null
     .select({ productId: schema.saleLines.productId, qty: sql<number>`sum(${schema.saleLines.quantity})` })
     .from(schema.saleLines)
     .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
-    .where(and(eq(schema.sales.status, "open"), eq(schema.sales.source, "online"), gte(schema.sales.createdAt, since), inArray(schema.saleLines.productId, ids), locationId ? eq(schema.sales.locationId, locationId) : sql`true`))
+    .where(and(eq(schema.sales.status, "open"), eq(schema.sales.source, "online"), gte(schema.sales.createdAt, since), inArray(schema.saleLines.productId, ids), locationId ? eq(schema.sales.locationId, locationId) : sql`true`, opts.excludeSaleId ? ne(schema.sales.id, opts.excludeSaleId) : sql`true`))
     .groupBy(schema.saleLines.productId);
   const holds = new Map(held.map((h) => [h.productId!, Number(h.qty)]));
   for (const id of ids) out.set(id, Math.max(0, (have.get(id) ?? 0) - (holds.get(id) ?? 0)));

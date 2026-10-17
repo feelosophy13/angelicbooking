@@ -213,7 +213,8 @@ function PayStep({ slug, saleId, clientSecret, buyer, brand, total }: { slug: st
     const card = elements.getElement(CardElement);
     if (!card) return;
     const r = await stripe.confirmCardPayment(clientSecret, { payment_method: { card, billing_details: { name: `${buyer.firstName} ${buyer.lastName}`.trim() || undefined, email: buyer.email || undefined, phone: buyer.phone || undefined } } });
-    if (r.error || r.paymentIntent?.status !== "succeeded") {
+    // The card is authorized here ("requires_capture"); the server captures it once the stock is checked again.
+    if (r.error || (r.paymentIntent?.status !== "requires_capture" && r.paymentIntent?.status !== "succeeded")) {
       setError(r.error?.message ?? `Payment ${r.paymentIntent?.status ?? "incomplete"}.`);
       setBusy(false);
       return;
