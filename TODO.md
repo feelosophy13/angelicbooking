@@ -12,9 +12,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Connect account creation migrated to Accounts v2 (Stripe refuses v1 Standard accounts for new platforms).
 - [ ] ~~Put Stripe **test** keys in local `.env`~~ (`STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) so the
       billing, Connect and checkout flows can be run end to end with Stripe test cards.
-- [ ] Activate the platform Stripe account (business details, bank, identity) and complete the Connect
-      platform profile for Standard accounts. As of 2026-10-10 the live account `acct_1UP3plPmYAh2Q7ir` reports
-      charges_enabled=false, details_submitted=false. The restricted live key must have write access to Customers,
+- [x] Activate the platform Stripe account. Done by 2026-10-17: the live account reports charges and payouts enabled, details
+      submitted, nothing currently due; live webhooks for /api/stripe/webhook and /api/stripe/billing exist. The restricted live key must have write access to Customers,
       PaymentIntents, SetupIntents, Refunds, Checkout, Subscriptions, Products/Prices, Billing meters, Webhook
       endpoints and Connect accounts (or use a full secret key).
 - [x] Webhooks created 2026-10-10 **in the sandbox** (`we_1UP6MGBapD9TuxcNtawam0qF` Connect, `we_1UP6MGBapD9TuxcNrI58f7K2` account)
@@ -25,13 +24,16 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `STRIPE_WEBHOOK_LIVE_SECRET` / `STRIPE_BILLING_WEBHOOK_LIVE_SECRET`. Switch Render to live once the account is
       activated and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_LIVE_KEY` is in `.env`: run the script with `--live` (Render
       copies one variable per call if the classifier objects) and deploy.
-- [ ] Put **live** keys on Render and in `.env`; redeploy; verify a real card payment + refund from the sale page.
+- [x] Live keys on Render, 2026-10-17: STRIPE_SECRET_KEY (restricted rk_live), NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY and both webhook secrets
+      now hold the live values (kept in `.env` as the `*_LIVE_*` names; local dev stays on test keys). Redeployed; both prod webhooks accept
+      events signed with the live secrets; the key can read every resource the app uses. Still to do: one real card payment + refund
+      from the sale page (proves the key's write access), and a real store order (manual capture with a platform fee).
 - [ ] Save the Customer Portal configuration once in the Stripe dashboard (branding, cancellation copy).
 - [ ] Decide pricing on the admin Pricing page (base plan, trial, number fee, text usage, included texts, platform fee on card
       payments). Prices are in the database now, not in environment variables.
 
 ### Twilio
-- [ ] Buy the first toll-free number for Angelic Beauty in production (Settings → Text messaging) and submit
+- [ ] (Angelic Beauty was deleted from prod on 2026-10-17 at the owner's request; they will re-add it.) Buy the first toll-free number for Angelic Beauty in production (Settings → Text messaging) and submit
       carrier verification. Needs the owner signed in on app.angelicbooking.com; buy it **before** the deploy that
       turns Stripe on (billing then requires an active subscription to buy a number) or set up billing first. Needs EIN (or sole proprietor), address, contact. Approval takes 1–3 weeks;
       status is polled every 5 minutes.
@@ -41,7 +43,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ### Email
 - [x] Add a DMARC record in Cloudflare: `TXT _dmarc.mail1  v=DMARC1; p=none;` (improves Gmail/Yahoo delivery). Done 2026-10-10.
-- [ ] Set `SUPPORT_EMAIL` on Render and in `.env` so Help/Privacy/Terms show a contact address.
+- [x] `SUPPORT_EMAIL` = tunityventure@gmail.com on Render and in `.env` (2026-10-17); the Help page shows it.
 
 ### Domain move to app.angelicbooking.com (done 2026-10-10)
 - [x] Cloudflare DNS `CNAME app → angelic-booking.onrender.com` (DNS only); Render verified, certificate issued.
