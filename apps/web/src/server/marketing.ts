@@ -69,8 +69,9 @@ export async function audienceClients(tx: TenantDb, business: Business, audience
       : and(eq(schema.clients.smsOptIn, true), eq(schema.clients.smsMarketingOptIn, true), sql`${schema.clients.phone} is not null and ${schema.clients.phone} <> ''`, sql`not exists (select 1 from sms_suppressions ss where ss.business_id = ${schema.clients.businessId} and ss.phone_tail = right(regexp_replace(${schema.clients.phone}, '\D', '', 'g'), 10))`),
   ];
   const now = Date.now();
-  if (audience.visitedWithinDays) conds.push(sql`v.last_visit >= ${new Date(now - audience.visitedWithinDays * 86_400_000)}`);
-  if (audience.lapsedDays) conds.push(sql`v.last_visit is not null and v.last_visit <= ${new Date(now - audience.lapsedDays * 86_400_000)}`);
+  // ISO strings, not Date objects: a raw Date in a sql`` parameter is rejected by the postgres driver.
+  if (audience.visitedWithinDays) conds.push(sql`v.last_visit >= ${new Date(now - audience.visitedWithinDays * 86_400_000).toISOString()}::timestamptz`);
+  if (audience.lapsedDays) conds.push(sql`v.last_visit is not null and v.last_visit <= ${new Date(now - audience.lapsedDays * 86_400_000).toISOString()}::timestamptz`);
   if (audience.neverVisited) conds.push(sql`coalesce(v.visits, 0) = 0`);
   if (audience.tag) conds.push(sql`${audience.tag} = any(${schema.clients.tags})`);
   if (audience.locationId) conds.push(eq(schema.clients.homeLocationId, audience.locationId));
