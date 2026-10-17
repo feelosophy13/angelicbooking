@@ -39,7 +39,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       status is polled every 5 minutes.
 - [ ] Decide whether a platform-wide fallback sender is wanted for businesses without a verified number
       (`TWILIO_FROM` / `TWILIO_MESSAGING_SERVICE_SID`). It would need its own toll-free verification.
-- [ ] Keep an eye on the Twilio balance (≈$197 on 2026-10-08) and enable auto-recharge.
+- [ ] Keep an eye on the Twilio balance (≈$197 on 2026-10-08) and enable auto-recharge (owner only: Twilio Console → Billing →
+      Auto-recharge; it needs the card on the Twilio account).
 
 ### Email
 - [x] Add a DMARC record in Cloudflare: `TXT _dmarc.mail1  v=DMARC1; p=none;` (improves Gmail/Yahoo delivery). Done 2026-10-10.
@@ -312,9 +313,15 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Platform billing overview (real MRR, failed payments) once Stripe keys exist.
 
 - [ ] Upgrade the Render Postgres from the free `0.1c-256mb` tier to a paid plan with backups and
-      point-in-time recovery; until then run `scripts/backup.sh` nightly somewhere and store the dumps off-box.
-- [ ] Set `ERROR_WEBHOOK_URL` (Slack/Discord incoming webhook) so unhandled errors are seen; consider Sentry.
-- [ ] Add an uptime check on `https://app.angelicbooking.com/sign-in` and on the cron job's run history
+      point-in-time recovery; until then run `scripts/backup.sh` nightly somewhere and store the dumps off-box. (Waiting on the
+      owner's choice of plan, 2026-10-17.)
+- [x] Unhandled errors reach someone without a Slack webhook, 2026-10-17: with `ERROR_WEBHOOK_URL` unset, `lib/report-error.ts` emails
+      the summary to `ERROR_EMAIL_TO` (default `SUPPORT_EMAIL`) through Resend, throttled (one per distinct error per 10 minutes, 20 an
+      hour). Setting a Slack/Discord webhook later switches it back to POSTs. Sentry still optional.
+- [x] Uptime check, 2026-10-17: `/api/health` now also fails (503 `reminders: "stale"`) when the 5-minute cron has not called
+      `/api/jobs/notifications` for 20 minutes (heartbeat row in `job_markers`), so one check covers app, database and cron. A
+      DigitalOcean Uptime check (check `b36fc184-f0d2-44b2-9105-0b4dea55e2ef`, us_east + us_west) polls it with a "down" alert emailed
+      to the owner.
       (Render emails on failed runs if enabled in the cron job's settings).
 - [ ] Rate limiting is in-memory (fine on one instance). Move to Upstash Redis before scaling to 2+ instances;
       the notification claim logic is already safe for multiple instances.
@@ -328,7 +335,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (`DATABASE_URL=<prod, sslmode=require>`), then assign staff to locations, enable the imported classes, and
       set each location's address/phone/opening hours and name the second site "Angelic Lashes by Tiffany" (its own legal entity; the website lists it as Angelic Beauty – Fairfax) (taken from angelicbeautyva.com on 2026-10-10: Sterling
       Mon/Wed/Thu 10–6, Fri 10–7, Sat/Sun 10–5, Tue closed; Fairfax Mon–Fri 9–6, Sat 8:30–6, Sun 9–5).
-- [ ] Write a short privacy/terms review with a lawyer before accepting other businesses.
+- [ ] Write a short privacy/terms review with a lawyer before accepting other businesses. 2026-10-17: `LEGAL-REVIEW-2026-10-17.md` is the
+      brief for the lawyer (what the product holds, subprocessors, the 13 gaps, the owner's open questions); the privacy page now names the
+      subprocessors, the processor role for client data, photos/forms/notes and the texting rules. The lawyer's pass itself is still to do.
+- [ ] Stripe Tax on the platform subscription: code is ready behind `STRIPE_TAX_ENABLED=1` (2026-10-17: products carry the SaaS tax code
+      `txcd_10103000`; Checkout collects the billing address and tax id and turns on `automatic_tax`). Before setting the flag: in the
+      Stripe dashboard, Settings → Tax, enter the head-office address and add the registrations for the states where the platform must
+      collect; have the accountant confirm the SaaS code for the text-message items. Existing subscriptions are not re-priced.
 
 ### Public REST API (built 2026-10-14, migration 0076)
 - [x] Business-scoped API keys (Settings → API access; hashed, shown once, scopes, expiry, revoke, 120 req/min per key), `/api/v1`

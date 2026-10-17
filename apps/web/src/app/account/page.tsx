@@ -19,7 +19,8 @@ export const metadata: Metadata = { title: "Account" };
 export default async function AccountPage() {
   const session = await requireSession();
   const h = await headers();
-  const [sessions, mine, accounts] = await Promise.all([auth.api.listSessions({ headers: h }), listMyBusinesses(session.user.id), auth.api.listUserAccounts({ headers: h })]);
+  // Better Auth only lists devices for a session signed in within the last day; an older one gets the list after signing in again, not a crash.
+  const [sessions, mine, accounts] = await Promise.all([auth.api.listSessions({ headers: h }).catch(() => null), listMyBusinesses(session.user.id), auth.api.listUserAccounts({ headers: h })]);
   const hasPassword = accounts.some((a) => a.providerId === "credential");
   const google = accounts.find((a) => a.providerId === "google");
   const user = session.user as typeof session.user & { twoFactorEnabled?: boolean | null };
@@ -73,10 +74,11 @@ export default async function AccountPage() {
           <Card className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-medium">Signed-in devices</h2>
-              {sessions.length > 1 ? <form action={revokeOtherSessions}><ConfirmSubmit title="Sign out all other devices?" confirmLabel="Sign out others" variant="ghost">Sign out others</ConfirmSubmit></form> : null}
+              {sessions && sessions.length > 1 ? <form action={revokeOtherSessions}><ConfirmSubmit title="Sign out all other devices?" confirmLabel="Sign out others" variant="ghost">Sign out others</ConfirmSubmit></form> : null}
             </div>
+            {!sessions ? <p className="text-sm text-stone-500">Sign in again to see and sign out the devices signed in to your account.</p> : null}
             <ul className="divide-y divide-stone-100 text-sm">
-              {sessions.map((s) => {
+              {(sessions ?? []).map((s) => {
                 const current = s.id === session.session.id;
                 return (
                   <li key={s.id} className="flex items-center gap-3 py-2">

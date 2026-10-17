@@ -41,8 +41,17 @@ async function ensureProduct(id: keyof typeof PRODUCT_IDS, name: string, descrip
   } catch (e) {
     if ((e as Stripe.errors.StripeError).code !== "resource_missing") throw e;
   }
-  const p = await s.products.create({ id: PRODUCT_IDS[id], name, description });
+  // Stripe Tax code: SaaS for business use (the messaging items are billed as part of the same service; have the accountant confirm).
+  const p = await s.products.create({ id: PRODUCT_IDS[id], name, description, tax_code: "txcd_10103000" });
   return p.id;
+}
+
+/**
+ * Stripe Tax on the platform's own subscriptions, once the head-office address and tax registrations exist in the Stripe
+ * dashboard (Settings → Tax). Off until STRIPE_TAX_ENABLED=1, so a dashboard that is not set up never breaks Checkout.
+ */
+export function stripeTaxEnabled(): boolean {
+  return process.env.STRIPE_TAX_ENABLED === "1";
 }
 
 async function ensureMeter(): Promise<string> {
@@ -200,6 +209,8 @@ export async function startBilling(business: Business, slug: string): Promise<st
     line_items: items,
     payment_method_collection: "always",
     allow_promotion_codes: true,
+    // With Stripe Tax on, Checkout collects the billing address, saves it to the customer and works out the tax from it.
+    ...(stripeTaxEnabled() ? { automatic_tax: { enabled: true }, billing_address_collection: "required" as const, customer_update: { address: "auto" as const, name: "auto" as const }, tax_id_collection: { enabled: true } } : {}),
     subscription_data: {
       metadata: { businessId: business.id, slug },
       ...checkoutTrial(business.trialEndsAt, catalog.config.trialDays),

@@ -37,8 +37,18 @@ pnpm --filter @angelic/web e2e
 ## Monitoring
 `src/instrumentation.ts` logs every unhandled request error and, when `ERROR_WEBHOOK_URL`
 is set, POSTs a JSON summary (message, route, digest, top of stack) to that URL — a Slack or
-Discord incoming webhook works as-is. For full tracing and grouping, add Sentry:
+Discord incoming webhook works as-is. With no webhook (production today), `lib/report-error.ts`
+emails the same summary through Resend to `ERROR_EMAIL_TO` (default `SUPPORT_EMAIL`), throttled to
+one email per distinct error every 10 minutes and 20 an hour per instance, so a crash loop is a
+handful of emails. For full tracing and grouping, add Sentry:
 `pnpm --filter @angelic/web add @sentry/nextjs && npx @sentry/wizard@latest -i nextjs`.
+
+**Uptime.** `GET /api/health` answers 200 when Postgres is reachable and the reminders cron has
+called `/api/jobs/notifications` in the last 20 minutes (the job writes a `job_markers` heartbeat
+row each run), 503 otherwise with `database: "unreachable"` or `reminders: "stale"`. A
+DigitalOcean Uptime check (account tunityventure@gmail.com, check `b36fc184-f0d2-44b2-9105-0b4dea55e2ef`,
+us_east + us_west, added 2026-10-17) polls it and emails the owner when it is down, so one check
+covers the app, the database and the cron job.
 
 ## Rate limiting and headers
 `src/proxy.ts` limits POSTs to `/api/auth/*` (20/min/IP), `/book/*` (30/min/IP) and other

@@ -163,9 +163,9 @@ export function TakePayment({ slug, saleId, dueCents, currency, hasClient, saved
           {way === "saved" ? (
             <SavedCardForm key={dueCents} action={actions.payWithSavedCard} slug={slug} saleId={saleId} dueCents={dueCents} cards={savedCards} />
           ) : way === "reader" ? (
-            <TerminalPayment slug={slug} saleId={saleId} dueCents={dueCents} hasClient={hasClient} test={stripe.test} />
+            <TerminalPayment key={`tp${dueCents}`} slug={slug} saleId={saleId} dueCents={dueCents} hasClient={hasClient} test={stripe.test} />
           ) : (
-            <CardPayment slug={slug} saleId={saleId} dueCents={dueCents} publishableKey={stripe.publishableKey} hasClient={hasClient} />
+            <CardPayment key={`cp${dueCents}`} slug={slug} saleId={saleId} dueCents={dueCents} publishableKey={stripe.publishableKey} hasClient={hasClient} />
           )}
         </div>
       ) : null}

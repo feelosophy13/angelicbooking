@@ -52,9 +52,14 @@ export async function POST(req: Request) {
     .filter(([, r]) => r && typeof r === "object" && "error" in r && (r as { error?: unknown }).error)
     .map(([k, r]) => `${k}: ${(r as { error: string }).error}`);
   if (failed.length) await reportError(`jobs/notifications: ${failed.length} step(s) failed`, undefined, { failed });
+  // Heartbeat for /api/health: the cron reached the app and the run finished (with or without failed steps).
+  await db.insert(schema.jobMarkers).values({ name: HEARTBEAT, lastRunOn: now.toISOString().slice(0, 10) }).onConflictDoUpdate({ target: schema.jobMarkers.name, set: { lastRunOn: now.toISOString().slice(0, 10), updatedAt: new Date() } }).catch(() => undefined);
   console.log(`[jobs/notifications] processed=${r.processed} sent=${r.sent} failed=${r.failed} skipped=${r.skipped} workflowsStarted=${a.started} workflowsResumed=${w.resumed} formsNudges=${f.queued} lowStockEmails=${inv.sent} verifications=${v.checked}/${v.changed} in ${ms}ms`);
   return NextResponse.json({ ...r, workflows: { ...a, ...w }, formsNudges: f, lowStock: inv, verifications: v, billing: bill, onboardingNudge: nudge, customDomains: domains, orphanDeposits: orphans, authorizedOrders: orders, failed, ms }, { status: failed.length ? 500 : 200 });
 }
+
+/** The job_markers row /api/health reads to know the 5-minute cron is still calling. */
+export const HEARTBEAT = "notifications-heartbeat";
 
 /** Claim today's run of a once-a-day job (UTC day). True for exactly one caller per day, however many runs or instances there are. */
 async function claimDailyRun(name: string, now: Date): Promise<boolean> {
