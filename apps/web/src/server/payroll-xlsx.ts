@@ -91,7 +91,7 @@ function simpleSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, period: string, 
       row("Regular hours", h(e.regularMinutes), $(at(e.regularMinutes, 1)));
       if (e.overtimeMinutes) row("Overtime hours (1.5×)", h(e.overtimeMinutes), $(at(e.overtimeMinutes, 1.5)));
       if (e.doubleMinutes) row("Double-time hours (2×)", h(e.doubleMinutes), $(at(e.doubleMinutes, 2)));
-      if (e.overtimeOnCommissionCents) row("Overtime on commission", "commission in the regular rate", $(e.overtimeOnCommissionCents));
+      if (e.overtimeOnCommissionCents) row("Overtime on commission and bonuses", "in the regular rate", $(e.overtimeOnCommissionCents));
     }
     row("Pay", "", $(e.wageCents), { bold: true });
   } else {

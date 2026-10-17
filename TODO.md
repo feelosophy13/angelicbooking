@@ -283,10 +283,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       2026-10-17: authorize → capture (full amount), a capture replay with the same key, and cancel-after-capture / capture-after-cancel
       both refused with `payment_intent_unexpected_state` (which the code handles). Not yet checked: manual capture with a platform fee on
       a real connected account (the demo sandbox is a standalone account and takes no fee).
-- [ ] Still open from the review (2026-10-17 audit): bonuses entered as adjustments don't count in the overtime rate (needs a "counts as
-      pay" flag, a migration); no client merge tool (the duplicate warning is there; the client page could show "possible duplicate");
-      the quick "new client" in the client picker has no duplicate check; eslint + config for apps/web (then make CI lint blocking);
-      mobile has no two-factor screen; Render "Auto-Deploy: After CI Checks Pass" is the owner's setting.
+- [x] 2026-10-17: payroll adjustments have "Bonus or pay for work" (migration 0112); ticked ones count toward the overtime regular rate
+      like commission ("OT on commission and bonuses"). The client picker's quick add offers likely duplicates first (pick the existing
+      client, or add anyway), and it now works inside other forms (it used to submit the page's own form, e.g. on Sales).
+- [ ] Still open from the review (2026-10-17 audit): no client merge tool (the duplicate warnings are there; the client page could show
+      "possible duplicate"); eslint + config for apps/web (then make CI lint blocking); mobile has no two-factor screen; store capture with
+      a platform fee untested on a real connected account; Render "Auto-Deploy: After CI Checks Pass" is the owner's setting.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done, including Resend pacing/per-tenant fairness, except the items listed as still open above.
       Next: the per-area lists in that file.
 

@@ -274,3 +274,14 @@ describe("pay settings that change inside a period", () => {
     expect(e.wageCents).toBe(15_000 + 20_000);
   });
 });
+
+describe("bonuses in the overtime rate", () => {
+  it("counts an adjustment marked as pay toward the overtime regular rate, not a reimbursement", () => {
+    const hours = [5, 6, 7, 8, 9].map((d) => ({ staffId: "s", date: `2026-10-0${d}`.replace("-010", "-10"), minutes: 600 }));
+    const emp = base({ payType: "hourly", hourlyRateCents: 2000, mainCommissionBps: 0, productCommissionBps: 0 });
+    const run = (countsAsPay: boolean) => computePayroll({ employees: [emp], lines: [], hours, adjustments: [{ staffId: "s", label: "Bonus", amountCents: 100_000, countsAsPay }], overtime: true }).employees[0]!;
+    // $1,000 over 50 h = $20/h; 10 overtime hours add half of it each: $100.
+    expect(run(true).overtimeOnCommissionCents).toBe(10_000);
+    expect(run(false).overtimeOnCommissionCents).toBe(0);
+  });
+});

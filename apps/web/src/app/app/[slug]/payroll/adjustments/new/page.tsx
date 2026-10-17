@@ -3,7 +3,7 @@ import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { formatDateLong } from "@/lib/utils";
 import type { Metadata } from "next";
-import { FormPage, Input, Select, MoneyInput } from "@/components/ui";
+import { Checkbox, FormPage, Input, Select, MoneyInput } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 
 export const metadata: Metadata = { title: "Add payroll adjustment" };
@@ -26,6 +26,7 @@ export default async function NewAdjustmentPage({ params, searchParams }: { para
         <Field label="Employee" name="staffId"><Select name="staffId">{staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}</Select></Field>
         <Field label="Label" name="label" required><Input name="label" placeholder="Missed Pay from Training" required autoFocus /></Field>
         <Field label="Amount" name="amount" required><MoneyInput name="amount" required /></Field>
+        <Checkbox name="countsAsPay" label="Bonus or pay for work" hint="counts toward the overtime rate, like commission (leave unticked for reimbursements and corrections)" />
         <SubmitButton pendingText="Adding…">Add adjustment</SubmitButton>
       </ActionForm>
     </FormPage>

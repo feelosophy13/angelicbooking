@@ -12,12 +12,17 @@ import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
 let rowFreeDuringCall: boolean[] = [];
 let probe: (() => Promise<boolean>) | null = null;
 const refunds = new Map<string, { id: string }>();
+// For a double click: hold each Stripe call until `waitFor` calls are in flight (so the two clicks really overlap), at most 2 s.
+let waitFor = 1;
+let inFlight = 0;
 vi.mock("@/lib/stripe", async (orig) => ({
   ...(await orig<typeof import("@/lib/stripe")>()),
   stripe: () => ({
     refunds: {
       create: async (_params: unknown, opts: { idempotencyKey: string }) => {
         if (probe) rowFreeDuringCall.push(await probe());
+        inFlight++;
+        for (let t = 0; inFlight < waitFor && t < 200; t++) await new Promise((r) => setTimeout(r, 10));
         await new Promise((r) => setTimeout(r, 20));
         if (!refunds.has(opts.idempotencyKey)) refunds.set(opts.idempotencyKey, { id: `re_${refunds.size + 1}` });
         return refunds.get(opts.idempotencyKey)!;
@@ -72,7 +77,10 @@ describe.skipIf(!up)("Stripe calls outside transactions", () => {
     probe = null;
     expect(rowFreeDuringCall).toEqual([true]);
     // A double click: one refund.
+    waitFor = 2;
+    inFlight = 0;
     await Promise.allSettled([refund(1000), refund(1000)]);
+    waitFor = 1;
     const d = (await getSale(kit.A, saleId))!;
     expect(d.refunds.map((r) => [r.amountCents, r.stripeRefundId]).sort((x, y) => String(x[1]).localeCompare(String(y[1])))).toEqual([[1000, "re_1"], [1000, "re_2"]]);
     // The webhook for that same refund: already booked, nothing added.

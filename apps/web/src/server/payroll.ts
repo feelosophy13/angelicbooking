@@ -266,7 +266,7 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
     };
   });
   const hours: HoursEntry[] = rest.hours.filter((h) => !split || h.locationId === locationId).map((h) => ({ staffId: h.staffId, date: h.date, minutes: h.minutes }));
-  const adjustments: Adjustment[] = split ? [] : rest.adjustments.map((a) => ({ staffId: a.staffId, label: a.label, amountCents: a.amountCents }));
+  const adjustments: Adjustment[] = split ? [] : rest.adjustments.map((a) => ({ staffId: a.staffId, label: a.label, amountCents: a.amountCents, countsAsPay: a.countsAsPay }));
   const nameOf = new Map(employees.map((e) => [e.staffId, e.name]));
   const rateChanges = rest.rates.changes.map((c) => ({ ...c, name: nameOf.get(c.staffId) ?? "" }));
   return {

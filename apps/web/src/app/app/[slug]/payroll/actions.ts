@@ -10,14 +10,14 @@ import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 
 export const addAdjustment = formAction(
-  z.object({ slug: z.string(), start: f.isoDate(), end: f.isoDate(), staffId: f.id(), label: f.text(1, 80), amount: z.string().trim().regex(/^-?\$?\d{1,7}(\.\d{1,2})?$/, "Enter an amount like 142.90 (negative to subtract)") }),
+  z.object({ slug: z.string(), start: f.isoDate(), end: f.isoDate(), staffId: f.id(), label: f.text(1, 80), amount: z.string().trim().regex(/^-?\$?\d{1,7}(\.\d{1,2})?$/, "Enter an amount like 142.90 (negative to subtract)"), countsAsPay: f.checkbox() }),
   async (d) => {
     const ctx = await requireAction(d.slug, "payroll.view");
     const cents = Math.round(Number(d.amount.replace("$", "")) * 100);
     if (cents === 0) throw new FormError("Amount can't be zero", "amount");
     await withTenant(ctx.business.id, async (tx) => {
       if (await getFinalizedRunIn(tx, { start: d.start, end: d.end })) throw new FormError("This period is finalized. Add the adjustment to the current period instead.", "label");
-      const [row] = await tx.insert(schema.payrollAdjustments).values({ businessId: ctx.business.id, staffId: d.staffId, periodStart: d.start, periodEnd: d.end, label: d.label, amountCents: cents, createdByUserId: ctx.user.id }).returning();
+      const [row] = await tx.insert(schema.payrollAdjustments).values({ businessId: ctx.business.id, staffId: d.staffId, periodStart: d.start, periodEnd: d.end, label: d.label, amountCents: cents, countsAsPay: d.countsAsPay, createdByUserId: ctx.user.id }).returning();
       await tx.insert(schema.auditLog).values({ businessId: ctx.business.id, actorUserId: ctx.user.id, action: "payroll.adjustment_add", entity: "payroll_adjustment", entityId: row!.id, diff: JSON.stringify({ staffId: d.staffId, period: `${d.start}_${d.end}`, label: d.label, cents }) });
     });
     await setFlash("Adjustment added");

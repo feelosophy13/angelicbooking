@@ -37,7 +37,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   const money = (c: number) => formatMoney(c, business.currency);
   // "6.00 OT, 1.00 double, incl. $40.00 OT on commission"
   const otText = (e: (typeof result.employees)[number]) =>
-    [`${(e.overtimeMinutes / 60).toFixed(2)} OT`, e.doubleMinutes ? `${(e.doubleMinutes / 60).toFixed(2)} double` : null, e.overtimeOnCommissionCents ? `incl. ${money(e.overtimeOnCommissionCents)} OT on commission` : null].filter(Boolean).join(", ");
+    [`${(e.overtimeMinutes / 60).toFixed(2)} OT`, e.doubleMinutes ? `${(e.doubleMinutes / 60).toFixed(2)} double` : null, e.overtimeOnCommissionCents ? `incl. ${money(e.overtimeOnCommissionCents)} OT on commission and bonuses` : null].filter(Boolean).join(", ");
   const active = result.employees.filter((e) => e.hasActivity);
   const unconfigured = result.employees.filter((e) => e.hasActivity && e.employee.payType === "commission" && e.employee.mainCommissionBps === 0 && e.mainRevenueCents > 0);
   const qs = `start=${start}&end=${end}&overtime=${overtime ? 1 : 0}${locationFilter ? `&location=${locationFilter}` : ""}`;
