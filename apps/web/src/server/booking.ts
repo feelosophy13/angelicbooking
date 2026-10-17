@@ -327,7 +327,8 @@ export async function rescheduleService(input: {
         const start = new Date(s.startAt.getTime() + deltaMs);
         await tx
           .update(schema.appointmentItems)
-          .set({ startAt: start, endAt: lengthMin !== null ? new Date(start.getTime() + lengthMin * 60_000) : new Date(s.endAt.getTime() + deltaMs), staffId, ...(priceFor !== null && s.id === priced.id ? { priceCents: priceFor } : {}) })
+          // A move is a new placement: a deliberate double-booking doesn't carry over to wherever it lands.
+          .set({ startAt: start, endAt: lengthMin !== null ? new Date(start.getTime() + lengthMin * 60_000) : new Date(s.endAt.getTime() + deltaMs), staffId, allowOverlap: false, ...(priceFor !== null && s.id === priced.id ? { priceCents: priceFor } : {}) })
           .where(eq(schema.appointmentItems.id, s.id));
       }
       await followProviderLocation(tx, input.businessId, item.appointmentId);
@@ -374,7 +375,8 @@ export async function rescheduleAppointment(input: { businessId: string; appoint
       }
       await tx.execute(sql`set constraints appointment_items_no_double_booking deferred`);
       for (const staffId of staffIds) await assertNoClassClash(tx, staffId, moved.filter((m) => m.item.staffId === staffId));
-      for (const m of moved) await tx.update(schema.appointmentItems).set({ startAt: m.start, endAt: m.end }).where(eq(schema.appointmentItems.id, m.item.id));
+      // A move is a new placement: a deliberate double-booking doesn't carry over.
+      for (const m of moved) await tx.update(schema.appointmentItems).set({ startAt: m.start, endAt: m.end, allowOverlap: false }).where(eq(schema.appointmentItems.id, m.item.id));
       await followProviderLocation(tx, input.businessId, input.appointmentId);
       await audit(tx, input.businessId, input.actorUserId, "appointment.reschedule", input.appointmentId, { from: items[0]!.startAt, to: input.newStartAt, items: items.length });
     });
