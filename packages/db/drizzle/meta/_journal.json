@@ -757,6 +757,13 @@
       "when": 1794800000000,
       "tag": "0107_payroll_overtime",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1794900000000,
+      "tag": "0108_admin_role_secrets",
+      "breakpoints": true
     }
   ]
 }

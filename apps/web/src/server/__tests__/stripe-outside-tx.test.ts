@@ -98,4 +98,14 @@ describe.skipIf(!up)("Stripe calls outside transactions", () => {
     const logged = await withTenant(kit.A, (tx) => tx.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, two.id)));
     expect(logged.filter((l) => l.action === "deposit.refund").length).toBe(1);
   });
+
+  it("sends two equal partial deposit refunds as two refunds", async () => {
+    const clientId = (await withTenant(kit.A, (tx) => tx.insert(schema.clients).values({ businessId: kit.A, firstName: "Bo" }).returning()))[0]!.id;
+    const appt = (await withTenant(kit.A, (tx) => tx.insert(schema.appointments).values({ businessId: kit.A, clientId, depositCents: 3000, depositStatus: "paid", depositPaymentIntentId: `pi_dep3_${kit.A}`, depositStripeAccountId: "acct_test" }).returning()))[0]!;
+    const before = refunds.size;
+    for (let n = 0; n < 2; n++) await refundDeposit({ businessId: kit.A, accountId: "acct_test", appointmentId: appt.id, actorUserId: userId, reason: "partial", amountCents: 1000 });
+    expect(refunds.size - before).toBe(2);
+    const after = await withTenant(kit.A, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appt.id) }));
+    expect([after!.depositStatus, after!.depositCents]).toEqual(["paid", 1000]);
+  });
 });

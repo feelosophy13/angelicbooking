@@ -164,9 +164,9 @@ export async function refundDeposit(input: { businessId: string; accountId: stri
   });
   if (typeof prep === "boolean") return prep;
   const { appt, refundCents, partial, account } = prep;
-  // Stripe is called with no transaction open. A partial refund names its amount (and carries it in the idempotency key); a full one lets
-  // Stripe refund what is left.
-  await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId!, ...(partial ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: account, idempotencyKey: `deposit_refund_${appt.id}_${partial ? refundCents : "all"}` });
+  // Stripe is called with no transaction open. A partial refund names its amount; a full one lets Stripe refund what is left. The key
+  // carries the deposit as it stood, so a double click is one refund but a second, equal partial refund later is a refund of its own.
+  await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId!, ...(partial ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: account, idempotencyKey: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}` });
   return withTenant(input.businessId, async (tx) => {
     // Only if nothing recorded it meanwhile (a double click, or the webhook for this very refund): then the deposit has already moved on.
     const updated = await tx

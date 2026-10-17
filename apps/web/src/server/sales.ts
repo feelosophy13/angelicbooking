@@ -1560,7 +1560,7 @@ export async function applyPromoToSale(input: { businessId: string; saleId: stri
     if (!sale) throw new SaleError("Sale not found.");
     assertOpen(sale);
     const lines = await tx.select().from(schema.saleLines).where(eq(schema.saleLines.saleId, sale.id));
-    const promo = await validatePromo(tx, input.code, { serviceIds: lines.filter((l) => l.kind === "service").map((l) => l.serviceId), subtotalCents: sale.subtotalCents });
+    const promo = await validatePromo(tx, input.code, { serviceIds: lines.filter((l) => l.kind === "service").map((l) => l.serviceId), subtotalCents: sale.subtotalCents, forSaleId: sale.id });
     const d = promoDiscount(promo);
     await tx.update(schema.sales).set({ promoCodeId: promo.id, discountType: d.type, discountValue: d.value }).where(eq(schema.sales.id, sale.id));
     await recompute(tx, sale.id, input.taxRateBps, { ...d, serviceIds: promo.serviceIds }, `Code ${promo.code}`);

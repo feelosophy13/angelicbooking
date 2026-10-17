@@ -41,6 +41,17 @@ async function insertServiceItems(
   return { service, segments };
 }
 
+/** A booking saved with a promo code takes one of its uses (checked under the code's lock, in the booking's own transaction). */
+async function promoRoom(tx: Tx, promoCodeId: string) {
+  const { assertPromoRoom, PromoError } = await import("./promos");
+  try {
+    await assertPromoRoom(tx, promoCodeId);
+  } catch (e) {
+    if (e instanceof PromoError) throw new BookingError(e.message);
+    throw e;
+  }
+}
+
 /** The provider is teaching a scheduled class across any of these ranges. Classes aren't appointment items, so the DB constraint can't see them. */
 async function assertNoClassClash(tx: Tx, staffId: string, ranges: { start: Date; end: Date }[]) {
   if (!ranges.length) return;
@@ -126,6 +137,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
   if (input.classSessionId) {
     const { insertSeat } = await import("./classes");
     return withTenant(input.businessId, async (tx) => {
+      if (input.promoCodeId) await promoRoom(tx, input.promoCodeId);
       const r = await insertSeat(tx, { businessId: input.businessId, sessionId: input.classSessionId!, clientId: input.clientId, notes: input.notes ?? null, source: input.source ?? "staff", createdByUserId: input.createdByUserId ?? null, deposit: input.deposit, cardSetupIntentId: input.cardSetupIntentId, promoCodeId: input.promoCodeId });
       return { appointmentId: r.appointmentId };
     });
@@ -135,6 +147,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
       const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
       const locationId = await resolveAppointmentLocation(tx, input.staffId, input.startAt, biz?.timezone ?? "America/New_York", input.locationId);
       if (!(await serviceOfferedAt(tx, input.serviceId, locationId))) throw new BookingError("That service isn't offered at this location.");
+      if (input.promoCodeId) await promoRoom(tx, input.promoCodeId);
       const [appt] = await tx
         .insert(schema.appointments)
         .values({

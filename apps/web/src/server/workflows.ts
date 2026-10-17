@@ -25,6 +25,7 @@ import { smsBody, smsWithStopNotice } from "@/lib/notify/sms";
 import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing";
 import { pathTo } from "@/server/categories";
 import { ensureReferralCode, referralsEnabled } from "./loyalty";
+import { NO_POSTAL_ADDRESS, postalAddress } from "./locations";
 import { APPOINTMENT_TRIGGERS, birthdayKeys, deferToDaytime, isMarketingTrigger, matchesFilters, newStepId, noVisitWindow, validateSteps, waitResumesAt, type TriggerFacts } from "@/lib/workflows-logic";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -472,7 +473,10 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       } else {
         if (!client.emailOptIn || !client.email) { note(i, "skipped", "No email consent or address"); continue; }
         if (marketing && !client.emailMarketingOptIn) { note(i, "skipped", "Unsubscribed from marketing emails"); continue; }
-        const t = marketingEmail(v.brand, { subject: renderText(step.subject, v.vars), text: renderText(step.body, v.vars), ctaLabel: step.ctaLabel ?? v.ctaLabel, ctaUrl: v.ctaUrl, unsubscribeUrl: unsubscribeUrl(business, client.id) });
+        // A marketing email must show a postal address (CAN-SPAM).
+        const address = v.brand.address || (marketing ? await postalAddress(tx, business) : null);
+        if (marketing && !address) { note(i, "skipped", NO_POSTAL_ADDRESS); continue; }
+        const t = marketingEmail({ ...v.brand, address }, { subject: renderText(step.subject, v.vars), text: renderText(step.body, v.vars), ctaLabel: step.ctaLabel ?? v.ctaLabel, ctaUrl: v.ctaUrl, unsubscribeUrl: unsubscribeUrl(business, client.id) });
         const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: `workflow_${w.templateKey ?? "custom"}`, recipient: client.email, subject: t.subject, body: t.html, scheduledAt, workflowRunId: run.id, marketing }).returning({ id: schema.notifications.id });
         out.push(row!.id);
         note(i, "sent", `Email queued to ${client.email}${deferred}`);

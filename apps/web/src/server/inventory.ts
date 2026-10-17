@@ -231,7 +231,7 @@ export async function findProductByCode(businessId: string, code: string) {
 // ---- Online orders: don't sell what is already spoken for ----
 
 /** Online carts held open this long count against the shelf, so two buyers can't both take the last one. */
-export const ONLINE_HOLD_MINUTES = 30;
+export const ONLINE_HOLD_MINUTES = 60;
 
 /** For each product: what the online store may still sell (on hand at that location, less unpaid online orders). Untracked products are absent. */
 export async function onlineAvailability(tx: TenantDb, locationId: string | null, productIds: string[], opts: { lock?: boolean } = {}) {

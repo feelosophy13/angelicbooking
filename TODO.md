@@ -238,6 +238,25 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       the whole ticket) cancels a membership that ticket started (credits to 0, Stripe auto-renew cancelled after the commit); refunding a
       renewal ticket puts the membership back as it was before that renewal (recorded in the audit log at renewal; older renewals take one
       period and its credits off). Tests: `delivery-fairness.test.ts`, `refund-items.test.ts`.
+- [x] Review per-area batch, 2026-10-17 (migration 0108): the admin database role can no longer read secrets (password hashes and
+      OAuth tokens, 2FA secrets, sign-in/reset codes, API key hashes, session tokens; sessions keep who/when for "last login"; also in
+      `packages/db/sql/admin-role.sql` so re-running it can't grant them back). Two equal partial deposit refunds are two refunds in Stripe
+      (the key carries the deposit as it stood). Promo use limits hold under concurrency: the code is locked and uses already held (open
+      tickets, upcoming bookings) count, checked where the ticket or booking is saved. Marketing emails (campaigns and automations)
+      need a postal address (the business's, else the main location's) or aren't sent. Platform billing webhooks read the subscription
+      fresh (out-of-order events can't roll it back). Online store holds last 60 minutes. Payroll adjustments count in the period that
+      contains their start date, however its boundaries are picked. Tests: `api-marketing`, `money-tail`, `stripe-outside-tx`.
+- [ ] Still open from the review (2026-10-17 audit), highest impact first: pay-rate change mid-period pays one rate for the whole period;
+      overtime should default on for hourly staff (and bonuses entered as adjustments count in the overtime rate); store orders could
+      authorize then capture only if stock remains (instead of a time hold); messages skipped while texting was paused for billing never
+      re-queue; quiet hours use the business time zone, not the location's; `/api/v1/appointments/:id/cancel` doesn't require a reason;
+      dragging a multi-service visit moves only the dragged service; online booking picks the time before add-ons; class end ignores the
+      cleanup buffer; 24:00 close becomes 23:59; no deliberate double-booking (`allowOverlap` unused) or warning when time off covers
+      bookings; audit gaps (clock PIN, payroll export, settings, domains; no audit filters); catalog small items (bulk blank cost saves $0,
+      `applyCount` overwrites sales during a count, flat deposit above price accepted, category/supplier ids unchecked); custom-domain
+      salons get app.angelicbooking.com links in emails; `/suspended` is a dead end; mobile `apiUrl` hard-coded, no Expo auth plugin, CI
+      doesn't lint or gate deploys; Vagaro import in one transaction (batch it); no client merge / duplicate warning. No record of the
+      client accepting the cancellation policy at online booking (chargeback evidence).
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done, including Resend pacing/per-tenant fairness, except the items listed as still open above.
       Next: the per-area lists in that file.
 

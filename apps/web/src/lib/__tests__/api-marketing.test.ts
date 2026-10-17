@@ -128,6 +128,17 @@ describe.skipIf(!up)("campaigns", () => {
     expect((await call(previewAudience, ro, {}, send("POST", { channel: "email", audience: { staff_id: seed[`staff${kit.B}`] } }))).status).toBe(404);
     expect((await call(previewAudience, ro, {}, send("POST", { channel: "pigeon" }))).status).toBe(422);
   });
+  it("refuses to email a campaign until the business has a postal address (CAN-SPAM)", async () => {
+    await call(patchCampaign, kit.key, { id }, send("PATCH", { audience: {} }));
+    const r = await call(sendCampaign, kit.key, { id }, send("POST"));
+    expect(r.status).not.toBe(200);
+    expect((await j(r)).error.message).toMatch(/postal address/);
+    expect(await withTenant(kit.A, (tx) => tx.select().from(schema.notifications).where(eq(schema.notifications.campaignId, id)))).toHaveLength(0);
+    // The main location's address is enough.
+    await withTenant(kit.A, (tx) => tx.update(schema.locations).set({ addressLine1: "1 Main St", city: "Sterling", state: "VA", postalCode: "20164" }).where(eq(schema.locations.id, seed[`loc${kit.A}`]!)));
+    await withTenant(kit.B, (tx) => tx.update(schema.locations).set({ addressLine1: "2 Oak Ave", city: "Fairfax", state: "VA", postalCode: "22030" }).where(eq(schema.locations.id, seed[`loc${kit.B}`]!)));
+  });
+
   it("sends exactly once: queues one row per client, then refuses a resend and further edits", async () => {
     await call(patchCampaign, kit.key, { id }, send("PATCH", { audience: {} }));
     const [a, b] = await Promise.all([call(sendCampaign, kit.key, { id }, send("POST")), call(sendCampaign, kit.key, { id }, send("POST"))]);

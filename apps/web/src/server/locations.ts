@@ -4,7 +4,7 @@
  * sales-tax rate and appear as the merchant on receipts. Everything else
  * (clients, services, gift cards, packages, memberships) is shared.
  */
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { isStripeConfigured } from "@/lib/stripe";
 
@@ -34,6 +34,19 @@ export function addressOf(l: Pick<Location, "addressLine1" | "addressLine2" | "c
   const cityLine = [l.city, [l.state, l.postalCode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   return [street, cityLine].filter(Boolean).join(", ") || null;
 }
+
+/** The postal address a marketing email must show (CAN-SPAM): the business's own, else its main location's. Null when there is none. */
+export async function postalAddress(tx: TenantDb, business: Pick<Business, "addressLine">): Promise<string | null> {
+  if (business.addressLine?.trim()) return business.addressLine.trim();
+  const locs = await tx.select().from(schema.locations).orderBy(desc(schema.locations.isDefault));
+  for (const l of locs) {
+    const a = addressOf(l);
+    if (a) return a;
+  }
+  return null;
+}
+
+export const NO_POSTAL_ADDRESS = "Marketing emails must show your business's postal address. Add it under Settings → Locations (or Business), then send again.";
 
 /** Pure: the payment settings in force for a (possibly null) location. */
 export function paymentContext(business: Business, location: Location | null | undefined): PaymentContext {

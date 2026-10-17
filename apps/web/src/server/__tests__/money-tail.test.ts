@@ -11,6 +11,7 @@ import { db, schema, withTenant } from "@angelic/db";
 import { addProductLine, addServiceLine, getSale, openWalkInSale, recordManualPayment, recordStripeSideRefund } from "@/server/sales";
 import { addOfferLine, redeemCredit } from "@/server/offers";
 import { redeemPoints } from "@/server/loyalty";
+import { applyPromoToSale } from "@/server/sales";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
 
 vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: () => undefined }));
@@ -94,5 +95,12 @@ describe.skipIf(!up)("money tail", () => {
     const earned = await withTenant(kit.A, (tx) => tx.select().from(schema.loyaltyLedger).where(and(eq(schema.loyaltyLedger.saleId, saleId), eq(schema.loyaltyLedger.reason, "earn"))));
     // ($50 + $20 − $10 paid in points) × 1 point/$ + 10 for the visit
     expect(earned.map((e) => e.delta)).toEqual([70]);
+  });
+  it("lets a one-use promo code onto only one of two tickets applied at the same moment", async () => {
+    await withTenant(kit.A, (tx) => tx.insert(schema.promoCodes).values({ businessId: kit.A, code: "ONCE", type: "percent", value: 10, maxUses: 1 }));
+    const [a, b] = [await ticket([cut]), await ticket([cut])];
+    const both = await Promise.allSettled([a, b].map((saleId) => applyPromoToSale({ businessId: kit.A, saleId, code: "ONCE", taxRateBps: 0, actorUserId: userId })));
+    expect(both.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(String((both.find((r) => r.status === "rejected") as PromiseRejectedResult).reason)).toMatch(/used up/);
   });
 });

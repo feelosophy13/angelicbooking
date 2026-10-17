@@ -22,6 +22,12 @@ GRANT USAGE ON SCHEMA public TO angelic_admin;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO angelic_admin;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO angelic_admin;
 
+-- ...except secrets: password hashes and OAuth tokens, 2FA secrets, sign-in and reset codes, API key hashes, and session tokens
+-- (sessions: only who and when, for "last login"). Kept here too so re-running this file never grants them back (migration 0108).
+REVOKE ALL ON "account", "two_factor", "verification", "client_login_codes", "api_keys" FROM angelic_admin;
+REVOKE ALL ON "session" FROM angelic_admin;
+GRANT SELECT ("id", "user_id", "created_at", "updated_at", "expires_at", "active_organization_id") ON "session" TO angelic_admin;
+
 -- The only tables the admin app may write (pricing and its own audit trail). Idempotent, and safe to
 -- run before the migration that creates them (re-run this file after migrating).
 DO $$ BEGIN

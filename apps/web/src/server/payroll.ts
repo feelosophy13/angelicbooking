@@ -236,7 +236,9 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
         tx
           .select()
           .from(schema.payrollAdjustments)
-          .where(and(eq(schema.payrollAdjustments.periodStart, period.start), eq(schema.payrollAdjustments.periodEnd, period.end))),
+          // An adjustment belongs to the period that contains the day it was dated from, so it shows once however the period's start and
+          // end are picked (not only when they match the dates it was entered with).
+          .where(and(gte(schema.payrollAdjustments.periodStart, period.start), lte(schema.payrollAdjustments.periodStart, period.end))),
       ]);
       // Pay settings as they stood at the end of the period, so an old period re-runs with its old rates.
       const rates = await ratesForPeriod(tx, staff.map((x) => x.id), period.start, period.end);

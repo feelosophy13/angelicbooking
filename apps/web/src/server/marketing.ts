@@ -14,6 +14,7 @@ import { marketingEmail } from "@/lib/notify/templates";
 import { deliverMany } from "@/lib/notify";
 import { smsWithStopNotice } from "@/lib/notify/sms";
 import { deferToDaytime } from "@/lib/workflows-logic";
+import { NO_POSTAL_ADDRESS, postalAddress } from "./locations";
 import { phoneTail } from "@/server/consent";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -113,7 +114,9 @@ export async function sendCampaign(business: Business, id: string, actorUserId: 
     const clients = await audienceClients(tx, business, c.audience, c.channel);
     if (!clients.length) throw new MarketingError("Nobody matches this audience on that channel.");
     const bookingUrl = appUrl(`/book/${business.slug}`);
-    const brand = { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address: business.addressLine };
+    const address = await postalAddress(tx, business);
+    if (c.channel === "email" && !address) throw new MarketingError(NO_POSTAL_ADDRESS);
+    const brand = { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address };
     const rows: (typeof schema.notifications.$inferInsert)[] = [];
     // Texts wait for daytime in the business's time zone (9am–8pm); emails go now.
     const scheduledAt = c.channel === "sms" ? deferToDaytime(new Date(), business.timezone) : new Date();

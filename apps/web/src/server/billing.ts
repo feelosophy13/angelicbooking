@@ -418,7 +418,9 @@ export async function handleBillingEvent(event: Stripe.Event): Promise<"processe
       case "customer.subscription.deleted":
       case "customer.subscription.paused":
       case "customer.subscription.resumed": {
-        const sub = event.data.object;
+        // Events can arrive out of order: read the subscription as it is now rather than the event's copy (an older "updated" arriving
+        // after a newer one would otherwise roll the status back).
+        const sub = await stripe().subscriptions.retrieve(event.data.object.id).catch(() => event.data.object);
         const businessId = await businessIdFor(sub);
         if (businessId) {
           await syncSubscription(businessId, sub);
