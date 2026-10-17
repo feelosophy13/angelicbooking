@@ -57,7 +57,8 @@ wrong: fix the page.
 
 - `ActionForm` + `Field` for every form. `Field` owns the label, hint and error; never add your own label.
 - Inputs: `Input`, `Select`, `Textarea` (defaults to four lines, resizable), `Checkbox` (box aligned to the first
-  line, hint underneath), `ImageField` (click the picture to pick, preview in place, an × on the picture corner removes it, with Undo).
+  line, hint underneath), `Radio` inside a `RadioGroup` (same shape as `Checkbox`; the group owns the question, `inline`
+  for two or three short choices; never a hand-written `<input type="radio">`), `ImageField` (click the picture to pick, preview in place, an × on the picture corner removes it, with Undo).
 - Pictures: the picture is the control. Click it to pick or change the file, and a small round (x) on the
   picture's top-right corner removes it (with Undo in the helper line). Never a "Remove" text link or button
   beside the picture. `ImageField` does this; use it for every photo, logo and image.
@@ -78,6 +79,7 @@ wrong: fix the page.
 
 - `Disclosure` (collapsed card with a title and optional hint) for secondary panels: add a service to a visit,
   discount or promo code on a ticket, edit client details, the clock-in PIN, export menus.
+- Inside a Card use `<Disclosure variant="inset">`: a thin bordered row with no shadow, so a card never sits in a card.
 - A disclosure opens itself when it already holds something (a discount is applied, a filter is set).
 - **Only what applies is on screen.** A control earns its place in the current state or it is not drawn. When a
   choice decides which fields matter (discount: none / $ / % / promo code; pay by: card / cash / gift card; time off:

@@ -5,7 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { loadStripe } from "@stripe/stripe-js";
 import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
-import { Checkbox, Field, Input, Notice, Textarea } from "@/components/ui";
+import { Checkbox, Field, Input, Notice, Radio, RadioGroup, Textarea } from "@/components/ui";
 import { finishOrderAction, startOrderAction, type StartOrderResult } from "./actions";
 
 export type CartProduct = { id: string; name: string; groupId?: string | null; groupName?: string | null; optionLabel?: string | null; priceCents: number; description: string | null; imageUrl: string | null; category: string | null; stockQty: number; trackStock: boolean };
@@ -183,10 +183,10 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
       {(items.length > 0 || isGift) ? (
         <div className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
           {canShip ? (
-            <div className="flex gap-2 text-sm">
-              <label className="flex items-center gap-1"><input type="radio" name="method" checked={method === "pickup"} onChange={() => setMethod("pickup")} /> Pick up in store</label>
-              <label className="flex items-center gap-1"><input type="radio" name="method" checked={method === "ship"} onChange={() => setMethod("ship")} /> Ship ({money(props.shippingFlatCents, props.currency)})</label>
-            </div>
+            <RadioGroup inline>
+              <Radio name="method" value="pickup" checked={method === "pickup"} onChange={() => setMethod("pickup")} label="Pick up in store" />
+              <Radio name="method" value="ship" checked={method === "ship"} onChange={() => setMethod("ship")} label={`Ship (${money(props.shippingFlatCents, props.currency)})`} />
+            </RadioGroup>
           ) : !isGift ? <p className="text-xs text-stone-500">Pick up in store.</p> : null}
           {method === "ship" && canShip ? <Field label="Shipping address"><Textarea rows={4} value={address} onChange={(e) => setAddress(e.target.value)} required /></Field> : null}
           <div className="grid grid-cols-2 gap-3">

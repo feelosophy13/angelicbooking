@@ -2,6 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Input, Textarea, Checkbox, Select, MoneyInput } from "@/components/ui";
+import { Disclosure } from "@/components/disclosure";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { saveBookingSettings } from "./actions";
 
@@ -72,11 +73,8 @@ export function BookingForm({ slug, v, stripeReady, feeSummary, feeLabel, policy
         </>
       )}
       <Field label="Cancellation window" name="cancelWindowHours" hint="Hours before the visit. Cancelling inside it counts as late." className="sm:max-w-xs"><Input name="cancelWindowHours" type="number" min={0} defaultValue={v.cancelWindowHours} /></Field>
-      <details className="rounded-lg border border-stone-200 p-3" open={v.requireCardOnline || v.noShowFeeCents > 0 || v.lateCancelFeeType !== "none"}>
-        <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">
-          Fees, deposits and cards <span className="font-normal text-stone-500">· {feeSummary}</span>
-        </summary>
-        <div className="mt-3 space-y-4">
+      <Disclosure variant="inset" title="Fees, deposits and cards" hint={feeSummary} open={v.requireCardOnline || v.noShowFeeCents > 0 || v.lateCancelFeeType !== "none"}>
+        <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Late cancellation fee" name="lateCancelFeeType" hint="Inside the cancellation window; shown in the booking policy.">
               <Select name="lateCancelFeeType" value={feeType} onChange={(e) => setFeeType(e.target.value as BookingValues["lateCancelFeeType"])}>
@@ -131,10 +129,9 @@ export function BookingForm({ slug, v, stripeReady, feeSummary, feeLabel, policy
             <p className="text-xs text-stone-500">No-show fees, deposits and cards on file need card payments. <Link href={paymentsHref} className="text-brand-700 underline">Connect Stripe under Payments</Link>.</p>
           )}
         </div>
-      </details>
-      <details className="rounded-lg border border-stone-200 p-3" open={!!v.bookingPolicy || v.clientAccountsEnabled}>
-        <summary className="cursor-pointer select-none text-sm font-medium text-stone-700 marker:content-none [&::-webkit-details-marker]:hidden">{online ? "Policy, address and client accounts" : "Policy and address"}</summary>
-        <div className="mt-3 space-y-3">
+      </Disclosure>
+      <Disclosure variant="inset" title={online ? "Policy, address and client accounts" : "Policy and address"} open={!!v.bookingPolicy || v.clientAccountsEnabled}>
+        <div className="space-y-3">
           <Field label="Booking policy" name="bookingPolicy" hint={feeType !== "none" ? "Shown to clients when they book. The late cancellation fee above is added for you, so there is no need to repeat it." : "Shown to clients when they book."}><Textarea name="bookingPolicy" rows={5} defaultValue={v.bookingPolicy ?? ""} placeholder="Please arrive 5 minutes early. Late cancellations may be charged." /></Field>
           {policyConflict ? (
             <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">Your policy says &ldquo;{policyConflict}&rdquo; but the late cancellation fee is set to {feeLabel}. Clients see both, and the fee above is the one that is charged. Edit the policy text so they agree.</p>
@@ -146,7 +143,7 @@ export function BookingForm({ slug, v, stripeReady, feeSummary, feeLabel, policy
             <Keep name="clientAccountsEnabled" value={v.clientAccountsEnabled} />
           )}
         </div>
-      </details>
+      </Disclosure>
       <p className="text-xs text-stone-500">Reminder timing and wording live under <Link href={`/app/${slug}/marketing/automations`} className="text-brand-700 underline">Automations → Appointment reminder</Link>.</p>
       <SubmitButton pendingText="Saving…">Save</SubmitButton>
     </ActionForm>

@@ -159,6 +159,29 @@ export function Checkbox({ label, hint, className, ...props }: React.InputHTMLAt
   );
 }
 
+/** One choice in a RadioGroup. Same shape as Checkbox: dot aligned to the first line, label, optional hint. */
+export function Radio({ label, hint, className, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: React.ReactNode; hint?: React.ReactNode }) {
+  return (
+    <label className={cn("flex items-start gap-2.5 text-sm", props.disabled && "opacity-60", className)}>
+      <input type="radio" className="mt-0.5 h-4 w-4 shrink-0 border-stone-300 accent-brand-600" {...props} />
+      <span className="min-w-0">
+        <span className="block leading-5 text-stone-800">{label}</span>
+        {hint ? <span className="block text-xs leading-4 text-stone-500">{hint}</span> : null}
+      </span>
+    </label>
+  );
+}
+
+/** A set of Radio choices with one question above them. `inline` puts short choices on one line. */
+export function RadioGroup({ legend, hint, inline, className, children }: { legend?: React.ReactNode; hint?: React.ReactNode; inline?: boolean; className?: string; children: React.ReactNode }) {
+  return (
+    <fieldset className={cn("min-w-0", className)}>
+      {legend ? <legend className="mb-1.5 text-sm font-medium text-stone-700">{legend}{hint ? <span className="ml-1 font-normal text-stone-500">{hint}</span> : null}</legend> : null}
+      <div className={inline ? "flex flex-wrap gap-x-4 gap-y-1.5" : "space-y-1.5"}>{children}</div>
+    </fieldset>
+  );
+}
+
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return <label className={cn("mb-1 block text-sm font-medium text-stone-700", className)} {...props} />;
 }

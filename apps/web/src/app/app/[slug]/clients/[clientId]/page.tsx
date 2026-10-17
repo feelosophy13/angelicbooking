@@ -14,6 +14,7 @@ import { requireAction, requireBusiness } from "@/lib/tenant";
 import { formatMoney, formatTime } from "@/lib/utils";
 import { BackLink, Button, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox, MoneyInput } from "@/components/ui";
 import { ImageField } from "@/components/image-field";
+import { Disclosure } from "@/components/disclosure";
 import { updateClient } from "../actions";
 import { addNote, deleteNote, togglePin } from "./notes-actions";
 import { Pin, PinOff } from "lucide-react";
@@ -41,7 +42,6 @@ import { listLocations, paymentContextFor } from "@/server/locations";
 import { canWriteLashMaps, lashMapsFor } from "@/server/lash-maps";
 import { LashMapEyes } from "@/components/lash-map";
 import { smsAvailableFor } from "@/server/messaging";
-import { Disclosure } from "@/components/disclosure";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -290,9 +290,8 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               {client.notes ? <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">{client.notes}</p> : null}
             </div>
             {write ? (
-              <details className="group mt-3 border-t border-stone-200 pt-3">
-                <summary className="cursor-pointer select-none text-sm text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">Edit details</summary>
-              <ActionForm action={updateClient} className="mt-3">
+              <Disclosure variant="inset" title="Edit details" className="mt-3">
+              <ActionForm action={updateClient}>
                 <input type="hidden" name="slug" value={slug} />
                 <input type="hidden" name="clientId" value={client.id} />
                 <ImageField name="photo" removeName="removePhoto" current={client.photoUrl} shape="round" placeholder={client.firstName.slice(0, 1)} />
@@ -320,7 +319,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 )}
                 <SubmitButton variant="secondary" pendingText="Saving…">Save</SubmitButton>
               </ActionForm>
-              </details>
+              </Disclosure>
             ) : null}
           </Card>
           {storeCredit.balance > 0 || storeCredit.history.length > 0 ? (
@@ -339,10 +338,9 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 </ul>
               ) : null}
               {write ? (
-                <details className="mt-3 border-t border-stone-200 pt-3">
-                  <summary className="cursor-pointer select-none text-xs text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">Adjust store credit</summary>
+                <Disclosure variant="inset" title="Adjust store credit" className="mt-3">
                   <StoreCreditForm slug={slug} clientId={client.id} />
-                </details>
+                </Disclosure>
               ) : null}
             </Card>
           ) : write ? (
@@ -360,9 +358,8 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 </ul>
               ) : null}
               {write ? (
-                <details className="mt-3 border-t border-stone-200 pt-3">
-                  <summary className="cursor-pointer select-none text-xs text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">Adjust points</summary>
-                  <ActionForm action={adjustClientPoints} className="mt-2">
+                <Disclosure variant="inset" title="Adjust points" className="mt-3">
+                  <ActionForm action={adjustClientPoints}>
                     <input type="hidden" name="slug" value={slug} />
                     <input type="hidden" name="clientId" value={client.id} />
                     <div className="grid grid-cols-[6rem_1fr] gap-2">
@@ -371,7 +368,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                     </div>
                     <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Apply</SubmitButton>
                   </ActionForm>
-                </details>
+                </Disclosure>
               ) : null}
               {referralsOn || client.referralCode || referrals.length || referredBy ? (
                 <div className="mt-3 border-t border-stone-200 pt-3">
@@ -420,15 +417,14 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 </ul>
               )}
               {canText ? (
-                <details className="mt-2" open={thread.length > 0}>
-                  <summary className="cursor-pointer select-none text-xs text-brand-700 marker:content-none [&::-webkit-details-marker]:hidden">{thread.length ? "Reply" : "Send a text"}</summary>
-                  <ActionForm action={replyToClient} className="mt-2">
+                <Disclosure variant="inset" title={thread.length ? "Reply" : "Send a text"} open={thread.length > 0} className="mt-2">
+                  <ActionForm action={replyToClient}>
                     <input type="hidden" name="slug" value={slug} />
                     <input type="hidden" name="clientId" value={client.id} />
                     <Field label="" name="body"><Textarea name="body" rows={4} placeholder="Reply by text…" /></Field>
                     <SubmitButton size="sm" variant="secondary" pendingText="Sending…">Send text</SubmitButton>
                   </ActionForm>
-                </details>
+                </Disclosure>
               ) : write ? (
                 <p className="mt-2 text-xs text-stone-500">{!client.phone ? "No mobile number to reply to." : !client.smsOptIn ? "Opted out of texts, so nothing can be sent." : <>Replies need a verified text number. <Link href={`/app/${slug}/settings/messaging`} className="underline">Settings → Text number</Link></>}</p>
               ) : null}

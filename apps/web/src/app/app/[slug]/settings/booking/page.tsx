@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BackLink, Card, PageHeader } from "@/components/ui";
 import { BookingForm } from "./booking-form";
+import { Disclosure } from "@/components/disclosure";
 
 export const metadata: Metadata = { title: "Online booking" };
 import QRCode from "qrcode";
@@ -51,9 +52,8 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
           <img src={qr} alt="QR code for your booking link" className="mt-3 h-40 w-40 rounded-lg border border-stone-200" />
           <a href={qr} download={`book-${business.slug}.png`} className="mt-1 block text-xs text-brand-700 underline">Download QR code</a>
           {perLocation.length ? (
-            <details className="mt-4 border-t border-stone-200 pt-3">
-              <summary className="cursor-pointer select-none text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">Per-location links</summary>
-              <div className="mt-2 space-y-3">
+            <Disclosure variant="inset" title="Per-location links" className="mt-4">
+              <div className="space-y-3">
               <p className="text-xs text-stone-500">Skips the &ldquo;choose a location&rdquo; step. Use the right one on each site&apos;s Google listing, signage and social accounts.</p>
               {perLocation.map((l) => (
                 <div key={l.id} className="flex items-start gap-3">
@@ -66,11 +66,10 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
                 </div>
               ))}
               </div>
-            </details>
+            </Disclosure>
           ) : null}
-          <details className="mt-4 border-t border-stone-200 pt-3">
-            <summary className="cursor-pointer select-none text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden">Where to put the link</summary>
-          <div className="mt-2 space-y-2 text-xs text-stone-600">
+          <Disclosure variant="inset" title="Where to put the link" className="mt-4">
+          <div className="space-y-2 text-xs text-stone-600">
             <p><b>Instagram:</b> Edit profile → Links → add the link. Business accounts: Edit profile → Action buttons → Book now → “Other” → paste the link.</p>
             <p><b>Facebook page:</b> Add action button → Book now → Link to website → paste the link.</p>
             <p><b>Google Business Profile:</b> Edit profile → Booking → Add appointment link → paste the link. Google shows a Book button on your listing.</p>
@@ -78,7 +77,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
             <textarea readOnly rows={3} value={embed} className="w-full rounded border border-stone-300 bg-stone-50 p-2 font-mono text-[11px]" />
             {business.giftCardsOnline ? <p><b>Gift cards:</b> {appUrl(`/book/${business.slug}/gift`)}</p> : null}
           </div>
-          </details>
+          </Disclosure>
         </Card>
       </div>
     </>
