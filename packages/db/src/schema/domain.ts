@@ -741,6 +741,9 @@ export const clientNotes = pgTable(
   (t) => [index("client_notes_client_idx").on(t.businessId, t.clientId, t.createdAt)],
 );
 
+type LashSetJson = { length: number | null; curl: string | null; thickness: number | null; type?: string | null };
+type LashZoneJson = LashSetJson & { spike?: LashSetJson | null };
+
 // How a stylist sets a client's lash extensions: 6 or 7 zones from the inner to the outer corner, each with length, curl and
 // thickness. A client keeps every map they've had, newest first; the visit it was made at is optional.
 export const lashMaps = pgTable(
@@ -754,7 +757,8 @@ export const lashMaps = pgTable(
     appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
     authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
     title: text("title").notNull(), // the style: "Natural cat eye", "Doll eye volume"
-    zones: jsonb("zones").$type<{ length: number | null; curl: string | null; thickness: number | null }[]>().notNull(),
+    // A spike is the setting on the divider after a zone; type is Classic, Hybrid or a volume fan (see @angelic/core lash-map).
+    zones: jsonb("zones").$type<LashZoneJson[]>().notNull(),
     notes: text("notes"),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

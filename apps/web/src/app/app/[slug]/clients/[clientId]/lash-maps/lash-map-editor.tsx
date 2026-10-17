@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Minus, Plus } from "lucide-react";
-import { emptyLashZone, formatLashThickness, formatLashZone, LASH_CURLS, LASH_LENGTH_MAX, LASH_LENGTH_MIN, LASH_THICKNESS_MAX, LASH_THICKNESS_MIN, LASH_THICKNESS_PRESETS, LASH_ZONE_COUNTS, type LashZone } from "@angelic/core";
+import { emptyLashZone, formatLashThickness, formatLashZone, LASH_CURLS, LASH_LENGTH_MAX, LASH_LENGTH_MIN, LASH_THICKNESS_MAX, LASH_THICKNESS_MIN, LASH_THICKNESS_PRESETS, LASH_TYPES, LASH_ZONE_COUNTS, newLashSpike, sharedLashType, type LashSet, type LashZone } from "@angelic/core";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { Input, Textarea } from "@/components/ui";
-import { LashMapDiagram } from "@/components/lash-map";
+import { LashMapDiagram, type LashSelection } from "@/components/lash-map";
 import { cn } from "@/lib/utils";
 import { saveLashMap } from "./actions";
 
@@ -19,8 +19,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
   cancelHref: string;
 }) {
   const [zones, setZones] = useState<LashZone[]>(map.zones);
-  const [sel, setSel] = useState(0);
-  const z = zones[sel] ?? emptyLashZone();
+  const [sel, setSel] = useState<LashSelection>({ kind: "zone", i: 0 });
   const [customThickness, setCustomThickness] = useState("");
   // Taps on chips change no input, so tell ActionForm's unsaved-changes guard about them through the hidden zones field.
   const zonesInput = useRef<HTMLInputElement>(null);
@@ -30,17 +29,35 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
     zonesInput.current?.dispatchEvent(new Event("input", { bubbles: true }));
   }, [zones]);
 
-  const patch = (p: Partial<LashZone>) => setZones((cur) => cur.map((x, i) => (i === sel ? { ...x, ...p } : x)));
-  const applyToAll = (key: "curl" | "thickness") => setZones((cur) => cur.map((x) => ({ ...x, [key]: z[key] })));
+  const spike = sel.kind === "spike";
+  const z: LashSet = (spike ? zones[sel.i]?.spike : zones[sel.i]) ?? emptyLashZone();
+  const label = spike ? `Spike between zones ${sel.i + 1} and ${sel.i + 2}` : `Zone ${sel.i + 1}`;
+
+  const select = (s: LashSelection) => {
+    setCustomThickness("");
+    // Tapping an empty divider adds a spike there.
+    if (s.kind === "spike" && !zones[s.i]?.spike) setZones((cur) => cur.map((x, i) => (i === s.i ? { ...x, spike: newLashSpike(cur, i) } : x)));
+    setSel(s);
+  };
+  const patch = (p: Partial<LashSet>) =>
+    setZones((cur) => cur.map((x, i) => (i !== sel.i ? x : spike ? { ...x, spike: { ...(x.spike ?? emptyLashZone()), ...p } } : { ...x, ...p })));
+  const removeSpike = () => {
+    setZones((cur) => cur.map((x, i) => (i === sel.i ? { ...x, spike: null } : x)));
+    setSel({ kind: "zone", i: sel.i + 1 });
+  };
+  const applyToAll = (key: "curl" | "thickness" | "type") => setZones((cur) => cur.map((x) => ({ ...x, [key]: z[key] ?? null })));
   const setCount = (n: number) => {
-    setZones((cur) => (n < cur.length ? cur.slice(0, n) : [...cur, ...Array.from({ length: n - cur.length }, () => ({ ...(cur[cur.length - 1] ?? emptyLashZone()) }))]));
-    setSel((s) => Math.min(s, n - 1));
+    setZones((cur) => {
+      if (n < cur.length) return cur.slice(0, n).map((x, i) => (i === n - 1 ? { ...x, spike: null } : x)); // the last zone has no divider after it
+      const last = cur[cur.length - 1] ?? emptyLashZone();
+      return [...cur, ...Array.from({ length: n - cur.length }, () => ({ ...last, spike: null }))];
+    });
+    setSel((s) => (s.kind === "spike" ? (s.i < n - 1 ? s : { kind: "zone", i: n - 1 }) : { kind: "zone", i: Math.min(s.i, n - 1) }));
   };
-  const stepLength = (d: number) => {
-    const next = Math.min(LASH_LENGTH_MAX, Math.max(LASH_LENGTH_MIN, (z.length ?? 10) + d));
-    patch({ length: next });
-  };
+  const stepLength = (d: number) => patch({ length: Math.min(LASH_LENGTH_MAX, Math.max(LASH_LENGTH_MIN, (z.length ?? 10) + d)) });
   const isPreset = z.thickness != null && (LASH_THICKNESS_PRESETS as readonly number[]).includes(z.thickness);
+  const spikeCount = zones.filter((x) => x.spike).length;
+  const sharedType = sharedLashType(zones); // shown once under the diagram, so the chips leave it out
 
   return (
     <ActionForm action={saveLashMap}>
@@ -62,21 +79,28 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
       <datalist id="lash-style-ideas">{STYLE_IDEAS.map((s) => <option key={s} value={s} />)}</datalist>
 
       <div className="rounded-lg border border-stone-200 bg-white p-2">
-        <LashMapDiagram zones={zones} selected={sel} onSelect={setSel} />
+        <LashMapDiagram zones={zones} selected={sel} onSelect={select} />
         <ol className="mt-2 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${zones.length}, minmax(0, 1fr))` }}>
-          {zones.map((x, i) => (
-            <li key={i}>
-              <button type="button" onClick={() => setSel(i)} aria-pressed={sel === i} className={cn("w-full rounded-md border px-1 py-1.5 text-center text-xs leading-4 tabular-nums", sel === i ? "border-brand-500 bg-brand-50 text-brand-700" : "border-stone-200 text-stone-600 hover:bg-stone-50")}>
-                <span className="block font-semibold"><span className="hidden sm:inline">Zone </span>{i + 1}</span>
-                <span className="hidden truncate sm:block">{formatLashZone(x)}</span>
-              </button>
-            </li>
-          ))}
+          {zones.map((x, i) => {
+            const on = sel.kind === "zone" && sel.i === i;
+            return (
+              <li key={i}>
+                <button type="button" onClick={() => select({ kind: "zone", i })} aria-pressed={on} className={cn("w-full rounded-md border px-1 py-1.5 text-center text-xs leading-4 tabular-nums", on ? "border-brand-500 bg-brand-50 text-brand-700" : "border-stone-200 text-stone-600 hover:bg-stone-50")}>
+                  <span className="block font-semibold"><span className="hidden sm:inline">Zone </span>{i + 1}</span>
+                  <span className="hidden truncate sm:block">{formatLashZone(sharedType ? { ...x, type: null } : x)}</span>
+                </button>
+              </li>
+            );
+          })}
         </ol>
+        <p className="mt-2 px-1 text-xs text-stone-500">{spikeCount ? `${spikeCount} spike${spikeCount === 1 ? "" : "s"}. Tap a spike to change it, or a + to add another.` : "Tap a + on the lash line to add a spike between two zones."}</p>
       </div>
 
       <div className="space-y-4 rounded-lg border border-stone-200 p-4">
-        <p className="text-sm font-semibold text-stone-700">Zone {sel + 1}{sel === 0 ? " · inner corner" : sel === zones.length - 1 ? " · outer corner" : ""}</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-semibold text-stone-700">{label}{!spike && sel.i === 0 ? " · inner corner" : !spike && sel.i === zones.length - 1 ? " · outer corner" : ""}</p>
+          {spike ? <button type="button" onClick={removeSpike} className="text-sm text-stone-500 hover:text-red-600">Remove spike</button> : null}
+        </div>
         <Field label="Length (mm)">
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => stepLength(-0.5)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-stone-300 hover:bg-stone-50" aria-label="Half a millimetre shorter"><Minus className="h-4 w-4" /></button>
@@ -89,7 +113,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
               value={z.length ?? ""}
               onChange={(e) => patch({ length: e.target.value === "" ? null : Number(e.target.value) })}
               className="w-24 text-center tabular-nums"
-              aria-label={`Zone ${sel + 1} length in millimetres`}
+              aria-label={`${label} length in millimetres`}
             />
             <button type="button" onClick={() => stepLength(0.5)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-stone-300 hover:bg-stone-50" aria-label="Half a millimetre longer"><Plus className="h-4 w-4" /></button>
           </div>
@@ -97,7 +121,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
         <Field label="Curl">
           <div className="flex flex-wrap items-center gap-2">
             <Chips options={LASH_CURLS.map((c) => ({ value: c, label: c }))} value={z.curl} onChange={(v) => patch({ curl: v === z.curl ? null : v })} />
-            <ApplyAll onClick={() => applyToAll("curl")} disabled={z.curl == null} />
+            {spike ? null : <ApplyAll onClick={() => applyToAll("curl")} disabled={z.curl == null} />}
           </div>
         </Field>
         <Field label="Thickness (mm)" hint={`Pick a common size or type one between ${LASH_THICKNESS_MIN} and ${LASH_THICKNESS_MAX}.`}>
@@ -113,15 +137,23 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
               value={!isPreset && z.thickness != null ? String(z.thickness) : customThickness}
               onChange={(e) => { setCustomThickness(e.target.value); const v = Number(e.target.value); patch({ thickness: e.target.value === "" || !Number.isFinite(v) ? null : v }); }}
               className="w-24 tabular-nums"
-              aria-label={`Zone ${sel + 1} custom thickness in millimetres`}
+              aria-label={`${label} custom thickness in millimetres`}
             />
-            <ApplyAll onClick={() => applyToAll("thickness")} disabled={z.thickness == null} />
+            {spike ? null : <ApplyAll onClick={() => applyToAll("thickness")} disabled={z.thickness == null} />}
           </div>
         </Field>
-        <div className="flex justify-between gap-2">
-          <button type="button" onClick={() => setSel((s) => Math.max(0, s - 1))} disabled={sel === 0} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">← Zone {Math.max(1, sel)}</button>
-          <button type="button" onClick={() => setSel((s) => Math.min(zones.length - 1, s + 1))} disabled={sel === zones.length - 1} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">Zone {Math.min(zones.length, sel + 2)} →</button>
-        </div>
+        <Field label="Type" hint="Classic, hybrid, or the fan size for volume.">
+          <div className="flex flex-wrap items-center gap-2">
+            <Chips options={LASH_TYPES.map((t) => ({ value: t, label: t }))} value={z.type ?? null} onChange={(v) => patch({ type: v === z.type ? null : v })} />
+            {spike ? null : <ApplyAll onClick={() => applyToAll("type")} disabled={!z.type} />}
+          </div>
+        </Field>
+        {spike ? null : (
+          <div className="flex justify-between gap-2">
+            <button type="button" onClick={() => select({ kind: "zone", i: Math.max(0, sel.i - 1) })} disabled={sel.i === 0} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">← Zone {Math.max(1, sel.i)}</button>
+            <button type="button" onClick={() => select({ kind: "zone", i: Math.min(zones.length - 1, sel.i + 1) })} disabled={sel.i === zones.length - 1} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">Zone {Math.min(zones.length, sel.i + 2)} →</button>
+          </div>
+        )}
       </div>
 
       <Field label="Notes" name="notes" hint="Anything the map doesn't show: right eye differences, adhesive, sensitivities, fill schedule.">

@@ -977,9 +977,13 @@ runs several salons on separate accounts.
       any visit where the client has one or a lash service is booked ("Update for this visit" starts a new map
       from the last one, tied to the visit). Desk (`clients.write`) and the provider who has seen the client can
       write; providers otherwise can't edit client details.
-- [ ] Follow-ups: one map covers both eyes (asymmetry goes in notes, no separate right-eye map); no per-zone
-      "type" (classic / hybrid / volume fan size); not shown in the client portal or the public API; not in the
-      demo seed.
+- [x] Spikes and lash type (2026-10-17): a + on each zone divider adds a spike (longer lashes between two zones,
+      for wispy / spiky styles) with its own length, curl, thickness and type; it starts 2 mm longer than its
+      neighbours. Zones and spikes take a type (Classic, Hybrid, 2D–10D); a type every zone shares shows once as
+      "3D volume throughout". Stored inside the zones JSON, so no migration and older maps load unchanged.
+- [ ] Follow-ups: one map covers both eyes (asymmetry goes in notes, no separate right-eye map); spikes only sit
+      on dividers (two inside one zone go in notes); not shown in the client portal or the public API; not in
+      the demo seed.
 
 ### Needs a real Stripe/Twilio run before relying on it (2026-10-10)
 - [ ] Online deposit + card on file at booking (test cards on a connected test account), including the
