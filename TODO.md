@@ -39,8 +39,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       status is polled every 5 minutes.
 - [ ] Decide whether a platform-wide fallback sender is wanted for businesses without a verified number
       (`TWILIO_FROM` / `TWILIO_MESSAGING_SERVICE_SID`). It would need its own toll-free verification.
-- [ ] Keep an eye on the Twilio balance (≈$197 on 2026-10-08) and enable auto-recharge (owner only: Twilio Console → Billing →
-      Auto-recharge; it needs the card on the Twilio account).
+- [x] Twilio auto-recharge enabled by the owner 2026-10-17 (balance was ≈$197 on 2026-10-08).
 
 ### Email
 - [x] Add a DMARC record in Cloudflare: `TXT _dmarc.mail1  v=DMARC1; p=none;` (improves Gmail/Yahoo delivery). Done 2026-10-10.
@@ -312,9 +311,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       shows locations, staff and logins instead. Worth doing only if support needs it.
 - [ ] Platform billing overview (real MRR, failed payments) once Stripe keys exist.
 
-- [ ] Upgrade the Render Postgres from the free `0.1c-256mb` tier to a paid plan with backups and
-      point-in-time recovery; until then run `scripts/backup.sh` nightly somewhere and store the dumps off-box. (Waiting on the
-      owner's choice of plan, 2026-10-17.)
+- [x] Render Postgres upgraded 2026-10-17 from the free tier to `basic_256mb` (about $6/month: daily backups and point-in-time
+      recovery; 15 GB disk). Move to `basic_1gb` if the instance's memory graph sits high after the Vagaro import.
 - [x] Unhandled errors reach someone without a Slack webhook, 2026-10-17: with `ERROR_WEBHOOK_URL` unset, `lib/report-error.ts` emails
       the summary to `ERROR_EMAIL_TO` (default `SUPPORT_EMAIL`) through Resend, throttled (one per distinct error per 10 minutes, 20 an
       hour). Setting a Slack/Discord webhook later switches it back to POSTs. Sentry still optional.
