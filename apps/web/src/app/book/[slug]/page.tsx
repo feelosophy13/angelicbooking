@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { ChevronRight, MapPin } from "lucide-react";
 import { instantToISODate, weekdayOf } from "@angelic/core";
 import { lateFeeLabelFor } from "@/lib/policy-text";
-import { getAvailableDates, getBusinessForLinks, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots, lastProviderFor, nextOpenings, planExtras, providerRatings, publicProvidersFor, type PlannedExtra } from "@/server/public-booking";
+import { getAvailableDates, getBusinessForLinks, getPublicBusiness, getPublicLocations, getPublicMenu, getPublicSlots, lastProviderFor, nextOpenings, planExtras, providerRatings, timesThatFitVisit, publicProvidersFor, type PlannedExtra } from "@/server/public-booking";
 import { BookingError } from "@/server/booking";
 import { buildTree, pathTo, subtreeIds } from "@/server/categories";
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
@@ -494,6 +494,8 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       else throw e;
     }
   }
+  // When the added services don't fit after this time, offer the times that day when the whole visit fits with the same person.
+  const fitTimes = extraError && date ? await timesThatFitVisit(business, { serviceId: service.id, staffId: slot.staffId, date, extraServiceIds: extraIds, locationId: locId }) : [];
   const ownPrice = termsFor(slot.staffId).priceCents;
   const visitPrice = ownPrice + extras.reduce((sum, x) => sum + x.priceCents, 0);
   const visitEnd = extras.length ? extras[extras.length - 1]!.endAt : null;
@@ -519,7 +521,17 @@ export default async function PublicBookingPage({ params, searchParams }: { para
       />
       {pricierNote(slot.staffId, slot.staffName)}
       {extraError ? (
-        <p className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">{extraError} <Link href={q({ time: sp.time, extra: undefined })} className="font-medium underline">Remove added services</Link> or <Link href={q({ time: undefined })} className="font-medium underline">pick another time</Link>.</p>
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p>{extraError} <Link href={q({ time: sp.time, extra: undefined })} className="font-medium underline">Remove added services</Link> or <Link href={q({ time: undefined })} className="font-medium underline">pick another time</Link>.</p>
+          {fitTimes.length ? (
+            <div className="mt-3">
+              <p className="mb-2 font-medium">Times that day when everything fits with {slot.staffName}:</p>
+              <div className="flex flex-wrap gap-2">
+                {fitTimes.map((t) => <Link key={t.getTime()} href={q({ time: t.toISOString(), staff: slot.staffId, extra: extraIds.join(",") })} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-medium text-stone-800 hover:border-stone-400">{formatTime(t, tz)}</Link>)}
+              </div>
+            </div>
+          ) : null}
+        </div>
       ) : (
         <>
           {sp.time ? <p className="mb-3 text-sm"><Link href={q({ time: sp.time, staff: slot.staffId, add: "1" })} className="underline" style={{ color: "var(--brand-dark)" }}>+ Add another service with {slot.staffName.split(" ")[0]}</Link></p> : null}

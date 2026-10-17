@@ -357,6 +357,25 @@ export async function assertQuotedPrice(business: PublicBusiness, input: { servi
 export interface PlannedExtra { serviceId: string; name: string; startAt: Date; endAt: Date; priceCents: number; durationMin: number }
 
 /**
+ * Start times that day when the whole visit fits with this provider: the first service and every added one back to back. Offered when
+ * an added service doesn't fit after the time the client picked (at most `limit` times, earliest first).
+ */
+export async function timesThatFitVisit(business: PublicBusiness, input: { serviceId: string; staffId: string; date: string; extraServiceIds: string[]; locationId?: string | null }, now = new Date(), limit = 6): Promise<Date[]> {
+  const slots = (await getPublicSlots(business, input.serviceId, input.staffId, input.date, now, input.locationId)).filter((s) => s.free.includes(input.staffId));
+  const out: Date[] = [];
+  for (const s of slots.slice(0, 48)) {
+    try {
+      await planExtras(business, { serviceId: input.serviceId, staffId: input.staffId, startAt: s.at, extraServiceIds: input.extraServiceIds, locationId: input.locationId }, now);
+      out.push(s.at);
+      if (out.length >= limit) break;
+    } catch (e) {
+      if (!(e instanceof BookingError)) throw e;
+    }
+  }
+  return out;
+}
+
+/**
  * Further services added to one visit: same provider, back to back after the first. Each must be bookable online,
  * performed by that provider, and open at the moment the one before it ends. Throws a BookingError the client can read.
  */
