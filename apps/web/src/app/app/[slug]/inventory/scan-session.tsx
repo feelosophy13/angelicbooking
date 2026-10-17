@@ -36,6 +36,8 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
   );
   const [s, dispatch] = useReducer(reduce, { lines: [], last: null });
   const [loc, setLoc] = useState(defaultLocationId);
+  // When scanning began: sales made meanwhile are kept on top of the count.
+  const [startedAt] = useState(() => new Date().toISOString());
   const [note, setNote] = useState(order?.reference ?? "");
   const [zeroRest, setZeroRest] = useState(false);
   const [camera, setCamera] = useState(false);
@@ -95,7 +97,7 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
     if (!s.lines.length && !(mode === "count" && zeroRest)) return;
     start(async () => {
       if (mode === "receive") done(await receiveScannedAction({ slug, locationId: loc, note, lines: s.lines }));
-      else if (mode === "count") done(await countScannedAction({ slug, locationId: loc, note, zeroRest, counts: s.lines.map((l) => ({ productId: l.productId, counted: l.qty })) }));
+      else if (mode === "count") done(await countScannedAction({ slug, locationId: loc, note, zeroRest, startedAt, counts: s.lines.map((l) => ({ productId: l.productId, counted: l.qty })) }));
       else if (order && progress) {
         const mine = progress.lines.filter((l) => l.now > 0).map((l) => ({ lineId: l.lineId, qty: l.now }));
         if (!mine.length) return setStatus({ ok: false, text: "None of what you scanned is on this order." });

@@ -59,7 +59,7 @@ export const receiveStock = formAction(z.object({ slug: z.string(), locationId: 
 
 // ---- Count ----
 
-export const submitCount = formAction(z.object({ slug: z.string(), locationId: z.string(), note: f.optional(120) }), async (d, raw) => {
+export const submitCount = formAction(z.object({ slug: z.string(), locationId: z.string(), note: f.optional(120), startedAt: z.string().datetime().optional() }), async (d, raw) => {
   const ctx = await requireAction(d.slug, "inventory.manage");
   const counts: { productId: string; counted: number }[] = [];
   for (const [key, v] of raw.entries()) {
@@ -70,7 +70,7 @@ export const submitCount = formAction(z.object({ slug: z.string(), locationId: z
     counts.push({ productId: key.slice(6), counted: n });
   }
   if (!counts.length) throw new FormError("Enter at least one count. Products you leave blank aren't touched.");
-  const r = await wrap(undefined, () => applyCount({ businessId: ctx.business.id, locationId: d.locationId, counts, note: d.note, actorUserId: ctx.user.id }));
+  const r = await wrap(undefined, () => applyCount({ businessId: ctx.business.id, locationId: d.locationId, counts, note: d.note, actorUserId: ctx.user.id, since: d.startedAt ? new Date(d.startedAt) : null }));
   refresh(d.slug);
   return r.changed ? `${r.counted} counted, ${r.changed} corrected (${r.unitsOff} unit${r.unitsOff === 1 ? "" : "s"} off)` : `${r.counted} counted: all correct`;
 });
@@ -275,7 +275,7 @@ export async function receiveOrderScannedAction(input: { slug: string; orderId: 
 }
 
 /** A count from scanning each item on the shelf. With `zeroRest`, tracked products that weren't scanned are counted as none. */
-export async function countScannedAction(input: { slug: string; locationId: string; note: string; zeroRest: boolean; counts: { productId: string; counted: number }[] }): Promise<ScanResult> {
+export async function countScannedAction(input: { slug: string; locationId: string; note: string; zeroRest: boolean; counts: { productId: string; counted: number }[]; startedAt?: string }): Promise<ScanResult> {
   const ctx = await requireAction(input.slug, "inventory.manage");
   const counts = z.array(z.object({ productId: z.string().min(1), counted: z.number().int().min(0).max(100000) })).max(1000).safeParse(input.counts);
   if (!counts.success) return { ok: false, error: "Check the counts." };
@@ -286,7 +286,7 @@ export async function countScannedAction(input: { slug: string; locationId: stri
       const seen = new Set(list.map((c) => c.productId));
       for (const id of await trackedProductIds(ctx.business.id)) if (!seen.has(id)) list.push({ productId: id, counted: 0 });
     }
-    const r = await applyCount({ businessId: ctx.business.id, locationId: input.locationId, counts: list, note: input.note.trim().slice(0, 120) || "Scanned count", actorUserId: ctx.user.id });
+    const r = await applyCount({ businessId: ctx.business.id, locationId: input.locationId, counts: list, note: input.note.trim().slice(0, 120) || "Scanned count", actorUserId: ctx.user.id, since: input.startedAt && !Number.isNaN(Date.parse(input.startedAt)) ? new Date(input.startedAt) : null });
     refresh(input.slug);
     return r.changed ? `${r.counted} counted, ${r.changed} corrected (${r.unitsOff} unit${r.unitsOff === 1 ? "" : "s"} off)` : `${r.counted} counted: all correct`;
   });

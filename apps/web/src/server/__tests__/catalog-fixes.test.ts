@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { applyStaffServices } from "@/server/stylist-pricing";
-import { createPurchaseOrder, receiveOrder } from "@/server/inventory";
+import { applyCount, createPurchaseOrder, receiveOrder, recordMovement } from "@/server/inventory";
 import { addProductLine, openWalkInSale } from "@/server/sales";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
 
@@ -62,5 +62,19 @@ describe.skipIf(!up)("catalog fixes", () => {
     const [p] = await withTenant(kit.A, (tx) => tx.insert(schema.products).values({ businessId: kit.A, name: "Repriced serum", priceCents: 0, kind: "retail" }).returning());
     const saleId = await openWalkInSale({ businessId: kit.A, actorUserId: userId, currency: "usd" });
     await expect(addProductLine({ businessId: kit.A, saleId, productId: p!.id, quantity: 1, staffId: null, actorUserId: userId, taxRateBps: 0 })).rejects.toThrow(/no price yet/);
+  });
+
+  it("keeps what sold while a count was being taken", async () => {
+    const [loc, product] = await withTenant(kit.A, async (tx) => [
+      (await tx.query.locations.findFirst({ where: eq(schema.locations.isDefault, true) }))!.id,
+      (await tx.insert(schema.products).values({ businessId: kit.A, name: "Count me", priceCents: 1000, kind: "retail", trackStock: true }).returning())[0]!.id,
+    ]);
+    await applyCount({ businessId: kit.A, locationId: loc, counts: [{ productId: product, counted: 10 }], note: null, actorUserId: userId });
+    const started = new Date(Date.now() - 1000);
+    // Two sell at the desk while the shelf is being counted; the counter saw all 10 before they went.
+    await recordMovement({ businessId: kit.A, productId: product, locationId: loc, entered: -2, reason: "adjust", note: null, actorUserId: userId });
+    await applyCount({ businessId: kit.A, locationId: loc, counts: [{ productId: product, counted: 10 }], note: null, actorUserId: userId, since: started });
+    const [row] = await withTenant(kit.A, (tx) => tx.select().from(schema.productStock).where(and(eq(schema.productStock.productId, product), eq(schema.productStock.locationId, loc))));
+    expect(row!.qty).toBe(8);
   });
 });

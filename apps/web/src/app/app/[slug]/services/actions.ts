@@ -31,7 +31,7 @@ const fields = z.object({
   capacity: f.int(1, 500).default(1),
   bookableOnline: f.checkbox(),
   removeImage: f.checkbox(),
-});
+}).refine((d) => d.depositType !== "flat" || !d.deposit || d.deposit <= d.price, { message: "The deposit can't be more than the price.", path: ["deposit"] });
 
 async function imageOrFieldError(businessId: string, raw: FormData) {
   try {
@@ -51,7 +51,11 @@ const revalidateServices = (slug: string, serviceId?: string) => {
 
 async function resolveCategory(businessId: string, d: { categoryId?: string; categoryIdNew: string | null }) {
   if (d.categoryIdNew) return ensureCategory(businessId, "service", d.categoryIdNew);
-  return d.categoryId || null;
+  if (!d.categoryId) return null;
+  // Only this business's categories (a foreign key alone would accept another business's id).
+  const own = await withTenant(businessId, (tx) => tx.query.serviceCategories.findFirst({ where: eq(schema.serviceCategories.id, d.categoryId!), columns: { id: true } }));
+  if (!own) throw new FormError("Pick a category from the list.", "categoryId");
+  return own.id;
 }
 
 /** `loc_<id>` checkboxes → the "offered at" set (none/all ticked = everywhere). */
@@ -93,11 +97,12 @@ export const updateService = formAction(fields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "services.manage");
   const categoryId = await resolveCategory(ctx.business.id, d);
   const uploaded = await imageOrFieldError(ctx.business.id, raw);
+  let oldImage: string | null = null;
   await withTenant(ctx.business.id, async (tx) => {
     if (raw.has("hasLocations")) await setServiceLocations(tx, ctx.business.id, d.serviceId ?? "", pickedLocations(raw));
     const current = await tx.query.services.findFirst({ where: eq(schema.services.id, d.serviceId ?? ""), columns: { imageUrl: true } });
     const imagePatch = uploaded ? { imageUrl: uploaded } : d.removeImage ? { imageUrl: null } : {};
-    if ((uploaded || d.removeImage) && current?.imageUrl) await deleteFileByUrl(current.imageUrl);
+    if ((uploaded || d.removeImage) && current?.imageUrl) oldImage = current.imageUrl;
     await tx
       .update(schema.services)
       .set({
@@ -119,6 +124,8 @@ export const updateService = formAction(fields, async (d, raw) => {
       })
       .where(eq(schema.services.id, d.serviceId ?? ""));
   });
+  // The old picture goes only once the new one is saved.
+  if (oldImage) await deleteFileByUrl(oldImage);
   revalidateServices(d.slug, d.serviceId);
   return "Service saved";
 });

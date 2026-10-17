@@ -253,14 +253,20 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (422). Online bookings save the cancellation policy the client saw ("By booking, you agree to this policy"), when, and from which
       address; staff see it on the appointment as "Cancellation policy agreed". A class blocks its service's cleanup time; a 24:00 close
       ends at midnight (no lost last slot). Tests: core `payroll.test.ts` and `availability.test.ts`, `booking-guards`, API scope tests.
-- [ ] Still open from the review (2026-10-17 audit), highest impact first: overtime should default on for hourly staff (and bonuses entered
-      as adjustments count in the overtime rate); store orders could authorize then capture only if stock remains (instead of a time
+- [x] Review per-area batch 3, 2026-10-17: the web import (Settings → Import) commits every 500 rows, so a long file can't time out and
+      roll everything back, and a re-run skips what landed (the Vagaro script stays one all-or-nothing transaction on purpose). Payroll
+      runs have overtime on unless the run turns it off (also the export). Emails and texts link to the salon's own domain once it's live
+      (`siteUrl`; unsubscribe links stay on ours). Catalog: a blank cost in bulk edit keeps the cost; category, supplier and location ids
+      from forms must be the business's own (`server/own-ids.ts`); a flat deposit can't exceed the price; a service's old picture is
+      deleted only after the save; a count keeps what sold while it was being taken (the sheet and scanner send when counting began).
+      `/suspended` has the support email (when set), "Your other businesses" and Sign out. Tests: `import-clients`, `catalog-fixes`,
+      `custom-domain`.
+- [ ] Still open from the review (2026-10-17 audit), highest impact first: bonuses entered as adjustments don't count in the overtime rate
+      (needs a "counts as pay" flag on adjustments); store orders could authorize then capture only if stock remains (instead of a time
       hold); dragging a multi-service visit moves only the dragged service; online booking picks the time before add-ons; no deliberate
       double-booking (`allowOverlap` unused) or warning when time off covers bookings; audit gaps (clock PIN, payroll export, settings,
-      domains; no audit filters); catalog small items (bulk blank cost saves $0, `applyCount` overwrites sales during a count, flat
-      deposit above price accepted, category/supplier ids unchecked); custom-domain salons get app.angelicbooking.com links in emails;
-      `/suspended` is a dead end; mobile `apiUrl` hard-coded, no Expo auth plugin, CI doesn't lint or gate deploys; Vagaro import in one
-      transaction (batch it); no client merge / duplicate warning.
+      domains; no audit filters); mobile `apiUrl` hard-coded, no Expo auth plugin, CI doesn't lint or gate deploys; no client merge /
+      duplicate warning.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done, including Resend pacing/per-tenant fairness, except the items listed as still open above.
       Next: the per-area lists in that file.
 

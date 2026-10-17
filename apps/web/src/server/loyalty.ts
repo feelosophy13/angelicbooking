@@ -8,6 +8,7 @@ import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { queueOneOff } from "@/lib/notify";
+import { siteUrl } from "@/lib/site-url";
 import { brandedEmail } from "@/lib/notify/templates";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -200,7 +201,7 @@ export async function sendReferralCode(business: Business, clientId: string, cha
     const phone = normalizePhone(client.phone);
     if (!phone) throw new LoyaltyError("No mobile number on file.");
     if (!client.smsOptIn) throw new LoyaltyError("This client has opted out of texts.");
-    await queueOneOff(business.id, { channel: "sms", template: "referral_code", recipient: phone, body: `${business.name}: ${pitch} Book: ${appUrl(`/book/${business.slug}`)}`, clientId: client.id });
+    await queueOneOff(business.id, { channel: "sms", template: "referral_code", recipient: phone, body: `${business.name}: ${pitch} Book: ${siteUrl(business)}`, clientId: client.id });
     return phone;
   }
   if (!client.email) throw new LoyaltyError("No email on file.");
@@ -208,7 +209,7 @@ export async function sendReferralCode(business: Business, clientId: string, cha
   const html = brandedEmail(
     { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address: business.addressLine },
     "Your referral code",
-    `<p>Hi ${client.firstName},</p><p>${pitch}</p><p style="font-size:24px;font-weight:700;letter-spacing:1px;margin:16px 0">${code}</p><p>They just type it in the “Referral code” box when booking online.</p><p style="margin-top:16px"><a href="${appUrl(`/book/${business.slug}`)}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Book at ${business.name}</a></p>`,
+    `<p>Hi ${client.firstName},</p><p>${pitch}</p><p style="font-size:24px;font-weight:700;letter-spacing:1px;margin:16px 0">${code}</p><p>They just type it in the “Referral code” box when booking online.</p><p style="margin-top:16px"><a href="${siteUrl(business)}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Book at ${business.name}</a></p>`,
   );
   await queueOneOff(business.id, { channel: "email", template: "referral_code", recipient: client.email, subject: `Your ${business.name} referral code`, body: html, clientId: client.id });
   return client.email;

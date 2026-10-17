@@ -15,7 +15,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const isDate = (s: string | null) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
   const start = isDate(url.searchParams.get("start")) ? url.searchParams.get("start")! : defaultPeriod(today).start;
   const end = isDate(url.searchParams.get("end")) ? url.searchParams.get("end")! : defaultPeriod(today).end;
-  const overtime = url.searchParams.get("overtime") === "1";
+  // Same default as the Payroll page: on unless the link says "0".
+  const overtime = url.searchParams.getAll("overtime").at(-1) !== "0";
   const kind = url.searchParams.get("kind") === "w2" ? "w2" : "full";
   const locationId = url.searchParams.get("location") || null;
   const result = await runPayroll(business, { start, end }, overtime, locationId);

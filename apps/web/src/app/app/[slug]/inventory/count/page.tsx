@@ -44,6 +44,8 @@ export default async function CountPage({ params, searchParams }: { params: Prom
         <ActionForm action={submitCount}>
           <input type="hidden" name="slug" value={slug} />
           <input type="hidden" name="locationId" value={loc} />
+          {/* When this sheet was opened: sales made while counting are kept, not counted away. */}
+          <input type="hidden" name="startedAt" value={new Date().toISOString()} />
           <ul className="divide-y divide-stone-100">
             {shown.map((i) => {
               const expected = i.byLocation[loc] ?? 0;

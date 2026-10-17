@@ -18,6 +18,7 @@ import { appUrl } from "@/lib/stripe";
 import { isManualReason, locationAlerts, manualDelta, productLabel, SHRINKAGE_REASONS, stockStatus, suggestedOrderQty, daysOfStock, worstStatus, type LocationAlert, type ManualReason, type ParsedProductRow, type StockStatus } from "@/lib/inventory";
 import { ensureCategory } from "./categories";
 import { cleanCode, matchProduct } from "@/lib/scan";
+import { ownIds } from "./own-ids";
 import { findGroupByName } from "./product-groups";
 
 export class InventoryError extends Error {}
@@ -171,18 +172,26 @@ export async function transferStock(input: { businessId: string; productId: stri
 }
 
 /** Set the count from what was physically counted: only products whose count differs get a movement. */
-export async function applyCount(input: { businessId: string; locationId: string; counts: { productId: string; counted: number }[]; note: string | null; actorUserId: string }) {
+export async function applyCount(input: { businessId: string; locationId: string; counts: { productId: string; counted: number }[]; note: string | null; actorUserId: string; /** When counting began: stock that moved since (a sale at the desk, a delivery) is applied on top of the count rather than wiped out. */ since?: Date | null }) {
   return withTenant(input.businessId, async (tx) => {
     let changed = 0;
     let unitsOff = 0;
+    const since = input.since && input.since.getTime() > Date.now() - 24 * 3_600_000 ? input.since : null;
     for (const c of input.counts) {
       if (!Number.isInteger(c.counted) || c.counted < 0) continue;
       const have = await qtyAt(tx, c.productId, input.locationId);
-      if (have === c.counted) continue;
-      await applyMove(tx, { businessId: input.businessId, productId: c.productId, locationId: input.locationId, delta: c.counted - have, reason: "count", note: `Counted ${c.counted}, was ${have}${input.note ? ` · ${input.note}` : ""}`, actorUserId: input.actorUserId });
+      const [moved] = since
+        ? await tx
+            .select({ n: sql<number>`coalesce(sum(${schema.stockMovements.delta}), 0)::int` })
+            .from(schema.stockMovements)
+            .where(and(eq(schema.stockMovements.productId, c.productId), eq(schema.stockMovements.locationId, input.locationId), sql`${schema.stockMovements.reason} <> 'count'`, sql`${schema.stockMovements.createdAt} > ${since.toISOString()}::timestamptz`))
+        : [{ n: 0 }];
+      const target = Math.max(0, c.counted + Number(moved?.n ?? 0));
+      if (have === target) continue;
+      await applyMove(tx, { businessId: input.businessId, productId: c.productId, locationId: input.locationId, delta: target - have, reason: "count", note: `Counted ${c.counted}${target !== c.counted ? ` (${target} after what moved while counting)` : ""}, was ${have}${input.note ? ` · ${input.note}` : ""}`, actorUserId: input.actorUserId });
       await tx.update(schema.products).set({ trackStock: true }).where(and(eq(schema.products.id, c.productId), eq(schema.products.trackStock, false)));
       changed++;
-      unitsOff += Math.abs(c.counted - have);
+      unitsOff += Math.abs(target - have);
     }
     await audit(tx, input.businessId, input.actorUserId, "inventory.count", input.locationId, { counted: input.counts.length, changed, unitsOff });
     return { counted: input.counts.length, changed, unitsOff };
@@ -460,6 +469,7 @@ export async function getPurchaseOrder(businessId: string, id: string) {
 
 export async function createPurchaseOrder(input: { businessId: string; supplierId: string | null; locationId?: string | null; expectedOn?: string | null; notes?: string | null; lines?: { productId: string; qty: number; unitCostCents?: number }[]; actorUserId: string }) {
   return withTenant(input.businessId, async (tx) => {
+    if (await ownIds(tx, { supplierId: input.supplierId, locationId: input.locationId })) throw new InventoryError("Pick a supplier and location from the list.");
     const locationId = input.locationId || (await mainLocationId(tx));
     const rows = await tx.execute<{ n: number }>(sql`select next_purchase_order_number(${input.businessId}) as n`);
     const [po] = await tx.insert(schema.purchaseOrders).values({ businessId: input.businessId, number: Number(rows[0]?.n ?? 1), supplierId: input.supplierId, locationId, expectedOn: input.expectedOn ?? null, notes: input.notes ?? null, createdByUserId: input.actorUserId }).returning();

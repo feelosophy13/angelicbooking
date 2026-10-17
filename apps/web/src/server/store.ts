@@ -20,6 +20,7 @@ import { onlineAvailability } from "./inventory";
 import { productLabel } from "@/lib/inventory";
 import { queueOneOff } from "@/lib/notify";
 import { giftCardEmail, orderEmail } from "@/lib/notify/templates";
+import { siteUrl } from "@/lib/site-url";
 import { formatMoney } from "@/lib/utils";
 
 export class StoreError extends Error {}
@@ -209,7 +210,7 @@ async function sendOrderEmails(business: PublicBusiness, saleId: string) {
   for (const g of o.giftCards) {
     const to = f.giftRecipientEmail ?? f.email;
     if (!to) continue;
-    const t = giftCardEmail(brand, { code: g.code, amount: money(g.initialCents), from: f.name ?? null, message: f.message ?? null, bookingUrl: appUrl(`/book/${business.slug}`) });
+    const t = giftCardEmail(brand, { code: g.code, amount: money(g.initialCents), from: f.name ?? null, message: f.message ?? null, bookingUrl: siteUrl(business) });
     await queueOneOff(business.id, { channel: "email", template: "gift_card", recipient: to, subject: t.subject, body: t.html, clientId: o.sale.clientId });
   }
 }

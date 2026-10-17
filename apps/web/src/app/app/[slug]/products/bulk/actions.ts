@@ -26,6 +26,7 @@ export const saveBulk = formAction(z.object({ slug: z.string() }), async (d, raw
   let changed = 0;
   await withTenant(ctx.business.id, async (tx) => {
     const current = await tx.select().from(schema.products);
+    const suppliers = new Set((await tx.select({ id: schema.suppliers.id }).from(schema.suppliers)).map((x) => x.id));
     for (const id of ids) {
       const p = current.find((x) => x.id === id);
       if (!p) continue;
@@ -38,10 +39,15 @@ export const saveBulk = formAction(z.object({ slug: z.string() }), async (d, raw
         continue;
       }
       const supplierId = String(raw.get(`supplier:${id}`) ?? "") || null;
+      if (supplierId && !suppliers.has(supplierId)) {
+        bad.push(`${p.name} (unknown supplier)`);
+        continue;
+      }
       const active = raw.get(`active:${id}`) === "on";
       const next = {
         priceCents: p.kind === "backbar" ? p.priceCents : (price ?? p.priceCents),
-        costCents: cost ?? 0,
+        // A blank cost leaves the cost as it was (it isn't "free").
+        costCents: cost ?? p.costCents,
         lowStockThreshold: low ?? p.lowStockThreshold,
         reorderUpTo: upto,
         supplierId,

@@ -41,10 +41,17 @@ const money = (v: string) => {
 export async function runImport(business: Business, kind: ImportKind, rows: Record<string, string>[], mapping: Record<string, string>, actorUserId: string | null, filename: string): Promise<ImportResult> {
   const r: ImportResult = { created: 0, updated: 0, skipped: 0, errors: [] };
   const upcoming: string[] = [];
+  // In batches, each committed on its own: a long file can't hit a timeout and roll everything back, and a re-run skips what already
+  // landed (rows match existing clients, services and visits).
+  for (let from = 0; from < rows.length; from += IMPORT_BATCH) {
+    const batch = rows.slice(from, from + IMPORT_BATCH);
+    await withTenant(business.id, async (tx) => {
+      if (kind === "clients") await importClients(tx, business, batch, mapping, r, from);
+      else if (kind === "services") await importServices(tx, business, batch, mapping, r, from);
+      else await importAppointments(tx, business, batch, mapping, r, actorUserId, upcoming, from);
+    });
+  }
   await withTenant(business.id, async (tx) => {
-    if (kind === "clients") await importClients(tx, business, rows, mapping, r);
-    else if (kind === "services") await importServices(tx, business, rows, mapping, r);
-    else await importAppointments(tx, business, rows, mapping, r, actorUserId, upcoming);
     await tx.insert(schema.importJobs).values({
       businessId: business.id,
       kind,
@@ -66,6 +73,9 @@ export async function runImport(business: Business, kind: ImportKind, rows: Reco
 
 type Tx = Parameters<Parameters<typeof withTenant>[1]>[0];
 
+/** Rows committed per transaction. */
+export const IMPORT_BATCH = 500;
+
 /**
  * The existing client a row is, if any: the same phone or email AND the same name (family members sharing a phone, or two people with
  * one email, stay separate people). A row with no phone or email matches by name only when exactly one client has that name.
@@ -85,7 +95,7 @@ async function findClient(tx: Tx, first: string, last: string, phone: string | n
   return null;
 }
 
-async function importClients(tx: Tx, business: Business, rows: Record<string, string>[], mapping: Record<string, string>, r: ImportResult) {
+async function importClients(tx: Tx, business: Business, rows: Record<string, string>[], mapping: Record<string, string>, r: ImportResult, offset = 0) {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
     try {
@@ -139,12 +149,12 @@ async function importClients(tx: Tx, business: Business, rows: Record<string, st
       }
       });
     } catch (e) {
-      r.errors.push({ row: i + 2, message: (e as Error).message });
+      r.errors.push({ row: offset + i + 2, message: (e as Error).message });
     }
   }
 }
 
-async function importServices(tx: Tx, business: Business, rows: Record<string, string>[], mapping: Record<string, string>, r: ImportResult) {
+async function importServices(tx: Tx, business: Business, rows: Record<string, string>[], mapping: Record<string, string>, r: ImportResult, offset = 0) {
   const catCache = new Map<string, string>();
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
@@ -188,12 +198,12 @@ async function importServices(tx: Tx, business: Business, rows: Record<string, s
       r.created++;
       });
     } catch (e) {
-      r.errors.push({ row: i + 2, message: (e as Error).message });
+      r.errors.push({ row: offset + i + 2, message: (e as Error).message });
     }
   }
 }
 
-async function importAppointments(tx: Tx, business: Business, rows: Record<string, string>[], mapping: Record<string, string>, r: ImportResult, actorUserId: string | null, upcoming: string[] = []) {
+async function importAppointments(tx: Tx, business: Business, rows: Record<string, string>[], mapping: Record<string, string>, r: ImportResult, actorUserId: string | null, upcoming: string[] = [], offset = 0) {
   // Imported visits belong to a site like any other (the stylist's own, else the default), for reports, tax and the right Stripe account.
   const defaultLocationId = (await tx.query.locations.findFirst({ where: eq(schema.locations.isDefault, true), columns: { id: true } }))?.id ?? null;
   const staffRows = await tx.select().from(schema.staff);
@@ -219,7 +229,7 @@ async function importAppointments(tx: Tx, business: Business, rows: Record<strin
       }
       const staff = staffByName.get(norm(staffName)) ?? staffRows.find((s) => norm(s.displayName).startsWith(norm(staffName).split(" ")[0]!));
       if (!staff) {
-        r.errors.push({ row: i + 2, message: `Unknown staff "${staffName}"` });
+        r.errors.push({ row: offset + i + 2, message: `Unknown staff "${staffName}"` });
         return;
       }
       let service = serviceByName.get(norm(serviceName)) ?? null;
@@ -272,7 +282,7 @@ async function importAppointments(tx: Tx, business: Business, rows: Record<strin
             )
             .limit(1);
           if (clash.length) {
-            r.errors.push({ row: i + 2, message: `Overlaps an existing booking for ${staff.displayName} at ${date} ${time}` });
+            r.errors.push({ row: offset + i + 2, message: `Overlaps an existing booking for ${staff.displayName} at ${date} ${time}` });
             return;
           }
         }
@@ -303,7 +313,7 @@ async function importAppointments(tx: Tx, business: Business, rows: Record<strin
         if (code === "23P01") {
           await tx.execute(sql`rollback to savepoint import_items`);
           await tx.delete(schema.appointments).where(eq(schema.appointments.id, appt!.id));
-          r.errors.push({ row: i + 2, message: `Overlaps an existing booking for ${staff.displayName} at ${date} ${time}` });
+          r.errors.push({ row: offset + i + 2, message: `Overlaps an existing booking for ${staff.displayName} at ${date} ${time}` });
           return;
         }
         throw e;
@@ -312,7 +322,7 @@ async function importAppointments(tx: Tx, business: Business, rows: Record<strin
       if ((status === "booked" || status === "confirmed") && startAt > new Date()) upcoming.push(appt!.id);
       });
     } catch (e) {
-      r.errors.push({ row: i + 2, message: (e as Error).message });
+      r.errors.push({ row: offset + i + 2, message: (e as Error).message });
     }
   }
 }

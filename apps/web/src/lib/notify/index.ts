@@ -18,6 +18,7 @@ import { emailDailyCap } from "@/lib/access";
 import { smsPausedReason } from "@/lib/billing-config";
 import { priceBookIn } from "@/server/price-book";
 import { templates, type ApptContext, type TemplateName } from "./templates";
+import { siteUrl } from "@/lib/site-url";
 import { smsBody, smsWithStopNotice } from "./sms";
 
 type Row = typeof schema.notifications.$inferSelect;
@@ -52,7 +53,7 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
     services: [...new Set(use.map((i) => i.name.replace(" (finish)", "")))].join(", "),
     staffName: [...new Set(use.map((i) => i.staffName))].join(" & "),
     startAt: use[0]!.startAt,
-    manageUrl: appUrl(`/book/${business.slug}/manage/${appt.manageToken}`),
+    manageUrl: siteUrl(business, `/manage/${appt.manageToken}`),
     policy: business.bookingPolicy,
     cancelWindowHours: business.cancelWindowHours,
     lateCancelFee: (() => {
@@ -62,7 +63,7 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
     })(),
     depositPaid: appt.depositStatus === "paid" || appt.depositStatus === "applied" ? formatMoney(appt.depositCents, business.currency) : null,
     cardOnFile: !!appt.cardSetupIntentId,
-    formsUrl: (await formsForAppointment(tx, appt.id)).some((f) => !f.current) ? appUrl(`/book/${business.slug}/manage/${appt.manageToken}/forms`) : null,
+    formsUrl: (await formsForAppointment(tx, appt.id)).some((f) => !f.current) ? siteUrl(business, `/manage/${appt.manageToken}/forms`) : null,
     prepNotes,
   };
   return { appt, client, ctx };

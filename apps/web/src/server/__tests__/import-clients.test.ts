@@ -34,4 +34,14 @@ describe.skipIf(!up)("client import", () => {
     const people = await withTenant(kit.A, (tx) => tx.select().from(schema.clients).orderBy(asc(schema.clients.firstName)));
     expect(people.map((p) => [p.firstName, p.birthday])).toEqual([["Maria", "1985-04-05"], ["Sofia", "1900-12-25"]]);
   });
+
+  it("imports a long file in batches, numbering errors by spreadsheet row", async () => {
+    const business = (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, kit.A) }))!;
+    const mapping = { firstName: "First", lastName: "Last", email: "Email" };
+    const many = Array.from({ length: 600 }, (_, n) => ({ First: n === 550 ? "" : `Bulk${n}`, Last: "Person", Email: `bulk${n}@example.test` }));
+    const r = await runImport(business, "clients", many, mapping, null, "big.csv");
+    expect([r.created, r.skipped]).toEqual([599, 1]);
+    const again = await runImport(business, "clients", many, mapping, null, "big.csv");
+    expect([again.created, again.updated]).toEqual([0, 599]);
+  }, 30_000);
 });

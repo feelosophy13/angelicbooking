@@ -15,6 +15,7 @@ import { deliverMany } from "@/lib/notify";
 import { smsWithStopNotice } from "@/lib/notify/sms";
 import { deferToDaytime } from "@/lib/workflows-logic";
 import { locationTimeZones, NO_POSTAL_ADDRESS, postalAddress } from "./locations";
+import { siteUrl } from "@/lib/site-url";
 import { phoneTail } from "@/server/consent";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -113,7 +114,7 @@ export async function sendCampaign(business: Business, id: string, actorUserId: 
     if (c.status === "sent") throw new MarketingError("This campaign was already sent.");
     const clients = await audienceClients(tx, business, c.audience, c.channel);
     if (!clients.length) throw new MarketingError("Nobody matches this audience on that channel.");
-    const bookingUrl = appUrl(`/book/${business.slug}`);
+    const bookingUrl = siteUrl(business);
     const address = await postalAddress(tx, business);
     if (c.channel === "email" && !address) throw new MarketingError(NO_POSTAL_ADDRESS);
     const brand = { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address };
@@ -170,5 +171,5 @@ export async function campaignStats(businessId: string, campaignId: string) {
 /** Vars for appointment-driven workflow messages. */
 export function appointmentVars(business: Business, ctx: { clientFirstName: string; services: string; staffName: string; startAt: Date; manageUrl: string; formsUrl?: string | null; timeZone?: string; businessName?: string }) {
   const d = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: ctx.timeZone ?? business.timezone }).format(ctx.startAt);
-  return { first_name: ctx.clientFirstName, business: ctx.businessName ?? business.name, booking_url: appUrl(`/book/${business.slug}`), service: ctx.services, staff: ctx.staffName, when: d, manage_url: ctx.manageUrl, forms_url: ctx.formsUrl ?? "" };
+  return { first_name: ctx.clientFirstName, business: ctx.businessName ?? business.name, booking_url: siteUrl(business), service: ctx.services, staff: ctx.staffName, when: d, manage_url: ctx.manageUrl, forms_url: ctx.formsUrl ?? "" };
 }

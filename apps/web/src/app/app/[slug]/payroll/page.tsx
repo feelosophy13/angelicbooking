@@ -16,7 +16,7 @@ import { listLocations } from "@/server/locations";
 import { and, gte, ilike, lte } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 
-export default async function PayrollPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ start?: string; end?: string; overtime?: string; location?: string }> }) {
+export default async function PayrollPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ start?: string; end?: string; overtime?: string | string[]; location?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
   const { business, permissions } = await requireAction(slug, "payroll.view");
@@ -25,7 +25,10 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   const def = defaultPeriod(today);
   const start = isDate(sp.start) ? sp.start! : def.start;
   const end = isDate(sp.end) ? sp.end! : def.end;
-  const overtime = sp.overtime === "1";
+  // Overtime is on unless the run turns it off (hourly staff are owed it by law; people set to "never" in their pay settings still get none).
+  // The form sends "0" before the checkbox, so the last value is the box's state.
+  const otParam = Array.isArray(sp.overtime) ? sp.overtime.at(-1) : sp.overtime;
+  const overtime = otParam !== "0";
   const daily = business.overtimeRule === "daily";
   const period = { start, end };
   const locations = await listLocations(business.id);
@@ -62,6 +65,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <details className="relative">
             <summary className="cursor-pointer select-none rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden">Options{overtime ? " · overtime on" : ""}</summary>
             <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-stone-200 bg-white p-3 text-sm shadow-lg">
+              <input type="hidden" name="overtime" value="0" />
               <Checkbox name="overtime" value="1" defaultChecked={overtime} label={daily ? "Overtime, California rules" : "Overtime at 1.5× over 40 h/week"} hint={'for hourly staff set to "follow the payroll run"'} />
               <div className="mt-3 border-t border-stone-100 pt-3">
                 <label className="mb-1 block text-xs font-medium text-stone-600" htmlFor="ot-rule-select">Count overtime</label>

@@ -78,3 +78,12 @@ describe("ownershipRecord", () => {
     expect(ownershipRecord("mysalon.co.uk", "abc").name).toBe("_angelic-verify");
   });
 });
+
+describe("siteUrl", () => {
+  it("links to the salon's own domain once it is live, ours otherwise", async () => {
+    const { siteUrl } = await import("../site-url");
+    expect(siteUrl({ slug: "luxe", customDomain: "book.luxe.com", customDomainStatus: "active" }, "/manage/t1")).toBe("https://book.luxe.com/book/luxe/manage/t1");
+    expect(siteUrl({ slug: "luxe", customDomain: "book.luxe.com", customDomainStatus: "pending" }, "/manage/t1")).toMatch(/\/book\/luxe\/manage\/t1$/);
+    expect(siteUrl({ slug: "luxe", customDomain: "book.luxe.com", customDomainStatus: "pending" })).not.toContain("book.luxe.com");
+  });
+});

@@ -26,6 +26,7 @@ import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing"
 import { pathTo } from "@/server/categories";
 import { ensureReferralCode, referralsEnabled } from "./loyalty";
 import { locationTimeZones, NO_POSTAL_ADDRESS, postalAddress } from "./locations";
+import { siteUrl } from "@/lib/site-url";
 import { APPOINTMENT_TRIGGERS, birthdayKeys, deferToDaytime, isMarketingTrigger, matchesFilters, newStepId, noVisitWindow, validateSteps, waitResumesAt, type TriggerFacts } from "@/lib/workflows-logic";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -376,7 +377,7 @@ async function appointmentTimes(tx: TenantDb, appointmentId: string): Promise<{ 
 
 /** Vars for message steps: client + business always, appointment / review / form / membership when the run has one. */
 async function varsFor(tx: TenantDb, business: Business, w: Workflow, run: WorkflowRun, client: typeof schema.clients.$inferSelect) {
-  const bookingUrl = appUrl(`/book/${business.slug}`);
+  const bookingUrl = siteUrl(business);
   let vars: Record<string, string | number | null | undefined> = { first_name: client.firstName, business: business.name, booking_url: bookingUrl, points: null, referral_code: "" };
   if (referralsEnabled(business)) vars.referral_code = await ensureReferralCode(tx, client).catch(() => "");
   let ctaUrl = bookingUrl;
@@ -390,7 +391,7 @@ async function varsFor(tx: TenantDb, business: Business, w: Workflow, run: Workf
       brand = { businessName: apptCtx.ctx.businessName, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: apptCtx.ctx.businessPhone, address: apptCtx.ctx.address };
       if (w.trigger === "appointment_booked") { ctaUrl = apptCtx.ctx.manageUrl; ctaLabel = "Manage appointment"; }
       const review = await tx.query.reviews.findFirst({ where: eq(schema.reviews.appointmentId, run.appointmentId) });
-      if (review) vars.review_url = appUrl(`/book/${business.slug}/review/${review.token}`);
+      if (review) vars.review_url = siteUrl(business, `/review/${review.token}`);
     }
   }
   if (w.trigger === "review_submitted") {
@@ -403,7 +404,7 @@ async function varsFor(tx: TenantDb, business: Business, w: Workflow, run: Workf
     const m = await tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, run.context.membershipId) });
     const plan = m ? await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, m.planId), columns: { name: true } }) : null;
     vars.membership = plan?.name ?? "membership";
-    if (business.clientAccountsEnabled) { ctaUrl = appUrl(`/book/${business.slug}/account`); ctaLabel = "Update your card"; }
+    if (business.clientAccountsEnabled) { ctaUrl = siteUrl(business, `/account`); ctaLabel = "Update your card"; }
   }
   return { vars, ctaUrl, ctaLabel, brand, apptCtx };
 }
@@ -512,7 +513,7 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       const v = await getVars();
       if (!v.apptCtx) { note(i, "skipped", "Appointment no longer exists"); continue; }
       const [review] = await tx.insert(schema.reviews).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, staffId: run.context.staffId ?? null, locationId: run.context.locationId ?? null }).returning();
-      const url = appUrl(`/book/${business.slug}/review/${review!.token}`);
+      const url = siteUrl(business, `/review/${review!.token}`);
       const t = reviewRequestTemplate(v.apptCtx.ctx, url);
       const phone = normalizePhone(client.phone);
       if (client.emailOptIn && client.email) {

@@ -12,6 +12,7 @@ import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
 import { attachBarcode, codeTaken, InventoryError, recordMovement, removeExtraBarcode, transferStock } from "@/server/inventory";
 import { MANUAL_REASONS } from "@/lib/inventory";
 import { addOptions, convertToGroup, createGroup, GroupError, setGroupActive, updateGroup } from "@/server/product-groups";
+import { ownIds } from "@/server/own-ids";
 import { optionCombos, parseOptionList } from "@/lib/variants";
 
 const fields = z.object({
@@ -56,6 +57,7 @@ async function checked(businessId: string, d: z.infer<typeof fields>, raw: FormD
     const owner = await codeTaken(businessId, value, d.productId ?? null);
     if (owner) throw new FormError(`${owner} already uses this ${field === "sku" ? "SKU" : "barcode"}.`, field);
   }
+  if (d.supplierId && (await withTenant(businessId, (tx) => ownIds(tx, { supplierId: d.supplierId })))) throw new FormError("Pick a supplier from the list.", "supplierId");
   return {
     reorderUpTo,
     supplierId: d.supplierId || null,
@@ -67,6 +69,7 @@ async function checked(businessId: string, d: z.infer<typeof fields>, raw: FormD
 
 async function resolveCategory(businessId: string, d: { categoryId?: string; categoryIdNew?: string | null }) {
   if (d.categoryIdNew) return ensureCategory(businessId, "product", d.categoryIdNew);
+  if (d.categoryId && (await withTenant(businessId, (tx) => ownIds(tx, { productCategoryId: d.categoryId })))) throw new FormError("Pick a category from the list.", "categoryId");
   return d.categoryId || null;
 }
 
@@ -224,6 +227,7 @@ const groupFields = z.object({
 /** What the options share. Every option follows. */
 export const saveGroup = formAction(groupFields, async (d, raw) => {
   const ctx = await requireAction(d.slug, "services.manage");
+  if (d.supplierId && (await withTenant(ctx.business.id, (tx) => ownIds(tx, { supplierId: d.supplierId })))) throw new FormError("Pick a supplier from the list.", "supplierId");
   const categoryId = await resolveCategory(ctx.business.id, d);
   const image = await uploadedImage(ctx.business.id, raw);
   const removeImage = raw.get("removeImage") === "on";

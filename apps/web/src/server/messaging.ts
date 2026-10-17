@@ -10,6 +10,7 @@ import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { attachNumberItem, billingState, detachNumberItem } from "@/server/billing";
 import { priceBookFor } from "@/server/price-book";
+import { siteUrl } from "@/lib/site-url";
 import {
   createTollfreeVerification,
   fetchTollfreeVerification,
@@ -145,7 +146,7 @@ export interface VerificationForm {
 /** Sensible prefill from the business profile and the signed-in user. */
 export function defaultVerificationForm(business: Business, user: { name: string; email: string }): VerificationForm {
   const [first = "", ...rest] = user.name.trim().split(/\s+/);
-  const bookingUrl = appUrl(`/book/${business.slug}`);
+  const bookingUrl = siteUrl(business);
   return {
     businessName: business.name,
     businessWebsite: business.website || bookingUrl,
