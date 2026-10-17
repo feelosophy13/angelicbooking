@@ -25,7 +25,7 @@ import { smsBody, smsWithStopNotice } from "@/lib/notify/sms";
 import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing";
 import { pathTo } from "@/server/categories";
 import { ensureReferralCode, referralsEnabled } from "./loyalty";
-import { NO_POSTAL_ADDRESS, postalAddress } from "./locations";
+import { locationTimeZones, NO_POSTAL_ADDRESS, postalAddress } from "./locations";
 import { APPOINTMENT_TRIGGERS, birthdayKeys, deferToDaytime, isMarketingTrigger, matchesFilters, newStepId, noVisitWindow, validateSteps, waitResumesAt, type TriggerFacts } from "@/lib/workflows-logic";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -458,7 +458,9 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
     if (step.type === "sms" || step.type === "email") {
       if (skipNextMessage) { skipNextMessage = false; note(i, "skipped", "Not sent: booked inside the reminder window"); continue; }
       const v = await getVars();
-      const scheduledAt = marketing ? deferToDaytime(now, business.timezone) : now;
+      // Quiet hours where the client is: the visit's location, else their usual one.
+      const zone = (await locationTimeZones(tx, business))(run.context.locationId ?? client?.homeLocationId);
+      const scheduledAt = marketing ? deferToDaytime(now, zone) : now;
       const deferred = scheduledAt > now ? ` (held until ${scheduledAt.toISOString()}, quiet hours)` : "";
       if (step.type === "sms") {
         const phone = normalizePhone(client.phone);
@@ -518,7 +520,7 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
         out.push(row!.id);
         note(i, "sent", `Rating request emailed to ${client.email}`);
       } else if (client.smsOptIn && phone) {
-        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: "review_request", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "review_request", v.apptCtx.ctx, { review_url: url })), scheduledAt: deferToDaytime(now, business.timezone), workflowRunId: run.id }).returning({ id: schema.notifications.id });
+        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: "review_request", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "review_request", v.apptCtx.ctx, { review_url: url })), scheduledAt: deferToDaytime(now, (await locationTimeZones(tx, business))(run.context.locationId ?? client.homeLocationId)), workflowRunId: run.id }).returning({ id: schema.notifications.id });
         out.push(row!.id);
         note(i, "sent", `Rating request texted to ${phone} (held for daytime if it's late)`);
       } else note(i, "skipped", "No channel the client has consented to");

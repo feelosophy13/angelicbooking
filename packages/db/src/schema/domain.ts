@@ -795,6 +795,10 @@ export const appointments = pgTable(
     // a payment on that sale: "applied"), or until it is refunded.
     depositCents: integer("deposit_cents").notNull().default(0),
     depositStatus: depositStatus("deposit_status").notNull().default("none"),
+    // Online bookings: the cancellation policy as the client saw it, when they agreed by booking, and from which address.
+    policyText: text("policy_text"),
+    policyAcceptedAt: timestamp("policy_accepted_at", { withTimezone: true }),
+    policyAcceptedIp: text("policy_accepted_ip"),
     depositPaymentIntentId: text("deposit_payment_intent_id"),
     /** The Stripe account that took the deposit, so a refund goes to the right one even after the location's account changes. */
     depositStripeAccountId: text("deposit_stripe_account_id"),

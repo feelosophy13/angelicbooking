@@ -1,4 +1,6 @@
 "use server";
+import { headers } from "next/headers";
+import { formIp } from "@/lib/rate-limit";
 import { publicBotCheck } from "@/lib/turnstile";
 import { redirect } from "next/navigation";
 import { browserStripe } from "@/lib/stripe-demo";
@@ -72,7 +74,7 @@ export async function bookOnline(_prev: PublicState, formData: FormData): Promis
   if (onlinePaymentRequirement(business, service, pay, visitPrice).mode !== "none") return { error: "This booking needs a card. Please reload the page and try again." };
   let token: string;
   try {
-    const r = await createOnlineBooking(business, { ...d, startAt: new Date(d.startAt) });
+    const r = await createOnlineBooking(business, { ...d, startAt: new Date(d.startAt), ip: formIp(await headers()) });
     token = r.token;
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
@@ -159,7 +161,7 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
     const startAt = new Date(d.startAt);
     const pay = await paymentContextFor(business, d.locationId);
     const verified = await verifyOnlineIntent(business, pay, intent.kind, intent.id, { businessId: business.id, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" });
-    const r = await createOnlineBooking(business, { ...d, startAt }, new Date(), verified);
+    const r = await createOnlineBooking(business, { ...d, startAt, ip: formIp(await headers()) }, new Date(), verified);
     token = r.token;
   } catch (e) {
     const twin = await appointmentForIntent(business.id, intent.id);

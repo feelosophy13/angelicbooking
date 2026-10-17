@@ -14,7 +14,7 @@ import { marketingEmail } from "@/lib/notify/templates";
 import { deliverMany } from "@/lib/notify";
 import { smsWithStopNotice } from "@/lib/notify/sms";
 import { deferToDaytime } from "@/lib/workflows-logic";
-import { NO_POSTAL_ADDRESS, postalAddress } from "./locations";
+import { locationTimeZones, NO_POSTAL_ADDRESS, postalAddress } from "./locations";
 import { phoneTail } from "@/server/consent";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -118,8 +118,10 @@ export async function sendCampaign(business: Business, id: string, actorUserId: 
     if (c.channel === "email" && !address) throw new MarketingError(NO_POSTAL_ADDRESS);
     const brand = { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address };
     const rows: (typeof schema.notifications.$inferInsert)[] = [];
-    // Texts wait for daytime in the business's time zone (9am–8pm); emails go now.
-    const scheduledAt = c.channel === "sms" ? deferToDaytime(new Date(), business.timezone) : new Date();
+    // Texts wait for daytime where the client is (their usual location's time zone); emails go now.
+    const zoneOf = await locationTimeZones(tx, business);
+    const now = new Date();
+    const at = (cl: ClientRow) => (c.channel === "sms" ? deferToDaytime(now, zoneOf(cl.homeLocationId)) : now);
     // One message per address: family members sharing a phone, or duplicate records, get it once (and are charged once).
     const seen = new Set<string>();
     for (const cl of clients) {
@@ -129,11 +131,11 @@ export async function sendCampaign(business: Business, id: string, actorUserId: 
       const vars = { first_name: cl.firstName, business: business.name, booking_url: bookingUrl };
       if (c.channel === "email") {
         const t = marketingEmail(brand, { subject: renderText(c.subject ?? c.name, vars), text: renderText(c.body, vars), ctaUrl: bookingUrl, unsubscribeUrl: unsubscribeUrl(business, cl.id) });
-        rows.push({ businessId: business.id, clientId: cl.id, channel: "email", template: "campaign", recipient: cl.email!, subject: t.subject, body: t.html, campaignId: c.id, marketing: true, scheduledAt });
+        rows.push({ businessId: business.id, clientId: cl.id, channel: "email", template: "campaign", recipient: cl.email!, subject: t.subject, body: t.html, campaignId: c.id, marketing: true, scheduledAt: at(cl) });
       } else {
         const phone = normalizePhone(cl.phone);
         if (!phone) continue;
-        rows.push({ businessId: business.id, clientId: cl.id, channel: "sms", template: "campaign", recipient: phone, body: await smsWithStopNotice(tx, cl, `${business.name}: ${renderText(c.body, vars)}`, true), campaignId: c.id, marketing: true, scheduledAt });
+        rows.push({ businessId: business.id, clientId: cl.id, channel: "sms", template: "campaign", recipient: phone, body: await smsWithStopNotice(tx, cl, `${business.name}: ${renderText(c.body, vars)}`, true), campaignId: c.id, marketing: true, scheduledAt: at(cl) });
       }
     }
     const inserted = rows.length ? await tx.insert(schema.notifications).values(rows).returning({ id: schema.notifications.id }) : [];

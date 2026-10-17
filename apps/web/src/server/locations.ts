@@ -46,6 +46,13 @@ export async function postalAddress(tx: TenantDb, business: Pick<Business, "addr
   return null;
 }
 
+/** Time zone per location id (quiet hours follow the site the client uses; the business's own zone when unknown). */
+export async function locationTimeZones(tx: TenantDb, business: Pick<Business, "timezone">): Promise<(locationId: string | null | undefined) => string> {
+  const locs = await tx.select().from(schema.locations);
+  const byId = new Map(locs.map((l) => [l.id, tzFor(business, l)]));
+  return (id) => (id && byId.get(id)) || business.timezone;
+}
+
 export const NO_POSTAL_ADDRESS = "Marketing emails must show your business's postal address. Add it under Settings → Locations (or Business), then send again.";
 
 /** Pure: the payment settings in force for a (possibly null) location. */

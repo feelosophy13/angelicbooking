@@ -240,7 +240,7 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
           // end are picked (not only when they match the dates it was entered with).
           .where(and(gte(schema.payrollAdjustments.periodStart, period.start), lte(schema.payrollAdjustments.periodStart, period.end))),
       ]);
-      // Pay settings as they stood at the end of the period, so an old period re-runs with its old rates.
+      // Pay settings as they stood in the period (an old period re-runs with its old rates; a change inside it splits the period).
       const rates = await ratesForPeriod(tx, staff.map((x) => x.id), period.start, period.end);
       return { staff, hours, adjustments, rates };
     }),
@@ -261,6 +261,8 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
       overtimeOverride: r.overtimeOverride,
       taxDeductionCents: r.taxDeductionCents,
       taxDeductionBps: r.taxDeductionBps,
+      // A change inside the period: each sale and worked day is paid at the rates in force that day.
+      ratesFrom: rest.rates.segments.get(s.id)?.map((g) => ({ from: g.from, rates: { mainCommissionBps: g.rates.mainCommissionBps, productCommissionBps: g.rates.productCommissionBps, ccTipFeeBps: g.rates.ccTipFeeBps, hourlyRateCents: g.rates.hourlyRateCents } })),
     };
   });
   const hours: HoursEntry[] = rest.hours.filter((h) => !split || h.locationId === locationId).map((h) => ({ staffId: h.staffId, date: h.date, minutes: h.minutes }));

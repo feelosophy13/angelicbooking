@@ -26,6 +26,13 @@ export function zonedToInstant(date: ISODate, time: LocalTime, timeZone: string)
   return new Date(new TZDate(y, mo - 1, d, h, m, 0, 0, timeZone).getTime());
 }
 
+/** The end of a working block as an instant: "24:00" is midnight at the start of the next day. */
+export function blockEndInstant(date: ISODate, end: LocalTime, timeZone: string): Date {
+  if (end !== "24:00") return zonedToInstant(date, end, timeZone);
+  const { y, mo, d } = parseISODate(date);
+  return zonedToInstant(new Date(Date.UTC(y, mo - 1, d + 1)).toISOString().slice(0, 10), "00:00", timeZone);
+}
+
 /** Calendar date (YYYY-MM-DD) of an instant as seen in a timezone. */
 export function instantToISODate(at: Date, timeZone: string): ISODate {
   const z = new TZDate(at.getTime(), timeZone);

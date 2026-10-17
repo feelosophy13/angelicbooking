@@ -1,4 +1,4 @@
-import { addMinutes, parseISODate, zonedToInstant, type ISODate, type LocalTime } from "./time";
+import { addMinutes, blockEndInstant, parseISODate, zonedToInstant, type ISODate, type LocalTime } from "./time";
 
 export interface Interval {
   start: Date;
@@ -152,8 +152,7 @@ export function computeAvailableSlots(input: AvailabilityInput): Date[] {
 
   for (const block of input.workingBlocks) {
     const blockStart = zonedToInstant(date, block.start, timeZone);
-    const blockEnd =
-      block.end === "24:00" ? zonedToInstant(date, "23:59", timeZone) : zonedToInstant(date, block.end, timeZone);
+    const blockEnd = blockEndInstant(date, block.end, timeZone);
     if (blockEnd <= blockStart) continue;
     const blockIv: Interval = { start: blockStart, end: blockEnd };
 

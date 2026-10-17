@@ -7,6 +7,7 @@ import {
   rowsForDate,
   weekdayOf,
   zonedToInstant,
+  blockEndInstant,
   type Interval,
   type ServiceTiming,
 } from "@angelic/core";
@@ -81,10 +82,13 @@ export async function getStaffAvailabilityForDates(opts: AvailabilityOpts & { da
           ),
         ),
       // Scheduled classes block the instructor even before anyone has enrolled.
+      // ...including the class service's cleanup time after it.
       tx
-        .select({ start: schema.classSessions.startAt, end: schema.classSessions.endAt })
+        .select({ start: schema.classSessions.startAt, end: schema.classSessions.endAt, bufferMin: schema.services.bufferAfterMin })
         .from(schema.classSessions)
-        .where(and(eq(schema.classSessions.staffId, staffId), eq(schema.classSessions.status, "scheduled"), gte(schema.classSessions.startAt, windowStart), lt(schema.classSessions.startAt, windowEnd))),
+        .leftJoin(schema.services, eq(schema.services.id, schema.classSessions.serviceId))
+        .where(and(eq(schema.classSessions.staffId, staffId), eq(schema.classSessions.status, "scheduled"), gte(schema.classSessions.startAt, windowStart), lt(schema.classSessions.startAt, windowEnd)))
+        .then((rows) => rows.map((r) => ({ start: r.start, end: new Date(r.end.getTime() + (r.bufferMin ?? 0) * 60_000) }))),
       tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true, rotationWeeks: true, rotationAnchor: true } }),
       tx.select({ id: schema.locations.id, isDefault: schema.locations.isDefault, hours: schema.locations.hours, timezone: schema.locations.timezone }).from(schema.locations),
     ]);
@@ -167,7 +171,7 @@ export async function workingBlocksFor(opts: { businessId: string; timeZone: str
         const todays = rowsForDate(date, mine, rotation).filter((r) => r.weekday === weekday);
         const blocks: WorkingInterval[] = [];
         const push = (loc: string | null, local: { start: string; end: string }[]) => {
-          for (const b of local) blocks.push({ start: zonedToInstant(date, b.start, tzAt(loc)), end: b.end === "24:00" ? zonedToInstant(date, "23:59", tzAt(loc)) : zonedToInstant(date, b.end, tzAt(loc)) });
+          for (const b of local) blocks.push({ start: zonedToInstant(date, b.start, tzAt(loc)), end: blockEndInstant(date, b.end, tzAt(loc)) });
         };
         if (ov) {
           const dayLoc = todays[0] ? locOf(todays[0]) : fallbackLoc;

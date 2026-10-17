@@ -137,3 +137,11 @@ describe("computeAvailableSlots", () => {
     expect(local(slots)).toEqual(["09:00", "09:30", "10:00", "10:30", "13:00", "13:30"]);
   });
 });
+
+describe("a working block that closes at 24:00", () => {
+  it("ends at midnight, not 23:59, so the last hour can be booked", async () => {
+    const { blockEndInstant, zonedToInstant } = await import("../time");
+    expect(blockEndInstant("2026-10-05", "24:00", "America/New_York").getTime()).toBe(zonedToInstant("2026-10-06", "00:00", "America/New_York").getTime());
+    expect(blockEndInstant("2026-10-05", "18:00", "America/New_York").getTime()).toBe(zonedToInstant("2026-10-05", "18:00", "America/New_York").getTime());
+  });
+});

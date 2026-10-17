@@ -7,7 +7,10 @@ import { getAppointmentApi } from "@/server/api-v1";
 import { BookingError, setAppointmentStatus } from "@/server/booking";
 import { notifyAppointment } from "@/lib/notify";
 
-const body = z.object({ reason: z.string().max(500).nullish(), reason_id: z.string().nullish(), notify: z.boolean().default(true) });
+// A reason is required, as at the desk and in the mobile app: a managed one (`reason_id`) or a written note (`reason`).
+const body = z
+  .object({ reason: z.string().trim().max(500).nullish(), reason_id: z.string().nullish(), notify: z.boolean().default(true) })
+  .refine((b) => !!b.reason_id || !!b.reason, { message: "Give a cancellation reason: reason (text), or reason_id (a reason set up under Settings → Cancellation reasons).", path: ["reason_id"] });
 
 /** POST /api/v1/appointments/:id/cancel. No fee is charged; refunds and fees stay in the staff app. */
 export const POST = route<{ id: string }>("appointments:cancel", async (ctx, req, { id }) => {

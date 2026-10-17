@@ -87,7 +87,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
 
       {result.rateChanges.length ? (
         <p className="mb-4 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600">
-          Pay settings changed during this period: {result.rateChanges.map((c) => `${c.name} from ${formatDateLong(c.effectiveFrom)}`).join(", ")}. The whole period is paid at the settings in force on {formatDateLong(end)}.
+          Pay settings changed during this period: {result.rateChanges.map((c) => `${c.name} from ${formatDateLong(c.effectiveFrom)}`).join(", ")}. Commission and hourly pay follow the rate in force on each day; salary and withholding use the settings in force on {formatDateLong(end)}.
         </p>
       ) : null}
       {finalized && !locationFilter && finalized.overtime !== overtime ? (

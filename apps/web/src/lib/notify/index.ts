@@ -178,7 +178,7 @@ export async function queueOneOff(businessId: string, input: { channel: "email" 
   if (row) after(() => deliverMany(businessId, [row.id]));
 }
 
-type Outcome = { id: string; status: "sent" | "failed" | "skipped"; providerId?: string; error?: string; /** The carrier says this number opted out: suppress it. */ suppress?: string; /** Throttled by the provider: try again soon without using up an attempt. */ throttled?: boolean };
+type Outcome = { id: string; status: "sent" | "failed" | "skipped"; providerId?: string; error?: string; /** The carrier says this number opted out: suppress it. */ suppress?: string; /** Throttled by the provider: try again soon without using up an attempt. */ throttled?: boolean; /** With throttled: how long to wait (default a minute). */ retryInMs?: number };
 
 /** Rows left in "sending" longer than this are assumed orphaned (process died mid-run) and retried. */
 const STALE_CLAIM_MS = 10 * 60_000;
@@ -186,6 +186,8 @@ const STALE_CLAIM_MS = 10 * 60_000;
 const CONCURRENCY = 8;
 /** A send that errors is retried this many times in total, 5 min then 10 min then 20 min apart. */
 const MAX_ATTEMPTS = 3;
+/** How long a text waits for texting to be switched back on (billing) before it is given up as stale. */
+const SMS_PAUSE_HOLD_MS = 48 * 3_600_000;
 const retryDelayMs = (attempt: number) => 5 * 60_000 * 2 ** Math.max(0, attempt - 1);
 
 /**
@@ -316,7 +318,10 @@ async function send({ row: n, sender, email, consentBlock, unsubscribe }: Claime
     if (email.emailBudget.left <= 0) return { id: n.id, status: "skipped", error: "Daily email limit for accounts without a subscription: add a card under Settings → Billing." };
     email.emailBudget.left--;
   }
-  if (n.channel === "sms" && email?.smsPausedReason) return { id: n.id, status: "skipped", error: email.smsPausedReason };
+  // Texting paused for billing: hold the text (it goes once texting is back) unless it has waited two days and is stale by now.
+  if (n.channel === "sms" && email?.smsPausedReason) {
+    return n.createdAt.getTime() > Date.now() - SMS_PAUSE_HOLD_MS ? { id: n.id, status: "failed", error: email.smsPausedReason, throttled: true, retryInMs: 30 * 60_000 } : { id: n.id, status: "skipped", error: email.smsPausedReason };
+  }
   const configured = n.channel === "email" ? emailConfigured() : smsConfigured();
   if (!configured) return { id: n.id, status: "skipped", error: `${n.channel} provider not configured` };
   if (n.channel === "sms" && !sender) return { id: n.id, status: "skipped", error: "No verified text number yet (Settings → Text messaging)" };
@@ -382,7 +387,7 @@ async function deliverClaimed(claimed: Claimed[]): Promise<Summary> {
             ? { status: "sent" as const, sentAt: new Date(), providerId: o.providerId, error: null, attempts }
             : o.throttled
               ? // The provider was only busy: back in the queue for the next run, and it doesn't count as a try.
-                { status: "queued" as const, error: `${o.error} (retrying)`, claimedAt: null, scheduledAt: new Date(Date.now() + 60_000) }
+                { status: "queued" as const, error: `${o.error} (retrying)`, claimedAt: null, scheduledAt: new Date(Date.now() + (o.retryInMs ?? 60_000)) }
               : o.status === "failed" && attempts < MAX_ATTEMPTS
               ? // A provider error (outage, rate limit) gets another go later; the error is kept visible meanwhile.
                 { status: "queued" as const, error: `${o.error} (retrying)`, attempts, claimedAt: null, scheduledAt: new Date(Date.now() + retryDelayMs(attempts)) }

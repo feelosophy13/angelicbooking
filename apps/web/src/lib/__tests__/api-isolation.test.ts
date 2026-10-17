@@ -119,7 +119,7 @@ describe.skipIf(!reachable)("API isolation", () => {
   it("cannot read or cancel another business's appointment", async () => {
     const [appt] = await withTenant(B, (tx) => tx.insert(schema.appointments).values({ businessId: B }).returning());
     expect((await call(getAppt, keys.aAll!, { id: appt!.id })).status).toBe(404);
-    expect((await call(cancelAppt, keys.aAll!, { id: appt!.id }, { method: "POST", body: "{}" })).status).toBe(404);
+    expect((await call(cancelAppt, keys.aAll!, { id: appt!.id }, { method: "POST", body: JSON.stringify({ reason: "test" }) })).status).toBe(404);
     const after = await withTenant(B, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appt!.id) }));
     expect(after?.status).toBe("booked");
   });

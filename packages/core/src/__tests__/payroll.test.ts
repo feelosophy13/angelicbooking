@@ -254,3 +254,23 @@ describe("daily overtime (California) and commission in the overtime rate", () =
     expect([e.overtimeOnCommissionCents, e.wageCents]).toEqual([0, 100_000]);
   });
 });
+
+describe("pay settings that change inside a period", () => {
+  it("pays commission and hours on each side of the change at their own rate", () => {
+    const emp = base({
+      payType: "hourly",
+      hourlyRateCents: 2000,
+      mainCommissionBps: 1000,
+      ratesFrom: [
+        { from: "2026-10-01", rates: { mainCommissionBps: 1000, productCommissionBps: 500, ccTipFeeBps: 300, hourlyRateCents: 1500 } },
+        { from: "2026-10-10", rates: { mainCommissionBps: 2000, productCommissionBps: 500, ccTipFeeBps: 300, hourlyRateCents: 2000 } },
+      ],
+    });
+    const lines = [line({ date: "2026-10-05", amtPaidCents: 10_000 }), line({ date: "2026-10-12", amtPaidCents: 10_000 })];
+    const hours = [{ staffId: "s", date: "2026-10-05", minutes: 600 }, { staffId: "s", date: "2026-10-12", minutes: 600 }];
+    const e = computePayroll({ employees: [emp], lines, hours, adjustments: [], overtime: false, countFrom: "2026-10-01" }).employees[0]!;
+    // $100 at 10% + $100 at 20%; 10 h at $15 + 10 h at $20.
+    expect(e.mainCommissionCents).toBe(1000 + 2000);
+    expect(e.wageCents).toBe(15_000 + 20_000);
+  });
+});

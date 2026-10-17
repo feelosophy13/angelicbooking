@@ -457,6 +457,14 @@ export default async function AppointmentPage({
             </Card>
           ) : null}
 
+          {appointment.policyAcceptedAt && appointment.policyText ? (
+            <Card className="p-4 text-sm">
+              <h2 className="mb-1 font-medium">Cancellation policy agreed</h2>
+              <p className="text-xs text-stone-500">When booking online, {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: tz }).format(appointment.policyAcceptedAt)}{appointment.policyAcceptedIp ? ` · from ${appointment.policyAcceptedIp}` : ""}. Useful if a fee or deposit is disputed.</p>
+              <p className="mt-1 text-stone-700">{appointment.policyText}</p>
+            </Card>
+          ) : null}
+
           {!locked && !existingSale && savedCards.length > 0 && canCancel ? (
             <Card className="p-4">
               <h2 className="mb-1 font-medium">No-show fee</h2>

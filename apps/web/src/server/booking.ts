@@ -58,9 +58,11 @@ async function assertNoClassClash(tx: Tx, staffId: string, ranges: { start: Date
   const from = new Date(Math.min(...ranges.map((r) => r.start.getTime())));
   const to = new Date(Math.max(...ranges.map((r) => r.end.getTime())));
   const classes = await tx
-    .select({ start: schema.classSessions.startAt, end: schema.classSessions.endAt })
+    .select({ start: schema.classSessions.startAt, end: sql<Date>`${schema.classSessions.endAt} + make_interval(mins => coalesce(${schema.services.bufferAfterMin}, 0)::int)`.mapWith(schema.classSessions.endAt) })
     .from(schema.classSessions)
-    .where(and(eq(schema.classSessions.staffId, staffId), eq(schema.classSessions.status, "scheduled"), lt(schema.classSessions.startAt, to), gt(schema.classSessions.endAt, from)));
+    .leftJoin(schema.services, eq(schema.services.id, schema.classSessions.serviceId))
+    // A class blocks its cleanup time too.
+    .where(and(eq(schema.classSessions.staffId, staffId), eq(schema.classSessions.status, "scheduled"), lt(schema.classSessions.startAt, to), sql`${schema.classSessions.endAt} + make_interval(mins => coalesce(${schema.services.bufferAfterMin}, 0)::int) > ${from.toISOString()}::timestamptz`));
   if (classes.some((c) => ranges.some((r) => r.start < c.end && c.start < r.end))) throw new BookingError("That time overlaps a class this provider is teaching. Please pick another.");
 }
 
@@ -113,6 +115,8 @@ export interface BookAppointmentInput {
   classSessionId?: string | null;
   /** Promo code to apply when checkout opens. */
   promoCodeId?: string | null;
+  /** Online bookings: the cancellation policy the client agreed to by booking. */
+  policy?: { text: string; ip: string | null } | null;
   /** Where the visit happens. Defaults to where the provider works that weekday, else their primary site, else the default. */
   locationId?: string | null;
   /** More services booked in the same visit, with the same provider, each starting where the last one ends. */
@@ -139,6 +143,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
     return withTenant(input.businessId, async (tx) => {
       if (input.promoCodeId) await promoRoom(tx, input.promoCodeId);
       const r = await insertSeat(tx, { businessId: input.businessId, sessionId: input.classSessionId!, clientId: input.clientId, notes: input.notes ?? null, source: input.source ?? "staff", createdByUserId: input.createdByUserId ?? null, deposit: input.deposit, cardSetupIntentId: input.cardSetupIntentId, promoCodeId: input.promoCodeId });
+      if (input.policy) await tx.update(schema.appointments).set({ policyText: input.policy.text, policyAcceptedAt: new Date(), policyAcceptedIp: input.policy.ip }).where(eq(schema.appointments.id, r.appointmentId));
       return { appointmentId: r.appointmentId };
     });
   }
@@ -163,6 +168,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
             : {}),
           cardSetupIntentId: input.cardSetupIntentId ?? null,
           promoCodeId: input.promoCodeId ?? null,
+          ...(input.policy ? { policyText: input.policy.text, policyAcceptedAt: new Date(), policyAcceptedIp: input.policy.ip } : {}),
         })
         .returning({ id: schema.appointments.id });
       const firstItems = await insertServiceItems(tx, { ...input, appointmentId: appt!.id, sortOrderBase: 0 });

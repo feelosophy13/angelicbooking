@@ -16,6 +16,7 @@ import { businessAccess, publishBlockedReason } from "./access";
 import { formatMoney, shiftISODate } from "@/lib/utils";
 import { overridesForService, priceForStaff, termsOf } from "./stylist-pricing";
 import { sameClientName } from "@/lib/client-match";
+import { policySnapshot } from "@/lib/policy-text";
 import { isSmsSuppressed, smsMarketingConsent } from "./consent";
 import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt, tzFor } from "./locations";
 
@@ -244,6 +245,8 @@ export async function lastProviderFor(businessId: string, clientId: string, serv
 }
 
 export interface OnlineBookingInput {
+  /** The client's address, saved with their acceptance of the cancellation policy. */
+  ip?: string | null;
   serviceId: string;
   staffId: string;
   startAt: Date;
@@ -461,6 +464,8 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
       promoCodeId,
       locationId: input.locationId ?? null,
       extras: extras.map((x) => ({ serviceId: x.serviceId, startAt: x.startAt })),
+      // Booking online is agreeing to the cancellation policy shown on the form: keep exactly that text, when, and from where.
+      policy: { text: policySnapshot(business), ip: input.ip ?? null },
     }));
   } catch (e) {
     await undoPayment(business, paid);

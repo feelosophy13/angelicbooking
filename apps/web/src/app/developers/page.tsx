@@ -154,7 +154,7 @@ export default function DevelopersPage() {
       </Endpoint>
       <Endpoint method="PATCH" path="/appointments/{id}" scope="appointments:change"><p>Change <code>status</code> (<code>booked</code>, <code>confirmed</code>, <code>checked_in</code>, <code>in_progress</code>, <code>completed</code>, <code>no_show</code>) and/or <code>notes</code>.</p></Endpoint>
       <Endpoint method="POST" path="/appointments/{id}/reschedule" scope="appointments:change"><p>Body: <code>start_at</code>, optional <code>staff_id</code>, <code>notify</code> (default <code>true</code>). Moves the visit&apos;s service. 409 when the time is taken or outside the provider&apos;s hours.</p></Endpoint>
-      <Endpoint method="POST" path="/appointments/{id}/cancel" scope="appointments:cancel"><p>Body: optional <code>reason</code>, <code>notify</code> (default <code>true</code>). No fee is charged and nothing is refunded; do those in the app.</p></Endpoint>
+      <Endpoint method="POST" path="/appointments/{id}/cancel" scope="appointments:cancel"><p>Body: a reason is required, either <code>reason</code> (text, up to 500) or <code>reason_id</code> (one of the business&apos;s cancellation reasons); <code>422</code> without one. Also <code>notify</code> (default <code>true</code>). No fee is charged and nothing is refunded; do those in the app.</p></Endpoint>
       <Code>{`curl -X POST ${BASE}/appointments \\
   -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \\
   -d '{ "client_id": "…", "service_id": "…", "staff_id": "…", "start_at": "2026-11-02T14:00:00-05:00" }'`}</Code>

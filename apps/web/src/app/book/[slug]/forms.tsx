@@ -5,6 +5,7 @@ import { bookOnline, joinWaitlistAction, type PublicState } from "./actions";
 import { Field, Input, Notice, Textarea, Checkbox } from "@/components/ui";
 import { Disclosure } from "@/components/disclosure";
 import { SubmitButton } from "@/components/form";
+import { policyLine } from "@/lib/policy-text";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean; smsMarketingOptIn?: boolean } | null;
 
@@ -26,7 +27,7 @@ export function BookingForm(props: { extraServiceIds?: string[]; /** The price b
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <PublicBotCheck resetKey={state} />
       <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Booking…">Confirm booking{props.priceLabel ? ` · ${props.priceLabel}` : ""}</SubmitButton>
-      <p className="text-xs text-stone-500">You can cancel or reschedule online up to {props.cancelWindowHours} hours before.{props.lateFee ? ` Cancellations inside that window carry a fee of ${props.lateFee}.` : ""}{props.policy ? ` ${props.policy}` : ""}</p>
+      <p className="text-xs text-stone-500">{policyLine(props)} By booking, you agree to this policy.</p>
     </form>
   );
 }

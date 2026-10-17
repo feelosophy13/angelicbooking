@@ -6,6 +6,7 @@ import { CardElement, Elements, useElements, useStripe } from "@stripe/react-str
 import { Button, Notice } from "@/components/ui";
 import { ContactFields, type BookingDefaults } from "./forms";
 import { useHydrated } from "@/lib/use-hydrated";
+import { policyLine } from "@/lib/policy-text";
 import { abandonOnlinePaymentAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
 
 type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null };
@@ -89,7 +90,7 @@ export function PaidBookingForm(props: {
           {pending ? "One moment…" : props.mode === "deposit" ? props.full ? `Continue to pay ${props.amountLabel}` : `Continue to pay ${props.amountLabel} deposit` : "Continue to add a card"}
         </Button>
         <p className="text-xs text-stone-500">
-          {props.mode === "deposit" ? props.full ? `${props.amountLabel} is charged now, paying for your visit in full.` : `A ${props.amountLabel} deposit is charged now and comes off your bill on the day.` : "Your card is saved to hold the booking. Nothing is charged now."} You can cancel or reschedule online up to {props.cancelWindowHours} hours before.{props.lateFee ? ` Cancellations inside that window carry a fee of ${props.lateFee}.` : ""}{props.policy ? ` ${props.policy}` : ""}
+          {props.mode === "deposit" ? props.full ? `${props.amountLabel} is charged now, paying for your visit in full.` : `A ${props.amountLabel} deposit is charged now and comes off your bill on the day.` : "Your card is saved to hold the booking. Nothing is charged now."} {policyLine(props)} By booking, you agree to this policy.
         </p>
       </form>
     );

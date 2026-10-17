@@ -68,11 +68,12 @@ describe.skipIf(!up)("exact scopes", () => {
     const book = await v2(["appointments:book"]);
     const nope = (r: Response) => expect(r.status).toBe(403);
     nope(await call(patchAppointment, book, { id: "x" }, send("PATCH", { notes: "n" })));
-    nope(await call(cancelAppointment, book, { id: "x" }, send("POST", {})));
+    nope(await call(cancelAppointment, book, { id: "x" }, send("POST", { reason: "test" })));
     nope(await call(deleteBlock, await v2(["appointments:change"]), { id: "x" }, send("DELETE")));
     const cancelOnly = await v2(["appointments:cancel"]);
     nope(await call(patchAppointment, cancelOnly, { id: "x" }, send("PATCH", { notes: "n" })));
-    expect((await call(cancelAppointment, cancelOnly, { id: "does-not-exist" }, send("POST", {}))).status).toBe(404); // allowed in, then not found
+    expect((await call(cancelAppointment, cancelOnly, { id: "does-not-exist" }, send("POST", { reason: "test" }))).status).toBe(404); // allowed in, then not found
+    expect((await call(cancelAppointment, cancelOnly, { id: "does-not-exist" }, send("POST", {}))).status).toBe(422); // a reason is required
   });
 });
 

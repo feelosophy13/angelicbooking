@@ -29,6 +29,23 @@ export interface PayrollEmployee {
   overtimeOverride: boolean | null;
   taxDeductionCents: number | null;
   taxDeductionBps: number | null;
+  /**
+   * When pay settings changed inside the period: the rates in force from each date (ascending; the first covers the period's start).
+   * Commission, card-tip fees and hourly pay then follow the date of each sale or worked day. Without it the fields above cover all.
+   */
+  ratesFrom?: { from: string; rates: DatedRates }[];
+}
+
+/** The pay settings that can change from one day to the next inside a period. */
+export type DatedRates = Pick<PayrollEmployee, "mainCommissionBps" | "productCommissionBps" | "ccTipFeeBps" | "hourlyRateCents">;
+
+/** The employee's rates in force on `date`. */
+export function ratesOn(emp: PayrollEmployee, date: string): DatedRates {
+  const list = emp.ratesFrom;
+  if (!list?.length) return emp;
+  let cur = list[0]!.rates;
+  for (const r of list) if (r.from <= date) cur = r.rates;
+  return cur;
 }
 
 export type LineKind = "service" | "product" | "package" | "membership" | "fee";
@@ -232,7 +249,10 @@ export function computeHours(entries: HoursEntry[], weekStart: number, applyOver
   regularMinutes: number;
   overtimeMinutes: number;
   doubleMinutes: number;
+  /** Paid days with how their minutes split (for paying each day at its own rate). */
+  days: { date: string; regular: number; overtime: number; double: number }[];
 } {
+  const dayParts: { date: string; regular: number; overtime: number; double: number }[] = [];
   const byDateMap = new Map<string, number>();
   for (const e of entries) byDateMap.set(e.date, (byDateMap.get(e.date) ?? 0) + Math.max(0, e.minutes));
   const days = [...byDateMap.entries()].filter(([, m]) => m > 0).sort(([a], [b]) => a.localeCompare(b));
@@ -270,6 +290,7 @@ export function computeHours(entries: HoursEntry[], weekStart: number, applyOver
       wk.regular += regular;
       wk.overtime += overtime;
       wk.double += double;
+      dayParts.push({ date, regular, overtime, double });
     }
     weekMap.set(w, wk);
   }
@@ -281,7 +302,7 @@ export function computeHours(entries: HoursEntry[], weekStart: number, applyOver
   const totalMinutes = weeks.reduce((s, w) => s + w.minutes, 0);
   const overtimeMinutes = weeks.reduce((s, w) => s + w.overtimeMinutes, 0);
   const doubleMinutes = weeks.reduce((s, w) => s + w.doubleMinutes, 0);
-  return { byDate, weeks, totalMinutes, regularMinutes: totalMinutes - overtimeMinutes - doubleMinutes, overtimeMinutes, doubleMinutes };
+  return { byDate, weeks, totalMinutes, regularMinutes: totalMinutes - overtimeMinutes - doubleMinutes, overtimeMinutes, doubleMinutes, days: dayParts };
 }
 
 export function computePayroll(input: PayrollInput): PayrollResult {
@@ -304,16 +325,24 @@ export function computePayroll(input: PayrollInput): PayrollResult {
     const productSalesCents = commissionable.reduce((s, l) => s + l.amtPaidCents - l.cashTipCents - l.cardTipCents, 0);
     const cashTipsCents = live.reduce((s, l) => s + l.cashTipCents, 0);
     const cardTipsCents = live.reduce((s, l) => s + l.cardTipCents, 0);
-    const ccTipFeeCents = bps(cardTipsCents, emp.ccTipFeeBps);
-    const productCommissionCents = bps(productSalesCents, emp.productCommissionBps);
+    const dated = !!emp.ratesFrom?.length;
+    const ccTipFeeCents = dated ? live.reduce((s, l) => s + bps(l.cardTipCents, ratesOn(emp, l.date).ccTipFeeBps), 0) : bps(cardTipsCents, emp.ccTipFeeBps);
+    const productCommissionCents = dated ? commissionable.reduce((s, l) => s + bps(serviceMoney(l), ratesOn(emp, l.date).productCommissionBps), 0) : bps(productSalesCents, emp.productCommissionBps);
 
     // Hourly wage for anyone with a rate (hourly staff, or a guaranteed base on top of commission);
     // overtime only ever applies to hourly pay. Salary is a flat amount per run.
     const applyOt = emp.overtimeOverride ?? input.overtime;
-    const paysHourly = emp.hourlyRateCents > 0 && (emp.payType === "hourly" || emp.payType === "commission");
+    const paysHourly = (emp.hourlyRateCents > 0 || !!emp.ratesFrom?.some((r) => r.rates.hourlyRateCents > 0)) && (emp.payType === "hourly" || emp.payType === "commission");
     const hrs = computeHours(input.hours.filter((h) => h.staffId === emp.staffId), weekStart, applyOt && paysHourly, 40 * 60, input.countFrom, input.overtimeRule ?? "weekly");
     let wageCents = 0;
-    if (paysHourly) wageCents += roundCents((hrs.regularMinutes / 60) * emp.hourlyRateCents + (hrs.overtimeMinutes / 60) * emp.hourlyRateCents * 1.5 + (hrs.doubleMinutes / 60) * emp.hourlyRateCents * 2);
+    const hourlyPay = (rate: number, d: { regular: number; overtime: number; double: number }) => (d.regular / 60) * rate + (d.overtime / 60) * rate * 1.5 + (d.double / 60) * rate * 2;
+    if (paysHourly) {
+      wageCents += roundCents(
+        dated
+          ? hrs.days.reduce((s, d) => s + hourlyPay(ratesOn(emp, d.date).hourlyRateCents, d), 0)
+          : hourlyPay(emp.hourlyRateCents, { regular: hrs.regularMinutes, overtime: hrs.overtimeMinutes, double: hrs.doubleMinutes }),
+      );
+    }
     if (emp.payType === "salary") wageCents += emp.salaryPerPeriodCents;
 
     const adjustments = input.adjustments.filter((a) => a.staffId === emp.staffId);
@@ -321,7 +350,7 @@ export function computePayroll(input: PayrollInput): PayrollResult {
 
     // Service commission for anyone with a rate: the whole pay for commission providers,
     // a bonus on top of wages for employees.
-    const mainCommissionCents = bps(mainRevenueCents, emp.mainCommissionBps);
+    const mainCommissionCents = dated ? mainRows.reduce((s, l) => s + bps(serviceMoney(l), ratesOn(emp, l.date).mainCommissionBps), 0) : bps(mainRevenueCents, emp.mainCommissionBps);
     // Commission is part of the regular rate for overtime (FLSA): spread over all hours worked, overtime adds half of it per hour on top.
     const commissionCents = mainCommissionCents + productCommissionCents;
     const overtimeOnCommissionCents =

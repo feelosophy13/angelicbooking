@@ -49,9 +49,13 @@ export async function syncCurrentRates(tx: TenantDb, today: string, staffIds?: s
   }
 }
 
-/** Rates in force on `asOf` for each staff member, plus changes that fell inside [start, asOf]. */
+/**
+ * Rates in force on `asOf` for each staff member, plus changes that fell inside [start, asOf], and for anyone with such a change the
+ * rates in force from each date of the period (`segments`: the first is the one in force on `start`).
+ */
 export async function ratesForPeriod(tx: TenantDb, staffIds: string[], start: string, asOf: string) {
-  if (!staffIds.length) return { byStaff: new Map<string, PayRateRow>(), changes: [] as { staffId: string; effectiveFrom: string }[] };
+  const segments = new Map<string, { from: string; rates: PayRateRow }[]>();
+  if (!staffIds.length) return { byStaff: new Map<string, PayRateRow>(), changes: [] as { staffId: string; effectiveFrom: string }[], segments };
   const rows = await tx.select().from(schema.staffPayRates).where(inArray(schema.staffPayRates.staffId, staffIds));
   const byStaff = new Map<string, PayRateRow>();
   const changes: { staffId: string; effectiveFrom: string }[] = [];
@@ -60,7 +64,10 @@ export async function ratesForPeriod(tx: TenantDb, staffIds: string[], start: st
     const cur = rateAsOf(list, asOf);
     if (cur) byStaff.set(id, cur);
     const first = list.reduce<(typeof list)[number] | null>((m, r) => (!m || r.effectiveFrom < m.effectiveFrom ? r : m), null);
+    const inside = list.filter((r) => r !== first && r.effectiveFrom > start && r.effectiveFrom <= asOf).sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
     for (const r of list) if (r !== first && r.effectiveFrom >= start && r.effectiveFrom <= asOf) changes.push({ staffId: id, effectiveFrom: r.effectiveFrom });
+    const atStart = rateAsOf(list, start);
+    if (inside.length && atStart) segments.set(id, [{ from: start, rates: atStart }, ...inside.map((r) => ({ from: r.effectiveFrom, rates: r }))]);
   }
-  return { byStaff, changes };
+  return { byStaff, changes, segments };
 }

@@ -12,6 +12,7 @@ import { shiftISODate } from "@/lib/utils";
 import { joinWaitlist, WAITLIST_CAP } from "@/server/public-booking";
 import { bookAppointment, rescheduleService } from "@/server/booking";
 import { createSeries } from "@/server/series";
+import { policySnapshot } from "@/lib/policy-text";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
 
 vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: () => undefined }));
@@ -78,5 +79,22 @@ describe.skipIf(!up)("booking guards", () => {
     const late = createSeries({ businessId: kit.A, timeZone: tz, slotIntervalMin: 15, clientId, serviceId: cut, staffId, firstStartAt: at(6, "19:50"), intervalWeeks: 1, occurrences: 2, notes: null, createdByUserId: userId });
     await expect(late).rejects.toThrow(/None of those dates/); // runs past 20:00
     expect((await withTenant(kit.A, (tx) => tx.select().from(schema.appointments).where(and(eq(schema.appointments.clientId, clientId))))).length).toBe(3);
+  });
+
+  it("keeps a class's cleanup time free after it", async () => {
+    const yoga = (await withTenant(kit.A, (tx) => tx.insert(schema.services).values({ businessId: kit.A, name: "Yoga", durationMin: 60, priceCents: 2000, capacity: 8, bufferAfterMin: 15 }).returning()))[0]!.id;
+    const start = at(8, "10:00");
+    await withTenant(kit.A, (tx) => tx.insert(schema.classSessions).values({ businessId: kit.A, serviceId: yoga, staffId, startAt: start, endAt: new Date(start.getTime() + 3_600_000), capacity: 8, priceCents: 0 }));
+    await expect(bookAppointment({ businessId: kit.A, clientId, serviceId: cut, staffId, startAt: at(8, "11:05"), createdByUserId: userId })).rejects.toThrow(/class this provider is teaching/);
+    await expect(bookAppointment({ businessId: kit.A, clientId, serviceId: cut, staffId, startAt: at(8, "11:15"), createdByUserId: userId })).resolves.toBeDefined();
+  });
+
+  it("saves the cancellation policy the client agreed to when booking online", async () => {
+    const b = await business();
+    await withTenant(kit.A, (tx) => tx.update(schema.businesses).set({ cancelWindowHours: 24, lateCancelFeeType: "flat", lateCancelFeeValue: 2500, bookingPolicy: "Please arrive on time." }).where(eq(schema.businesses.id, kit.A)));
+    const { appointmentId } = await bookAppointment({ businessId: kit.A, clientId, serviceId: cut, staffId, startAt: at(9, "15:00"), createdByUserId: null, source: "online", policy: { text: policySnapshot({ ...b, cancelWindowHours: 24, lateCancelFeeType: "flat", lateCancelFeeValue: 2500, bookingPolicy: "Please arrive on time." }), ip: "203.0.113.7" } });
+    const a = (await withTenant(kit.A, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId) })))!;
+    expect(a.policyText).toBe("You can cancel or reschedule online up to 24 hours before. Cancellations inside that window carry a fee of $25.00. Please arrive on time.");
+    expect([!!a.policyAcceptedAt, a.policyAcceptedIp]).toEqual([true, "203.0.113.7"]);
   });
 });

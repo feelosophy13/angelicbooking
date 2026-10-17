@@ -246,17 +246,21 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       need a postal address (the business's, else the main location's) or aren't sent. Platform billing webhooks read the subscription
       fresh (out-of-order events can't roll it back). Online store holds last 60 minutes. Payroll adjustments count in the period that
       contains their start date, however its boundaries are picked. Tests: `api-marketing`, `money-tail`, `stripe-outside-tx`.
-- [ ] Still open from the review (2026-10-17 audit), highest impact first: pay-rate change mid-period pays one rate for the whole period;
-      overtime should default on for hourly staff (and bonuses entered as adjustments count in the overtime rate); store orders could
-      authorize then capture only if stock remains (instead of a time hold); messages skipped while texting was paused for billing never
-      re-queue; quiet hours use the business time zone, not the location's; `/api/v1/appointments/:id/cancel` doesn't require a reason;
-      dragging a multi-service visit moves only the dragged service; online booking picks the time before add-ons; class end ignores the
-      cleanup buffer; 24:00 close becomes 23:59; no deliberate double-booking (`allowOverlap` unused) or warning when time off covers
-      bookings; audit gaps (clock PIN, payroll export, settings, domains; no audit filters); catalog small items (bulk blank cost saves $0,
-      `applyCount` overwrites sales during a count, flat deposit above price accepted, category/supplier ids unchecked); custom-domain
-      salons get app.angelicbooking.com links in emails; `/suspended` is a dead end; mobile `apiUrl` hard-coded, no Expo auth plugin, CI
-      doesn't lint or gate deploys; Vagaro import in one transaction (batch it); no client merge / duplicate warning. No record of the
-      client accepting the cancellation policy at online booking (chargeback evidence).
+- [x] Review per-area batch 2, 2026-10-17 (migration 0109): a pay-rate change inside a period pays commission, card-tip fees and hourly
+      hours (overtime included) at the rate in force on each day (salary and withholding use the end-of-period settings). Texts held while
+      texting is paused for billing wait and go out once it's back (retried every 30 minutes, given up after 48 hours). Quiet hours follow
+      the client's location (the visit's, else their usual one). `POST /api/v1/appointments/:id/cancel` requires `reason` or `reason_id`
+      (422). Online bookings save the cancellation policy the client saw ("By booking, you agree to this policy"), when, and from which
+      address; staff see it on the appointment as "Cancellation policy agreed". A class blocks its service's cleanup time; a 24:00 close
+      ends at midnight (no lost last slot). Tests: core `payroll.test.ts` and `availability.test.ts`, `booking-guards`, API scope tests.
+- [ ] Still open from the review (2026-10-17 audit), highest impact first: overtime should default on for hourly staff (and bonuses entered
+      as adjustments count in the overtime rate); store orders could authorize then capture only if stock remains (instead of a time
+      hold); dragging a multi-service visit moves only the dragged service; online booking picks the time before add-ons; no deliberate
+      double-booking (`allowOverlap` unused) or warning when time off covers bookings; audit gaps (clock PIN, payroll export, settings,
+      domains; no audit filters); catalog small items (bulk blank cost saves $0, `applyCount` overwrites sales during a count, flat
+      deposit above price accepted, category/supplier ids unchecked); custom-domain salons get app.angelicbooking.com links in emails;
+      `/suspended` is a dead end; mobile `apiUrl` hard-coded, no Expo auth plugin, CI doesn't lint or gate deploys; Vagaro import in one
+      transaction (batch it); no client merge / duplicate warning.
 - [x] "Fix first" table from `REVIEW-2026-10-16.md` is done, including Resend pacing/per-tenant fairness, except the items listed as still open above.
       Next: the per-area lists in that file.
 
