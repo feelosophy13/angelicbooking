@@ -12,6 +12,21 @@
 `.github/workflows/ci.yml` runs typecheck, unit + DB integration tests (against a Postgres
 service with the non-superuser app role), a production build, and the Playwright smoke test
 (`apps/web/e2e/smoke.spec.ts`: sign up → onboard → service → book → checkout → public page).
+It also runs `pnpm --filter @angelic/web lint`, non-blocking until eslint and a config are added to apps/web.
+
+### Make Render wait for CI
+By default Render deploys `main` the moment a commit lands, whether or not CI passes. To make
+it wait (owner does this; nothing in the repo changes it):
+
+1. Render dashboard → `angelic-booking` web service → **Settings** → **Build & Deploy** →
+   **Auto-Deploy** → choose **After CI Checks Pass** → Save.
+2. Do the same on the cron jobs built from this repo (`angelic-booking-reminders`, and the demo
+   refresh job) so they don't run code the web service refused.
+
+Render then waits for every GitHub check on the commit (here the `CI / check` job) and skips the
+deploy if any fails. Manual deploys from the dashboard or the API are not gated. Optionally also
+protect `main` on GitHub (Settings → Branches → require the `check` status) so failing code
+can't be merged in the first place.
 
 Run locally:
 ```bash

@@ -6,8 +6,10 @@ import { permissionsForRole } from "@/server/roles";
 import { businessAccess } from "@/server/access";
 
 /**
- * Mobile requests authenticate with the Better Auth session token as a Bearer
- * header (the Expo client stores it securely) and name the business by slug.
+ * Mobile requests authenticate with the Better Auth session: the Expo client stores the
+ * session cookie in SecureStore and sends it as a Cookie header (an
+ * `Authorization: Bearer <session token>` header also works, via the `bearer()` plugin).
+ * They name the business by slug.
  */
 export async function mobileContext(req: Request, slug: string | null) {
   const session = await auth.api.getSession({ headers: req.headers });

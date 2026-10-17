@@ -4,14 +4,20 @@ import { organizationClient } from "better-auth/client/plugins";
 import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
 
-export const API_URL: string = (Constants.expoConfig?.extra?.apiUrl as string) ?? "http://localhost:3001";
+// Resolved at build time in app.config.ts (EXPO_PUBLIC_API_URL, else production/dev default).
+export const API_URL: string =
+  (Constants.expoConfig?.extra?.apiUrl as string | undefined) ?? (__DEV__ ? "http://localhost:3001" : "https://app.angelicbooking.com");
 
 export const authClient = createAuthClient({
   baseURL: API_URL,
   plugins: [expoClient({ scheme: "angelic", storagePrefix: "angelic", storage: SecureStore }), organizationClient()],
 });
 
-/** Fetch against the web app's mobile API with the stored session as a Bearer token. */
+/**
+ * Fetch against the web app's mobile API with the stored session. The Expo client keeps the
+ * Better Auth session cookie in SecureStore and we send it back as a Cookie header (the server's
+ * `bearer()` plugin would also accept it as `Authorization: Bearer <token>`).
+ */
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const cookie = await authClient.getCookie();
   const headers: Record<string, string> = { "Content-Type": "application/json" };

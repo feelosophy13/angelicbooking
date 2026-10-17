@@ -36,7 +36,13 @@ jobs:
         run: |
           psql "$DATABASE_ADMIN_URL" -f packages/db/sql/roles.sql
           pnpm db:migrate
-      - run: pnpm typecheck
+      - run: pnpm typecheck # every workspace with a typecheck script (web, admin, mobile, packages)
+      # Non-blocking for now: apps/web's `lint` script runs `eslint .`, but eslint isn't a
+      # dependency and there is no eslint config, so it exits 127 ("eslint: command not found").
+      # Make it blocking (drop continue-on-error) once eslint + a config are added to apps/web.
+      - name: Lint web
+        run: pnpm --filter @angelic/web lint
+        continue-on-error: true
       - run: pnpm test
       - name: Build web
         run: pnpm --filter @angelic/web build
