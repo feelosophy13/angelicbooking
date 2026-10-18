@@ -38,6 +38,8 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
   }, [left, right]);
 
   const spike = sel.kind === "spike";
+  // The left eye is drawn mirrored (inner corner toward the nose), so the zone buttons and arrows under it run the same way.
+  const mirror = right != null && !onRight;
   const z: LashSet = (spike ? zones[sel.i]?.spike : zones[sel.i]) ?? emptyLashZone();
   const label = (right ? (onRight ? "Right eye, " : "Left eye, ") : "") + (spike ? `${right ? "s" : "S"}pike between zones ${sel.i + 1} and ${sel.i + 2}` : `${right ? "z" : "Z"}one ${sel.i + 1}`);
 
@@ -103,10 +105,27 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
   };
   const isPresetColor = !z.color || (LASH_COLOR_PRESETS as readonly string[]).includes(z.color);
   const isPreset = z.thickness != null && (LASH_THICKNESS_PRESETS as readonly number[]).includes(z.thickness);
-  const spikeCount = zones.filter((x) => x.spike).length;
+  // Spikes by divider index, in the order they sit on the drawing (mirrored for the left eye, like the zone buttons).
+  const spikeAt = zones.map((x, i) => (x.spike ? i : -1)).filter((i) => i >= 0);
+  const spikeOrder = mirror ? [...spikeAt].reverse() : spikeAt;
+  const spikePos = spike ? spikeAt.indexOf(sel.i) : -1;
+  const [copiedSpikes, setCopiedSpikes] = useState(false);
+  const copyToAllSpikes = () => {
+    setZones((cur) => cur.map((x) => (x.spike ? { ...x, spike: { ...x.spike, curl: z.curl, thickness: z.thickness, flat: !!z.flat, type: z.type ?? null, color: z.color ?? null } } : x)));
+    setCopiedSpikes(true);
+    setTimeout(() => setCopiedSpikes(false), 1500);
+  };
+  // A spike's length only means something next to the zones either side of it, so say how far it sticks out past the longer one.
+  const spikeVsNeighbours = (() => {
+    if (!spike || z.length == null) return undefined;
+    const a = zones[sel.i]?.length ?? null;
+    const b = zones[sel.i + 1]?.length ?? null;
+    if (a == null && b == null) return undefined;
+    const [n, len] = (b ?? -1) > (a ?? -1) ? [sel.i + 2, b!] : [sel.i + 1, a!];
+    const d = Math.round((z.length - len) * 10) / 10;
+    return d === 0 ? `Same as zone ${n} (${len} mm).` : `${Math.abs(d)} mm ${d > 0 ? "longer" : "shorter"} than zone ${n} (${len} mm).`;
+  })();
   const sharedType = sharedLashType(zones); // shown once under the diagram, so the chips leave it out
-  // The left eye is drawn mirrored (inner corner toward the nose), so the zone buttons and arrows under it run the same way.
-  const mirror = right != null && !onRight;
   const order = mirror ? zones.map((_, i) => zones.length - 1 - i) : zones.map((_, i) => i);
   const toggleRight = (on: boolean) => {
     setRight(on ? left.map((x) => ({ ...x, spike: x.spike ? { ...x.spike } : null })) : null);
@@ -164,7 +183,22 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
             );
           })}
         </ol>
-        <p className="mt-2 px-1 text-xs text-stone-500">{spikeCount ? `${spikeCount} spike${spikeCount === 1 ? "" : "s"}. Tap a spike to change it, or a + to add another.` : "Tap a + on the lash line to add a spike between two zones."}</p>
+        {spikeOrder.length ? (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5 px-1">
+            <span className="text-xs font-medium text-stone-600">Spikes</span>
+            {spikeOrder.map((i) => {
+              const on = spike && sel.i === i;
+              return (
+                <button key={i} type="button" onClick={() => select({ kind: "spike", i })} aria-pressed={on} className={cn("rounded-md border px-2 py-1 text-xs tabular-nums", on ? "border-brand-500 bg-brand-50 text-brand-700" : "border-stone-200 text-stone-600 hover:bg-stone-50")}>
+                  {i + 1}–{i + 2} · {zones[i]?.spike?.length ?? "–"} mm
+                </button>
+              );
+            })}
+            <span className="text-xs text-stone-500">Tap a + on the lash line to add another.</span>
+          </div>
+        ) : (
+          <p className="mt-2 px-1 text-xs text-stone-500">Tap a + on the lash line to add a spike between two zones.</p>
+        )}
       </div>
 
       <Disclosure variant="inset" title="Fill lengths from a style">
@@ -182,12 +216,15 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-stone-700">{label}{!spike && sel.i === 0 ? " · inner corner" : !spike && sel.i === zones.length - 1 ? " · outer corner" : ""}</p>
           {spike ? (
-            <button type="button" onClick={removeSpike} className="text-sm text-stone-500 hover:text-red-600">Remove spike</button>
+            <div className="flex items-center gap-4">
+              {spikeAt.length > 1 ? <button type="button" onClick={copyToAllSpikes} className="text-sm text-brand-700 hover:underline" title="Curl, thickness, shape, type and color; lengths stay as they are">{copiedSpikes ? "Copied to all spikes" : "Copy to all spikes"}</button> : null}
+              <button type="button" onClick={removeSpike} className="text-sm text-stone-500 hover:text-red-600">Remove spike</button>
+            </div>
           ) : (
             <button type="button" onClick={copyToAll} className="text-sm text-brand-700 hover:underline" title="Curl, thickness, shape, type and color; lengths stay as they are">{copied ? "Copied to all zones" : "Copy to all zones"}</button>
           )}
         </div>
-        <Field label="Length (mm)">
+        <Field label="Length (mm)" hint={spikeVsNeighbours}>
           <div className="flex items-center gap-2">
             <button type="button" onClick={() => stepLength(-0.5)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-stone-300 hover:bg-stone-50" aria-label="Half a millimetre shorter"><Minus className="h-4 w-4" /></button>
             <Input
@@ -269,6 +306,12 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
             </Field>
           </div>
         </Disclosure>
+        {spike && spikeAt.length > 1 ? (
+          <div className={cn("flex justify-between gap-2", mirror && "flex-row-reverse")}>
+            <button type="button" onClick={() => select({ kind: "spike", i: spikeAt[spikePos - 1]! })} disabled={spikePos <= 0} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">{mirror ? "Previous spike →" : "← Previous spike"}</button>
+            <button type="button" onClick={() => select({ kind: "spike", i: spikeAt[spikePos + 1]! })} disabled={spikePos >= spikeAt.length - 1} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">{mirror ? "← Next spike" : "Next spike →"}</button>
+          </div>
+        ) : null}
         {spike ? null : (
           <div className={cn("flex justify-between gap-2", mirror && "flex-row-reverse")}>
             <button type="button" onClick={() => select({ kind: "zone", i: Math.max(0, sel.i - 1) })} disabled={sel.i === 0} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">{mirror ? `Zone ${Math.max(1, sel.i)} →` : `← Zone ${Math.max(1, sel.i)}`}</button>

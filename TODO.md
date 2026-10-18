@@ -1080,6 +1080,9 @@ runs several salons on separate accounts.
       tall or more); one "Copy to all zones" (everything but length) replaces the per-field links; shape and
       colour fold into a section that opens on zones using them; "Fill lengths from a style" (Natural, Cat eye,
       Doll eye, Squirrel, Open eye) from a longest length; bigger + markers for spikes.
+- [x] Spike editing (2026-10-18): a "Spikes" row under the zone buttons ("3–4 · 12 mm") opens each spike; the spike
+      panel shows its length against the longer neighbouring zone, has previous / next spike, and "Copy to all
+      spikes" (everything but length).
 - [ ] Not built on purpose: spikes inside a zone (dividers cover wispy styles; notes cover the rest); lash maps
       in the client portal (notes can hold remarks a client shouldn't see, so showing them should be a per-salon
       choice) and the public API (nothing asks for it yet).
