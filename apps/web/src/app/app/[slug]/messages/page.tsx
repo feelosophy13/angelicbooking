@@ -8,7 +8,7 @@ import { Button, Card, Empty, Notice, PageHeader } from "@/components/ui";
 import { StatusBadge } from "@/components/status-badge";
 import { resendMessage } from "./actions";
 
-export const metadata: Metadata = { title: "Messages" };
+export const metadata: Metadata = { title: "Message log" };
 
 /** Texts and emails sent to clients, every one with its delivery status. Replies from clients are in the Inbox; wording is in settings. */
 export default async function MessagesPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -26,10 +26,11 @@ export default async function MessagesPage({ params }: { params: Promise<{ slug:
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: business.timezone });
   return (
     <>
-      <PageHeader title="Messages">
+      <PageHeader title="Message log">
         <Link href={`/app/${slug}/inbox`} className="text-sm text-brand-700 underline">Replies are in the Inbox</Link>
         <Link href={`/app/${slug}/settings/notifications`} className="text-sm text-brand-700 underline">Text wording</Link>
       </PageHeader>
+      <p className="-mt-3 mb-4 text-sm text-stone-600">Every confirmation, reminder, campaign and automation message sent to clients, and whether it arrived.</p>
       {!emailConfigured() || !smsConfigured() ? (
         <div className="mb-4">
           <Notice>

@@ -21,14 +21,19 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       it(`${base}/waitlist`, "Waitlist", "ListOrdered"),
       it(`${base}/time`, "Time clock", "Clock"),
     ] },
+    // Who: the client and team directories, and who may do what.
     { title: "People", items: [
       it(`${base}/clients`, "Clients", "Users"),
-      ...(ok("clients.read") ? [it(`${base}/inbox`, "Inbox", "Inbox")] : []),
-      ...(ok("clients.read") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
       it(`${base}/staff`, "Staff", "UserCog", { exclude: [`${base}/staff-hours`] }),
       // Who may do what. A Settings page that is also a daily tool for whoever manages people, so it has its own entry (and Settings steps aside).
       ...(ok("members.manage") ? [it(`${base}/settings/roles`, "Roles", "ShieldCheck")] : []),
+    ] },
+    // Looking after clients day to day: their texts, what we sent them, their forms and their photos.
+    { title: "Client care", items: [
+      ...(ok("clients.read") ? [it(`${base}/inbox`, "Inbox", "Inbox")] : []),
+      ...(ok("business.manage") ? [it(`${base}/messages`, "Message log", "MessageSquare")] : []),
       ...(ok("business.manage") ? [it(`${base}/settings/forms`, "Forms", "FileText")] : []),
+      ...(ok("clients.read") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
     ] },
     { title: "Catalog", items: [
       it(`${base}/services`, "Services", "Scissors"),
@@ -43,12 +48,11 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       ...(ok("reports.view") ? [it(`${base}/reports`, "Reports", "BarChart3")] : []),
       ...(ok("payroll.view") ? [it(`${base}/payroll`, "Payroll", "Wallet")] : []),
     ] },
-    // Bringing clients back: campaigns and promo codes, automated messages, and what clients say.
+    // Bringing clients back: campaigns and promo codes, automated messages, loyalty, and what clients say.
     { title: "Grow", items: [
       ...(ok("reports.view") ? [it(`${base}/marketing`, "Marketing", "Megaphone", { exclude: [`${base}/marketing/automations`] }), it(`${base}/marketing/automations`, "Automations", "Workflow")] : []),
       ...(ok("business.manage") ? [it(`${base}/loyalty`, "Loyalty & referrals", "Heart", { exclude: [`${base}/settings/loyalty`] })] : []),
       it(`${base}/reviews`, "Reviews", "Star"),
-      ...(ok("business.manage") ? [it(`${base}/messages`, "Messages", "MessageSquare")] : []),
     ] },
     { title: "", items: ok("business.manage") ? [it(`${base}/settings/api`, "API", "KeyRound"), it(`${base}/settings`, "Settings", "Settings", { exclude: [`${base}/settings/loyalty`, `${base}/settings/roles`, `${base}/settings/forms`, `${base}/settings/notifications`, `${base}/settings/api`] })] : [] },
   ].filter((s) => s.items.length > 0);
@@ -105,7 +109,7 @@ export function settingsGroups(base: string, status?: SettingsStatusSource): Set
       title: "Messaging",
       entries: [
         { href: `${sb}/messaging`, title: "Text number", blurb: "Your own toll-free number for confirmations and reminders." },
-        { href: `${sb}/notifications`, title: "Messages", blurb: "Text wording, replies from clients and the delivery log." },
+        { href: `${sb}/notifications`, title: "Text wording", blurb: "What confirmations and reminders say, and quick replies for the Inbox." },
       ],
     },
     {
