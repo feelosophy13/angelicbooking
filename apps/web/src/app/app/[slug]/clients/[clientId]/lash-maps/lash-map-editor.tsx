@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Minus, Plus } from "lucide-react";
-import { emptyLashZone, formatLashThickness, formatLashZone, LASH_CURLS, LASH_LENGTH_MAX, LASH_LENGTH_MIN, LASH_THICKNESS_MAX, LASH_THICKNESS_MIN, LASH_COLOR_PRESETS, LASH_THICKNESS_PRESETS, LASH_TYPE_GROUPS, LASH_ZONE_COUNTS, newLashSpike, sharedLashType, type LashSet, type LashZone } from "@angelic/core";
+import { emptyLashZone, formatLashThickness, formatLashZone, LASH_CURLS, LASH_LENGTH_MAX, LASH_LENGTH_MIN, LASH_THICKNESS_MAX, LASH_THICKNESS_MIN, LASH_COLOR_PRESETS, LASH_HYBRID_FANS, LASH_THICKNESS_PRESETS, LASH_LENGTH_STYLES, LASH_TYPE_GROUPS, lashHybridFan, lashLengthStyle, LASH_ZONE_COUNTS, newLashSpike, normalizeLashZones, sharedLashType, type LashSet, type LashZone } from "@angelic/core";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { Checkbox, Input, Textarea } from "@/components/ui";
 import { LashMapDiagram, type LashSelection } from "@/components/lash-map";
+import { Disclosure } from "@/components/disclosure";
 import { cn } from "@/lib/utils";
 import { saveLashMap } from "./actions";
 
@@ -19,8 +20,8 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
   cancelHref: string;
 }) {
   // `left` is both eyes until the right eye is set differently; then it is the left eye and `right` the right.
-  const [left, setLeft] = useState<LashZone[]>(map.zones);
-  const [right, setRight] = useState<LashZone[] | null>(map.rightZones);
+  const [left, setLeft] = useState<LashZone[]>(() => normalizeLashZones(map.zones));
+  const [right, setRight] = useState<LashZone[] | null>(() => (map.rightZones ? normalizeLashZones(map.rightZones) : null));
   const [eye, setEye] = useState<"left" | "right">("left");
   const onRight = eye === "right" && right != null;
   const zones = onRight ? right : left;
@@ -53,7 +54,20 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
     setZones((cur) => cur.map((x, i) => (i === sel.i ? { ...x, spike: null } : x)));
     setSel({ kind: "zone", i: sel.i + 1 });
   };
-  const applyToAll = (key: "curl" | "thickness" | "type" | "color") => setZones((cur) => cur.map((x) => ({ ...x, [key]: z[key] ?? null })));
+  // Everything but length goes to every zone (shape to spikes too: a set is one lash product); length is what varies zone to zone.
+  const [copied, setCopied] = useState(false);
+  const copyToAll = () => {
+    setZones((cur) => cur.map((x) => ({ ...x, curl: z.curl, thickness: z.thickness, flat: !!z.flat, type: z.type ?? null, color: z.color ?? null, spike: x.spike ? { ...x.spike, flat: !!z.flat } : x.spike })));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  const longestNow = Math.max(0, ...zones.map((x) => x.length ?? 0)) || 12;
+  const [longest, setLongest] = useState(String(longestNow));
+  const fillLengths = (style: (typeof LASH_LENGTH_STYLES)[number]) => {
+    const top = Math.min(LASH_LENGTH_MAX, Math.max(LASH_LENGTH_MIN, Math.round(Number(longest) * 2) / 2 || longestNow));
+    const lengths = lashLengthStyle(style, zones.length, top);
+    setZones((cur) => cur.map((x, i) => ({ ...x, length: lengths[i] ?? x.length })));
+  };
   const setCount = (n: number) => {
     setZones((cur) => {
       if (n < cur.length) return cur.slice(0, n).map((x, i) => (i === n - 1 ? { ...x, spike: null } : x)); // the last zone has no divider after it
@@ -63,6 +77,18 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
     setSel((s) => (s.kind === "spike" ? (s.i < n - 1 ? s : { kind: "zone", i: n - 1 }) : { kind: "zone", i: Math.min(s.i, n - 1) }));
   };
   const stepLength = (d: number) => patch({ length: Math.min(LASH_LENGTH_MAX, Math.max(LASH_LENGTH_MIN, (z.length ?? 10) + d)) });
+  // A hybrid is stored with its fan ("Hybrid 3D"): the fan chips pick the fan and the checkbox turns the mix on or off.
+  const hybridFan = lashHybridFan(z.type);
+  const hybrid = hybridFan != null;
+  const pickType = (v: string) => {
+    if (v === "Classic") return patch({ type: z.type === "Classic" ? null : "Classic" });
+    if (hybrid) return patch({ type: hybridFan === v ? "Hybrid" : `Hybrid ${v}` });
+    patch({ type: v === z.type ? null : v });
+  };
+  const setHybrid = (on: boolean) => {
+    if (on) patch({ type: z.type && LASH_HYBRID_FANS.includes(z.type) ? `Hybrid ${z.type}` : "Hybrid" });
+    else patch({ type: hybridFan || null });
+  };
   const isPresetColor = !z.color || (LASH_COLOR_PRESETS as readonly string[]).includes(z.color);
   const isPreset = z.thickness != null && (LASH_THICKNESS_PRESETS as readonly number[]).includes(z.thickness);
   const spikeCount = zones.filter((x) => x.spike).length;
@@ -80,7 +106,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
     setSel({ kind: "zone", i: 0 });
     setCustomThickness("");
     setCustomColor("");
-  }; // shown once under the diagram, so the chips leave it out
+  };
 
   return (
     <ActionForm action={saveLashMap}>
@@ -104,12 +130,13 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Checkbox label="Right eye is set differently" hint={right ? "Drawn as you see them from behind the client's head." : "Starts as a copy of this map."} checked={right != null} onChange={(e) => toggleRight(e.target.checked)} />
-        {right ? <Chips options={[{ value: "left", label: "Left eye" }, { value: "right", label: "Right eye" }]} value={eye} onChange={(v) => switchEye(v as "left" | "right")} /> : null}
       </div>
 
-      <div className="rounded-lg border border-stone-200 bg-white p-2">
-        {right ? <p className="px-1 text-sm font-semibold text-stone-700">{onRight ? "Right eye" : "Left eye"}</p> : null}
-        <LashMapDiagram zones={zones} selected={sel} onSelect={select} mirror={mirror} />
+      {/* On screens with room for it (tablet width and 700px tall), the diagram stays in view while the zone's settings scroll below it, so
+          each change shows as it's made. Shorter screens scroll it away rather than have it cover the controls. */}
+      <div className="rounded-lg border border-stone-200 bg-white p-2 [@media(min-width:768px)_and_(min-height:700px)]:sticky [@media(min-width:768px)_and_(min-height:700px)]:top-2 [@media(min-width:768px)_and_(min-height:700px)]:z-10 [@media(min-width:768px)_and_(min-height:700px)]:shadow-sm">
+        {right ? <Chips options={[{ value: "left", label: "Left eye" }, { value: "right", label: "Right eye" }]} value={eye} onChange={(v) => switchEye(v as "left" | "right")} /> : null}
+        <LashMapDiagram zones={zones} selected={sel} onSelect={select} mirror={mirror} className="mx-auto max-w-md" />
         <ol className="mt-2 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${zones.length}, minmax(0, 1fr))` }}>
           {order.map((i) => {
             const x = zones[i]!;
@@ -127,10 +154,25 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
         <p className="mt-2 px-1 text-xs text-stone-500">{spikeCount ? `${spikeCount} spike${spikeCount === 1 ? "" : "s"}. Tap a spike to change it, or a + to add another.` : "Tap a + on the lash line to add a spike between two zones."}</p>
       </div>
 
+      <Disclosure variant="inset" title="Fill lengths from a style">
+        <p className="mb-2 text-xs text-stone-500">Sets every {right ? `${onRight ? "right" : "left"} eye ` : ""}zone&apos;s length from the longest. Fine-tune zones afterwards.</p>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-sm text-stone-700">
+            <span className="mb-1 block text-xs text-stone-500">Longest (mm)</span>
+            <Input type="number" inputMode="decimal" step={0.5} min={LASH_LENGTH_MIN} max={LASH_LENGTH_MAX} value={longest} onChange={(e) => setLongest(e.target.value)} className="w-24 tabular-nums" />
+          </label>
+          <Chips options={LASH_LENGTH_STYLES.map((s) => ({ value: s, label: s }))} value={null} onChange={(v) => fillLengths(v as (typeof LASH_LENGTH_STYLES)[number])} />
+        </div>
+      </Disclosure>
+
       <div className="space-y-4 rounded-lg border border-stone-200 p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-stone-700">{label}{!spike && sel.i === 0 ? " · inner corner" : !spike && sel.i === zones.length - 1 ? " · outer corner" : ""}</p>
-          {spike ? <button type="button" onClick={removeSpike} className="text-sm text-stone-500 hover:text-red-600">Remove spike</button> : null}
+          {spike ? (
+            <button type="button" onClick={removeSpike} className="text-sm text-stone-500 hover:text-red-600">Remove spike</button>
+          ) : (
+            <button type="button" onClick={copyToAll} className="text-sm text-brand-700 hover:underline" title="Curl, thickness, shape, type and colour; lengths stay as they are">{copied ? "Copied to all zones" : "Copy to all zones"}</button>
+          )}
         </div>
         <Field label="Length (mm)">
           <div className="flex items-center gap-2">
@@ -152,7 +194,6 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
         <Field label="Curl">
           <div className="flex flex-wrap items-center gap-2">
             <Chips options={LASH_CURLS.map((c) => ({ value: c, label: c }))} value={z.curl} onChange={(v) => patch({ curl: v === z.curl ? null : v })} />
-            {spike || z.curl == null ? null : <ApplyAll onClick={() => applyToAll("curl")} />}
           </div>
         </Field>
         <Field label="Thickness (mm)" hint={`Pick a common size or type one between ${LASH_THICKNESS_MIN} and ${LASH_THICKNESS_MAX}.`}>
@@ -170,34 +211,49 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
               className="w-24 tabular-nums"
               aria-label={`${label} custom thickness in millimetres`}
             />
-            {spike || z.thickness == null ? null : <ApplyAll onClick={() => applyToAll("thickness")} />}
           </div>
         </Field>
-        <Field label="Type" hint="Handmade fans by size; YY, W and spike fans come premade.">
+        <Field label="Type" hint="What goes on each natural lash: one classic, or a fan of several fine lashes.">
           <div className="space-y-2">
             {LASH_TYPE_GROUPS.map((g) => (
               <div key={g.label}>
                 <p className="mb-1 text-xs text-stone-500">{g.label}</p>
-                <Chips options={g.types.map((t) => ({ value: t, label: t }))} value={z.type ?? null} onChange={(v) => patch({ type: v === z.type ? null : v })} />
+                <Chips options={g.types.filter((t) => !hybrid || t !== "Spike").map((t) => ({ value: t, label: t }))} value={hybrid ? hybridFan || null : z.type ?? null} onChange={pickType} />
               </div>
             ))}
-            {spike || !z.type ? null : <ApplyAll onClick={() => applyToAll("type")} />}
+            {spike ? null : (
+              <Checkbox
+                label="Hybrid: classics mixed with this fan"
+                hint={hybrid && !hybridFan ? "Pick the fan it's mixed with." : undefined}
+                checked={hybrid}
+                onChange={(e) => setHybrid(e.target.checked)}
+              />
+            )}
           </div>
         </Field>
-        <Field label="Colour" hint="Leave blank for black.">
-          <div className="flex flex-wrap items-center gap-2">
-            <Chips options={LASH_COLOR_PRESETS.map((c) => ({ value: c, label: c }))} value={isPresetColor ? z.color ?? null : null} onChange={(v) => { setCustomColor(""); patch({ color: v === z.color ? null : v }); }} />
-            <Input
-              placeholder="Other"
-              maxLength={20}
-              value={!isPresetColor && z.color ? z.color : customColor}
-              onChange={(e) => { setCustomColor(e.target.value); const c = e.target.value.trim(); patch({ color: c ? c.charAt(0).toUpperCase() + c.slice(1) : null }); }}
-              className="w-28"
-              aria-label={`${label} other colour`}
-            />
-            {spike || !z.color ? null : <ApplyAll onClick={() => applyToAll("color")} />}
+        {/* Rarely changed, so folded away; opens by itself on a zone that uses flat lashes or a colour. Keyed so each zone decides afresh. */}
+        <Disclosure key={`${eye}-${sel.kind}-${sel.i}`} variant="inset" title="Shape and colour" hint={`${z.flat ? "Flat" : "Round"} · ${z.color ?? "Black"}`} defaultOpen={!!z.flat || !!z.color}>
+          <div className="space-y-4">
+            <Field label="Shape" hint="Flat (ellipse or split-tip) lashes are lighter than round ones of the same size.">
+              <div className="flex flex-wrap items-center gap-2">
+                <Chips options={[{ value: "round", label: "Round" }, { value: "flat", label: "Flat" }]} value={z.flat ? "flat" : "round"} onChange={(v) => patch({ flat: v === "flat" })} />
+              </div>
+            </Field>
+            <Field label="Colour" hint="Leave blank for black.">
+              <div className="flex flex-wrap items-center gap-2">
+                <Chips options={LASH_COLOR_PRESETS.map((c) => ({ value: c, label: c }))} value={isPresetColor ? z.color ?? null : null} onChange={(v) => { setCustomColor(""); patch({ color: v === z.color ? null : v }); }} />
+                <Input
+                  placeholder="Other"
+                  maxLength={20}
+                  value={!isPresetColor && z.color ? z.color : customColor}
+                  onChange={(e) => { setCustomColor(e.target.value); const c = e.target.value.trim(); patch({ color: c ? c.charAt(0).toUpperCase() + c.slice(1) : null }); }}
+                  className="w-28"
+                  aria-label={`${label} other colour`}
+                />
+              </div>
+            </Field>
           </div>
-        </Field>
+        </Disclosure>
         {spike ? null : (
           <div className={cn("flex justify-between gap-2", mirror && "flex-row-reverse")}>
             <button type="button" onClick={() => select({ kind: "zone", i: Math.max(0, sel.i - 1) })} disabled={sel.i === 0} className="text-sm text-stone-600 hover:text-stone-900 disabled:opacity-40">{mirror ? `Zone ${Math.max(1, sel.i)} →` : `← Zone ${Math.max(1, sel.i)}`}</button>
@@ -228,8 +284,4 @@ function Chips({ options, value, onChange }: { options: { value: string; label: 
       ))}
     </div>
   );
-}
-
-function ApplyAll({ onClick }: { onClick: () => void }) {
-  return <button type="button" onClick={onClick} className="text-xs text-brand-700 hover:underline">Use for all zones</button>;
 }

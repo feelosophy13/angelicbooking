@@ -743,7 +743,7 @@ export const clientNotes = pgTable(
   (t) => [index("client_notes_client_idx").on(t.businessId, t.clientId, t.createdAt)],
 );
 
-type LashSetJson = { length: number | null; curl: string | null; thickness: number | null; type?: string | null };
+type LashSetJson = { length: number | null; curl: string | null; thickness: number | null; flat?: boolean; type?: string | null; color?: string | null };
 type LashZoneJson = LashSetJson & { spike?: LashSetJson | null };
 
 // How a stylist sets a client's lash extensions: 6 or 7 zones from the inner to the outer corner, each with length, curl and

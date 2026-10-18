@@ -1067,11 +1067,18 @@ runs several salons on separate accounts.
       right eye with its own zones and spikes; a Left / Right switch picks which eye the editor shows. Saved maps
       show left above right. Demo seed has five lash maps (classic, hybrid, wispy with spikes, volume with a
       different right eye, and an older version of one).
-- [x] Premade fans, flat lashes and colour (2026-10-18): type is grouped as classic and hybrid (Classic, Flat,
-      Hybrid), handmade volume (2D–10D) and premade fans (YY, 3D W–6D W, Spike); new spikes start as Spike.
+- [x] Premade fans, flat lashes and colour (2026-10-18): type is grouped as Classic, handmade fans (2D–10D) and
+      premade fans (YY, 3D W–6D W, Spike); new spikes start as Spike. "Hybrid" is a checkbox that mixes classics
+      with the chosen fan, saved as e.g. "Hybrid 3D" (a bare "Hybrid" from earlier maps stays valid). Shape is its
+      own Round / Flat setting per zone and spike, so flat works with any type ("Use for all zones" covers spikes
+      too); maps saved with the earlier "Flat" type read as Classic + Flat.
       Each zone and spike has a colour (blank is black; presets or a typed name), drawn on the lashes and listed
       under the diagram ("Blue: zones 6, 7"). Still in notes: hybrid ratio, layering, lift, lash brand/material,
       adhesive, lower lashes.
+- [x] Editor layout (2026-10-18): the diagram stays in view while the zone's settings scroll (tablet width and 700px
+      tall or more); one "Copy to all zones" (everything but length) replaces the per-field links; shape and
+      colour fold into a section that opens on zones using them; "Fill lengths from a style" (Natural, Cat eye,
+      Doll eye, Squirrel, Open eye) from a longest length; bigger + markers for spikes.
 - [ ] Not built on purpose: spikes inside a zone (dividers cover wispy styles; notes cover the rest); lash maps
       in the client portal (notes can hold remarks a client shouldn't see, so showing them should be a per-salon
       choice) and the public API (nothing asks for it yet).

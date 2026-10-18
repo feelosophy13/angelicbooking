@@ -1,4 +1,4 @@
-import { formatLashThickness, formatLashType, LASH_LENGTH_MAX, lashColorSummary, sharedLashType, type LashZone } from "@angelic/core";
+import { allLashFlat, formatLashThickness, formatLashType, LASH_LENGTH_MAX, lashColorSummary, lashHybridFan, normalizeLashZones, sharedLashType, type LashZone } from "@angelic/core";
 import { cn } from "@/lib/utils";
 
 /**
@@ -51,16 +51,21 @@ function lashPath(g: Geo, t: number, length: number, curl: string | null): strin
   return `M${f1(x0)},${f1(y0)} Q${f1((x0 + x2) / 2 + bend)},${f1((y0 + y2) / 2)} ${f1(x2)},${f1(y2)}`;
 }
 
-/** Short type for the label under a zone ("3D", "Cl", "3DW") when zones don't all share one. */
-const TYPE_SHORT: Record<string, string> = { Classic: "Cl", Flat: "Fl", Hybrid: "Hy", Spike: "Sp" };
-const typeShort = (t: string) => TYPE_SHORT[t] ?? t.replace(" ", "");
+/** Short type for the label under a zone ("3D", "Cl", "3DW", "Hy3D") when zones don't all share one. */
+const TYPE_SHORT: Record<string, string> = { Classic: "Cl", Spike: "Sp" };
+const typeShort = (t: string) => {
+  const fan = lashHybridFan(t);
+  return fan != null ? `Hy${fan.replace(/\s/g, "")}` : TYPE_SHORT[t] ?? t.replace(/\s/g, "");
+};
 
 /** Lash colour on the drawing. Other typed names go to the browser as CSS colour names ("teal"); one it doesn't know, like black (null), draws in the usual dark grey. */
 const COLOR_STROKE: Record<string, string> = { Brown: "#8b5a2b", "Dark brown": "#4a2c17", Blue: "#2563eb", Purple: "#7c3aed", Red: "#dc2626", Pink: "#ec4899", Green: "#16a34a", White: "#d6d3d1" };
 const strokeFor = (color: string | null | undefined) => (color ? (COLOR_STROKE[color] ?? color.toLowerCase().replace(/\s+/g, "")) : undefined);
 
-export function LashMapDiagram({ zones, selected, onSelect, mirror = false, className }: { zones: LashZone[]; selected?: LashSelection | null; onSelect?: (s: LashSelection) => void; mirror?: boolean; className?: string }) {
+export function LashMapDiagram({ zones: saved, selected, onSelect, mirror = false, className }: { zones: LashZone[]; selected?: LashSelection | null; onSelect?: (s: LashSelection) => void; mirror?: boolean; className?: string }) {
   const g = mirror ? GEO_MIRROR : GEO;
+  const zones = normalizeLashZones(saved);
+  const flatAll = allLashFlat(zones);
   const n = zones.length;
   const lashesPerZone = 6;
   const shared = sharedLashType(zones);
@@ -80,7 +85,8 @@ export function LashMapDiagram({ zones, selected, onSelect, mirror = false, clas
           const lx = tx + (bx - tx) * k;
           const ly = ty + (by - ty) * k;
           const blank = z.length == null && z.curl == null && z.thickness == null && !z.type;
-          const second = [z.curl, z.thickness != null ? formatLashThickness(z.thickness) : null, !shared && z.type ? typeShort(z.type) : null].filter(Boolean).join(" ");
+          // A flat zone's thickness reads ".15f" unless every zone is flat (then the caption says so once).
+          const second = [z.curl, z.thickness != null ? `${formatLashThickness(z.thickness)}${z.flat && !flatAll ? "f" : ""}` : null, !shared && z.type ? typeShort(z.type) : null].filter(Boolean).join(" ");
           return (
             <g key={i} onClick={onSelect ? () => onSelect({ kind: "zone", i }) : undefined} className={onSelect ? "cursor-pointer" : undefined}>
               <path d={zonePath(g, i, n)} className={cn("stroke-stone-300 transition-colors", active ? "fill-brand-100" : "fill-transparent", onSelect && !active && "hover:fill-stone-100")} strokeWidth={1} />
@@ -109,7 +115,7 @@ export function LashMapDiagram({ zones, selected, onSelect, mirror = false, clas
           const d = s ? lashPath(g, t, s.length ?? 0, s.curl) : null;
           return (
             <g key={`d${i}`} onClick={onSelect ? (e) => { e.stopPropagation(); onSelect({ kind: "spike", i }); } : undefined} className={onSelect ? "cursor-pointer" : undefined}>
-              {onSelect ? <circle cx={x0} cy={y0 - 14} r={14} className="fill-transparent" /> : null}
+              {onSelect ? <circle cx={x0} cy={y0 - 15} r={19} className="fill-transparent" /> : null}
               {d ? <path d={d} className={cn("fill-none", active ? "stroke-brand-600" : "stroke-stone-900")} style={active ? undefined : { stroke: strokeFor(s?.color) }} strokeWidth={1.6 + (s?.thickness ?? 0.07) * 10} strokeLinecap="round" /> : null}
               {s ? (
                 <>
@@ -118,8 +124,8 @@ export function LashMapDiagram({ zones, selected, onSelect, mirror = false, clas
                 </>
               ) : (
                 <>
-                  <circle cx={x0} cy={y0 - 14} r={7} className={cn("fill-white", active ? "stroke-brand-600" : "stroke-stone-300")} strokeWidth={1} />
-                  <path d={`M${f1(x0 - 3.5)},${f1(y0 - 14)} H${f1(x0 + 3.5)} M${f1(x0)},${f1(y0 - 17.5)} V${f1(y0 - 10.5)}`} className="stroke-stone-400" strokeWidth={1.2} />
+                  <circle cx={x0} cy={y0 - 15} r={9} className={cn("fill-white", active ? "stroke-brand-600" : "stroke-stone-400")} strokeWidth={1.2} />
+                  <path d={`M${f1(x0 - 4.5)},${f1(y0 - 15)} H${f1(x0 + 4.5)} M${f1(x0)},${f1(y0 - 19.5)} V${f1(y0 - 10.5)}`} className="stroke-stone-500" strokeWidth={1.4} />
                 </>
               )}
             </g>
@@ -128,8 +134,10 @@ export function LashMapDiagram({ zones, selected, onSelect, mirror = false, clas
         <text x={20} y={22} className="fill-stone-500 text-[11px]">{mirror ? "Outer corner" : "Inner corner"}</text>
         <text x={W - 20} y={22} textAnchor="end" className="fill-stone-500 text-[11px]">{mirror ? "Inner corner" : "Outer corner"}</text>
       </svg>
-      {shared || colors ? (
-        <figcaption className="text-center text-xs text-stone-500">{[shared ? `${formatLashType(shared)} throughout` : null, colors].filter(Boolean).join(" · ")}</figcaption>
+      {shared || colors || flatAll ? (
+        <figcaption className="text-center text-xs text-stone-500">
+          {[shared ? `${formatLashType(shared)} throughout` : null, flatAll ? (shared ? "all flat" : "Flat lashes throughout") : null, colors].filter(Boolean).join(" · ")}
+        </figcaption>
       ) : null}
     </figure>
   );

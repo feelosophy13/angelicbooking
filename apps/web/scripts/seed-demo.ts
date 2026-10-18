@@ -786,7 +786,7 @@ async function main() {
       lengths.map((length, i) => ({ length, curl, thickness, type, color, spike: spikes[i] ? { length: spikes[i]!, curl, thickness, type: "Spike", color: spikeColor } : null }));
     const LASH_MAPS: { c: number; title: string; days: number; zones: LashZone[]; right?: LashZone[]; notes?: string }[] = [
       { c: 5, title: "Natural cat eye", days: 75, zones: lashZones([8, 9, 10, 11, 11, 10], "C", 0.15, "Classic") },
-      { c: 5, title: "Natural cat eye", days: 20, zones: lashZones([8, 9, 11, 12, 11, 10], "C", 0.15, "Classic"), notes: "12 mm centre, 10 mm outer. Never longer." },
+      { c: 5, title: "Natural cat eye", days: 20, zones: lashZones([8, 9, 11, 12, 11, 10], "C", 0.15, "Classic").map((z) => ({ ...z, flat: true })), notes: "12 mm centre, 10 mm outer. Never longer. Flat .15 since this visit: better retention." },
       { c: 2, title: "Hybrid doll eye", days: 30, zones: lashZones([9, 10, 11, 12, 12, 11, 10], "CC", 0.07, "Hybrid", {}, "Dark brown"), notes: "Sensitive adhesive. Tape, not gel pads, on the lower lashes." },
       { c: 3, title: "Soft wispy (bridal)", days: 14, zones: lashZones([8, 9, 10, 10.5, 11, 11, 10], "D", 0.05, "YY", { 2: 12, 4: 13 }), notes: "Trial look. Keep spikes subtle for the day." },
       {

@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { formatLashThickness, formatLashType, formatLashZone, lashColorSummary, LashMapError, newLashSpike, parseLashZones, sharedLashType, starterLashZones } from "../lash-map";
+import { allLashFlat, formatLashThickness, formatLashType, formatLashZone, lashColorSummary, lashHybridFan, LASH_LENGTH_STYLES, lashLengthStyle, LashMapError, newLashSpike, normalizeLashZones, parseLashZones, sharedLashType, starterLashZones } from "../lash-map";
 
 const zone = (length: unknown, curl: unknown, thickness: unknown) => ({ length, curl, thickness });
 
 describe("parseLashZones", () => {
   it("accepts 6 or 7 zones and normalises curl and thickness", () => {
     const z = parseLashZones([zone(8, "c", "0.07"), zone(9.5, "CC", 0.1), zone(10, "d", 0.05), zone(11, "L+", 0.15), zone(12, "C", 0.07), zone("", "", "")]);
-    expect(z[0]).toEqual({ length: 8, curl: "C", thickness: 0.07, type: null, color: null, spike: null });
+    expect(z[0]).toEqual({ length: 8, curl: "C", thickness: 0.07, flat: false, type: null, color: null, spike: null });
     expect(z[1]?.length).toBe(9.5);
-    expect(z[5]).toEqual({ length: null, curl: null, thickness: null, type: null, color: null, spike: null });
+    expect(z[5]).toEqual({ length: null, curl: null, thickness: null, flat: false, type: null, color: null, spike: null });
     expect(parseLashZones(starterLashZones(7))).toHaveLength(7);
   });
   it("rejects other zone counts, all-blank maps and out-of-range values", () => {
@@ -29,7 +29,7 @@ describe("types and spikes", () => {
     zs[2] = { ...zs[2], spike: { length: 14, curl: "d", thickness: 0.05, type: "Classic" } };
     zs[5] = { ...zs[5], spike: { length: 15 } };
     const z = parseLashZones(zs);
-    expect(z[2]?.spike).toEqual({ length: 14, curl: "D", thickness: 0.05, type: "Classic", color: null });
+    expect(z[2]?.spike).toEqual({ length: 14, curl: "D", thickness: 0.05, flat: false, type: "Classic", color: null });
     expect(z[5]?.spike).toBeNull();
     expect(sharedLashType(z)).toBe("3D");
   });
@@ -56,13 +56,32 @@ describe("types and spikes", () => {
 
 describe("premade fans and colour", () => {
   it("accepts premade, flat and spike types and normalises colour, with blank and black both meaning black", () => {
-    const zs: object[] = starterLashZones(6).map((x, i) => ({ ...x, type: ["YY", "3D W", "Flat", "6D W", "Spike", "Hybrid"][i], color: ["", "black", "brown", " dark   brown ", "Blue", null][i] }));
+    const zs: object[] = starterLashZones(6).map((x, i) => ({ ...x, type: ["YY", "3D W", "Classic", "6D W", "Spike", "Hybrid"][i], color: ["", "black", "brown", " dark   brown ", "Blue", null][i] }));
     const z = parseLashZones(zs);
-    expect(z.map((x) => x.type)).toEqual(["YY", "3D W", "Flat", "6D W", "Spike", "Hybrid"]);
+    expect(z.map((x) => x.type)).toEqual(["YY", "3D W", "Classic", "6D W", "Spike", "Hybrid"]);
     expect(z.map((x) => x.color)).toEqual([null, null, "Brown", "Dark brown", "Blue", null]);
     expect(formatLashZone(z[3]!)).toBe("11mm C .07 6D W Dark brown");
     expect(formatLashType("YY")).toBe("YY");
-    expect(formatLashType("Flat")).toBe("Flat classic");
+    expect(formatLashType("Spike")).toBe("Spike fans");
+  });
+  it("keeps flat as a shape on any type, and reads the old Flat type as a flat classic", () => {
+    const zs = starterLashZones(6).map((x, i) => ({ ...x, thickness: 0.15, flat: i < 3, type: i === 1 ? "Hybrid" : i === 2 ? "Flat" : "Classic", spike: i === 0 ? { length: 12, flat: true } : null }));
+    const z = parseLashZones(zs);
+    expect(z.map((x) => [x.type, x.flat])).toEqual([["Classic", true], ["Hybrid", true], ["Classic", true], ["Classic", false], ["Classic", false], ["Classic", false]]);
+    expect(z[0]?.spike?.flat).toBe(true);
+    expect(formatLashZone(z[1]!)).toBe("9mm C .15 flat Hybrid");
+    expect(allLashFlat(z)).toBe(false);
+    expect(allLashFlat(z.map((x) => ({ ...x, flat: true })))).toBe(true);
+    const old = normalizeLashZones([{ length: 10, curl: "C", thickness: 0.15, type: "Flat", spike: { length: 12, curl: "C", thickness: 0.15, type: "Flat" } }]);
+    expect(old[0]).toMatchObject({ type: "Classic", flat: true, spike: { type: "Classic", flat: true } });
+  });
+  it("records which fan a hybrid mixes with classics, and keeps a bare Hybrid valid", () => {
+    const zs = starterLashZones(6).map((x, i) => ({ ...x, type: ["Hybrid 3D", "Hybrid YY", "Hybrid 4D W", "Hybrid", "Classic", "5D"][i] }));
+    expect(parseLashZones(zs).map((x) => x.type)).toEqual(["Hybrid 3D", "Hybrid YY", "Hybrid 4D W", "Hybrid", "Classic", "5D"]);
+    expect(() => parseLashZones(zs.map((x, i) => (i === 0 ? { ...x, type: "Hybrid Spike" } : x)))).toThrow(/Zone 1: type/);
+    expect(formatLashType("Hybrid 3D")).toBe("Hybrid (classic + 3D)");
+    expect(formatLashType("Hybrid")).toBe("Hybrid");
+    expect([lashHybridFan("Hybrid 4D W"), lashHybridFan("Hybrid"), lashHybridFan("3D"), lashHybridFan(null)]).toEqual(["4D W", "", null, null]);
   });
   it("rejects colours that aren't a short name", () => {
     const zs = starterLashZones(6).map((x, i) => (i === 4 ? { ...x, color: "#ff0000" } : x));
@@ -76,6 +95,17 @@ describe("premade fans and colour", () => {
     expect(lashColorSummary(zs.map((x) => ({ ...x, color: "Brown" })))).toBe("Brown throughout");
     const accents = zs.map((x, i) => ({ ...x, color: i >= 5 ? "Blue" : null, spike: i === 4 ? { length: 14, curl: "C", thickness: 0.07, color: "Purple" } : null }));
     expect(lashColorSummary(accents)).toBe("Purple: spike 5–6 · Blue: zones 6, 7");
+  });
+});
+
+describe("length styles", () => {
+  it("fills lengths from the longest, shaped by style, within the allowed range", () => {
+    expect(lashLengthStyle("Cat eye", 6, 12)).toEqual([7, 8, 9, 10, 11, 12]);
+    expect(lashLengthStyle("Doll eye", 7, 12)).toEqual([9, 10, 11, 12, 11, 10, 9]);
+    expect(lashLengthStyle("Squirrel", 7, 13)).toEqual([9, 10, 11, 12, 13, 12, 10]);
+    expect(lashLengthStyle("Cat eye", 6, 7)[0]).toBe(4);
+    expect(lashLengthStyle("Natural", 6, 20)).toHaveLength(6);
+    expect(LASH_LENGTH_STYLES).toContain("Open eye");
   });
 });
 
