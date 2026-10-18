@@ -54,8 +54,8 @@ describe("types and spikes", () => {
   });
 });
 
-describe("premade fans and colour", () => {
-  it("accepts premade, flat and spike types and normalises colour, with blank and black both meaning black", () => {
+describe("premade fans and color", () => {
+  it("accepts premade, flat and spike types and normalizes color, with blank and black both meaning black", () => {
     const zs: object[] = starterLashZones(6).map((x, i) => ({ ...x, type: ["YY", "3D W", "Classic", "6D W", "Spike", "Hybrid"][i], color: ["", "black", "brown", " dark   brown ", "Blue", null][i] }));
     const z = parseLashZones(zs);
     expect(z.map((x) => x.type)).toEqual(["YY", "3D W", "Classic", "6D W", "Spike", "Hybrid"]);
@@ -83,13 +83,13 @@ describe("premade fans and colour", () => {
     expect(formatLashType("Hybrid")).toBe("Hybrid");
     expect([lashHybridFan("Hybrid 4D W"), lashHybridFan("Hybrid"), lashHybridFan("3D"), lashHybridFan(null)]).toEqual(["4D W", "", null, null]);
   });
-  it("rejects colours that aren't a short name", () => {
+  it("rejects colors that aren't a short name", () => {
     const zs = starterLashZones(6).map((x, i) => (i === 4 ? { ...x, color: "#ff0000" } : x));
-    expect(() => parseLashZones(zs)).toThrow(/Zone 5: colour/);
-    const spike = starterLashZones(6).map((x, i) => (i === 1 ? { ...x, spike: { length: 12, color: "a very long colour name here" } } : x));
-    expect(() => parseLashZones(spike)).toThrow(/Spike between zones 2 and 3: colour/);
+    expect(() => parseLashZones(zs)).toThrow(/Zone 5: color/);
+    const spike = starterLashZones(6).map((x, i) => (i === 1 ? { ...x, spike: { length: 12, color: "a very long color name here" } } : x));
+    expect(() => parseLashZones(spike)).toThrow(/Spike between zones 2 and 3: color/);
   });
-  it("summarises where colours are used", () => {
+  it("summarizes where colors are used", () => {
     const zs = starterLashZones(7);
     expect(lashColorSummary(zs)).toBeNull();
     expect(lashColorSummary(zs.map((x) => ({ ...x, color: "Brown" })))).toBe("Brown throughout");

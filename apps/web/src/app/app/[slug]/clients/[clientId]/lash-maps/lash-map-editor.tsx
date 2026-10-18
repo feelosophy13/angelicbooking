@@ -184,7 +184,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
           {spike ? (
             <button type="button" onClick={removeSpike} className="text-sm text-stone-500 hover:text-red-600">Remove spike</button>
           ) : (
-            <button type="button" onClick={copyToAll} className="text-sm text-brand-700 hover:underline" title="Curl, thickness, shape, type and colour; lengths stay as they are">{copied ? "Copied to all zones" : "Copy to all zones"}</button>
+            <button type="button" onClick={copyToAll} className="text-sm text-brand-700 hover:underline" title="Curl, thickness, shape, type and color; lengths stay as they are">{copied ? "Copied to all zones" : "Copy to all zones"}</button>
           )}
         </div>
         <Field label="Length (mm)">
@@ -246,15 +246,15 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
             ) : null}
           </div>
         </Field>
-        {/* Rarely changed, so folded away; opens by itself on a zone that uses flat lashes or a colour. Keyed so each zone decides afresh. */}
-        <Disclosure key={`${eye}-${sel.kind}-${sel.i}`} variant="inset" title="Shape and colour" hint={`${z.flat ? "Flat" : "Round"} · ${z.color ?? "Black"}`} defaultOpen={!!z.flat || !!z.color}>
+        {/* Rarely changed, so folded away; opens by itself on a zone that uses flat lashes or a color. Borderless: it already sits inside the zone panel. Keyed so each zone decides afresh. */}
+        <Disclosure key={`${eye}-${sel.kind}-${sel.i}`} variant="plain" title="Shape and color" hint={`${z.flat ? "Flat" : "Round"} · ${z.color ?? "Black"}`} defaultOpen={!!z.flat || !!z.color}>
           <div className="space-y-4">
             <Field label="Shape" hint="Flat (ellipse or split-tip) lashes are lighter than round ones of the same size.">
               <div className="flex flex-wrap items-center gap-2">
                 <Chips options={[{ value: "round", label: "Round" }, { value: "flat", label: "Flat" }]} value={z.flat ? "flat" : "round"} onChange={(v) => patch({ flat: v === "flat" })} />
               </div>
             </Field>
-            <Field label="Colour" hint="Leave blank for black.">
+            <Field label="Color" hint="Leave blank for black.">
               <div className="flex flex-wrap items-center gap-2">
                 <Chips options={LASH_COLOR_PRESETS.map((c) => ({ value: c, label: c }))} value={isPresetColor ? z.color ?? null : null} onChange={(v) => { setCustomColor(""); patch({ color: v === z.color ? null : v }); }} />
                 <Input
@@ -263,7 +263,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
                   value={!isPresetColor && z.color ? z.color : customColor}
                   onChange={(e) => { setCustomColor(e.target.value); const c = e.target.value.trim(); patch({ color: c ? c.charAt(0).toUpperCase() + c.slice(1) : null }); }}
                   className="w-28"
-                  aria-label={`${label} other colour`}
+                  aria-label={`${label} other color`}
                 />
               </div>
             </Field>

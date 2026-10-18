@@ -3,7 +3,7 @@
  * eyes unless the right eye is set differently, when the map's zones are the left eye and `rightZones` the right. A zone can also carry a
  * spike: longer lashes on the divider after it (wispy and spiky styles), written on the line between two zones as printed lash maps do.
  * Each zone and spike has length, curl, thickness, shape (round, or flat: ellipse / split-tip lashes, lighter than a round lash of the
- * same size), type (classic, hybrid, handmade volume or a premade fan) and colour (blank is black).
+ * same size), type (classic, hybrid, handmade volume or a premade fan) and color (blank is black).
  */
 
 export const LASH_CURLS = ["B", "C", "CC", "D", "DD", "J", "L", "L+", "M", "U"] as const;
@@ -26,7 +26,7 @@ export const LASH_TYPES: readonly string[] = [...LASH_TYPE_GROUPS.flatMap((g) =>
 export function lashHybridFan(type: string | null | undefined): string | null {
   return type === "Hybrid" ? "" : type?.startsWith("Hybrid ") ? type.slice(7) : null;
 }
-/** Common colours besides black (black is the default and is stored as blank). Any short colour name is accepted too. */
+/** Common colors besides black (black is the default and is stored as blank). Any short color name is accepted too. */
 export const LASH_COLOR_PRESETS = ["Brown", "Dark brown", "Blue", "Purple", "Red", "Pink", "Green", "White"] as const;
 export const LASH_LENGTH_MIN = 4;
 export const LASH_LENGTH_MAX = 20;
@@ -128,7 +128,7 @@ export function normalizeLashZones(zones: LashZone[]): LashZone[] {
 }
 
 /**
- * Where colours other than black are used, for a line under the diagram: "Brown throughout", or "Blue: zones 6, 7 · Purple: spike 5–6".
+ * Where colors other than black are used, for a line under the diagram: "Brown throughout", or "Blue: zones 6, 7 · Purple: spike 5–6".
  * Null when everything is black.
  */
 export function lashColorSummary(zones: LashZone[]): string | null {
@@ -172,7 +172,7 @@ function parseSet(o: Record<string, unknown>, label: string): LashSet {
   if (type != null && !LASH_TYPES.includes(type)) throw new LashMapError(`${label}: type should be Classic, a volume fan like 3D, a premade fan like YY or 3D W, or a hybrid with one of those.`);
   let color = o.color == null ? null : String(o.color).trim().replace(/\s+/g, " ");
   if (!color || /^black$/i.test(color)) color = null;
-  else if (!/^[A-Za-z][A-Za-z -]{0,19}$/.test(color)) throw new LashMapError(`${label}: colour should be a short name like Brown or Blue.`);
+  else if (!/^[A-Za-z][A-Za-z -]{0,19}$/.test(color)) throw new LashMapError(`${label}: color should be a short name like Brown or Blue.`);
   else color = color.charAt(0).toUpperCase() + color.slice(1);
   return { length, curl, thickness: thickness == null ? null : Math.round(thickness * 1000) / 1000, flat, type, color };
 }

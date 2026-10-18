@@ -58,7 +58,7 @@ const typeShort = (t: string) => {
   return fan != null ? `Hy${fan.replace(/\s/g, "")}` : TYPE_SHORT[t] ?? t.replace(/\s/g, "");
 };
 
-/** Lash colour on the drawing. Other typed names go to the browser as CSS colour names ("teal"); one it doesn't know, like black (null), draws in the usual dark grey. */
+/** Lash color on the drawing. Other typed names go to the browser as CSS color names ("teal"); one it doesn't know, like black (null), draws in the usual dark grey. */
 const COLOR_STROKE: Record<string, string> = { Brown: "#8b5a2b", "Dark brown": "#4a2c17", Blue: "#2563eb", Purple: "#7c3aed", Red: "#dc2626", Pink: "#ec4899", Green: "#16a34a", White: "#d6d3d1" };
 const strokeFor = (color: string | null | undefined) => (color ? (COLOR_STROKE[color] ?? color.toLowerCase().replace(/\s+/g, "")) : undefined);
 

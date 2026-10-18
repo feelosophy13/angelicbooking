@@ -80,6 +80,8 @@ wrong: fix the page.
 - `Disclosure` (collapsed card with a title and optional hint) for secondary panels: add a service to a visit,
   discount or promo code on a ticket, edit client details, the clock-in PIN, export menus.
 - Inside a Card use `<Disclosure variant="inset">`: a thin bordered row with no shadow, so a card never sits in a card.
+- Inside a box that already has a border (a bordered panel within a Card) use `<Disclosure variant="plain">`: no border
+  at all, so it never draws a border inside a border.
 - A disclosure opens itself when it already holds something (a discount is applied, a filter is set).
 - **Only what applies is on screen.** A control earns its place in the current state or it is not drawn. When a
   choice decides which fields matter (discount: none / $ / % / promo code; pay by: card / cash / gift card; time off:
