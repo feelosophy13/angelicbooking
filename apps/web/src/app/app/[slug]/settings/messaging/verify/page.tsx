@@ -18,7 +18,7 @@ const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","
 export default async function VerifyPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ number?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, user } = await requireAction(slug, "business.manage");
+  const { business, user } = await requireAction(slug, "integrations.manage");
   const number = sp.number ? await getNumberById(business.id, sp.number) : await getActiveNumber(business.id);
   if (!number) redirect(`/app/${slug}/settings/messaging/new`);
   if (number.status !== "unverified" && number.status !== "rejected") redirect(`/app/${slug}/settings/messaging`);

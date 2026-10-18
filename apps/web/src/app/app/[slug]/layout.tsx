@@ -127,7 +127,7 @@ export default async function AppLayout({ children, params }: { children: React.
           {isDelinquent(business.subscriptionStatus) ? (
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
               Your last payment failed.{" "}
-              {can(permissions, "business.manage") ? <Link href={`${base}/settings/billing`} className="underline">Update your card</Link> : "Ask the owner to update the card"} to keep text messaging running.
+              {can(permissions, "billing.manage") ? <Link href={`${base}/settings/billing`} className="underline">Update your card</Link> : "Ask the owner to update the card"} to keep text messaging running.
             </div>
           ) : null}
           {awaitingVerification ? (
@@ -136,7 +136,7 @@ export default async function AppLayout({ children, params }: { children: React.
               <ResendVerification email={user.email} callbackURL={`/app/${slug}`} />
             </div>
           ) : null}
-          {plan.state === "trial" && owner ? (
+          {plan.state === "trial" && can(permissions, "billing.manage") ? (
             <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${plan.daysLeft <= 3 ? "border-amber-200 bg-amber-50 text-amber-900" : "border-brand-100 bg-brand-50/60 text-brand-900"}`}>
               Free trial: {plan.daysLeft} day{plan.daysLeft === 1 ? "" : "s"} left. <Link href={`${base}/settings/billing`} className="underline">Add a card</Link> so nothing stops when it ends; you won&apos;t be charged until then.
             </div>

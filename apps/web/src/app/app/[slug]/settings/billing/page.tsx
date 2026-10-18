@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Billing" };
 export default async function BillingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ session_id?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const ctx = await requireAction(slug, "business.manage");
+  const ctx = await requireAction(slug, "billing.manage");
   let { business } = ctx;
   const plan = ctx.plan;
   let justSubscribed = false;

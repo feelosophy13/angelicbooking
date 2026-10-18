@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { money } from "@/lib/format";
 import { listNumbers, numberMonthlyFeeCents, twilioConfigured, type MessagingNumber } from "@/server/messaging";
@@ -24,7 +25,9 @@ const STATUS_HELP: Record<string, string> = {
 export default async function MessagingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ bought?: string; submitted?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business, permissions } = await requireAction(slug, "business.manage");
+  // Reading the number and its status is a business setting; buying, verifying or releasing one is integrations.manage.
+  const manage = can(permissions, "integrations.manage");
   const [numbers, locations] = await Promise.all([withTenant(business.id, listNumbers), listLocations(business.id)]);
   const fee = await numberMonthlyFeeCents(business.id);
   const billing = await billingState(business);
@@ -33,7 +36,7 @@ export default async function MessagingPage({ params, searchParams }: { params: 
   const locName = (id: string | null) => (id ? (locations.find((l) => l.id === id)?.name ?? "Unknown location") : null);
   const submittedFor = sp.submitted ? numbers.find((n) => n.id === sp.submitted) : null;
   const buyHref = (locationId?: string) => `/app/${slug}/settings/messaging/new${locationId ? `?location=${locationId}` : ""}`;
-  const canBuy = twilioConfigured() && billing.canBuyNumber;
+  const canBuy = manage && twilioConfigured() && billing.canBuyNumber;
 
   return (
     <>
@@ -56,18 +59,20 @@ export default async function MessagingPage({ params, searchParams }: { params: 
             <li>Until the number is verified, text messages are skipped and clients still get email.</li>
             {multi ? <li>One number serves every location. A location that is its own business can get its own number below, so its texts come from it.</li> : null}
           </ul>
-          {twilioConfigured() && !billing.canBuyNumber ? (
-            <div className="mt-4"><Notice>Add a card under <Link href={`/app/${slug}/settings/billing`} className="underline">Billing</Link> first; the number is billed monthly.</Notice></div>
-          ) : twilioConfigured() ? (
-            <div className="mt-4"><LinkButton href={buyHref()}>Choose a number</LinkButton></div>
-          ) : (
+          {!twilioConfigured() ? (
             <div className="mt-4"><Notice>Text messaging is not available on this platform yet.</Notice></div>
+          ) : !manage ? (
+            <div className="mt-4"><Notice>Ask the owner to get a number; that needs the &quot;API keys and text number&quot; permission.</Notice></div>
+          ) : !billing.canBuyNumber ? (
+            <div className="mt-4"><Notice>Add a card under {can(permissions, "billing.manage") ? <Link href={`/app/${slug}/settings/billing`} className="underline">Billing</Link> : "Billing (ask the owner)"} first; the number is billed monthly.</Notice></div>
+          ) : (
+            <div className="mt-4"><LinkButton href={buyHref()}>Choose a number</LinkButton></div>
           )}
         </Card>
       ) : (
         <div className="grid max-w-3xl gap-6">
           {numbers.map((number) => (
-            <NumberCard key={number.id} number={number} slug={slug} tz={business.timezone} label={number.locationId ? locName(number.locationId)! : multi ? "All locations" : "Your number"} />
+            <NumberCard key={number.id} number={number} slug={slug} tz={business.timezone} manage={manage} label={number.locationId ? locName(number.locationId)! : multi ? "All locations" : "Your number"} />
           ))}
           {!main && canBuy ? (
             <Card className="p-5 text-sm text-stone-600">
@@ -114,7 +119,7 @@ export default async function MessagingPage({ params, searchParams }: { params: 
   );
 }
 
-function NumberCard({ number, slug, tz, label }: { number: MessagingNumber; slug: string; tz: string; label: string }) {
+function NumberCard({ number, slug, tz, manage, label }: { number: MessagingNumber; slug: string; tz: string; /** May verify or release it (integrations.manage). */ manage: boolean; label: string }) {
   return (
     <Card className="p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -137,7 +142,7 @@ function NumberCard({ number, slug, tz, label }: { number: MessagingNumber; slug
           ) : null}
         </Notice></div>
       ) : null}
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      {manage ? <div className="mt-4 flex flex-wrap items-center gap-2">
         {number.status === "unverified" || number.status === "rejected" ? (
           <LinkButton href={`/app/${slug}/settings/messaging/verify?number=${number.id}`}>{number.status === "rejected" ? "Fix and resubmit" : "Submit verification"}</LinkButton>
         ) : null}
@@ -153,7 +158,7 @@ function NumberCard({ number, slug, tz, label }: { number: MessagingNumber; slug
           <input type="hidden" name="numberId" value={number.id} />
           <ConfirmSubmit title="Release this number?" body="You lose the number permanently and texts stop until you get a new one and verify it again." confirmLabel="Release" variant="ghost">Release number</ConfirmSubmit>
         </ActionForm>
-      </div>
+      </div> : null}
     </Card>
   );
 }

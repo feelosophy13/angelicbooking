@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BackLink, Card, PageHeader } from "@/components/ui";
 import { BookingForm } from "./booking-form";
+import { paymentsHrefFor } from "@/lib/nav";
 import { Disclosure } from "@/components/disclosure";
 
 export const metadata: Metadata = { title: "Online booking" };
@@ -14,7 +15,7 @@ import { formatMoney } from "@/lib/utils";
 
 export default async function BookingSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business, permissions } = await requireAction(slug, "business.manage");
   const url = business.customDomain ? `https://${business.customDomain}` : appUrl(`/book/${business.slug}`);
   const qr = await QRCode.toDataURL(url, { margin: 1, width: 220, color: { dark: "#1c1917" } });
   // One deep link per location: clients land on that site's services and providers.
@@ -39,6 +40,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
             slug={slug}
             v={{ onlineBookingEnabled: business.onlineBookingEnabled, minNoticeMin: business.minNoticeMin, maxAdvanceDays: business.maxAdvanceDays, cancelWindowHours: business.cancelWindowHours, bookingOrder: business.bookingOrder, anyProviderMode: business.anyProviderMode, noShowFeeCents: business.noShowFeeCents, lateCancelFeeType: latePolicy.feeType, lateCancelFeeValue: business.lateCancelFeeValue, lateCancelDeposit: business.lateCancelDeposit, depositRefundAs: business.depositRefundAs, requireCardOnline: business.requireCardOnline, clientAccountsEnabled: business.clientAccountsEnabled, bookingPolicy: business.bookingPolicy, addressLine: business.addressLine }}
             stripeReady={isStripeConfigured() && business.stripeChargesEnabled}
+            paymentsHref={paymentsHrefFor(slug, permissions)}
             feeSummary={feeSummary}
             feeLabel={feeLabel}
             policyConflict={policyCheck.conflicts[0] ?? null}

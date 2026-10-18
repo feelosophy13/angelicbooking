@@ -496,7 +496,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                           <select name="paymentMethodId" className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-xs">{savedCards.map((c) => <option key={c.id} value={c.id}>{c.brand.toUpperCase()} •••• {c.last4}</option>)}</select>
                           <button className="rounded-lg border border-stone-300 bg-white px-2 py-1 text-xs hover:bg-stone-50">Auto-renew with this card</button>
                         </form>
-                      ) : <p className="text-xs text-stone-500">{stripeReady ? "Save a card at checkout to turn on auto-renew." : <>Auto-renew needs card payments. <Link href={`/app/${slug}/settings/payments`} className="underline">Settings → Card payments</Link></>}</p>}
+                      ) : <p className="text-xs text-stone-500">{stripeReady ? "Save a card at checkout to turn on auto-renew." : <>Auto-renew needs card payments{can(permissions, "billing.manage") ? <>. <Link href={`/app/${slug}/settings/payments`} className="underline">Settings → Card payments</Link></> : " (ask the owner to connect Stripe)."}</>}</p>}
                     </div>
                   ) : null}
                 </div>

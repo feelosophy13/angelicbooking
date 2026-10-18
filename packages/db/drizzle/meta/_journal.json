@@ -806,6 +806,13 @@
       "when": 1795200300000,
       "tag": "0114_client_data_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1795200400000,
+      "tag": "0115_settings_permissions",
+      "breakpoints": true
     }
   ]
 }

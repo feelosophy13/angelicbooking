@@ -2,7 +2,12 @@ export const ROLES = ["owner", "manager", "provider", "front_desk"] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ACTIONS = [
-  "business.manage", // settings, billing, Stripe connection
+  "business.manage", // everyday settings: profile, booking rules, locations, wording, store, loyalty, reviews, reasons, forms, imports, embed, domain
+  // Split out of "business.manage" 2026-10-18 (migration 0115 back-fills stored roles) so the owner can hand the settings to a manager
+  // without handing over the money and the keys.
+  "billing.manage", // Settings → Payments (the Stripe connection and payouts) and Settings → Billing (the platform subscription and card)
+  "integrations.manage", // Settings → API keys, and buying and verifying the text number
+  "audit.view", // Settings → Activity log
   "members.manage",
   "staff.manage",
   "services.manage",
@@ -87,7 +92,10 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
       { action: "services.manage", label: "Manage the catalog", description: "Services, products, categories, packages and plans." },
       { action: "staff.manage", label: "Manage staff", description: "Add staff, set hours and time off, assign services." },
       { action: "members.manage", label: "Manage logins and roles", description: "Invite people, assign roles, revoke access." },
-      { action: "business.manage", label: "Business settings", description: "Profile, online booking, payments (Stripe), locations, imports." },
+      { action: "business.manage", label: "Business settings", description: "Profile, booking rules, locations, text wording, forms, store, loyalty, reviews, refund and cancellation reasons, imports, embed and domain. Not payments, billing or API keys." },
+      { action: "billing.manage", label: "Payments and billing", description: "Connect or disconnect the Stripe account that receives card payments, and manage the subscription and the card on file." },
+      { action: "integrations.manage", label: "API keys and text number", description: "Create and revoke API keys, and buy, verify or release the business's text number." },
+      { action: "audit.view", label: "See the activity log", description: "Who changed what, and when, across the whole business." },
     ],
   },
 ];
@@ -115,14 +123,14 @@ const ALL = new Set<Action>(ACTIONS);
 /** Default permissions for the built-in roles. Businesses can edit copies of these. */
 export const DEFAULT_ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {
   owner: ALL,
-  manager: new Set<Action>(ACTIONS.filter((a) => a !== "business.manage")),
+  manager: new Set<Action>(ACTIONS.filter((a) => a !== "billing.manage" && a !== "integrations.manage")),
   front_desk: new Set<Action>(["clients.read", "clients.write", "clients.notes", "clients.messages", "clients.balances", "appointments.read.any", "appointments.read.own", "appointments.write.any", "appointments.write.own", "checkout.take", "checkout.discount", "inventory.log"]),
   provider: new Set<Action>(["clients.read", "clients.notes", "clients.photos", "appointments.read.own", "appointments.write.own", "checkout.take", "inventory.log"]),
 };
 
 export const DEFAULT_ROLE_META: Record<Role, { name: string; description: string }> = {
   owner: { name: "Owner", description: "Full access, including billing and payments. Cannot be edited." },
-  manager: { name: "Manager", description: "Everything except business settings and Stripe." },
+  manager: { name: "Manager", description: "Everything except Stripe, billing and API keys." },
   front_desk: { name: "Front desk", description: "All calendars, clients and checkout. No reports or setup." },
   provider: { name: "Provider", description: "Their own calendar and checkout." },
 };

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
+import { paymentsHrefFor } from "@/lib/nav";
 import { isStripeConfigured } from "@/lib/stripe";
 import { listCategories } from "@/server/categories";
 import { FormPage } from "@/components/ui";
@@ -21,7 +22,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function EditServicePage({ params }: { params: Promise<{ slug: string; serviceId: string }> }) {
   const { slug, serviceId } = await params;
-  const { business } = await requireAction(slug, "services.manage");
+  const { business, permissions } = await requireAction(slug, "services.manage");
   const [service, categories, locations, offeredAt] = await Promise.all([
     withTenant(business.id, (tx) => tx.query.services.findFirst({ where: eq(schema.services.id, serviceId) })),
     listCategories(business.id, "service"),
@@ -35,7 +36,7 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
       <ActionForm action={updateService}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="serviceId" value={service.id} />
-        <ServiceFields service={service} categories={categories} locations={locations} offeredAt={offeredAt.map((r) => r.locationId)} currency={business.currency} stripeReady={isStripeConfigured() && business.stripeChargesEnabled} slug={slug} />
+        <ServiceFields service={service} categories={categories} locations={locations} offeredAt={offeredAt.map((r) => r.locationId)} currency={business.currency} stripeReady={isStripeConfigured() && business.stripeChargesEnabled} paymentsHref={paymentsHrefFor(slug, permissions)} />
         <SubmitButton pendingText="Saving…">Save service</SubmitButton>
       </ActionForm>
     </FormPage>

@@ -6,11 +6,11 @@ import { LinkButton } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Free trial ended" };
 
-/** Where a business lands when its free trial is over and it has no subscription. Billing is the only other page that opens. */
+/** Where a business lands when its free trial is over and it has no subscription. Billing is the only other page that opens, for whoever holds "billing.manage". */
 export default async function LockedPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, permissions } = await requireBusiness(slug);
-  const owner = can(permissions, "business.manage");
+  const owner = can(permissions, "billing.manage");
   return (
     <div className="mx-auto max-w-lg py-12 text-center">
       <h1 className="text-2xl font-semibold text-stone-900">Your free trial has ended</h1>

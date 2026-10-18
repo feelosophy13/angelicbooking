@@ -19,7 +19,7 @@ async function locationFrom(businessId: string, formData: FormData) {
 
 export async function connectStripe(formData: FormData) {
   const slug = String(formData.get("slug"));
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "billing.manage");
   const location = await locationFrom(business.id, formData);
   const url = await startConnectOnboarding(business, slug, location);
   redirect(url);
@@ -27,7 +27,7 @@ export async function connectStripe(formData: FormData) {
 
 export async function refreshStripe(formData: FormData) {
   const slug = String(formData.get("slug"));
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "billing.manage");
   const location = await locationFrom(business.id, formData);
   const accountId = location ? location.stripeAccountId : business.stripeAccountId;
   if (accountId) await syncConnectAccount(business.id, accountId);
@@ -37,7 +37,7 @@ export async function refreshStripe(formData: FormData) {
 
 export async function disconnectStripe(formData: FormData) {
   const slug = String(formData.get("slug"));
-  const { business, user } = await requireAction(slug, "business.manage");
+  const { business, user } = await requireAction(slug, "billing.manage");
   const location = await locationFrom(business.id, formData);
   await disconnectConnectAccount(business.id, location?.id);
   await auditEvent(business.id, user.id, "settings.stripe_disconnect", location ? "location" : "business", location?.id ?? business.id);
@@ -46,7 +46,7 @@ export async function disconnectStripe(formData: FormData) {
 }
 
 export const saveTax = formAction(z.object({ slug: z.string(), taxPct: f.num(0, 30) }), async (d) => {
-  const { business, user } = await requireAction(d.slug, "business.manage");
+  const { business, user } = await requireAction(d.slug, "billing.manage");
   await db.update(schema.businesses).set({ taxRateBps: Math.round(d.taxPct * 100) }).where(eq(schema.businesses.id, business.id));
   await auditSettings(business, user.id, "tax", { taxRateBps: Math.round(d.taxPct * 100) });
   revalidatePath(`/app/${d.slug}/settings/payments`);
@@ -54,7 +54,7 @@ export const saveTax = formAction(z.object({ slug: z.string(), taxPct: f.num(0, 
 });
 
 export const saveReceiptFooter = formAction(z.object({ slug: z.string(), footer: z.string().max(400).optional() }), async (d) => {
-  const { business, user } = await requireAction(d.slug, "business.manage");
+  const { business, user } = await requireAction(d.slug, "billing.manage");
   await db.update(schema.businesses).set({ receiptFooter: d.footer?.trim() || null }).where(eq(schema.businesses.id, business.id));
   await auditSettings(business, user.id, "receipt", { receiptFooter: d.footer?.trim() || null });
   revalidatePath(`/app/${d.slug}/settings/payments`);

@@ -14,7 +14,7 @@ const TRIAL_MAX_KEYS = 2;
 /** Create a key. The secret comes back once in `values.key`; only its hash is stored, so it can never be shown again. */
 export async function createApiKey(_prev: FormState | undefined, fd: FormData): Promise<FormState> {
   const slug = String(fd.get("slug") ?? "");
-  const ctx = await requireAction(slug, "business.manage");
+  const ctx = await requireAction(slug, "integrations.manage");
   const name = String(fd.get("name") ?? "").trim();
   const scopes = [...new Set(fd.getAll("scopes").map(String))].filter(isApiScope);
   const days = Number(fd.get("expiresInDays") ?? 0);
@@ -59,7 +59,7 @@ export async function createApiKey(_prev: FormState | undefined, fd: FormData): 
 
 export async function revokeApiKey(fd: FormData) {
   const slug = String(fd.get("slug") ?? "");
-  const ctx = await requireAction(slug, "business.manage");
+  const ctx = await requireAction(slug, "integrations.manage");
   const id = String(fd.get("id") ?? "");
   const businessId = ctx.business.id;
   await withTenant(businessId, async (tx) => {

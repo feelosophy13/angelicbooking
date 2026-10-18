@@ -304,7 +304,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       points={business.loyaltyEnabled && client && points >= business.loyaltyMinRedeemPoints ? { balance: points, pointValueCents: business.loyaltyPointValueCents, minPoints: business.loyaltyMinRedeemPoints } : null}
                       actions={{ payManual, payWithGiftCard, payWithSavedCard, payWithStoreCredit: payWithStoreCreditAction, payWithPoints }}
                     />
-                    {!stripeReady && can(permissions, "business.manage") ? (
+                    {!stripeReady && can(permissions, "billing.manage") ? (
                       <p className="text-xs text-stone-500">To take cards, connect Stripe under <Link className="underline" href={`/app/${slug}/settings/payments`}>Settings → Payments</Link>.</p>
                     ) : null}
                   </div>

@@ -164,11 +164,11 @@ export default async function CalendarPage({
       { key: "services", label: "Add your services", href: `/app/${slug}/services/new`, done: counts.services > 0, hint: "What clients can book." },
       { key: "staff", label: "Add your team", href: `/app/${slug}/staff/new`, done: counts.staff > 1, hint: "Everyone gets a calendar column." },
       { key: "profile", label: "Brand your booking page", href: `/app/${slug}/settings/profile`, done: !!(business.tagline || business.logoUrl || business.brandColor), hint: "Logo, colour and hours." },
-      { key: "stripe", label: "Connect Stripe", href: `/app/${slug}/settings/payments`, done: business.stripeChargesEnabled, hint: "Take cards and save cards on file." },
-      { key: "sms", label: "Get a text number", href: `/app/${slug}/settings/messaging`, done: counts.smsNumber, hint: "Reminders by SMS from your own number." },
+      ...(can(permissions, "billing.manage") ? [{ key: "stripe", label: "Connect Stripe", href: `/app/${slug}/settings/payments`, done: business.stripeChargesEnabled, hint: "Take cards and save cards on file." }] : []),
+      ...(can(permissions, "integrations.manage") ? [{ key: "sms", label: "Get a text number", href: `/app/${slug}/settings/messaging`, done: counts.smsNumber, hint: "Reminders by SMS from your own number." }] : []),
       { key: "clients", label: "Import clients from Vagaro", href: `/app/${slug}/settings/import`, done: counts.clients > 3, hint: "CSV or Excel export." },
       { key: "booking", label: "Share your booking link", href: `/app/${slug}/settings/booking`, done: counts.appointments > 0 && business.onlineBookingEnabled, hint: "Put it on Instagram and Google." },
-      ...(plan.state === "trial" ? [{ key: "plan", label: "Add a card", href: `/app/${slug}/settings/billing`, done: false, hint: `Your trial ends in ${plan.daysLeft} day${plan.daysLeft === 1 ? "" : "s"}; nothing is charged until then.` }] : []),
+      ...(plan.state === "trial" && can(permissions, "billing.manage") ? [{ key: "plan", label: "Add a card", href: `/app/${slug}/settings/billing`, done: false, hint: `Your trial ends in ${plan.daysLeft} day${plan.daysLeft === 1 ? "" : "s"}; nothing is charged until then.` }] : []),
       { key: "2fa", label: "Turn on two-factor sign-in", href: `/account`, done: !!me?.twoFactorEnabled, hint: "An extra code at sign-in protects your clients and your money." },
     ];
   }

@@ -12,7 +12,7 @@ const known = { knownErrors: [MessagingError] };
 export const buyNumberAction = formAction(
   z.object({ slug: z.string(), phoneNumber: z.string().regex(/^\+1\d{10}$/, "Pick a number from the list"), locationId: z.string().optional() }),
   async (d) => {
-    const { business } = await requireAction(d.slug, "business.manage");
+    const { business } = await requireAction(d.slug, "integrations.manage");
     const row = await buyNumber(business, d.phoneNumber, d.locationId || null);
     revalidatePath(`/app/${d.slug}`, "layout");
     redirect(`/app/${d.slug}/settings/messaging?bought=${row.id}`);
@@ -23,7 +23,7 @@ export const buyNumberAction = formAction(
 export const releaseNumberAction = formAction(
   z.object({ slug: z.string(), numberId: z.string().optional() }),
   async (d) => {
-    const { business } = await requireAction(d.slug, "business.manage");
+    const { business } = await requireAction(d.slug, "integrations.manage");
     await releaseBusinessNumber(business, d.numberId || null);
     revalidatePath(`/app/${d.slug}`, "layout");
     return "Number released. Texts are paused until you get a new one.";
@@ -34,7 +34,7 @@ export const releaseNumberAction = formAction(
 export const refreshVerificationAction = formAction(
   z.object({ slug: z.string(), numberId: z.string().optional() }),
   async (d) => {
-    const { business } = await requireAction(d.slug, "business.manage");
+    const { business } = await requireAction(d.slug, "integrations.manage");
     const row = await refreshVerification(business, d.numberId || null);
     revalidatePath(`/app/${d.slug}/settings/messaging`);
     return row?.status === "verified" ? "Verified. Texts now go out from your number." : "Status refreshed";
@@ -67,7 +67,7 @@ export const submitVerificationAction = formAction(
     extraOptInImageUrl: z.string().trim().url("Enter a full image URL").or(z.literal("")).transform((v) => v || null),
   }),
   async (d) => {
-    const { business } = await requireAction(d.slug, "business.manage");
+    const { business } = await requireAction(d.slug, "integrations.manage");
     if (d.businessType !== "SOLE_PROPRIETOR" && !/^\d{2}-?\d{7}$/.test(d.businessRegistrationNumber ?? "")) {
       throw new FormError("Enter your 9-digit EIN (or choose Sole proprietor).", "businessRegistrationNumber");
     }

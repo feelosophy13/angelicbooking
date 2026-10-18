@@ -8,7 +8,7 @@ import { syncConnectAccount } from "@/server/stripe-connect";
 export default async function ConnectReturnPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ location?: string }> }) {
   const { slug } = await params;
   const { location } = await searchParams;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "billing.manage");
   const accountId = location
     ? (await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, location), columns: { stripeAccountId: true } })))?.stripeAccountId
     : business.stripeAccountId;

@@ -34,11 +34,10 @@ function Keep({ name, value }: { name: string; value: string | boolean }) {
  * Online booking rules. Fields that only matter when booking is on, when a fee is set, or
  * when Stripe can charge cards appear only then; hidden values are posted unchanged.
  */
-export function BookingForm({ slug, v, stripeReady, feeSummary, feeLabel, policyConflict }: { slug: string; v: BookingValues; stripeReady: boolean; feeSummary: string; feeLabel: string; policyConflict: string | null }) {
+export function BookingForm({ slug, v, stripeReady, paymentsHref, feeSummary, feeLabel, policyConflict }: { slug: string; v: BookingValues; stripeReady: boolean; /** Settings → Payments, or null when the viewer cannot open it. */ paymentsHref: string | null; feeSummary: string; feeLabel: string; policyConflict: string | null }) {
   const [online, setOnline] = useState(v.onlineBookingEnabled);
   const [feeType, setFeeType] = useState(v.lateCancelFeeType);
   const feeValue = v.lateCancelFeeType === "flat" ? (v.lateCancelFeeValue / 100).toFixed(2) : v.lateCancelFeeType === "percent" ? String(v.lateCancelFeeValue / 100) : "";
-  const paymentsHref = `/app/${slug}/settings/payments`;
   return (
     <ActionForm action={saveBookingSettings}>
       <input type="hidden" name="slug" value={slug} />
@@ -126,7 +125,7 @@ export function BookingForm({ slug, v, stripeReady, feeSummary, feeLabel, policy
           {stripeReady ? (
             <p className="text-xs text-stone-500">Deposits themselves are set per service.</p>
           ) : (
-            <p className="text-xs text-stone-500">No-show fees, deposits and cards on file need card payments. <Link href={paymentsHref} className="text-brand-700 underline">Connect Stripe under Payments</Link>.</p>
+            <p className="text-xs text-stone-500">No-show fees, deposits and cards on file need card payments. {paymentsHref ? <Link href={paymentsHref} className="text-brand-700 underline">Connect Stripe under Payments</Link> : "Ask the owner to connect Stripe under Payments"}.</p>
           )}
         </div>
       </Disclosure>

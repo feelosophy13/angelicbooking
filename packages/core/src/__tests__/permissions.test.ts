@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { can, canActOnAppointment } from "../permissions";
 
 describe("permissions", () => {
-  it("owner can do everything, manager everything but business settings", () => {
-    expect(can("owner", "business.manage")).toBe(true);
-    expect(can("manager", "business.manage")).toBe(false);
+  it("owner can do everything, manager everything but Stripe, billing and API keys", () => {
+    expect(can("owner", "billing.manage")).toBe(true);
+    expect(can("manager", "business.manage")).toBe(true);
+    expect(can("manager", "billing.manage")).toBe(false);
+    expect(can("manager", "integrations.manage")).toBe(false);
     expect(can("manager", "payroll.view")).toBe(true);
   });
   it("providers only touch their own calendar", () => {

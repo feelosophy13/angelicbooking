@@ -31,10 +31,10 @@ export type TenantContext = {
  */
 export const requireBusiness = (slug: string): Promise<TenantContext> => resolveBusiness(slug, false);
 
-/** For the billing actions only: the business even while the trial is over, so the owner can subscribe. */
+/** For the billing actions only: the business even while the trial is over, so whoever holds "billing.manage" (the owner) can subscribe. */
 export async function requireBillingAction(slug: string): Promise<TenantContext> {
   const ctx = await resolveBusiness(slug, true);
-  if (!can(ctx.permissions, "business.manage")) throw new PermissionError();
+  if (!can(ctx.permissions, "billing.manage")) throw new PermissionError();
   return ctx;
 }
 
@@ -93,6 +93,13 @@ export async function requireAction(slug: string, action: Action): Promise<Tenan
 export async function requireActions(slug: string, ...actions: Action[]): Promise<TenantContext> {
   const ctx = await requireBusiness(slug);
   if (!actions.every((a) => can(ctx.permissions, a))) throw new PermissionError();
+  return ctx;
+}
+
+/** Like requireAction, for a page that opens with any one of several permissions (the Settings directory: whichever settings the person may edit). */
+export async function requireAnyAction(slug: string, ...actions: Action[]): Promise<TenantContext> {
+  const ctx = await requireBusiness(slug);
+  if (!actions.some((a) => can(ctx.permissions, a))) throw new PermissionError();
   return ctx;
 }
 

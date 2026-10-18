@@ -50,6 +50,11 @@ describe("API key scopes", () => {
   it("viewing clients alone grants none of the split client-data scopes", () => {
     expect(scopesBeyond(["clients:read", "client-notes:read", "clients:balances", "messages:read", "forms:read"], perms("clients.read"), false)).toEqual(["client-notes:read", "clients:balances", "messages:read", "forms:read"]);
   });
+  it("settings scopes follow Business settings, not the keys permission that opens the API page", () => {
+    expect(scopesBeyond(["settings:read", "settings:write", "policies:write", "settings:delete"], perms("business.manage"), false)).toEqual([]);
+    expect(scopesBeyond(["settings:read", "policies:write", "catalog:read"], perms("integrations.manage", "billing.manage", "services.manage"), false)).toEqual(["settings:read", "policies:write"]);
+    expect(scopesBeyond(["roles:read", "roles:write"], perms("business.manage", "integrations.manage"), false)).toEqual(["roles:read", "roles:write"]);
+  });
   it("each split scope follows its own permission", () => {
     expect(scopesBeyond(["client-notes:read", "client-notes:write", "forms:read"], perms("clients.read", "clients.notes"), false)).toEqual([]);
     expect(scopesBeyond(["clients:balances"], perms("clients.read", "clients.balances"), false)).toEqual([]);

@@ -20,7 +20,7 @@ export default async function PaymentsSettingsPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "billing.manage");
   const configured = isStripeConfigured();
   const connected = !!business.stripeAccountId;
   const ready = connected && business.stripeChargesEnabled;

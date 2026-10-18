@@ -12,7 +12,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
   const PAGE = 100;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "audit.view");
   // Filters: the area is what comes before the first dot of an action ("settings", "payroll", "staff"…); who is a person or "system".
   const area = sp.area && /^[a-z_]+$/.test(sp.area) ? sp.area : null;
   const who = sp.who || null;

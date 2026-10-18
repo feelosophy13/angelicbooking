@@ -32,7 +32,7 @@ function describeScopes(scopes: string[], version: number): string {
 /** Keys for the REST API: see what is in use, replace, or revoke. Creating a key is on its own page. */
 export default async function ApiAccessPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "integrations.manage");
   const tz = business.timezone;
   const all = await withTenant(business.id, (tx) => tx.select().from(schema.apiKeys).where(eq(schema.apiKeys.businessId, business.id)).orderBy(desc(schema.apiKeys.createdAt)));
   const now = new Date();

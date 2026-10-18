@@ -67,6 +67,20 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       column unless the caller also has `clients.read`. Back-fill rule for stored roles: clients.read → notes + photos; clients.read +
       clients.write → messages + balances too; clients.read + (reports.view or members.manage) → export. Owners can retick anything
       under Roles.
+- [x] Business-settings permissions split, 2026-10-18 (migration 0115): `business.manage` ("Business settings") now means the everyday
+      settings only (profile, booking rules, locations, text wording, store, loyalty, reviews, refund and cancellation reasons, forms,
+      imports, embed, custom domain, the Message log, the Loyalty page, Marketing automations). Split out of it: `billing.manage`
+      (Settings → Payments: the Stripe connection; Settings → Billing: the subscription and card; it is what `requireBillingAction`
+      checks, so it is the one permission that works while a business is locked for non-payment), `integrations.manage` (Settings → API
+      keys; buying, verifying and releasing the text number, while the Text number page itself stays readable with business settings),
+      `audit.view` (Settings → Activity log). Defaults: Owner all; Manager gains business settings and the activity log but not billing
+      or integrations ("Everything except Stripe, billing and API keys"); Front desk and Provider unchanged. The Settings directory,
+      the sidebar, the ⌘K list, the home setup checklist and the "connect Stripe" pointers on Store, Booking rules, service forms, a
+      sale and a client's membership only link to pages the viewer may open. API key scopes `settings:` and `policies:` need business
+      settings. Back-fill rule for stored roles: business.manage → billing + integrations + audit too; stored Manager roles do NOT gain
+      business.manage (the owner opts in under Roles, and their stored description still reads "Everything except business settings and
+      Stripe" until they edit it). Gap: the tax rate and receipt footer live on the Payments page, so they moved with it to
+      `billing.manage`; move them to Locations or Business profile if a manager needs them.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,

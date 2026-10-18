@@ -138,6 +138,9 @@ const SCOPE_NEEDS: [prefix: string, action: string][] = [
   ["inventory:", "inventory.manage"],
   ["purchasing:", "inventory.manage"],
   ["supplies:", "inventory.log"],
+  // Settings scopes follow the everyday settings permission; opening Settings → API at all (to mint a key) needs integrations.manage.
+  ["settings:", "business.manage"],
+  ["policies:", "business.manage"],
 ];
 
 /** Scopes in `scopes` that a person with these role permissions may not grant. */

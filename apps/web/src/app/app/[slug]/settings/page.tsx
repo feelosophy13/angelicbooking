@@ -3,18 +3,18 @@ import type { Metadata } from "next";
 import { ChevronRight } from "lucide-react";
 import { asc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { requireAction } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
 import { Card, PageHeader } from "@/components/ui";
-import { settingsGroups } from "@/lib/nav";
+import { SETTINGS_ACTIONS, settingsGroups } from "@/lib/nav";
 
 export const metadata: Metadata = { title: "Settings" };
 
-/** A short, grouped directory. Each page explains itself; this one just helps you find it. */
+/** A short, grouped directory of the pages this person may open. Each page explains itself; this one just helps you find it. */
 export default async function SettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business, permissions } = await requireAnyAction(slug, ...SETTINGS_ACTIONS);
   const locations = await withTenant(business.id, (tx) => tx.select({ id: schema.locations.id }).from(schema.locations).orderBy(asc(schema.locations.name)));
-  const groups = settingsGroups(`/app/${slug}`, { ...business, locationCount: locations.length });
+  const groups = settingsGroups(`/app/${slug}`, permissions, { ...business, locationCount: locations.length });
   return (
     <>
       <PageHeader title="Settings" />

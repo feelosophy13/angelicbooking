@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Choose a number" };
 export default async function NewNumberPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ contains?: string; location?: string }> }) {
   const { slug } = await params;
   const { contains = "", location: locationId = "" } = await searchParams;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "integrations.manage");
   const location = locationId ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) })) : null;
   const existing = await withTenant(business.id, listNumbers);
   if (existing.some((n) => (n.locationId ?? null) === (location?.id ?? null))) redirect(`/app/${slug}/settings/messaging`);

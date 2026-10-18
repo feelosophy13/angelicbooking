@@ -9,6 +9,18 @@ export type NavItem = { href: string; label: string; iconName: string; exact?: b
 export type NavSectionDef = { title: string; items: NavItem[] };
 
 type Perms = Parameters<typeof can>[0];
+
+/**
+ * The permissions that open the Settings directory: each Settings page is gated by one of these, and the directory lists the entries the
+ * viewer may open. "business.manage" is the everyday settings; the rest were split out of it (2026-10-18) so an owner can hand over the
+ * settings without the money (billing.manage: Stripe, subscription), the keys (integrations.manage: API keys, text number) or the log.
+ */
+export const SETTINGS_ACTIONS: readonly Action[] = ["business.manage", "billing.manage", "integrations.manage", "audit.view", "members.manage"];
+export const canOpenSettings = (permissions: Perms) => SETTINGS_ACTIONS.some((a) => can(permissions, a));
+
+/** Settings → Payments for a viewer who may open it, else null (pages then say "ask the owner" instead of linking). */
+export const paymentsHrefFor = (slug: string, permissions: Perms): string | null => (can(permissions, "billing.manage") ? `/app/${slug}/settings/payments` : null);
+
 const it = (href: string, label: string, iconName: string, extra?: { exact?: boolean; exclude?: string[] }): NavItem => ({ href, label, iconName, ...extra });
 
 export function navSections(base: string, permissions: Perms): NavSectionDef[] {
@@ -54,11 +66,14 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       ...(ok("business.manage") ? [it(`${base}/loyalty`, "Loyalty & referrals", "Heart", { exclude: [`${base}/settings/loyalty`] })] : []),
       it(`${base}/reviews`, "Reviews", "Star"),
     ] },
-    { title: "", items: ok("business.manage") ? [it(`${base}/settings/api`, "API", "KeyRound"), it(`${base}/settings`, "Settings", "Settings", { exclude: [`${base}/settings/loyalty`, `${base}/settings/roles`, `${base}/settings/forms`, `${base}/settings/notifications`, `${base}/settings/api`] })] : [] },
+    { title: "", items: [
+      ...(ok("integrations.manage") ? [it(`${base}/settings/api`, "API", "KeyRound")] : []),
+      ...(canOpenSettings(permissions) ? [it(`${base}/settings`, "Settings", "Settings", { exclude: [`${base}/settings/loyalty`, `${base}/settings/roles`, `${base}/settings/forms`, `${base}/settings/notifications`, `${base}/settings/api`] })] : []),
+    ] },
   ].filter((s) => s.items.length > 0);
 }
 
-export type SettingsEntry = { href: string; title: string; blurb: string; status?: string };
+export type SettingsEntry = { href: string; title: string; blurb: string; status?: string; /** What opens the page; "business.manage" when omitted. */ action?: Action };
 export type SettingsGroup = { title: string; entries: SettingsEntry[] };
 
 export interface SettingsStatusSource {
@@ -71,17 +86,20 @@ export interface SettingsStatusSource {
   locationCount: number;
 }
 
-/** The Settings directory. Pass `status` to show each page's current state; omit it for a plain index (search). */
-export function settingsGroups(base: string, status?: SettingsStatusSource): SettingsGroup[] {
+/**
+ * The Settings directory, holding only the pages this viewer may open (so nobody is shown a link that ends in a permission error).
+ * Pass `status` to show each page's current state; omit it for a plain index (search).
+ */
+export function settingsGroups(base: string, permissions: Perms, status?: SettingsStatusSource): SettingsGroup[] {
   const s = status;
   const sb = `${base}/settings`;
-  return [
+  const groups: SettingsGroup[] = [
     {
       title: "Your business",
       entries: [
         { href: `${sb}/profile`, title: "Business profile", blurb: "Name, timezone, logo, colours, about text and links." },
         { href: `${sb}/locations`, title: "Locations", blurb: "Addresses, opening hours and tax rates.", status: s ? (s.locationCount === 1 ? "1 location" : `${s.locationCount} locations`) : undefined },
-        { href: `${sb}/roles`, title: "Roles & permissions", blurb: "What each role can see and do." },
+        { href: `${sb}/roles`, title: "Roles & permissions", blurb: "What each role can see and do.", action: "members.manage" },
       ],
     },
     {
@@ -99,10 +117,10 @@ export function settingsGroups(base: string, status?: SettingsStatusSource): Set
     {
       title: "Payments & billing",
       entries: [
-        { href: `${sb}/payments`, title: "Card payments", blurb: "Your Stripe account for cards, deposits and saved cards.", status: s ? (s.stripeChargesEnabled ? "connected" : "not connected") : undefined },
+        { href: `${sb}/payments`, title: "Card payments", blurb: "Your Stripe account for cards, deposits and saved cards.", status: s ? (s.stripeChargesEnabled ? "connected" : "not connected") : undefined, action: "billing.manage" },
         { href: `${sb}/refund-reasons`, title: "Refund reasons", blurb: "The list staff pick from when refunding; Reports group refunds by it." },
         { href: `${sb}/cancellation-reasons`, title: "Cancellation reasons", blurb: "The list staff pick from when cancelling an appointment; Reports group cancellations by it." },
-        { href: `${sb}/billing`, title: "Your plan", blurb: "Subscription, card on file and this month's usage." },
+        { href: `${sb}/billing`, title: "Your plan", blurb: "Subscription, card on file and this month's usage.", action: "billing.manage" },
       ],
     },
     {
@@ -116,11 +134,12 @@ export function settingsGroups(base: string, status?: SettingsStatusSource): Set
       title: "Data",
       entries: [
         { href: `${sb}/import`, title: "Import", blurb: "Bring clients, services and appointments from Vagaro." },
-        { href: `${sb}/api`, title: "API access", blurb: "Keys to read and manage your business from your own software." },
-        { href: `${sb}/audit`, title: "Activity log", blurb: "Who changed what, and when." },
+        { href: `${sb}/api`, title: "API access", blurb: "Keys to read and manage your business from your own software.", action: "integrations.manage" },
+        { href: `${sb}/audit`, title: "Activity log", blurb: "Who changed what, and when.", action: "audit.view" },
       ],
     },
   ];
+  return groups.map((g) => ({ ...g, entries: g.entries.filter((e) => can(permissions, e.action ?? "business.manage")) })).filter((g) => g.entries.length > 0);
 }
 
 /** Every page the ⌘K palette can jump to: the sidebar, common "new …" screens and the Settings directory. */
@@ -134,7 +153,7 @@ export function searchPages(base: string, permissions: Perms): { title: string; 
     ...(ok("inventory.manage") ? [{ title: "Receive stock", href: `${base}/inventory/receive`, keywords: "inventory delivery" }, { title: "Count stock", href: `${base}/inventory/count`, keywords: "inventory stocktake" }, { title: "Reorder", href: `${base}/inventory/reorder`, keywords: "inventory low stock purchase order" }, { title: "Purchase orders", href: `${base}/inventory/orders`, keywords: "inventory suppliers" }, { title: "Stock history", href: `${base}/inventory/history`, keywords: "inventory movements ledger log audit" }] : []),
     ...(ok("reports.view") ? [{ title: "Campaigns", href: `${base}/marketing`, keywords: "marketing email text" }, { title: "Promo codes", href: `${base}/marketing/promos`, keywords: "marketing discount" }] : []),
   ];
-  const settings = ok("business.manage") ? settingsGroups(base).flatMap((g) => g.entries.map((e) => ({ title: e.title === "Forms" || e.title === "Reviews" ? `${e.title} settings` : e.title, href: e.href, keywords: `settings ${g.title} ${e.blurb}` }))) : [];
+  const settings = settingsGroups(base, permissions).flatMap((g) => g.entries.map((e) => ({ title: e.title === "Forms" || e.title === "Reviews" ? `${e.title} settings` : e.title, href: e.href, keywords: `settings ${g.title} ${e.blurb}` })));
   const seen = new Set<string>();
   return [...nav, ...extras, ...settings].filter((p) => (seen.has(p.href) ? false : (seen.add(p.href), true)));
 }

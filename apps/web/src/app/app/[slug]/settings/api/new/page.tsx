@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "New API key" };
 export default async function NewApiKeyPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ replace?: string }> }) {
   const { slug } = await params;
   const { replace } = await searchParams;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "integrations.manage");
   const replacing = replace
     ? (await withTenant(business.id, (tx) => tx.select().from(schema.apiKeys).where(eq(schema.apiKeys.businessId, business.id)))).find((k) => k.id === replace && !k.revokedAt)
     : undefined;
