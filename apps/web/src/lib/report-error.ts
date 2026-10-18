@@ -23,10 +23,16 @@ export async function reportError(summary: string, err?: unknown, extra: Record<
       return;
     }
     const to = process.env.ERROR_EMAIL_TO || process.env.SUPPORT_EMAIL;
-    if (!to || !process.env.RESEND_API_KEY || !emailAllowed(summary)) return;
-    const { sendEmail } = await import("@/lib/notify/providers");
+    const key = process.env.RESEND_API_KEY;
+    const from = process.env.EMAIL_FROM;
+    if (!to || !key || !from || !emailAllowed(summary)) return;
+    // Resend called directly: this file is bundled into the edge instrumentation too, and the shared email client pulls in node-only modules.
     const body = JSON.stringify(payload, null, 2);
-    await sendEmail({ to, subject: `[angelic-booking] ${summary.slice(0, 120)}`, text: body, html: `<pre style="font:13px/1.4 ui-monospace,monospace;white-space:pre-wrap">${escapeHtml(body)}</pre>` });
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: [to], subject: `[angelic-booking] ${summary.slice(0, 120)}`, text: body, html: `<pre style="font:13px/1.4 ui-monospace,monospace;white-space:pre-wrap">${escapeHtml(body)}</pre>` }),
+    });
   } catch {
     /* never let reporting throw */
   }
