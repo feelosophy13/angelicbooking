@@ -116,6 +116,8 @@ export const businesses = pgTable("businesses", {
   // Per-business wording for text messages; keys are template names, values use
   // {first_name} {business} {service} {staff} {when} {manage_url} {review_url} placeholders.
   smsTemplates: jsonb("sms_templates").$type<Record<string, string>>().notNull().default(sql`'{}'::jsonb`),
+  // Saved replies the desk picks from in the Inbox: [{ title, body }], bodies use {first_name} {business} {next_appointment} {service} {staff}. Empty = the defaults.
+  quickReplies: jsonb("quick_replies").$type<{ title: string; body: string }[]>().notNull().default(sql`'[]'::jsonb`),
   // Optional custom hostname for the public booking page (e.g. book.angelicbeauty.com).
   customDomain: text("custom_domain").unique(),
   // Where the custom domain stands: none | pending (waiting for their DNS) | active | problem | manual (needs the platform team).
@@ -931,6 +933,8 @@ export const notifications = pgTable(
     // Carrier-reported outcome of a text (Twilio status callback): queued | sent | delivered | undelivered | failed. Null for email and until the first callback.
     deliveryStatus: text("delivery_status"),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    // Pictures attached to an outgoing text (MMS): [{ url, type }], public addresses Twilio fetches.
+    media: jsonb("media").$type<{ url: string; type: string }[]>().notNull().default(sql`'[]'::jsonb`),
     error: text("error"),
     campaignId: text("campaign_id"),
     // Set when a workflow step queued this message (Marketing → Automations), for the "why did this send" trail.

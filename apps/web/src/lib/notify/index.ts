@@ -172,7 +172,7 @@ export async function scheduleReminderFor(business: typeof schema.businesses.$in
 }
 
 /** Queue a one-off message (e.g. staff invitation) and send it after the response. */
-export async function queueOneOff(businessId: string, input: { channel: "email" | "sms"; template: string; recipient: string; subject?: string; body: string; clientId?: string | null; appointmentId?: string | null; locationId?: string | null }) {
+export async function queueOneOff(businessId: string, input: { channel: "email" | "sms"; template: string; recipient: string; subject?: string; body: string; clientId?: string | null; appointmentId?: string | null; locationId?: string | null; /** Pictures on a text (MMS). */ media?: { url: string; type: string }[] }) {
   const [row] = await withTenant(businessId, (tx) =>
     tx.insert(schema.notifications).values({ businessId, ...input }).returning({ id: schema.notifications.id }),
   );
@@ -328,7 +328,7 @@ async function send({ row: n, sender, email, consentBlock, unsubscribe }: Claime
   if (n.channel === "sms" && !sender) return { id: n.id, status: "skipped", error: "No verified text number yet (Settings → Text messaging)" };
   try {
     const headers = unsubscribe ? { "List-Unsubscribe": `<${unsubscribe}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } : undefined;
-    const r = n.channel === "email" ? await sendEmailPaced({ to: n.recipient, subject: n.subject ?? "", html: n.body, fromName: email?.fromName, replyTo: email?.replyTo, headers }) : await sendSms({ to: n.recipient, body: n.body, sender: sender! });
+    const r = n.channel === "email" ? await sendEmailPaced({ to: n.recipient, subject: n.subject ?? "", html: n.body, fromName: email?.fromName, replyTo: email?.replyTo, headers }) : await sendSms({ to: n.recipient, body: n.body, sender: sender!, media: n.media ?? [] });
     return { id: n.id, status: "sent", providerId: r.id };
   } catch (e) {
     if (e instanceof EmailRateLimitError) return { id: n.id, status: "failed", error: "Email provider busy", throttled: true };

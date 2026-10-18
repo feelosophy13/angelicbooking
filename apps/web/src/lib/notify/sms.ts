@@ -6,6 +6,7 @@
 import { eq } from "drizzle-orm";
 import { schema, type TenantDb } from "@angelic/db";
 import type { ApptContext } from "./templates";
+import { renderSms } from "./render";
 import { formatTime } from "@/lib/utils";
 
 export const SMS_TEMPLATE_KEYS = ["confirmation", "reminder", "rescheduled", "cancellation", "forms_nudge", "review_request"] as const;
@@ -39,12 +40,7 @@ export function smsVars(ctx: ApptContext, extra: { review_url?: string } = {}): 
   };
 }
 
-export function renderSms(template: string, vars: Record<string, string>): string {
-  return template
-    .replace(/\{(\w+)\}/g, (m, k: string) => (vars[k] == null ? m : vars[k]))
-    .replace(/[ \t]+/g, " ")
-    .trim();
-}
+export { renderSms };
 
 /** The wording for a template: the business's own text if set, else the default; extras (deposit, forms) appended once. */
 export function smsBody(business: { smsTemplates: Record<string, string> }, key: SmsTemplateKey, ctx: ApptContext, extra: { review_url?: string } = {}): string {

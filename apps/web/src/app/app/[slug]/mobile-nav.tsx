@@ -6,7 +6,7 @@ import { ExternalLink, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Wordmark } from "@/components/brand";
 
-export type NavSection = { title: string; items: { href: string; label: string; exact?: boolean; iconName: string; badge?: number }[] };
+export type NavSection = { title: string; items: { href: string; label: string; exact?: boolean; iconName: string; /** A count drawn after the label (the inbox's keeps itself current). */ badge?: React.ReactNode }[] };
 
 /**
  * Phone navigation: a top bar with the wordmark and a menu button that opens a
@@ -59,7 +59,7 @@ export function MobileNav({ sections, businessName, userName, tabs, bookingUrl, 
                     {s.items.map((n) => (
                       <Link key={n.href} href={n.href} className={cn("flex items-center gap-3 rounded-lg px-3 py-2.5 text-[15px]", isActive(n.href, n.exact) ? "bg-brand-50 font-medium text-brand-700" : "text-stone-700 hover:bg-stone-100")}>
                         <Icon name={n.iconName} className="h-5 w-5 text-stone-400" />
-                        {n.label}{n.badge ? <span className="ml-auto rounded-full bg-brand-600 px-1.5 text-[11px] font-medium text-white">{n.badge}</span> : null}
+                        {n.label}{n.badge ?? null}
                       </Link>
                     ))}
                   </div>

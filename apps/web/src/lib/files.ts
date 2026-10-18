@@ -19,8 +19,8 @@ const IMMUTABLE = "public, max-age=31536000, immutable";
 
 export class FileError extends Error {}
 
-/** Branding and catalog pictures: anyone may read them, and with R2 they live on the public CDN. */
-export const PUBLIC_KINDS = new Set(["logo", "cover", "product", "package", "service", "category", "staff"]);
+/** Branding and catalog pictures: anyone may read them, and with R2 they live on the public CDN. A picture texted to a client ("mms") is public too, under an unguessable id, because the carrier fetches it. */
+export const PUBLIC_KINDS = new Set(["logo", "cover", "product", "package", "service", "category", "staff", "mms"]);
 /** Kinds that only a signed-in member (or, for form files, the client who submitted them) may read. Client photos are faces. */
 export const PRIVATE_KINDS = new Set(["form", "signature", "visit", "client"]);
 /** Every kind that is a served picture or client file; anything else in `files` (staged imports) is never served. */
@@ -46,7 +46,7 @@ async function saveFile(businessId: string, kind: string, p: { data: Buffer; con
   return { id: row!.id, url: appUrl(`/api/files/${row!.id}`) };
 }
 
-export async function storeImage(businessId: string, kind: "logo" | "cover" | "product" | "package" | "service" | "category" | "staff" | "client", file: File): Promise<{ id: string; url: string }> {
+export async function storeImage(businessId: string, kind: "logo" | "cover" | "product" | "package" | "service" | "category" | "staff" | "client" | "mms", file: File): Promise<{ id: string; url: string }> {
   if (!file || file.size === 0) throw new FileError("Choose an image file.");
   if (!ALLOWED.has(file.type)) throw new FileError("Use a PNG, JPEG, WebP, GIF or SVG image.");
   if (file.size > MAX_FILE_BYTES) throw new FileError("Images must be 8 MB or smaller.");

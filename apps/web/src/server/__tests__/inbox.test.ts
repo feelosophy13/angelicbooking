@@ -3,7 +3,7 @@ import "../../../../../packages/db/src/env";
 import { beforeAll, describe, expect, it } from "vitest";
 import { getSql, schema, withTenant } from "@angelic/db";
 import { reachable, setupKit } from "../../lib/__tests__/api-test-kit";
-import { addNumberAsClient, classifyKeyword, clientByPhone, listConversations, markConversationRead } from "../inbound";
+import { addNumberAsClient, classifyKeyword, clientByPhone, clientThread, conversationContext, listConversations, markConversationRead, markConversationUnread } from "../inbound";
 import { recordDeliveryStatus } from "../delivery-status";
 
 const up = await reachable();
@@ -40,6 +40,37 @@ describe.skipIf(!up)("inbox conversations", () => {
     expect(list.find((c) => c.key === "tel:+15555550199")?.unread).toBe(1);
     await markConversationRead(kit.A, "tel:+15555550199");
     expect((await listConversations(kit.A)).items.every((c) => c.unread === 0)).toBe(true);
+  });
+
+  it("marks a conversation unread again (its latest text only) and counts it in the filter", async () => {
+    expect(await markConversationUnread(kit.A, ann)).toBe(true);
+    const r = await listConversations(kit.A, { filter: "unread" });
+    expect(r.items.map((c) => c.key)).toEqual([ann]);
+    expect(r.items[0]?.unread).toBe(1);
+    expect(r.unread).toBe(1);
+    expect(await markConversationUnread(kit.A, "tel:+15555550000")).toBe(false);
+    await markConversationRead(kit.A, ann);
+  });
+
+  it("knows who still needs a reply and shows the next booked visit beside them", async () => {
+    const [loc] = await withTenant(kit.A, (tx) => tx.insert(schema.locations).values({ businessId: kit.A, name: "Main", isDefault: true }).returning());
+    const [st] = await withTenant(kit.A, (tx) => tx.insert(schema.staff).values({ businessId: kit.A, displayName: "Jo", fullName: "Jo Test" }).returning());
+    const start = new Date(Date.now() + 3 * 86_400_000);
+    const [appt] = await withTenant(kit.A, (tx) => tx.insert(schema.appointments).values({ businessId: kit.A, locationId: loc!.id, clientId: ann, status: "booked", source: "staff" }).returning());
+    await withTenant(kit.A, (tx) => tx.insert(schema.appointmentItems).values({ businessId: kit.A, appointmentId: appt!.id, staffId: st!.id, serviceName: "Lash fill", startAt: start, endAt: new Date(start.getTime() + 3_600_000), priceCents: 8000 }));
+    const list = (await listConversations(kit.A)).items;
+    expect(list.find((c) => c.key === ann)?.nextAt?.getTime()).toBe(start.getTime());
+    expect(list.find((c) => c.key === ann)?.lastDir).toBe("in");
+    const ctx = await conversationContext(kit.A, ann);
+    expect(ctx.next).toMatchObject({ id: appt!.id, service: "Lash fill", staff: "Jo" });
+    expect(ctx.last).toBeNull();
+    expect(ctx.completed).toBe(0);
+    // A reply from the desk is the newest message: the client no longer needs a reply.
+    await withTenant(kit.A, (tx) => tx.insert(schema.notifications).values({ businessId: kit.A, clientId: ann, channel: "sms", template: "staff_reply", recipient: "+15555550177", body: "Sure, 3pm works", status: "sent", sentAt: new Date(Date.now() + 1000), scheduledAt: new Date(Date.now() + 1000) }));
+    expect((await listConversations(kit.A, { filter: "needs_reply" })).items.some((c) => c.key === ann)).toBe(false);
+    const thread = await clientThread(kit.A, ann);
+    expect(thread.map((m) => m.dir)).toEqual(["in", "in", "out"]);
+    expect(thread[2]).toMatchObject({ template: "staff_reply", status: "sent", deliveryStatus: null, error: null });
   });
 });
 

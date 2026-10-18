@@ -66,7 +66,7 @@ export function LinkButton({
 }
 
 /** Every password field is an <Input type="password">, which gets a show / hide button (DESIGN.md, "Forms"). */
-export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...props }: React.ComponentProps<"input">) {
   const fieldId = useFieldId();
   const [shown, setShown] = React.useState(false);
   const isPassword = props.type === "password";
@@ -127,7 +127,7 @@ export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLS
 }
 
 /** Multi-line text. Defaults to four visible lines and grows with the user's drag; pass `rows` for more. */
-export function Textarea({ className, rows = 4, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea({ className, rows = 4, ...props }: React.ComponentProps<"textarea">) {
   const fieldId = useFieldId();
   return (
     <textarea

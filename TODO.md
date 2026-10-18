@@ -853,9 +853,27 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       whole thread and a reply box. Unknown numbers show read-only. Needs no migration (reads `inbound_messages` + `notifications`).
 - [x] Inbox unread badge in the sidebar (desktop + mobile menu), 2026-10-15.
 - [x] Messaging gaps fixed 2026-10-15 (migration 0086): delivery receipts (Twilio status callback `/api/twilio/status`; "Delivered" badge, undelivered texts become Failed with a plain reason and "Send again"); picture texts (MMS) stored and shown; client matched by last 10 digits; STOP in short messages ("please stop"), CANCEL/END/QUIT/YES only as the whole message; HELP answered on non-toll-free numbers; owner emailed when a conversation first goes unread; Inbox has search, paging, "not a client" / "opted out" / "not delivered" markers and "Add as client" for unknown numbers; reply box shows the text count; the old replies box on Settings → Messages is gone. Untested against live Twilio.
-- [ ] Inbox follow-ups: email in the same thread (needs inbound email via Resend), assign a conversation to a
-      staff member, saved quick replies, start a new conversation from the inbox, sending pictures, a turn-off for the new-reply email,
-      a separate permission for reading client texts (today `clients.read`), quiet hours for staff replies.
+- [x] Inbox v2 for the front desk, 2026-10-18 (migration 0113: `businesses.quick_replies`, `notifications.media`). Walked as a
+      receptionist on demo-salon first (gaps in the session notes). Two panes from `lg` (list left, conversation right; two pages on a
+      phone). The list is unread-first, shows "You:" previews, each client's next visit, "needs reply", opted-out and not-a-client markers,
+      filters (All / Unread / Needs reply / Opted out), search, and keeps itself live (feed route polled every 30 s and on each open);
+      ↑ ↓ / J K switch conversations, / jumps to search. A conversation reads as a chat (day separators, newest at the bottom, composer
+      pinned) with the client's number, next visit, last visit and visit count above it and Client page / Book / Mark unread beside;
+      automated texts (reminder, confirmation…) sit in the thread with a small label; every outgoing text shows its state in words
+      (Waiting to send, Sending, Sent, Delivered, Not delivered · reason, Not sent · reason, Trying again) with "Send again" where it
+      stopped; the thread refreshes itself every 20 s. Composer: Enter sends (Shift+Enter newline), quick replies as one-press chips with
+      {first_name} {next_appointment} {service} {staff} {business} filled in, one picture attached per text (stored as a public JPEG,
+      sent as MMS via Twilio MediaUrl), text count. "New message" (header) opens a client picker that lands on the conversation; the
+      client page's Text messages card shows the last three and links into the Inbox (its duplicate reply form is gone). Quick replies
+      are edited under Settings → Text wording (starter set until the business saves its own). No verified number, no phone, opted out
+      or STOP each collapse the composer to one grey line (owner gets the Settings link). The sidebar badge updates itself every 30 s.
+      The demo seed now gives demo-salon a verified (fake) number plus a sent reminder and two desk replies, so the Inbox can be walked;
+      demo sends are still skipped ("Not sent · Demo business: nothing is sent"). Tests: `lib/__tests__/inbox-logic.test.ts`,
+      `server/__tests__/inbox.test.ts`. Untested against live Twilio (MMS fetch of `/api/files/<id>` needs the public app address).
+- [ ] Inbox follow-ups: email in the same thread (needs inbound email via Resend), assign or snooze a conversation (needs a
+      conversations table; not built), a turn-off for the new-reply email, a separate permission for reading client texts (today
+      `clients.read`), quiet hours for staff replies, more than one picture per text, delivery receipts for MMS pictures sent from a
+      number without MMS support (Twilio returns 21623/21620 as a plain "Carrier error").
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 

@@ -35,8 +35,8 @@ import { getClientStoreCredit } from "@/server/store-credit";
 import { freezeMembershipAction, resumeMembershipAction, turnOffAutoRenew, turnOnAutoRenew } from "./membership-actions";
 import { settleMemberships } from "@/server/offers";
 import { isMembershipInterval, periodNoun } from "@angelic/core";
-import { replyToClient } from "./messages-actions";
 import { clientThread } from "@/server/inbound";
+import { deliveryLabel } from "@/lib/inbox";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextFor } from "@/server/locations";
 import { canWriteLashMaps, lashMapsFor } from "@/server/lash-maps";
@@ -405,28 +405,23 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
           ) : null}
           {thread.length || canText ? (
             <Card className="p-4 text-sm">
-              <h2 className="mb-2 font-medium">Text messages</h2>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h2 className="font-medium">Text messages</h2>
+                {/* Texting happens in one place, the Inbox: the whole thread, quick replies, pictures and delivery state live there. */}
+                <Link href={`/app/${slug}/inbox/${client.id}`} className="text-xs text-brand-700 hover:underline">{thread.length ? (canText ? "Open conversation" : "Open in Inbox") : "Send a text"}</Link>
+              </div>
               {thread.length === 0 ? <p className="text-stone-500">No texts yet.</p> : (
-                <ul className="max-h-64 space-y-1.5 overflow-y-auto">
-                  {thread.map((m) => (
+                <ul className="space-y-1.5">
+                  {thread.slice(-3).map((m) => (
                     <li key={`${m.dir}${m.id}`} className={m.dir === "in" ? "mr-6" : "ml-6 text-right"}>
-                      <span className={`inline-block rounded-lg px-2 py-1 text-left text-xs ${m.dir === "in" ? "bg-stone-100 text-stone-800" : "bg-brand-50 text-brand-900"}`}>{m.body}</span>
-                      <span className="block text-[10px] text-stone-400">{fmtDate.format(m.at)} · {m.dir === "in" ? "client" : m.status}</span>
+                      <span className={`inline-block rounded-lg px-2 py-1 text-left text-xs ${m.dir === "in" ? "bg-stone-100 text-stone-800" : "bg-brand-50 text-brand-900"}`}>{m.body || "Picture"}</span>
+                      <span className="block text-[10px] text-stone-400">{fmtDate.format(m.at)} · {m.dir === "in" ? "client" : deliveryLabel(m).text}</span>
                     </li>
                   ))}
                 </ul>
               )}
-              {canText ? (
-                <Disclosure variant="inset" title={thread.length ? "Reply" : "Send a text"} open={thread.length > 0} className="mt-2">
-                  <ActionForm action={replyToClient}>
-                    <input type="hidden" name="slug" value={slug} />
-                    <input type="hidden" name="clientId" value={client.id} />
-                    <Field label="" name="body"><Textarea name="body" rows={4} placeholder="Reply by text…" /></Field>
-                    <SubmitButton size="sm" variant="secondary" pendingText="Sending…">Send text</SubmitButton>
-                  </ActionForm>
-                </Disclosure>
-              ) : write ? (
-                <p className="mt-2 text-xs text-stone-500">{!client.phone ? "No mobile number to reply to." : !client.smsOptIn ? "Opted out of texts, so nothing can be sent." : <>Replies need a verified text number. <Link href={`/app/${slug}/settings/messaging`} className="underline">Settings → Text number</Link></>}</p>
+              {!canText && write ? (
+                <p className="mt-2 text-xs text-stone-500">{!client.phone ? "No mobile number to text." : !client.smsOptIn ? "Opted out of texts, so nothing can be sent." : <>Texts need a verified text number. <Link href={`/app/${slug}/settings/messaging`} className="underline">Settings → Text number</Link></>}</p>
               ) : null}
             </Card>
           ) : null}

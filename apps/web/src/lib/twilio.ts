@@ -196,13 +196,14 @@ export async function fetchTollfreeVerification(sid: string): Promise<TollfreeVe
 // Messages
 // ---------------------------------------------------------------------------
 
-export async function sendMessage(input: { to: string; body: string; from?: string; messagingServiceSid?: string; statusCallback?: string }): Promise<{ sid: string }> {
+export async function sendMessage(input: { to: string; body: string; from?: string; messagingServiceSid?: string; statusCallback?: string; /** Public picture addresses Twilio fetches and sends as MMS (up to 10). */ mediaUrls?: string[] }): Promise<{ sid: string }> {
   const r = await request<{ sid: string }>("POST", `${account()}/Messages.json`, {
     To: input.to,
-    Body: input.body,
+    Body: input.body || undefined,
     From: input.messagingServiceSid ? undefined : input.from,
     MessagingServiceSid: input.messagingServiceSid,
     StatusCallback: input.statusCallback,
+    MediaUrl: input.mediaUrls?.length ? input.mediaUrls.slice(0, 10) : undefined,
   });
   return { sid: r.sid };
 }

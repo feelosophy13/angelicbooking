@@ -62,8 +62,8 @@ export async function sendEmail(input: { to: string; subject: string; html: stri
 
 export type SmsSender = { from?: string; messagingServiceSid?: string };
 
-export async function sendSms(input: { to: string; body: string; sender: SmsSender }): Promise<{ id: string }> {
+export async function sendSms(input: { to: string; body: string; sender: SmsSender; media?: { url: string; type: string }[] }): Promise<{ id: string }> {
   // The callback reports carrier delivery (delivered / undelivered) to /api/twilio/status.
-  const r = await sendMessage({ to: input.to, body: input.body, ...input.sender, statusCallback: appUrl("/api/twilio/status") });
+  const r = await sendMessage({ to: input.to, body: input.body, ...input.sender, statusCallback: appUrl("/api/twilio/status"), mediaUrls: input.media?.map((m) => m.url) });
   return { id: r.sid };
 }

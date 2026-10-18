@@ -852,6 +852,16 @@ async function main() {
       { businessId, clientId: clientIds[12]!.id, fromNumber: phoneOf(12), toNumber: "+17035550142", body: "Thank you! My lashes look amazing.", receivedAt: hoursAgo(50), readAt: hoursAgo(48) },
       { businessId, clientId: clientIds[18]!.id, fromNumber: phoneOf(18), toNumber: "+17035550142", body: "Do you have any openings next week for a facial?", receivedAt: hoursAgo(75), readAt: hoursAgo(70) },
     ]);
+    // A verified text number, so the Inbox can be used end to end (sends are skipped for demo businesses, never delivered), and a few
+    // texts the salon sent: an automated reminder and two replies typed at the desk, so a thread shows both kinds.
+    await tx.insert(schema.messagingNumbers).values({ businessId, phoneNumber: "+17035550142", providerSid: `PNdemo${businessId.replace(/-/g, "").slice(0, 24)}`, status: "verified", verifiedAt: agoDays(60), purchasedAt: agoDays(70), billingStartsAt: agoDays(70) });
+    const sent = (clientIdx: number, template: string, body: string, hours: number) => ({ businessId, clientId: clientIds[clientIdx]!.id, channel: "sms" as const, template, recipient: phoneOf(clientIdx), body, status: "sent" as const, scheduledAt: hoursAgo(hours), sentAt: hoursAgo(hours), deliveryStatus: "delivered", deliveredAt: hoursAgo(hours - 0.01), createdAt: hoursAgo(hours) });
+    await tx.insert(schema.notifications).values([
+      sent(3, "reminder", `${NAME} reminder: your appointment is tomorrow. Reply here if anything changes.`, 26),
+      sent(12, "reminder", `${NAME} reminder: your appointment is tomorrow. Reply here if anything changes.`, 74),
+      sent(12, "staff_reply", "Aw, thank you! So glad you love them. See you for your fill in two weeks.", 47),
+      sent(18, "staff_reply", "Yes! We have Tuesday 2pm or Thursday 11am. Which works?", 69),
+    ]);
 
     // --- Group classes: sessions with enrolled clients (one already held)
     for (const [ci, c] of (post.classPlan ?? []).entries()) {

@@ -12,7 +12,7 @@ import sharp from "sharp";
 export class ImageError extends Error {}
 
 /** Longest side, in pixels, by what the picture is for. */
-export const MAX_SIDE: Record<string, number> = { cover: 2000, logo: 800, staff: 800, client: 800, form: 2000, visit: 2000, thumb: 640 };
+export const MAX_SIDE: Record<string, number> = { cover: 2000, logo: 800, staff: 800, client: 800, form: 2000, visit: 2000, thumb: 640, mms: 1200 };
 export const DEFAULT_MAX_SIDE = 1600;
 export const MAX_SVG_BYTES = 512 * 1024;
 
@@ -35,6 +35,8 @@ export async function prepareImage(kind: string, input: Buffer, contentType: str
     const pipeline = sharp(input, { limitInputPixels: 60_000_000, animated: contentType === "image/gif", ...(svg ? { density: 300 } : {}) })
       .rotate() // honour the camera's orientation before the metadata is dropped
       .resize({ width: max, height: max, fit: "inside", withoutEnlargement: true });
+    // A picture texted to a client goes as JPEG: every phone and carrier shows it, which is not true of WebP over MMS.
+    if (kind === "mms") return { data: await pipeline.flatten({ background: "#fff" }).jpeg({ quality: 82 }).toBuffer(), contentType: "image/jpeg", ext: "jpg", resized: true };
     // Screenshots, logos and graphics (PNG) stay crisp as lossless WebP; photos and animations use lossy.
     const data = await (contentType === "image/png" || svg ? pipeline.webp({ lossless: true }) : pipeline.webp({ quality: 82 })).toBuffer();
     return { data, contentType: "image/webp", ext: "webp", resized: true };
