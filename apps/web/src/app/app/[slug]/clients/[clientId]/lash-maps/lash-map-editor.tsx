@@ -164,9 +164,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
         <Checkbox label="Right eye is set differently" hint={right ? "Drawn as you see them from behind the client's head." : "Starts as a copy of this map."} checked={right != null} onChange={(e) => toggleRight(e.target.checked)} />
       </div>
 
-      {/* On screens with room for it (tablet width and 700px tall), the diagram stays in view while the zone's settings scroll below it, so
-          each change shows as it's made. Shorter screens scroll it away rather than have it cover the controls. */}
-      <div className="rounded-lg border border-stone-200 bg-white p-2 [@media(min-width:768px)_and_(min-height:700px)]:sticky [@media(min-width:768px)_and_(min-height:700px)]:top-2 [@media(min-width:768px)_and_(min-height:700px)]:z-10 [@media(min-width:768px)_and_(min-height:700px)]:shadow-sm">
+      <div className="rounded-lg border border-stone-200 bg-white p-2">
         {right ? <Chips options={[{ value: "left", label: "Left eye" }, { value: "right", label: "Right eye" }]} value={eye} onChange={(v) => switchEye(v as "left" | "right")} /> : null}
         <LashMapDiagram zones={zones} selected={sel} onSelect={select} mirror={mirror} className="mx-auto max-w-md" />
         <ol className="mt-2 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${zones.length}, minmax(0, 1fr))` }}>

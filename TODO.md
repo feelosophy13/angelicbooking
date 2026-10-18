@@ -1076,8 +1076,7 @@ runs several salons on separate accounts.
       Each zone and spike has a colour (blank is black; presets or a typed name), drawn on the lashes and listed
       under the diagram ("Blue: zones 6, 7"). Still in notes: hybrid ratio, layering, lift, lash brand/material,
       adhesive, lower lashes.
-- [x] Editor layout (2026-10-18): the diagram stays in view while the zone's settings scroll (tablet width and 700px
-      tall or more); one "Copy to all zones" (everything but length) replaces the per-field links; shape and
+- [x] Editor layout (2026-10-18): one "Copy to all zones" (everything but length) replaces the per-field links; shape and
       colour fold into a section that opens on zones using them; "Fill lengths from a style" (Natural, Cat eye,
       Doll eye, Squirrel, Open eye) from a longest length; bigger + markers for spikes.
 - [x] Spike editing (2026-10-18): a "Spikes" row under the zone buttons ("3–4 · 12 mm") opens each spike; the spike
