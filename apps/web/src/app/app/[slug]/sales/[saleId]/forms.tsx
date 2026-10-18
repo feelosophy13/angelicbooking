@@ -82,13 +82,22 @@ export function DiscountForm({ action, promoAction, removePromoAction, slug, sal
 
 export function TipsForm({ action, slug, saleId, staff, current, currentMethods = {}, baseCents, choices = [], currency = "USD" }: { action: Action; slug: string; saleId: string; staff: { id: string; name: string }[]; current: Record<string, number>; /** How each tip already on the ticket was handed over ("" = same as the payment). */ currentMethods?: Record<string, "cash" | "card" | "">; /** Everyone who could receive a tip, offered when nobody is credited on the ticket yet (a products-only sale). */ choices?: { id: string; name: string }[]; /** What a percentage tip is worked out on: the goods after any discount, before tax. */ baseCents: number; currency?: string }) {
   const [state, act, pending] = useActionState(action, undefined);
-  const initial: Record<string, string> = {};
-  // No default person: a tip nobody is credited for has to be given to someone on purpose.
-  const [who, setWho] = useState("");
+  const money = (c: number) => new Intl.NumberFormat("en-US", { style: "currency", currency }).format(c / 100);
   const nobody = staff.length === 0;
+  const hasTips = Object.values(current).some((c) => c > 0);
+  // One person: a preset fills their tip; several: it tips the whole ticket, split by who earned the revenue.
+  const target = staff.length === 1 ? staff[0]!.id : "";
+  const presets = baseCents > 0 ? [15, 20, 25] : [];
+  type Mode = "none" | "custom" | `${number}`;
+  // The tips already on the ticket decide the opening mode: a preset when they match one exactly, else the amounts as typed.
+  const matching = presets.find((pct) => { const want = Math.round((baseCents * pct) / 100); return target ? current[target] === want && Object.values(current).reduce((a, b) => a + b, 0) === want : false; });
+  const [mode, setMode] = useState<Mode>(hasTips ? (matching ? `${matching}` : "custom") : "none");
+  const initial: Record<string, string> = {};
   for (const x of staff) initial[x.id] = current[x.id] ? (current[x.id]! / 100).toFixed(2) : "";
   initial[""] = "";
   const [vals, setVals] = useState(initial);
+  // No default person: a tip nobody is credited for has to be given to someone on purpose.
+  const [who, setWho] = useState("");
   // How each tip is handed over: cash or card, or "same as the payment" (payroll then splits it by how the sale was paid).
   const [by, setBy] = useState<Record<string, string>>({ ...currentMethods });
   const setMethod = (k: string, v: string) => setBy((m) => ({ ...m, [k]: v }));
@@ -101,57 +110,72 @@ export function TipsForm({ action, slug, saleId, staff, current, currentMethods 
       </Select>
     </Field>
   );
-  // One person: the preset fills their field; several: it fills the whole-ticket field, which is split by who earned the revenue.
-  const target = staff.length === 1 ? staff[0]!.id : "";
-  const fill = (pct: number) => setVals((v) => {
-    const next: Record<string, string> = {};
-    for (const k of Object.keys(v)) next[k] = "";
-    next[target] = pct ? ((Math.round((baseCents * pct) / 100)) / 100).toFixed(2) : "";
-    return next;
-  });
-  const money = (c: number) => new Intl.NumberFormat("en-US", { style: "currency", currency }).format(c / 100);
+  const pct = mode !== "none" && mode !== "custom" ? Number(mode) : 0;
+  const presetCents = Math.round((baseCents * pct) / 100);
+  const options: { value: Mode; label: React.ReactNode }[] = [
+    { value: "none", label: "No tip" },
+    ...presets.map((p) => ({ value: `${p}` as Mode, label: <>{p}% <span className="text-xs opacity-70">{money(Math.round((baseCents * p) / 100))}</span></> })),
+    { value: "custom", label: "Other amount" },
+  ];
   return (
     <form action={act} className="space-y-2">
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
-      {baseCents > 0 ? (
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Tip presets">
-          {[0, 15, 20, 25].map((pct) => (
-            <button key={pct} type="button" onClick={() => fill(pct)} className="rounded-lg border border-stone-300 bg-white px-2.5 py-1 text-sm hover:bg-stone-50">
-              {pct ? <>{pct}% <span className="text-xs text-stone-500">{money(Math.round((baseCents * pct) / 100))}</span></> : "No tip"}
-            </button>
-          ))}
-        </div>
+      <Segmented label="Tip" value={mode} onChange={setMode} options={options} />
+      {pct > 0 ? (
+        nobody && choices.length ? (
+          <div className="grid grid-cols-[1fr_9.5rem] gap-2">
+            <Field label={`Tip ${money(presetCents)} for`}>
+              <Select value={who} required onChange={(e) => setWho(e.target.value)}>
+                <option value="" disabled>Choose who…</option>
+                {choices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </Field>
+            {who ? <input type="hidden" name={`tip_${who}`} value={(presetCents / 100).toFixed(2)} /> : null}
+            {tipBy(who)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-[1fr_9.5rem] items-end gap-2">
+            <p className="pb-2 text-sm">Tip {money(presetCents)}{staff.length === 1 ? ` for ${staff[0]!.name}` : " on the whole ticket, split by who earned the revenue"}</p>
+            <input type="hidden" name={`tip_${target}`} value={(presetCents / 100).toFixed(2)} />
+            {tipBy(target)}
+          </div>
+        )
       ) : null}
-      {staff.map((s) => (
-        <div key={s.id} className="grid grid-cols-[1fr_9.5rem] gap-2">
-          <Field label={`Tip for ${s.name}`}>
-            <Input name={`tip_${s.id}`} inputMode="decimal" placeholder="0" value={vals[s.id] ?? ""} onChange={(e) => setVals((v) => ({ ...v, [s.id]: e.target.value }))} />
-          </Field>
-          {tipBy(s.id)}
-        </div>
-      ))}
-      {nobody && choices.length ? (
-        <div className="grid grid-cols-[1fr_7rem_9.5rem] gap-2">
-          <Field label="Tip for">
-            <Select value={who} required={(vals[""] ?? "").trim() !== ""} onChange={(e) => { setWho(e.target.value); }}>
-              <option value="" disabled>Choose who…</option>
-              {choices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </Select>
-          </Field>
-          <Field label="Amount"><MoneyInput name={who ? `tip_${who}` : undefined} value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} /></Field>
-          {tipBy(who)}
-        </div>
-      ) : staff.length > 1 ? (
-        <div className="grid grid-cols-[1fr_9.5rem] gap-2">
-          <Field label="Tip on the whole ticket (split by who earned the revenue)">
-            <MoneyInput name="tip_" value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} />
-          </Field>
-          {tipBy("")}
-        </div>
+      {mode === "custom" ? (
+        <>
+          {staff.map((s) => (
+            <div key={s.id} className="grid grid-cols-[1fr_9.5rem] gap-2">
+              <Field label={`Tip for ${s.name}`}>
+                <MoneyInput name={`tip_${s.id}`} value={vals[s.id] ?? ""} onChange={(e) => setVals((v) => ({ ...v, [s.id]: e.target.value }))} />
+              </Field>
+              {tipBy(s.id)}
+            </div>
+          ))}
+          {nobody && choices.length ? (
+            <div className="grid grid-cols-[1fr_7rem_9.5rem] gap-2">
+              <Field label="Tip for">
+                <Select value={who} required={(vals[""] ?? "").trim() !== ""} onChange={(e) => setWho(e.target.value)}>
+                  <option value="" disabled>Choose who…</option>
+                  {choices.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              </Field>
+              <Field label="Amount"><MoneyInput name={who ? `tip_${who}` : undefined} value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} /></Field>
+              {tipBy(who)}
+            </div>
+          ) : staff.length > 1 ? (
+            <div className="grid grid-cols-[1fr_9.5rem] gap-2">
+              <Field label="Tip on the whole ticket (split by who earned the revenue)">
+                <MoneyInput name="tip_" value={vals[""] ?? ""} onChange={(e) => setVals((v) => ({ ...v, "": e.target.value }))} />
+              </Field>
+              {tipBy("")}
+            </div>
+          ) : null}
+        </>
       ) : null}
       {state?.error ? <Notice>{state.error}</Notice> : null}
-      <Button type="submit" size="sm" variant="secondary" disabled={pending}>Save tips</Button>
+      {/* "No tip" with nothing on the ticket has nothing to save; with tips on it, saving clears them. */}
+      {mode !== "none" || hasTips ? <Button type="submit" size="sm" variant="secondary" disabled={pending}>{mode === "none" ? "Remove tips" : "Save tips"}</Button> : null}
     </form>
   );
 }

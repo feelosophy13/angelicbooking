@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { StatusBadge } from "@/components/status-badge";
-import { ConfirmSubmit } from "@/components/form";
+import { ConfirmSubmit, Field } from "@/components/form";
 import { dateTime } from "@/lib/format";
 import { notFound } from "next/navigation";
 import { can, isMembershipInterval, periodNoun } from "@angelic/core";
@@ -10,7 +10,7 @@ import { getSale, isOwnSale, refundableLines } from "@/server/sales";
 import { seesOwnOnly } from "@/lib/appointment-access";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForSale, validAtLocation } from "@/server/locations";
-import { MapPin } from "lucide-react";
+import { MapPin, X } from "lucide-react";
 import { formatMoney, shiftISODate } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Select, MoneyInput } from "@/components/ui";
 
@@ -34,6 +34,7 @@ import { asc, eq } from "drizzle-orm";
 import { instantToISODate } from "@angelic/core";
 import { DiscountForm, LateTipForm, RefundForm, RefundReasonEditor, SaleNoteForm, SendReceiptForm, TipsForm } from "./forms";
 import { AddToTicket, TakePayment } from "./add-and-pay";
+import { LineRow } from "./line-row";
 import { pointsBalance } from "@/server/loyalty";
 import { storeCreditBalance } from "@/server/store-credit";
 import { listRefundReasons } from "@/server/refund-reasons";
@@ -133,7 +134,33 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
             <table className="w-full text-sm">
               <tbody className="divide-y divide-stone-100">
                 {goods.map((l) => (
-                  <tr key={l.id}>
+                  <LineRow
+                    key={l.id}
+                    editor={open && l.kind !== "tip" && l.creditCents === 0 ? (
+                      <form action={editLine} className="flex flex-wrap items-end gap-2 rounded-lg bg-stone-50 p-3">
+                        <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="lineId" value={l.id} />
+                        {canDiscount ? <Field label="Unit price" className="w-32"><MoneyInput name="price" defaultValue={(l.unitCents / 100).toFixed(2)} /></Field> : null}
+                        {l.kind === "product" ? <Field label="Quantity" className="w-24"><Input name="quantity" type="number" min={1} max={99} defaultValue={l.quantity} /></Field> : null}
+                        {ownOnly ? null : (
+                          <Field label="Staff credit" className="w-48">
+                            <Select name="staffId" defaultValue={l.staffId ?? ""}>
+                              <option value="">No staff credit</option>
+                              {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
+                            </Select>
+                          </Field>
+                        )}
+                        <Button type="submit" size="sm" variant="secondary" className="h-10">Save</Button>
+                      </form>
+                    ) : undefined}
+                    remove={open ? (
+                      <form action={deleteLine}>
+                        <input type="hidden" name="slug" value={slug} />
+                        <input type="hidden" name="saleId" value={sale.id} />
+                        <input type="hidden" name="lineId" value={l.id} />
+                        <button className="rounded-md p-1.5 text-stone-400 hover:bg-stone-100 hover:text-red-600" aria-label="Remove line" title="Remove"><X className="h-3.5 w-3.5" aria-hidden /></button>
+                      </form>
+                    ) : undefined}
+                  >
                     <td className="py-2">
                       <p>{l.name}{l.quantity > 1 ? ` × ${l.quantity}` : ""}{l.memberDiscountBps ? <span className="ml-1 text-xs text-emerald-700">member {l.memberDiscountBps / 100}% off</span> : null}</p>
                       <p className="text-xs text-stone-500">{[l.kind, staff.find((s) => s.id === l.staffId)?.displayName, l.taxable ? "taxable" : null].filter(Boolean).join(" · ")}</p>
@@ -154,34 +181,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         </div>
                       ) : null}
                     </td>
-                    <td className="w-10 py-2 text-right">
-                      {open && l.kind !== "tip" && l.creditCents === 0 ? (
-                        <details className="mb-1 text-left">
-                          <summary className="cursor-pointer text-xs text-stone-500 hover:text-stone-800">Edit</summary>
-                          <form action={editLine} className="mt-1 flex w-56 flex-col gap-1">
-                            <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} /><input type="hidden" name="lineId" value={l.id} />
-                            {canDiscount ? <MoneyInput name="price" defaultValue={(l.unitCents / 100).toFixed(2)} aria-label="Unit price" /> : null}
-                            {l.kind === "product" ? <Input name="quantity" type="number" min={1} max={99} defaultValue={l.quantity} aria-label="Quantity" /> : null}
-                            {ownOnly ? null : (
-                              <Select name="staffId" defaultValue={l.staffId ?? ""} aria-label="Staff credit">
-                                <option value="">No staff credit</option>
-                                {staff.map((s) => <option key={s.id} value={s.id}>{s.displayName}</option>)}
-                              </Select>
-                            )}
-                            <Button type="submit" size="sm" variant="secondary">Save</Button>
-                          </form>
-                        </details>
-                      ) : null}
-                      {open ? (
-                        <form action={deleteLine}>
-                          <input type="hidden" name="slug" value={slug} />
-                          <input type="hidden" name="saleId" value={sale.id} />
-                          <input type="hidden" name="lineId" value={l.id} />
-                          <button className="text-xs text-stone-400 hover:text-red-600" aria-label="Remove line">✕</button>
-                        </form>
-                      ) : null}
-                    </td>
-                  </tr>
+                  </LineRow>
                 ))}
               </tbody>
               <tfoot className="text-sm">
