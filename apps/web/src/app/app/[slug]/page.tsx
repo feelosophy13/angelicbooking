@@ -176,9 +176,11 @@ export default async function CalendarPage({
   // Switching views keeps the location (and the staff pick when going to the week).
   const viewHref = (v: "day" | "week" | "month") => `?view=${v}&date=${date}${v === "week" && sp.staff ? `&staff=${sp.staff}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}`;
   const step = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
-  // The button back to now is named for the view (a week or a month is not "today") and quiet when you are already there.
-  const nowLabel = view === "week" ? "This week" : view === "month" ? "This month" : "Today";
+  // The button back to now is named for the view (a week or a month is not "today"). Away from now it says where it goes
+  // ("Back to today"), so it never reads as a label for the date on screen; at now it is a quiet "Today".
   const atNow = view === "week" ? from === startOfWeek(today) : view === "month" ? date.slice(0, 7) === today.slice(0, 7) : date === today;
+  const nowName = view === "week" ? "this week" : view === "month" ? "this month" : "today";
+  const nowLabel = atNow ? nowName.charAt(0).toUpperCase() + nowName.slice(1) : `Back to ${nowName}`;
   const title = view === "week" ? `Week of ${formatDateLong(from)}` : view === "month" ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(monthStart + "T00:00:00Z")) : formatDateLong(date);
 
   return (

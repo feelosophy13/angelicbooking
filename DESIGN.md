@@ -137,7 +137,7 @@ path ("Lash Extensions › Classic"). Build its groups with `serviceGroups(busin
 ## Calendar week view
 
 The calendar header is the same in Day, Week and Month (view toggle, previous / name / next, Block time, New appointment), so nothing in it moves when the
-view changes; the button back to now is named for the view (Today, This week, This month) and quiet when you are already there. Controls that only one view
+view changes; the button back to now is named for the view and says where it goes when you are elsewhere ("Back to today", "Back to this week", "Back to this month"), so it never reads as the date on screen; at now it is a quiet "Today" / "This week" / "This month". Controls that only one view
 has go in a row below the header, not in it.
 
 The week opens on "Everyone (overview)" (`?staff=all`, also the default), and the picker beside the view toggle switches to one stylist's week in full
