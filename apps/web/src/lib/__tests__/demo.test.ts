@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDemoSlug } from "../demo";
+import { isDemoSlug, numberUsableFor } from "../demo";
 
 describe("isDemoSlug", () => {
   it("recognises the demo tenants", () => {
@@ -12,5 +12,15 @@ describe("isDemoSlug", () => {
     expect(isDemoSlug("my-demo-salon")).toBe(false);
     expect(isDemoSlug(null)).toBe(false);
     expect(isDemoSlug("")).toBe(false);
+  });
+});
+
+describe("numberUsableFor", () => {
+  it("needs a verified number for a real business but any held number for a demo", () => {
+    expect(numberUsableFor("angelic-salon", "verified")).toBe(true);
+    expect(numberUsableFor("angelic-salon", "unverified")).toBe(false);
+    expect(numberUsableFor("demo-twosites", "unverified")).toBe(true);
+    expect(numberUsableFor("demo-twosites", "pending_review")).toBe(true);
+    expect(numberUsableFor("demo-twosites", "released")).toBe(false);
   });
 });

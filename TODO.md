@@ -870,6 +870,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       The demo seed now gives demo-salon a verified (fake) number plus a sent reminder and two desk replies, so the Inbox can be walked;
       demo sends are still skipped ("Not sent · Demo business: nothing is sent"). Tests: `lib/__tests__/inbox-logic.test.ts`,
       `server/__tests__/inbox.test.ts`. Untested against live Twilio (MMS fetch of `/api/files/<id>` needs the public app address).
+- [x] demo-twosites (Glow Collective) holds a real Twilio toll-free number, +1 (866) 329-2807 (PN7edaa389…), bought 2026-10-18 with
+      `apps/web/scripts/demo-number.ts --slug demo-twosites --buy` at the owner's request (`--release` gives it back). It stays
+      unverified (carrier verification is for real businesses) and its inbound webhook points at app.angelicbooking.com, so a text to
+      it only lands once a demo lives in that database. `DEMO_TWOSITES_TWILIO_NUMBER` / `_SID` in .env let the seed re-attach it after
+      a refresh; demo-salon keeps a placeholder "verified" number. A demo business may use any number it holds (`numberUsableFor`),
+      since its texts are skipped anyway; real businesses still need a verified one.
 - [ ] Inbox follow-ups: email in the same thread (needs inbound email via Resend), assign or snooze a conversation (needs a
       conversations table; not built), a turn-off for the new-reply email, a separate permission for reading client texts (today
       `clients.read`), quiet hours for staff replies, more than one picture per text, delivery receipts for MMS pictures sent from a

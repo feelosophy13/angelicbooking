@@ -854,7 +854,16 @@ async function main() {
     ]);
     // A verified text number, so the Inbox can be used end to end (sends are skipped for demo businesses, never delivered), and a few
     // texts the salon sent: an automated reminder and two replies typed at the desk, so a thread shows both kinds.
-    await tx.insert(schema.messagingNumbers).values({ businessId, phoneNumber: "+17035550142", providerSid: `PNdemo${businessId.replace(/-/g, "").slice(0, 24)}`, status: "verified", verifiedAt: agoDays(60), purchasedAt: agoDays(70), billingStartsAt: agoDays(70) });
+    // A real Twilio number bought with scripts/demo-number.ts (DEMO_TWOSITES_TWILIO_NUMBER / _SID in .env) is re-attached, unverified;
+    // otherwise a placeholder that looks verified. Either way a demo's texts are skipped, so the desk can use the Inbox.
+    const envKey = SLUG.toUpperCase().replace(/-/g, "_");
+    const realNumber = process.env[`${envKey}_TWILIO_NUMBER`];
+    const realSid = process.env[`${envKey}_TWILIO_SID`];
+    await tx.insert(schema.messagingNumbers).values(
+      realNumber && realSid
+        ? { businessId, phoneNumber: realNumber, providerSid: realSid, status: "unverified", purchasedAt: agoDays(1) }
+        : { businessId, phoneNumber: "+17035550142", providerSid: `PNdemo${businessId.replace(/-/g, "").slice(0, 24)}`, status: "verified", verifiedAt: agoDays(60), purchasedAt: agoDays(70), billingStartsAt: agoDays(70) },
+    );
     const sent = (clientIdx: number, template: string, body: string, hours: number) => ({ businessId, clientId: clientIds[clientIdx]!.id, channel: "sms" as const, template, recipient: phoneOf(clientIdx), body, status: "sent" as const, scheduledAt: hoursAgo(hours), sentAt: hoursAgo(hours), deliveryStatus: "delivered", deliveredAt: hoursAgo(hours - 0.01), createdAt: hoursAgo(hours) });
     await tx.insert(schema.notifications).values([
       sent(3, "reminder", `${NAME} reminder: your appointment is tomorrow. Reply here if anything changes.`, 26),

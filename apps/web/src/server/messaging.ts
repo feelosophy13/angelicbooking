@@ -5,8 +5,9 @@
  * the cross-tenant jobs read and writes back per tenant.
  */
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
+import { db, schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone } from "@angelic/core";
+import { numberUsableFor } from "@/lib/demo";
 import { appUrl } from "@/lib/stripe";
 import { attachNumberItem, billingState, detachNumberItem } from "@/server/billing";
 import { priceBookFor } from "@/server/price-book";
@@ -60,10 +61,13 @@ export async function getNumberById(businessId: string, id: string): Promise<Mes
   return withTenant(businessId, async (tx) => (await tx.query.messagingNumbers.findFirst({ where: and(eq(schema.messagingNumbers.id, id), isNull(schema.messagingNumbers.releasedAt)) })) ?? null);
 }
 
-/** Whether this business can send texts right now: a verified number of its own, or a platform fallback sender. */
+/** Whether this business can send texts right now: a verified number of its own (any number, for a demo), or a platform fallback sender. */
 export async function smsAvailableFor(businessId: string): Promise<boolean> {
   const own = await withTenant(businessId, listNumbers);
-  if (own.some((n) => n.status === "verified")) return true;
+  if (own.length) {
+    const biz = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId), columns: { slug: true } });
+    if (own.some((n) => numberUsableFor(biz?.slug, n.status))) return true;
+  }
   return !!(process.env.TWILIO_FROM || process.env.TWILIO_MESSAGING_SERVICE_SID) && twilioConfigured();
 }
 
