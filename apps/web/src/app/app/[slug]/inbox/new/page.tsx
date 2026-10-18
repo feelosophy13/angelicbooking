@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { can } from "@angelic/core";
-import { requireAction } from "@/lib/tenant";
+import { requireActions } from "@/lib/tenant";
 import { BackLink, Card } from "@/components/ui";
 import { quickCreateClient } from "../../clients/actions";
 import { PickToOpen } from "./pick-to-open";
@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "New message" };
 /** Start a text with any client: pick them (or add them) and their conversation opens with the composer ready. */
 export default async function NewMessagePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { permissions } = await requireAction(slug, "clients.write");
+  const { permissions } = await requireActions(slug, "clients.messages", "clients.write");
   return (
     <>
       <div className="mb-3 lg:hidden"><BackLink href={`/app/${slug}/inbox`}>Inbox</BackLink></div>

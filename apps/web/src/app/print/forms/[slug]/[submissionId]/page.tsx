@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Signed form" };
 /** Clean copy of a signed form for the file: print it or save it as a PDF from the browser's print dialog. */
 export default async function PrintSubmissionPage({ params }: { params: Promise<{ slug: string; submissionId: string }> }) {
   const { slug, submissionId } = await params;
-  const { business } = await requireAction(slug, "clients.read");
+  const { business } = await requireAction(slug, "clients.notes");
   const row = await getSubmission(business.id, submissionId);
   if (!row) notFound();
   const form = row.s.formSnapshot ?? { name: row.form.name, fields: row.form.fields, description: row.form.description };

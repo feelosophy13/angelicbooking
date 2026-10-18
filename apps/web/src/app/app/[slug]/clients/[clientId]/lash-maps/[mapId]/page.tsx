@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Lash map" };
 
 export default async function LashMapPage({ params }: { params: Promise<{ slug: string; clientId: string; mapId: string }> }) {
   const { slug, clientId, mapId } = await params;
-  const ctx = await requireAction(slug, "clients.read");
+  const ctx = await requireAction(slug, "clients.notes");
   const data = await withTenant(ctx.business.id, async (tx) => {
     const map = await tx.query.lashMaps.findFirst({ where: and(eq(schema.lashMaps.id, mapId), eq(schema.lashMaps.clientId, clientId)) });
     if (!map) return null;

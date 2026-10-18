@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Signed form" };
 
 export default async function SubmissionPage({ params }: { params: Promise<{ slug: string; submissionId: string }> }) {
   const { slug, submissionId } = await params;
-  const { business, permissions } = await requireAction(slug, "clients.read");
+  const { business, permissions } = await requireAction(slug, "clients.notes");
   const write = can(permissions, "clients.write");
   const row = await getSubmission(business.id, submissionId);
   if (!row) notFound();

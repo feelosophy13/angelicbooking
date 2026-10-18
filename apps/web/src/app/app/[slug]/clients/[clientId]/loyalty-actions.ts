@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
-import { requireAction } from "@/lib/tenant";
+import { requireAction, requireActions } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { adjustPoints, ensureReferralCode, LoyaltyError, sendReferralCode } from "@/server/loyalty";
 import { setFlash } from "@/lib/flash";
@@ -12,7 +12,8 @@ import { adjustStoreCredit, StoreCreditError } from "@/server/store-credit";
 export const adjustClientPoints = formAction(
   z.object({ slug: z.string(), clientId: f.id(), delta: z.coerce.number({ message: "Enter a number like 50 or -50" }).int("Whole points only"), note: f.optional(200) }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "clients.write");
+    // Balances are their own permission (clients.balances): changing one needs it as well as editing clients.
+    const ctx = await requireActions(d.slug, "clients.write", "clients.balances");
     if (d.delta === 0) throw new FormError("Enter how many points to add (or a negative number to remove).", "delta");
     try {
       await adjustPoints({ businessId: ctx.business.id, clientId: d.clientId, delta: d.delta, note: d.note, actorUserId: ctx.user.id });
@@ -39,7 +40,7 @@ export async function createReferralCode(formData: FormData) {
 export const adjustClientStoreCredit = formAction(
   z.object({ slug: z.string(), clientId: f.id(), amount: z.string().trim(), note: f.optional(200) }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "clients.write");
+    const ctx = await requireActions(d.slug, "clients.write", "clients.balances");
     const n = Number(d.amount.replace(/[$,]/g, ""));
     if (!Number.isFinite(n) || n === 0) throw new FormError("Enter an amount like 25 or -25.", "amount");
     const cents = Math.round(n * 100);

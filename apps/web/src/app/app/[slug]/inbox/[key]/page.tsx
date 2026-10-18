@@ -29,7 +29,8 @@ export const metadata: Metadata = { title: "Conversation" };
 export default async function ConversationPage({ params }: { params: Promise<{ slug: string; key: string }> }) {
   const { slug, key: rawKey } = await params;
   const key = decodeURIComponent(rawKey);
-  const { business, permissions } = await requireAction(slug, "clients.read");
+  const { business, permissions } = await requireAction(slug, "clients.messages");
+  // Reading texts is one permission; answering them also needs the one for editing clients.
   const write = can(permissions, "clients.write");
   const isNumber = key.startsWith("tel:");
   const client = isNumber ? null : await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, key) }));

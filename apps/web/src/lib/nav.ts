@@ -30,10 +30,10 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     ] },
     // Looking after clients day to day: their texts, what we sent them, their forms and their photos.
     { title: "Client care", items: [
-      ...(ok("clients.read") ? [it(`${base}/inbox`, "Inbox", "Inbox")] : []),
+      ...(ok("clients.messages") ? [it(`${base}/inbox`, "Inbox", "Inbox")] : []),
       ...(ok("business.manage") ? [it(`${base}/messages`, "Message log", "MessageSquare")] : []),
       ...(ok("business.manage") ? [it(`${base}/settings/forms`, "Forms", "FileText")] : []),
-      ...(ok("clients.read") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
+      ...(ok("clients.photos") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
     ] },
     { title: "Catalog", items: [
       it(`${base}/services`, "Services", "Scissors"),

@@ -24,8 +24,9 @@ const saveSchema = z.object({
   rightZones: z.string().optional().transform((v) => v || null),
 });
 
+// A lash map is a client note in picture form, so it is read (and written, with canWriteLashMaps) under clients.notes.
 export const saveLashMap = formAction(saveSchema, async (d) => {
-  const ctx = await requireAction(d.slug, "clients.read");
+  const ctx = await requireAction(d.slug, "clients.notes");
   let zones, rightZones;
   try {
     zones = parseLashZones(JSON.parse(d.zones), d.rightZones ? "Left eye" : undefined);
@@ -58,7 +59,7 @@ export const saveLashMap = formAction(saveSchema, async (d) => {
 
 export async function deleteLashMap(formData: FormData) {
   const d = z.object({ slug: z.string(), clientId: z.string(), mapId: z.string() }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "clients.read");
+  const ctx = await requireAction(d.slug, "clients.notes");
   await withTenant(ctx.business.id, async (tx) => {
     if (!(await canWriteLashMaps(tx, ctx, d.clientId))) throw new PermissionError();
     await tx.delete(schema.lashMaps).where(and(eq(schema.lashMaps.id, d.mapId), eq(schema.lashMaps.clientId, d.clientId)));

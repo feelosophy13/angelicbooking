@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Form submissions" };
 export default async function SubmissionsInboxPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ form?: string; q?: string; page?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "clients.read");
+  const { business } = await requireAction(slug, "clients.notes");
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
   const limit = 50;
   const [forms, { rows, total }, due] = await Promise.all([listForms(business.id), listSubmissions(business.id, { formId: sp.form || null, q: sp.q || null, limit, offset: (page - 1) * limit }), outstandingForms(business, 7)]);

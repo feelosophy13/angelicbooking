@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Inbox" };
 /** On a phone the list (in the layout) is the page. On a desktop this is the empty right pane until a conversation is picked. */
 export default async function InboxPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "clients.read");
+  const { business } = await requireAction(slug, "clients.messages");
   const unread = await unreadCount(business.id);
   return (
     <div className="hidden rounded-xl border border-dashed border-stone-300 p-10 text-center text-sm text-stone-500 lg:block">

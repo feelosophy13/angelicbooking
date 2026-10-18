@@ -799,6 +799,13 @@
       "when": 1795200200000,
       "tag": "0113_inbox_quick_replies_media",
       "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1795200300000,
+      "tag": "0114_client_data_permissions",
+      "breakpoints": true
     }
   ]
 }

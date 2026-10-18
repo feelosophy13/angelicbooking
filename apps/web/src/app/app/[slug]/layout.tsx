@@ -31,7 +31,7 @@ export default async function AppLayout({ children, params }: { children: React.
   const [mine, roles, locations] = await Promise.all([listMyBusinesses(user.id), listRoles(business.id), withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations).orderBy(desc(schema.locations.isDefault), asc(schema.locations.name)))]);
   void permissionsForRole;
   const lowCount = can(permissions, "inventory.manage") ? await lowStockCount(business.id) : 0;
-  const unreadTexts = can(permissions, "clients.read") ? await unreadCount(business.id) : 0;
+  const unreadTexts = can(permissions, "clients.messages") ? await unreadCount(business.id) : 0;
   // Development only: the staff a Provider can be viewed as.
   const viewAsStaff = viewAsEnabled() ? await withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName))) : [];
   const roleName = roles.find((r) => r.key === role)?.name ?? role.replace("_", " ");
