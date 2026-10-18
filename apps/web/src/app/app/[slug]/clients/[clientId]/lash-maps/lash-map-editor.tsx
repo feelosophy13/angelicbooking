@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Minus, Plus } from "lucide-react";
-import { emptyLashZone, formatLashThickness, formatLashZone, LASH_CURLS, LASH_LENGTH_MAX, LASH_LENGTH_MIN, LASH_THICKNESS_MAX, LASH_THICKNESS_MIN, LASH_THICKNESS_PRESETS, LASH_TYPES, LASH_ZONE_COUNTS, newLashSpike, sharedLashType, type LashSet, type LashZone } from "@angelic/core";
+import { emptyLashZone, formatLashThickness, formatLashZone, LASH_CURLS, LASH_LENGTH_MAX, LASH_LENGTH_MIN, LASH_THICKNESS_MAX, LASH_THICKNESS_MIN, LASH_COLOR_PRESETS, LASH_THICKNESS_PRESETS, LASH_TYPE_GROUPS, LASH_ZONE_COUNTS, newLashSpike, sharedLashType, type LashSet, type LashZone } from "@angelic/core";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { Checkbox, Input, Textarea } from "@/components/ui";
 import { LashMapDiagram, type LashSelection } from "@/components/lash-map";
@@ -27,6 +27,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
   const setZones = (fn: (cur: LashZone[]) => LashZone[]) => (onRight ? setRight((r) => fn(r ?? [])) : setLeft(fn));
   const [sel, setSel] = useState<LashSelection>({ kind: "zone", i: 0 });
   const [customThickness, setCustomThickness] = useState("");
+  const [customColor, setCustomColor] = useState("");
   // Taps on chips change no input, so tell ActionForm's unsaved-changes guard about them through the hidden zones field.
   const zonesInput = useRef<HTMLInputElement>(null);
   const firstRender = useRef(true);
@@ -41,6 +42,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
 
   const select = (s: LashSelection) => {
     setCustomThickness("");
+    setCustomColor("");
     // Tapping an empty divider adds a spike there.
     if (s.kind === "spike" && !zones[s.i]?.spike) setZones((cur) => cur.map((x, i) => (i === s.i ? { ...x, spike: newLashSpike(cur, i) } : x)));
     setSel(s);
@@ -51,7 +53,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
     setZones((cur) => cur.map((x, i) => (i === sel.i ? { ...x, spike: null } : x)));
     setSel({ kind: "zone", i: sel.i + 1 });
   };
-  const applyToAll = (key: "curl" | "thickness" | "type") => setZones((cur) => cur.map((x) => ({ ...x, [key]: z[key] ?? null })));
+  const applyToAll = (key: "curl" | "thickness" | "type" | "color") => setZones((cur) => cur.map((x) => ({ ...x, [key]: z[key] ?? null })));
   const setCount = (n: number) => {
     setZones((cur) => {
       if (n < cur.length) return cur.slice(0, n).map((x, i) => (i === n - 1 ? { ...x, spike: null } : x)); // the last zone has no divider after it
@@ -61,6 +63,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
     setSel((s) => (s.kind === "spike" ? (s.i < n - 1 ? s : { kind: "zone", i: n - 1 }) : { kind: "zone", i: Math.min(s.i, n - 1) }));
   };
   const stepLength = (d: number) => patch({ length: Math.min(LASH_LENGTH_MAX, Math.max(LASH_LENGTH_MIN, (z.length ?? 10) + d)) });
+  const isPresetColor = !z.color || (LASH_COLOR_PRESETS as readonly string[]).includes(z.color);
   const isPreset = z.thickness != null && (LASH_THICKNESS_PRESETS as readonly number[]).includes(z.thickness);
   const spikeCount = zones.filter((x) => x.spike).length;
   const sharedType = sharedLashType(zones); // shown once under the diagram, so the chips leave it out
@@ -76,6 +79,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
     setEye(e);
     setSel({ kind: "zone", i: 0 });
     setCustomThickness("");
+    setCustomColor("");
   }; // shown once under the diagram, so the chips leave it out
 
   return (
@@ -169,10 +173,29 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
             {spike || z.thickness == null ? null : <ApplyAll onClick={() => applyToAll("thickness")} />}
           </div>
         </Field>
-        <Field label="Type" hint="Classic, hybrid, or the fan size for volume.">
-          <div className="flex flex-wrap items-center gap-2">
-            <Chips options={LASH_TYPES.map((t) => ({ value: t, label: t }))} value={z.type ?? null} onChange={(v) => patch({ type: v === z.type ? null : v })} />
+        <Field label="Type" hint="Handmade fans by size; YY, W and spike fans come premade.">
+          <div className="space-y-2">
+            {LASH_TYPE_GROUPS.map((g) => (
+              <div key={g.label}>
+                <p className="mb-1 text-xs text-stone-500">{g.label}</p>
+                <Chips options={g.types.map((t) => ({ value: t, label: t }))} value={z.type ?? null} onChange={(v) => patch({ type: v === z.type ? null : v })} />
+              </div>
+            ))}
             {spike || !z.type ? null : <ApplyAll onClick={() => applyToAll("type")} />}
+          </div>
+        </Field>
+        <Field label="Colour" hint="Leave blank for black.">
+          <div className="flex flex-wrap items-center gap-2">
+            <Chips options={LASH_COLOR_PRESETS.map((c) => ({ value: c, label: c }))} value={isPresetColor ? z.color ?? null : null} onChange={(v) => { setCustomColor(""); patch({ color: v === z.color ? null : v }); }} />
+            <Input
+              placeholder="Other"
+              maxLength={20}
+              value={!isPresetColor && z.color ? z.color : customColor}
+              onChange={(e) => { setCustomColor(e.target.value); const c = e.target.value.trim(); patch({ color: c ? c.charAt(0).toUpperCase() + c.slice(1) : null }); }}
+              className="w-28"
+              aria-label={`${label} other colour`}
+            />
+            {spike || !z.color ? null : <ApplyAll onClick={() => applyToAll("color")} />}
           </div>
         </Field>
         {spike ? null : (
