@@ -1068,8 +1068,9 @@ runs several salons on separate accounts.
       show left above right. Demo seed has five lash maps (classic, hybrid, wispy with spikes, volume with a
       different right eye, and an older version of one).
 - [x] Premade fans, flat lashes and colour (2026-10-18): type is grouped as Classic, handmade fans (2D–10D) and
-      premade fans (YY, 3D W–6D W, Spike); new spikes start as Spike. "Hybrid" is a checkbox that mixes classics
-      with the chosen fan, saved as e.g. "Hybrid 3D" (a bare "Hybrid" from earlier maps stays valid). Shape is its
+      premade fans (YY, 3D W–6D W, Spike); new spikes start as Spike. Type is picked as Classic, Fans or Hybrid, then
+      the fan; a hybrid mixes classics with that fan, saved as e.g. "Hybrid 3D" (a bare "Hybrid" from earlier maps
+      stays valid). Shape is its
       own Round / Flat setting per zone and spike, so flat works with any type ("Use for all zones" covers spikes
       too); maps saved with the earlier "Flat" type read as Classic + Flat.
       Each zone and spike has a colour (blank is black; presets or a typed name), drawn on the lashes and listed

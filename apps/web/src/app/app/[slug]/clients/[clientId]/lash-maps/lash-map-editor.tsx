@@ -42,6 +42,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
   const label = (right ? (onRight ? "Right eye, " : "Left eye, ") : "") + (spike ? `${right ? "s" : "S"}pike between zones ${sel.i + 1} and ${sel.i + 2}` : `${right ? "z" : "Z"}one ${sel.i + 1}`);
 
   const select = (s: LashSelection) => {
+    setPickedFans(false);
     setCustomThickness("");
     setCustomColor("");
     // Tapping an empty divider adds a spike there.
@@ -80,14 +81,25 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
   // A hybrid is stored with its fan ("Hybrid 3D"): the fan chips pick the fan and the checkbox turns the mix on or off.
   const hybridFan = lashHybridFan(z.type);
   const hybrid = hybridFan != null;
-  const pickType = (v: string) => {
-    if (v === "Classic") return patch({ type: z.type === "Classic" ? null : "Classic" });
+  // Type is picked in two steps: the kind (Classic, Fans, Hybrid), then for fans and hybrids which fan. "Fans" with no fan chosen yet
+  // has nothing to store, so that one step lives in local state until a fan is picked.
+  const [pickedFans, setPickedFans] = useState(false);
+  const kind: "classic" | "fans" | "hybrid" | null = hybrid ? "hybrid" : z.type === "Classic" ? "classic" : z.type ? "fans" : pickedFans ? "fans" : null;
+  const pickKind = (k: "classic" | "fans" | "hybrid") => {
+    if (k === kind) {
+      // Tapping the chosen kind again clears the type.
+      setPickedFans(false);
+      return patch({ type: null });
+    }
+    setPickedFans(k === "fans");
+    if (k === "classic") return patch({ type: "Classic" });
+    const fan = hybrid ? hybridFan || null : z.type && z.type !== "Classic" ? z.type : null;
+    if (k === "fans") return patch({ type: fan });
+    patch({ type: fan && LASH_HYBRID_FANS.includes(fan) ? `Hybrid ${fan}` : "Hybrid" });
+  };
+  const pickFan = (v: string) => {
     if (hybrid) return patch({ type: hybridFan === v ? "Hybrid" : `Hybrid ${v}` });
     patch({ type: v === z.type ? null : v });
-  };
-  const setHybrid = (on: boolean) => {
-    if (on) patch({ type: z.type && LASH_HYBRID_FANS.includes(z.type) ? `Hybrid ${z.type}` : "Hybrid" });
-    else patch({ type: hybridFan || null });
   };
   const isPresetColor = !z.color || (LASH_COLOR_PRESETS as readonly string[]).includes(z.color);
   const isPreset = z.thickness != null && (LASH_THICKNESS_PRESETS as readonly number[]).includes(z.thickness);
@@ -102,6 +114,7 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
     setSel({ kind: "zone", i: 0 });
   };
   const switchEye = (e: "left" | "right") => {
+    setPickedFans(false);
     setEye(e);
     setSel({ kind: "zone", i: 0 });
     setCustomThickness("");
@@ -213,22 +226,24 @@ export function LashMapEditor({ slug, clientId, map, appointmentId, returnTo, ca
             />
           </div>
         </Field>
-        <Field label="Type" hint="What goes on each natural lash: one classic, or a fan of several fine lashes.">
-          <div className="space-y-2">
-            {LASH_TYPE_GROUPS.map((g) => (
-              <div key={g.label}>
-                <p className="mb-1 text-xs text-stone-500">{g.label}</p>
-                <Chips options={g.types.filter((t) => !hybrid || t !== "Spike").map((t) => ({ value: t, label: t }))} value={hybrid ? hybridFan || null : z.type ?? null} onChange={pickType} />
+        <Field label="Type" hint="What goes on each natural lash. Hybrid mixes classics with one fan.">
+          <div className="space-y-3">
+            <Chips
+              options={[{ value: "classic", label: "Classic" }, { value: "fans", label: "Fans" }, ...(spike ? [] : [{ value: "hybrid", label: "Hybrid" }])]}
+              value={kind}
+              onChange={(v) => pickKind(v as "classic" | "fans" | "hybrid")}
+            />
+            {kind === "fans" || kind === "hybrid" ? (
+              <div className="space-y-2 border-l-2 border-stone-200 pl-3">
+                {hybrid ? <p className="text-xs font-medium text-stone-700">Mixed with</p> : null}
+                {LASH_TYPE_GROUPS.slice(1).map((g) => (
+                  <div key={g.label}>
+                    <p className="mb-1 text-xs text-stone-500">{g.label}</p>
+                    <Chips options={g.types.filter((t) => !hybrid || t !== "Spike").map((t) => ({ value: t, label: t }))} value={hybrid ? hybridFan || null : z.type ?? null} onChange={pickFan} />
+                  </div>
+                ))}
               </div>
-            ))}
-            {spike ? null : (
-              <Checkbox
-                label="Hybrid: classics mixed with this fan"
-                hint={hybrid && !hybridFan ? "Pick the fan it's mixed with." : undefined}
-                checked={hybrid}
-                onChange={(e) => setHybrid(e.target.checked)}
-              />
-            )}
+            ) : null}
           </div>
         </Field>
         {/* Rarely changed, so folded away; opens by itself on a zone that uses flat lashes or a colour. Keyed so each zone decides afresh. */}
