@@ -20,7 +20,7 @@ export const metadata: Metadata = { title: "Gallery" };
 export default async function GalleryPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<GallerySearchParams> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "clients.read");
+  const { business } = await requireAction(slug, "clients.photos");
   const [locations, services, staff, tags, categories] = await Promise.all([
     listLocations(business.id),
     withTenant(business.id, (tx) => tx.select({ id: schema.services.id, name: schema.services.name }).from(schema.services).orderBy(asc(schema.services.name))),

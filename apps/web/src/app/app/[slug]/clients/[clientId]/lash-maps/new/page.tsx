@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "New lash map" };
 export default async function NewLashMapPage({ params, searchParams }: { params: Promise<{ slug: string; clientId: string }>; searchParams: Promise<{ appointmentId?: string; from?: string }> }) {
   const { slug, clientId } = await params;
   const { appointmentId, from } = await searchParams;
-  const ctx = await requireAction(slug, "clients.read");
+  const ctx = await requireAction(slug, "clients.notes");
   const data = await withTenant(ctx.business.id, async (tx) => {
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId), columns: { id: true, firstName: true, lastName: true } });
     if (!client) return null;

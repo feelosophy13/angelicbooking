@@ -47,7 +47,7 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
           <Button type="submit" variant="secondary" aria-label="Search"><Search className="h-4 w-4" /></Button>
         </form>
         <LocationFilter locations={locations} current={locationFilter} query={q ? `q=${encodeURIComponent(q)}` : ""} allLabel="All" />
-        <LinkButton href={`/app/${slug}/clients/export?${new URLSearchParams({ ...(q ? { q } : {}), ...(locationFilter ? { location: locationFilter } : {}) }).toString()}`}><Download className="h-4 w-4" /> CSV</LinkButton>
+        {can(permissions, "clients.export") ? <LinkButton href={`/app/${slug}/clients/export?${new URLSearchParams({ ...(q ? { q } : {}), ...(locationFilter ? { location: locationFilter } : {}) }).toString()}`}><Download className="h-4 w-4" /> CSV</LinkButton> : null}
         {can(permissions, "clients.write") ? <LinkButton href={`/app/${slug}/clients/new`} variant="primary"><Plus className="h-4 w-4" /> New client</LinkButton> : null}
       </PageHeader>
       <Card>

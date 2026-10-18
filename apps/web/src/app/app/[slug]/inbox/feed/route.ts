@@ -9,7 +9,7 @@ import { listConversations } from "@/server/inbound";
  */
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "clients.read");
+  const { business } = await requireAction(slug, "clients.messages");
   const sp = new URL(req.url).searchParams;
   const limit = Math.min(Math.max(Number(sp.get("n")) || 50, 50), 1000);
   const r = await listConversations(business.id, { q: sp.get("q") ?? "", filter: asFilter(sp.get("f")), limit: sp.get("count") ? 1 : limit });

@@ -6,8 +6,15 @@ export const ACTIONS = [
   "members.manage",
   "staff.manage",
   "services.manage",
-  "clients.read",
+  "clients.read", // the client list, a client's contact details and visit history
   "clients.write",
+  // Client data that "View clients" used to imply. Split out 2026-10-18 (migration 0114 back-fills stored roles) so a role can open a
+  // client without also getting the whole list as a file, every text conversation, every photo, or balances.
+  "clients.export", // download the client list as a CSV
+  "clients.notes", // private notes, lash maps and signed forms
+  "clients.messages", // the SMS inbox and a client's text thread
+  "clients.photos", // the gallery and visit photos
+  "clients.balances", // store credit and loyalty balances
   "appointments.read.any",
   "appointments.read.own",
   "appointments.write.any",
@@ -47,8 +54,13 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
   {
     title: "Clients",
     items: [
-      { action: "clients.read", label: "View clients", description: "Open client profiles, history and notes." },
+      { action: "clients.read", label: "View clients", description: "See the client list, and a client's contact details and visit history." },
       { action: "clients.write", label: "Add and edit clients", description: "Create clients and change their details." },
+      { action: "clients.notes", label: "Read notes and forms", description: "Private notes (formulas, allergies), lash maps and the forms a client signed." },
+      { action: "clients.photos", label: "See visit photos", description: "The Gallery and the before-and-after photos on a client's profile." },
+      { action: "clients.messages", label: "Read client texts", description: "The Inbox and a client's text thread. Replying also needs \"Add and edit clients\"." },
+      { action: "clients.balances", label: "See store credit and points", description: "A client's store credit and loyalty balances, and their history." },
+      { action: "clients.export", label: "Download the client list", description: "Export every client (contact details, spend, notes) as a CSV file. Each download is in the activity log." },
     ],
   },
   {
@@ -104,8 +116,8 @@ const ALL = new Set<Action>(ACTIONS);
 export const DEFAULT_ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {
   owner: ALL,
   manager: new Set<Action>(ACTIONS.filter((a) => a !== "business.manage")),
-  front_desk: new Set<Action>(["clients.read", "clients.write", "appointments.read.any", "appointments.read.own", "appointments.write.any", "appointments.write.own", "checkout.take", "checkout.discount", "inventory.log"]),
-  provider: new Set<Action>(["clients.read", "appointments.read.own", "appointments.write.own", "checkout.take", "inventory.log"]),
+  front_desk: new Set<Action>(["clients.read", "clients.write", "clients.notes", "clients.messages", "clients.balances", "appointments.read.any", "appointments.read.own", "appointments.write.any", "appointments.write.own", "checkout.take", "checkout.discount", "inventory.log"]),
+  provider: new Set<Action>(["clients.read", "clients.notes", "clients.photos", "appointments.read.own", "appointments.write.own", "checkout.take", "inventory.log"]),
 };
 
 export const DEFAULT_ROLE_META: Record<Role, { name: string; description: string }> = {

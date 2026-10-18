@@ -13,7 +13,7 @@ import { InboxShell } from "./inbox-shell";
  */
 export default async function InboxLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, permissions } = await requireAction(slug, "clients.read");
+  const { business, permissions } = await requireAction(slug, "clients.messages");
   const write = can(permissions, "clients.write");
   const [initial, smsReady] = await Promise.all([listConversations(business.id, { limit: 50 }), write ? smsAvailableFor(business.id) : Promise.resolve(false)]);
   const header = (

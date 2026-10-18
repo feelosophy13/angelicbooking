@@ -53,12 +53,18 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function ClientPage({ params }: { params: Promise<{ slug: string; clientId: string }> }) {
   const { slug, clientId } = await params;
   const { business, permissions, staffId } = await requireAction(slug, "clients.read");
+  // "View clients" opens the profile: contact details and visit history. Each of the rest is its own permission, and what a person
+  // may not see is not fetched.
+  const canNotes = can(permissions, "clients.notes");
+  const canMessages = can(permissions, "clients.messages");
+  const canPhotos = can(permissions, "clients.photos");
+  const canBalances = can(permissions, "clients.balances");
   const data = await withTenant(business.id, async (tx) => {
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
     if (!client) return null;
     const now = new Date();
     await settleMemberships(tx, clientId);
-    const notes = await tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, clientId)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(100);
+    const notes = canNotes ? await tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, clientId)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(100) : [];
     const [visits, sales, packs, memberships] = await Promise.all([
       tx
         .select({ id: schema.appointments.id, status: schema.appointments.status, startAt: schema.appointmentItems.startAt, serviceName: schema.appointmentItems.serviceName, staffName: schema.staff.displayName, locationName: schema.locations.name })
@@ -82,8 +88,8 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
         .innerJoin(schema.membershipPlans, eq(schema.membershipPlans.id, schema.clientMemberships.planId))
         .where(eq(schema.clientMemberships.clientId, clientId)),
     ]);
-    const lashMaps = await lashMapsFor(tx, clientId);
-    const lashWrite = await canWriteLashMaps(tx, { permissions, staffId }, clientId);
+    const lashMaps = canNotes ? await lashMapsFor(tx, clientId) : [];
+    const lashWrite = canNotes && (await canWriteLashMaps(tx, { permissions, staffId }, clientId));
     return { client, visits, sales, packs, memberships, notes, lashMaps, lashWrite };
   });
   if (!data) notFound();
@@ -92,11 +98,11 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const stopped = await withTenant(business.id, (tx) => isSmsSuppressed(tx, client.phone));
   const activeForms = (await listForms(business.id)).filter((f) => f.active);
   const [submissions, loyalty, reviews, thread, storeCredit, referrals, smsReady, referredBy] = await Promise.all([
-    listSubmissionsForClient(business.id, clientId),
-    business.loyaltyEnabled ? getClientLoyalty(business.id, clientId) : Promise.resolve(null),
+    canNotes ? listSubmissionsForClient(business.id, clientId) : Promise.resolve([]),
+    business.loyaltyEnabled && canBalances ? getClientLoyalty(business.id, clientId) : Promise.resolve(null),
     reviewsForClient(business.id, clientId),
-    clientThread(business.id, clientId),
-    getClientStoreCredit(business.id, clientId),
+    canMessages ? clientThread(business.id, clientId) : Promise.resolve([]),
+    canBalances ? getClientStoreCredit(business.id, clientId) : Promise.resolve(null),
     withTenant(business.id, (tx) => referralsOf(tx, clientId)),
     smsAvailableFor(business.id),
     client.referredByClientId ? withTenant(business.id, async (tx) => { const r = await tx.query.clients.findFirst({ where: eq(schema.clients.id, client.referredByClientId!), columns: { id: true, firstName: true, lastName: true } }); return r ? { id: r.id, name: `${r.firstName} ${r.lastName ?? ""}`.trim() } : null; }) : Promise.resolve(null),
@@ -119,7 +125,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const write = can(permissions, "clients.write");
   const bills = can(permissions, "checkout.take");
   // A text can go out only to a number that takes them, from a business that has one to send from.
-  const canText = write && !!client.phone && client.smsOptIn && smsReady;
+  const canText = write && canMessages && !!client.phone && client.smsOptIn && smsReady;
   const referralsOn = business.referralBonusPoints > 0 || business.referralFriendBonusPoints > 0;
   // One timeline: past visits carry their ticket and rating; sales with no visit (retail, gift cards, open tickets) are rows too.
   const reviewFor = new Map(reviews.filter((r) => r.appointmentId).map((r) => [r.appointmentId!, r]));
@@ -147,7 +153,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
     { label: "Usually", value: stats.favouriteService ?? "—", hint: [stats.usualProvider ? `with ${stats.usualProvider}` : null, stats.visitEveryDays ? `every ${stats.visitEveryDays} days` : null].filter(Boolean).join(" · ") || undefined },
   ];
 
-  const clientPhotos = await listGallery(business.id, { serviceId: null, categoryId: null, staffId: null, clientId, locationId: null, tag: null, periodDays: null, q: null, bothOnly: false, shareableOnly: false, page: 1 }, 6);
+  const clientPhotos = canPhotos ? await listGallery(business.id, { serviceId: null, categoryId: null, staffId: null, clientId, locationId: null, tag: null, periodDays: null, q: null, bothOnly: false, shareableOnly: false, page: 1 }, 6) : { pairs: [], hasMore: false };
   const photoViews = pairViews(slug, clientPhotos.pairs, business.timezone);
   return (
     <>
@@ -167,6 +173,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
       </Card>
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
+          {canNotes ? (
           <Card>
             <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2">
               <h2 className="text-sm font-semibold text-stone-600">Notes &amp; formulas</h2>
@@ -210,6 +217,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               </div>
             ) : null}
           </Card>
+          ) : null}
           {latestLash ? (
             <Card>
               <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2">
@@ -287,7 +295,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               {client.phone ? <p>{client.phone}{client.smsOptIn ? "" : <span className="ml-2 text-xs text-stone-400">no texts</span>}</p> : <p className="text-stone-400">No phone</p>}
               {client.email ? <p className="truncate">{client.email}{client.emailOptIn ? "" : <span className="ml-2 text-xs text-stone-400">no emails</span>}</p> : <p className="text-stone-400">No email</p>}
               {client.birthday ? <p className="text-stone-600">Birthday {client.birthday.slice(5).replace("-", "/")}</p> : null}
-              {client.notes ? <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">{client.notes}</p> : null}
+              {canNotes && client.notes ? <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">{client.notes}</p> : null}
             </div>
             {write ? (
               <Disclosure variant="inset" title="Edit details" className="mt-3">
@@ -302,7 +310,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 <Field label="Mobile phone" name="phone"><Input name="phone" type="tel" defaultValue={client.phone ?? ""} /></Field>
                 <Field label="Email" name="email"><Input name="email" type="email" defaultValue={client.email ?? ""} /></Field>
                 <Field label="Birthday" name="birthday" hint="For birthday messages."><Input name="birthday" type="date" defaultValue={client.birthday ?? ""} /></Field>
-                <Field label="Notes" name="notes"><Textarea name="notes" rows={4} defaultValue={client.notes ?? ""} /></Field>
+                {canNotes ? <Field label="Notes" name="notes"><Textarea name="notes" rows={4} defaultValue={client.notes ?? ""} /></Field> : null}
                 {stopped ? (
                   <p className="text-xs text-stone-500">This number replied STOP, so nothing is texted to it. Texts come back on only if they text START.</p>
                 ) : (
@@ -322,7 +330,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               </Disclosure>
             ) : null}
           </Card>
-          {storeCredit.balance > 0 || storeCredit.history.length > 0 ? (
+          {storeCredit && (storeCredit.balance > 0 || storeCredit.history.length > 0) ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-1 font-medium">Store credit</h2>
               <p className="text-2xl font-semibold">{money(storeCredit.balance)}</p>
@@ -343,7 +351,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 </Disclosure>
               ) : null}
             </Card>
-          ) : write ? (
+          ) : canBalances && write ? (
             <Disclosure title="Give store credit" hint="none yet">
               <StoreCreditForm slug={slug} clientId={client.id} />
             </Disclosure>
@@ -403,7 +411,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               ) : null}
             </Card>
           ) : null}
-          {thread.length || canText ? (
+          {canMessages && (thread.length || canText) ? (
             <Card className="p-4 text-sm">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h2 className="font-medium">Text messages</h2>
@@ -425,7 +433,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               ) : null}
             </Card>
           ) : null}
-          {submissions.length || (write && activeForms.length) ? (
+          {canNotes && (submissions.length || (write && activeForms.length)) ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-2 font-medium">Forms</h2>
               {submissions.length === 0 ? <p className="text-stone-500">Nothing signed yet.</p> : (

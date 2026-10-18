@@ -57,6 +57,16 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 ## 2. Before real customers
 
 ### Full review 2026-10-16 (`REVIEW-2026-10-16.md` has every finding; the "Fix first" table is the order)
+- [x] Client-data permissions split, 2026-10-18 (migration 0114): `clients.read` ("View clients") now means only the client list, a
+      client's contact details and visit history. Split out of it: `clients.export` (the CSV download, now in the activity log with the
+      filter and row count), `clients.notes` (private notes, lash maps, signed forms, the forms inbox and print view), `clients.messages`
+      (Inbox, a client's text thread, the unread badge; replying also needs `clients.write`), `clients.photos` (Gallery and the photos on
+      a profile), `clients.balances` (store credit and loyalty cards; adjusting them also needs `clients.write`). Defaults: Owner and
+      Manager all five; Front desk notes, messages, balances; Provider notes and photos. API key scopes follow (`client-notes:` and
+      `forms:read` need notes, `clients:balances` balances, `messages:read` messages). The appointments report CSV drops the Phone
+      column unless the caller also has `clients.read`. Back-fill rule for stored roles: clients.read → notes + photos; clients.read +
+      clients.write → messages + balances too; clients.read + (reports.view or members.manage) → export. Owners can retick anything
+      under Roles.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
@@ -871,9 +881,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       demo sends are still skipped ("Not sent · Demo business: nothing is sent"). Tests: `lib/__tests__/inbox-logic.test.ts`,
       `server/__tests__/inbox.test.ts`. Untested against live Twilio (MMS fetch of `/api/files/<id>` needs the public app address).
 - [ ] Inbox follow-ups: email in the same thread (needs inbound email via Resend), assign or snooze a conversation (needs a
-      conversations table; not built), a turn-off for the new-reply email, a separate permission for reading client texts (today
-      `clients.read`), quiet hours for staff replies, more than one picture per text, delivery receipts for MMS pictures sent from a
-      number without MMS support (Twilio returns 21623/21620 as a plain "Carrier error").
+      conversations table; not built), a turn-off for the new-reply email, quiet hours for staff replies, more than one picture per
+      text, delivery receipts for MMS pictures sent from a number without MMS support (Twilio returns 21623/21620 as a plain
+      "Carrier error").
+- [x] A separate permission for reading client texts: `clients.messages` gates the Inbox (list, conversation, feed, new message),
+      a client's text thread and the unread badge; replying, resending and adding a sender as a client also need `clients.write`.
+      Done 2026-10-18 with the client-data permission split (migration 0114).
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 

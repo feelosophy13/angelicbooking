@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { instantToISODate, zonedToInstant } from "@angelic/core";
+import { can, instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { salesReport } from "@/server/sales";
 import { serviceIdsInScope } from "@/server/service-groups";
@@ -10,7 +10,7 @@ import { shiftISODate } from "@/lib/utils";
 /** CSV export of closed sales or appointments for a date range: ?kind=sales|appointments&from&to */
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "reports.view");
+  const { business, permissions } = await requireAction(slug, "reports.view");
   const url = new URL(req.url);
   const tz = business.timezone;
   const today = instantToISODate(new Date(), tz);
@@ -37,7 +37,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
         .where(and(gte(schema.appointmentItems.startAt, start), lt(schema.appointmentItems.startAt, end), ...(locationId ? [eq(schema.appointments.locationId, locationId)] : []), ...(serviceIds ? [serviceIds.length ? inArray(schema.appointmentItems.serviceId, serviceIds) : sql`false`] : [])))
         .orderBy(asc(schema.appointmentItems.startAt)),
     );
-    return csvResponse(`appointments-${from}-${to}.csv`, ["Start", "End", "Client", "Phone", "Service", "Staff", "Location", "Status", "Source", "Price", "Notes"], rows.map((r) => [fmt(r.start), fmt(r.end), `${r.first ?? ""} ${r.last ?? ""}`.trim(), r.phone, r.service, r.staff, r.location, r.status, r.source, $(r.price), r.notes]));
+    // Client phone numbers are client data: they come along only for someone who may also view clients.
+    const withPhone = can(permissions, "clients.read");
+    const header = ["Start", "End", "Client", ...(withPhone ? ["Phone"] : []), "Service", "Staff", "Location", "Status", "Source", "Price", "Notes"];
+    return csvResponse(`appointments-${from}-${to}.csv`, header, rows.map((r) => [fmt(r.start), fmt(r.end), `${r.first ?? ""} ${r.last ?? ""}`.trim(), ...(withPhone ? [r.phone] : []), r.service, r.staff, r.location, r.status, r.source, $(r.price), r.notes]));
   }
   const { sales } = await salesReport(business.id, start, end, locationId, serviceIds);
   return csvResponse(`sales-${from}-${to}.csv`, ["Sale #", "Closed", "Location", "Client", "Status", "Subtotal", "Discount", "Tax", "Tips", "Total", "Refunded"], sales.map((s) => [s.number, fmt(s.closedAt), s.locationName, s.clientFirst ? `${s.clientFirst} ${s.clientLast ?? ""}`.trim() : "Walk-in", s.status, $(s.subtotalCents), $(s.discountCents), $(s.taxCents), $(s.tipCents), $(s.totalCents), $(s.refundedCents)]));

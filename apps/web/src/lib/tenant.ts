@@ -89,6 +89,13 @@ export async function requireAction(slug: string, action: Action): Promise<Tenan
   return ctx;
 }
 
+/** Like requireAction, for a page or action that needs every one of several permissions (reply to a text: read texts AND edit clients). */
+export async function requireActions(slug: string, ...actions: Action[]): Promise<TenantContext> {
+  const ctx = await requireBusiness(slug);
+  if (!actions.every((a) => can(ctx.permissions, a))) throw new PermissionError();
+  return ctx;
+}
+
 /** All businesses the current user belongs to (for the switcher / landing redirect). */
 export async function listMyBusinesses(userId: string) {
   return db

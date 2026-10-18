@@ -20,7 +20,8 @@ const fields = z.object({
   lastName: z.string().trim().max(60).default(""),
   email: f.email(),
   phone: z.string().trim().max(30).transform((v) => (v ? (normalizePhone(v) ?? v) : null)),
-  notes: f.optional(2000),
+  // Left out of the form (not sent at all) when the person may edit clients but not read notes: the stored notes then stay as they are.
+  notes: z.string().trim().max(2000, "At most 2000 characters").optional().transform((v) => (v === undefined ? undefined : v || null)),
   birthday: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Pick a date").transform((v) => v || null).optional(),
   smsOptIn: f.checkbox(),
   emailOptIn: f.checkbox(),
@@ -89,7 +90,7 @@ export const updateClient = formAction(fields, async (d, raw) => {
     const consent = smsMarketing === cur.smsMarketingOptIn ? {} : smsMarketingConsent(smsMarketing, `staff (${ctx.user.name || ctx.user.email})`);
     await tx
       .update(schema.clients)
-      .set({ ...photo, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, notes: d.notes, birthday: d.birthday ?? null, smsOptIn, emailOptIn: d.emailOptIn, emailMarketingOptIn: d.emailMarketingOptIn, ...consent })
+      .set({ ...photo, firstName: d.firstName, lastName: d.lastName, email: d.email, phone: d.phone, ...(d.notes === undefined ? {} : { notes: d.notes }), birthday: d.birthday ?? null, smsOptIn, emailOptIn: d.emailOptIn, emailMarketingOptIn: d.emailMarketingOptIn, ...consent })
       .where(eq(schema.clients.id, cur.id));
     // Consent changes are evidence: who changed what, when.
     const changed = Object.fromEntries(

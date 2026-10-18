@@ -47,6 +47,16 @@ describe("API key scopes", () => {
     expect(scopesBeyond(["clients:read", "clients:consent"], perms("clients.read"), false)).toEqual(["clients:consent"]);
     expect(scopesBeyond(["appointments:read", "appointments:book"], perms("appointments.read.any", "appointments.write.any"), false)).toEqual([]);
   });
+  it("viewing clients alone grants none of the split client-data scopes", () => {
+    expect(scopesBeyond(["clients:read", "client-notes:read", "clients:balances", "messages:read", "forms:read"], perms("clients.read"), false)).toEqual(["client-notes:read", "clients:balances", "messages:read", "forms:read"]);
+  });
+  it("each split scope follows its own permission", () => {
+    expect(scopesBeyond(["client-notes:read", "client-notes:write", "forms:read"], perms("clients.read", "clients.notes"), false)).toEqual([]);
+    expect(scopesBeyond(["clients:balances"], perms("clients.read", "clients.balances"), false)).toEqual([]);
+    expect(scopesBeyond(["messages:read", "messages:write"], perms("clients.read", "clients.messages"), false)).toEqual(["messages:write"]);
+    expect(scopesBeyond(["messages:write", "forms:write"], perms("clients.write"), false)).toEqual([]);
+    expect(scopesBeyond(["client-notes:read"], perms("clients.write", "clients.messages", "clients.balances"), false)).toEqual(["client-notes:read"]);
+  });
 });
 
 describe("file kinds", () => {

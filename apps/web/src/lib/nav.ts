@@ -23,8 +23,8 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     ] },
     { title: "People", items: [
       it(`${base}/clients`, "Clients", "Users"),
-      ...(ok("clients.read") ? [it(`${base}/inbox`, "Inbox", "Inbox")] : []),
-      ...(ok("clients.read") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
+      ...(ok("clients.messages") ? [it(`${base}/inbox`, "Inbox", "Inbox")] : []),
+      ...(ok("clients.photos") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
       it(`${base}/staff`, "Staff", "UserCog", { exclude: [`${base}/staff-hours`] }),
       // Who may do what. A Settings page that is also a daily tool for whoever manages people, so it has its own entry (and Settings steps aside).
       ...(ok("members.manage") ? [it(`${base}/settings/roles`, "Roles", "ShieldCheck")] : []),
