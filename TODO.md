@@ -29,10 +29,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       events signed with the live secrets; the key can read every resource the app uses. Still to do: one real card payment + refund
       from the sale page (proves the key's write access), and a real store order (manual capture with a platform fee).
 - [ ] Save the Customer Portal configuration once in the Stripe dashboard (branding, cancellation copy).
-- [ ] Decide pricing on the admin Pricing page (base plan, trial, number fee, text usage, included texts, platform fee on card
+- [x] Decide pricing on the admin Pricing page (base plan, trial, number fee, text usage, included texts, platform fee on card
       payments). Prices are in the database now, not in environment variables.
 
 ### Twilio
+      Done 2026-10-19 (saved on local and production price books with an admin audit entry): base $29/month with 1 location and
+      1 active staff included, $29 per extra location, $9 per extra staff, text number $15/month, 100 texts included then 2¢,
+      30-day trial, 200 trial emails a day, 0% platform fee. One bundled plan on purpose: payroll, forms, automations and the inbox
+      are included rather than sold as add-ons like Vagaro's; revisit per-feature pricing after ten paying salons.
 - [ ] (Angelic Beauty was deleted from prod on 2026-10-17 at the owner's request; they will re-add it.) Buy the first toll-free number for Angelic Beauty in production (Settings → Text messaging) and submit
       carrier verification. Needs the owner signed in on app.angelicbooking.com; buy it **before** the deploy that
       turns Stripe on (billing then requires an active subscription to buy a number) or set up billing first. Needs EIN (or sole proprietor), address, contact. Approval takes 1–3 weeks;
