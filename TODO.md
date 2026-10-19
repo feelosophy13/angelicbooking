@@ -162,6 +162,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       "Book anyway" offered to those who may double-book, confirmation then workflows. Success is a client toast (`toast()` in
       `components/toaster.tsx`, one at a time, optional action such as Open) and the grid refreshes. Touch: a tap opens the popover,
       a drag still scrolls. Not built: a popover on the phone agenda list (no empty slots there; "+ New" covers it).
+- [x] Drag polish, 2026-10-18: dropping a visit whose client can be reached (a phone or email they accept messages on) asks "Move
+      {name} to 3:45 PM?" with "Move and tell {name}" / "Move quietly" / Cancel, the card held where it was dropped meanwhile;
+      quietly still restarts the reminders (`moveAppointmentItem({ notify })` → `appointmentChangedSilently`). Blocks and walk-ins move
+      without asking. Every move and resize ends in a toast with Undo (moves it back the same way, told or quiet); drag errors are
+      toasts too, not a banner above a tall grid. The bottom edge of a card is a resize handle (mouse/pen): the service's last segment,
+      or the block, ends where it is dropped, snapped to the booking grid (`resizeService`, action `resizeAppointmentItem`; must stay
+      inside the provider's hours and off their classes; no message to the client since the start is unchanged; audit
+      `appointment.resize`). Not built: resizing the start edge, resizing on touch.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,

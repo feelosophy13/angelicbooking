@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { useRouter } from "next/navigation";
 import { TZDate } from "@date-fns/tz";
 import { cn, formatDateLong } from "@/lib/utils";
-import { moveAppointmentItem, quickStatus } from "./actions";
+import { moveAppointmentItem, quickStatus, resizeAppointmentItem } from "./actions";
 import { Check, LogIn } from "lucide-react";
 import type { CalTip } from "@/lib/calendar-tip";
 import { CalendarTip, type AnchorRect } from "./calendar-tooltip";
@@ -36,6 +36,9 @@ export type CalItem = {
   groupKey: string;
   /** What the hover card shows. */
   tip: CalTip;
+  /** Moving it asks whether to tell the client (there is one, and they can be reached). */
+  notify?: boolean;
+  clientFirst?: string | null;
 };
 
 const DEFAULT_START_H = 7;
@@ -93,6 +96,10 @@ function groupCards(items: CalItem[]): Card[] {
 }
 
 type Drag = { key: string; originX: number; originY: number; dx: number; dy: number; moved: boolean };
+/** Dragging a card's bottom edge: how far the end has moved, in grid minutes. */
+type Resize = { key: string; originY: number; dEnd: number };
+/** A drop that waits for "tell the client?" before it is saved; the card stays drawn where it was dropped. */
+type Confirm = { card: Card; target: CalColumn; newStart: number; newStaffId: string | null; dx: number; dyMin: number };
 /** Drawing on empty grid: the column, where the pointer went down (grid minutes) and the range it has swept so far. */
 type Sel = { colKey: string; anchorMin: number; startMin: number; endMin: number; moved: boolean; originY: number; el: HTMLElement };
 
@@ -173,7 +180,9 @@ export function CalendarGrid(props: {
   const router = useRouter();
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [resize, setResize] = useState<Resize | null>(null);
+  const resizeRef = useRef<Resize | null>(null);
+  const [confirm, setConfirm] = useState<Confirm | null>(null);
   // The hover card: shown after a short pause over an appointment (mouse or keyboard focus), never while dragging or on touch.
   const [hover, setHover] = useState<{ tip: CalTip; anchor: AnchorRect } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -242,13 +251,98 @@ export function CalendarGrid(props: {
     const newStart = card.startMin + deltaMin;
     if (newStart < 0 || newStart + (card.endMin - card.startMin) > 24 * 60) return;
     if (deltaMin === 0 && toIdx === fromIdx) return;
-    setError(null);
+    const newStaffId = props.view === "day" ? target.staffId : null;
+    // A client who can be reached is asked about: the move waits for "tell them" or "quietly" (the card stays where it was dropped).
+    if (card.first.notify) setConfirm({ card, target, newStart, newStaffId, dx: d.dx, dyMin: deltaMin });
+    else performMove(card, target, newStart, newStaffId, false);
+  }
+
+  const who = (card: Card) => card.first.clientFirst ?? card.first.title;
+  /** Save a move; on success a toast offers Undo (which moves it back, told or quiet the same way). */
+  function performMove(card: Card, target: CalColumn, newStart: number, newStaffId: string | null, notify: boolean) {
+    setConfirm(null);
+    const from = columns.find((c) => c.key === card.first.columnKey);
+    const whereTo = `${fmt(newStart)}${target.date !== card.first.columnKey && props.view === "week" ? ` on ${target.label}` : ""}${newStaffId && newStaffId !== card.first.staffId ? ` with ${target.label}` : ""}`;
     startTransition(async () => {
-      const res = await moveAppointmentItem({ slug: props.slug, itemId: card.first.id, newStartISO: instantISO(target.date, newStart, props.timeZone), newStaffId: props.view === "day" ? target.staffId : null });
-      if (!res.ok) setError(res.error);
+      const res = await moveAppointmentItem({ slug: props.slug, itemId: card.first.id, newStartISO: instantISO(target.date, newStart, props.timeZone), newStaffId, notify });
+      if (!res.ok) { toast({ kind: "error", message: res.error }); router.refresh(); return; }
+      toast({
+        message: `Moved ${who(card)} to ${whereTo}${notify ? ` and told ${who(card)}` : ""}`,
+        action: from
+          ? {
+              label: "Undo",
+              onClick: () =>
+                startTransition(async () => {
+                  const back = await moveAppointmentItem({ slug: props.slug, itemId: card.first.id, newStartISO: instantISO(from.date, card.startMin, props.timeZone), newStaffId: props.view === "day" ? card.first.staffId : null, notify });
+                  toast(back.ok ? { message: `Moved ${who(card)} back to ${fmt(card.startMin)}` } : { kind: "error", message: back.error });
+                  router.refresh();
+                }),
+            }
+          : undefined,
+      });
       router.refresh();
     });
   }
+
+  /** Save a new end after the bottom edge was dragged; Undo puts the old end back. */
+  function performResize(card: Card, newEnd: number) {
+    const col = columns.find((c) => c.key === card.first.columnKey);
+    if (!col) return;
+    startTransition(async () => {
+      const res = await resizeAppointmentItem({ slug: props.slug, itemId: card.first.id, newEndISO: instantISO(col.date, newEnd, props.timeZone) });
+      if (!res.ok) { toast({ kind: "error", message: res.error }); router.refresh(); return; }
+      toast({
+        message: `${who(card)} now ends at ${fmt(newEnd)}`,
+        action: {
+          label: "Undo",
+          onClick: () =>
+            startTransition(async () => {
+              const back = await resizeAppointmentItem({ slug: props.slug, itemId: card.first.id, newEndISO: instantISO(col.date, card.endMin, props.timeZone) });
+              toast(back.ok ? { message: `${who(card)} ends at ${fmt(card.endMin)} again` } : { kind: "error", message: back.error });
+              router.refresh();
+            }),
+        },
+      });
+      router.refresh();
+    });
+  }
+
+  useEffect(() => {
+    if (!resize) return;
+    const onMove = (e: PointerEvent) => {
+      const r = resizeRef.current;
+      if (!r) return;
+      const next = { ...r, dEnd: snap(e.clientY - r.originY) };
+      resizeRef.current = next;
+      setResize(next);
+    };
+    const onUp = () => {
+      const r = resizeRef.current;
+      resizeRef.current = null;
+      setResize(null);
+      if (!r) return;
+      const card = [...cardsByCol.values()].flat().find((c) => c.key === r.key);
+      if (!card) return;
+      const newEnd = Math.max(card.startMin + slotIntervalMin, Math.min(24 * 60, card.endMin + r.dEnd));
+      if (newEnd !== card.endMin) performResize(card, newEnd);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+    window.addEventListener("pointercancel", onUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resize?.key]);
+
+  useEffect(() => {
+    if (!confirm) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setConfirm(null); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [confirm]);
 
   useEffect(() => {
     if (!drag) return;
@@ -349,8 +443,6 @@ export function CalendarGrid(props: {
 
   return (
     <div className="space-y-2">
-      {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
-
       {/* Phone: agenda list */}
       <div className="space-y-4 md:hidden">
         {columns.map((c) => {
@@ -445,12 +537,17 @@ export function CalendarGrid(props: {
                 ) : null}
                 {(cardsByCol.get(c.key) ?? []).map((card) => {
                   const lane = lanesByCol.get(c.key)?.get(card.key) ?? { lane: 0, lanes: 1 };
-                  const dragging = drag?.key === card.key && drag.moved;
-                  const dyMin = dragging ? snap(drag.dy) : 0;
+                  // While a drop waits for "tell the client?", the card stays drawn where it was dropped.
+                  const held = confirm?.card.key === card.key ? confirm : null;
+                  const dragging = (drag?.key === card.key && drag.moved) || !!held;
+                  const dx = held ? held.dx : drag?.key === card.key ? drag.dx : 0;
+                  const dyMin = held ? held.dyMin : dragging && drag ? snap(drag.dy) : 0;
                   const draggable = (card.first.status === "block" ? props.canMoveBlock : props.canMove) && !LOCKED.has(card.first.status);
+                  const resizing = resize?.key === card.key ? resize : null;
+                  const endMin = resizing ? Math.max(card.startMin + slotIntervalMin, Math.min(24 * 60, card.endMin + resizing.dEnd)) : card.endMin;
                   // The quick buttons (check in, complete) need about 6rem; in a narrow card (the week view packs every stylist into one day column) they
                   // would spill out and be clipped, so the card hides them until it has room (container query on the card).
-                  const height = Math.max(22, (card.endMin - card.startMin) * PX_PER_MIN - 2);
+                  const height = Math.max(22, (endMin - card.startMin) * PX_PER_MIN - 2);
                   return (
                     <div
                       key={card.key}
@@ -467,7 +564,7 @@ export function CalendarGrid(props: {
                       onKeyDown={(e) => e.key === "Enter" && router.push(card.first.href)}
                       data-card
                       aria-label={`${card.first.title}, ${card.first.subtitle}, ${fmt(card.startMin)} to ${fmt(card.endMin)}`}
-                      className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", dragging && "z-30 ring-2 ring-brand-500 shadow-lg")}
+                      className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", (dragging || resizing) && "z-30 ring-2 ring-brand-500 shadow-lg")}
                       style={{
                         top: top(card.startMin),
                         height,
@@ -476,9 +573,30 @@ export function CalendarGrid(props: {
                         borderLeftColor: card.first.color,
                         // Overview: the stylist's colour is the only thing on the block, so tint it (cancelled and no-shows stay grey).
                         ...(props.overview && !GREYED.has(card.first.status) ? { backgroundColor: `color-mix(in srgb, ${card.first.color} 32%, white)` } : {}),
-                        transform: dragging ? `translate(${drag.dx}px, ${dyMin * PX_PER_MIN}px)` : undefined,
+                        transform: dragging ? `translate(${dx}px, ${dyMin * PX_PER_MIN}px)` : undefined,
                       }}
                     >
+                      {/* The bottom edge resizes (a visit running long, a longer lunch): drag it and the end snaps to the booking grid. */}
+                      {draggable && !props.overview ? (
+                        <div
+                          role="presentation"
+                          aria-hidden
+                          title="Drag to change when it ends"
+                          onPointerDown={(e) => {
+                            if (e.button !== 0 || e.pointerType === "touch") return;
+                            e.stopPropagation();
+                            e.preventDefault();
+                            hideTip();
+                            const r: Resize = { key: card.key, originY: e.clientY, dEnd: 0 };
+                            resizeRef.current = r;
+                            setResize(r);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute inset-x-0 bottom-0 z-10 flex h-2.5 cursor-ns-resize items-end justify-center opacity-0 group-hover:opacity-100"
+                        >
+                          <span className="mb-0.5 h-1 w-8 rounded-full bg-stone-500/50" />
+                        </div>
+                      ) : null}
                       {card.gaps.map((g, i) => (
                         <div key={i} className="pointer-events-none absolute inset-x-0 bg-[repeating-linear-gradient(135deg,transparent_0_6px,rgba(255,255,255,0.55)_6px_12px)]" style={{ top: (g.from - card.startMin) * PX_PER_MIN, height: (g.to - g.from) * PX_PER_MIN }}>
                           {props.overview ? null : <span className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-wide opacity-60">processing</span>}
@@ -524,7 +642,7 @@ export function CalendarGrid(props: {
                         <div className="px-2 py-1 leading-tight">
                           <div className="truncate font-semibold">{card.first.title}</div>
                           <div className="truncate">{card.first.subtitle}</div>
-                          {height > 44 ? <div className="truncate opacity-70">{fmt(card.startMin + dyMin)} – {fmt(card.endMin + dyMin)}</div> : null}
+                          {height > 44 ? <div className="truncate opacity-70">{fmt(card.startMin + dyMin)} – {fmt(endMin + dyMin)}</div> : null}
                         </div>
                       )}
                     </div>
@@ -540,7 +658,22 @@ export function CalendarGrid(props: {
           {[canCreate ? (props.canBlock ? "Click or draw on an empty slot to book or block it." : "Click an empty slot to book it.") : null, props.canMove || props.canMoveBlock ? "Drag an appointment to move it. Click to open it." : null].filter(Boolean).join(" ")}
         </p>
       ) : null}
-      {hover && !drag?.moved && !sel ? <CalendarTip tip={hover.tip} anchor={hover.anchor} fmt={fmt} /> : null}
+      {hover && !drag?.moved && !sel && !resize && !confirm ? <CalendarTip tip={hover.tip} anchor={hover.anchor} fmt={fmt} /> : null}
+      {confirm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 p-4" onClick={() => setConfirm(null)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="move-confirm-title" className="w-[min(92vw,26rem)] rounded-xl border border-stone-200 bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 id="move-confirm-title" className="text-base font-semibold text-stone-900">
+              Move {who(confirm.card)} to {fmt(confirm.newStart)}{confirm.newStaffId && confirm.newStaffId !== confirm.card.first.staffId ? ` with ${confirm.target.label}` : props.view === "week" && confirm.target.key !== confirm.card.first.columnKey ? ` on ${confirm.target.label}` : ""}?
+            </h3>
+            <p className="mt-1 text-sm text-stone-600">{who(confirm.card)} can be reached, so they can hear about the new time. Either way the reminders move with it.</p>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => setConfirm(null)} className="h-9 rounded-lg px-3 text-sm text-stone-700 hover:bg-stone-100">Cancel</button>
+              <button type="button" onClick={() => performMove(confirm.card, confirm.target, confirm.newStart, confirm.newStaffId, false)} className="h-9 rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium text-stone-800 hover:bg-stone-50">Move quietly</button>
+              <button type="button" autoFocus onClick={() => performMove(confirm.card, confirm.target, confirm.newStart, confirm.newStaffId, true)} className="h-9 rounded-lg bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700">Move and tell {who(confirm.card)}</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {quickAt && props.quick ? (
         <QuickCreate
           data={props.quick}

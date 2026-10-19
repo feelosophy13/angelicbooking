@@ -148,6 +148,9 @@ export default async function CalendarPage({
       href: i.classSessionId ? `/app/${slug}/classes/${i.classSessionId}` : `/app/${slug}/appointments/${i.appointmentId}`,
       groupKey: `${i.appointmentId}:${i.serviceName.replace(" (finish)", "")}:${i.staffId}:${instantToISODate(i.startAt, tz)}`,
       tip: tipFor(i.appointmentId),
+      // Moving a visit asks whether to tell the client, when there is a client who can be reached.
+      notify: i.kind !== "block" && !i.classSessionId && !!i.clientReachable,
+      clientFirst: i.clientName?.split(" ")[0] ?? null,
     }));
 
   // Quick create (click or draw on an empty slot): the menu, who does what, and what this person may start. Day and week only.

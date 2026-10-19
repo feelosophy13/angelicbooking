@@ -24,6 +24,8 @@ export type AgendaItem = {
   // What the calendar tooltip shows besides the basics.
   clientPhone?: string | null;
   clientTags?: string[] | null;
+  /** The client can be reached about a change (a phone or email they accept messages on). */
+  clientReachable?: boolean;
   source?: string | null;
   depositCents?: number | null;
   depositStatus?: string | null;
@@ -54,6 +56,9 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
           lastName: schema.clients.lastName,
           clientPhone: schema.clients.phone,
           clientTags: schema.clients.tags,
+          clientEmail: schema.clients.email,
+          smsOptIn: schema.clients.smsOptIn,
+          emailOptIn: schema.clients.emailOptIn,
           source: schema.appointments.source,
           depositCents: schema.appointments.depositCents,
           depositStatus: schema.appointments.depositStatus,
@@ -88,7 +93,7 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
       staffLocationIndex(tx),
     ]);
     const agenda: AgendaItem[] = [
-      ...items.map((i) => ({ ...i, clientName: i.firstName ? `${i.firstName} ${i.lastName ?? ""}`.trim() : null })),
+      ...items.map(({ clientEmail, smsOptIn, emailOptIn, ...i }) => ({ ...i, clientName: i.firstName ? `${i.firstName} ${i.lastName ?? ""}`.trim() : null, clientReachable: !!((smsOptIn && i.clientPhone) || (emailOptIn && clientEmail)) })),
       ...sessions.map((s) => ({
         id: `class:${s.id}`,
         appointmentId: `class:${s.id}`,

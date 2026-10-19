@@ -390,6 +390,45 @@ export async function rescheduleAppointment(input: { businessId: string; appoint
  * day. If that is a different site, every service on the ticket must be offered
  * there; then the appointment and the client's home location follow.
  */
+/**
+ * Change when a service (or a block of time) ends, from the calendar's resize handle: the last live segment of that service line grows
+ * or shrinks to `newEndAt`, so a visit that is running long gets its real length and a lunch block can be stretched. Nothing before
+ * the end moves. The new end must stay inside the provider's hours; busy clashes are the DB's job.
+ */
+export async function resizeService(input: { businessId: string; itemId: string; newEndAt: Date; actorUserId: string }) {
+  try {
+    await withTenant(input.businessId, async (tx) => {
+      const item = await tx.query.appointmentItems.findFirst({ where: eq(schema.appointmentItems.id, input.itemId) });
+      if (!item) throw new BookingError("Appointment not found.");
+      if (item.status === "cancelled" || item.status === "completed" || item.status === "no_show") throw new BookingError("This appointment can no longer be changed.");
+      if (item.classSessionId) throw new BookingError("A class keeps its own length. Edit the class instead.");
+      const siblings = (await tx
+        .select()
+        .from(schema.appointmentItems)
+        .where(and(eq(schema.appointmentItems.appointmentId, item.appointmentId), item.serviceId ? eq(schema.appointmentItems.serviceId, item.serviceId) : eq(schema.appointmentItems.id, item.id), eq(schema.appointmentItems.staffId, item.staffId))))
+        .filter((s) => s.status !== "cancelled")
+        .sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+      const last = siblings[siblings.length - 1] ?? item;
+      if (input.newEndAt.getTime() === last.endAt.getTime()) return;
+      if (input.newEndAt <= last.startAt) throw new BookingError("An appointment has to end after it starts.");
+      const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
+      const tz = biz?.timezone ?? "America/New_York";
+      const day = instantToISODate(last.startAt, tz);
+      const blocks = (await workingBlocksFor({ businessId: input.businessId, timeZone: tz, staffIds: [item.staffId], dates: [day] })).get(`${item.staffId}:${day}`) ?? [];
+      const target = await tx.query.staff.findFirst({ where: eq(schema.staff.id, item.staffId), columns: { displayName: true } });
+      if (input.newEndAt > last.endAt && !withinWorkingBlocks(blocks, [{ start: last.startAt, end: input.newEndAt }])) {
+        throw new BookingError(`${target?.displayName ?? "This provider"} isn't working until ${new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz }).format(input.newEndAt)}. Pick an earlier end, or change their hours under Staff.`);
+      }
+      if (input.newEndAt > last.endAt) await assertNoClassClash(tx, item.staffId, [{ start: last.endAt, end: input.newEndAt }]);
+      await tx.execute(sql`set constraints appointment_items_no_double_booking deferred`);
+      await tx.update(schema.appointmentItems).set({ endAt: input.newEndAt, allowOverlap: false }).where(eq(schema.appointmentItems.id, last.id));
+      await audit(tx, input.businessId, input.actorUserId, "appointment.resize", item.appointmentId, { itemId: last.id, from: last.endAt, to: input.newEndAt });
+    });
+  } catch (e) {
+    translate(e);
+  }
+}
+
 async function followProviderLocation(tx: Tx, businessId: string, appointmentId: string) {
   const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId) });
   if (!appt) return;

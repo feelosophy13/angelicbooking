@@ -6,9 +6,9 @@ import { schema } from "@angelic/db";
 import { can, zonedToInstant } from "@angelic/core";
 import { requireAction, requireBusiness } from "@/lib/tenant";
 import { modeForKind, requireAppointmentAccess, requireBlockAccess, requireBookingAccess } from "@/server/appointment-access";
-import { blockTime, bookAppointment, BookingError, OverlapError, rescheduleAppointment, rescheduleService, setAppointmentStatus } from "@/server/booking";
+import { blockTime, bookAppointment, BookingError, OverlapError, rescheduleAppointment, rescheduleService, resizeService, setAppointmentStatus } from "@/server/booking";
 import { tzFor } from "@/server/locations";
-import { afterAppointmentBooked, notifyAppointment } from "@/lib/notify";
+import { afterAppointmentBooked, appointmentChangedSilently, notifyAppointment } from "@/lib/notify";
 import { triggerAppointmentWorkflows } from "@/server/workflows";
 import { schema as dbSchema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
@@ -35,15 +35,19 @@ export async function updateAppointmentStatus(formData: FormData) {
 
 export type MoveResult = { ok: true } | { ok: false; error: string };
 
-/** Called from the calendar after a drag. */
+/**
+ * Called from the calendar after a drag. `notify` (default on) sends the client the "rescheduled" message; the calendar asks before a
+ * move when the client can be reached, and "Move quietly" passes false, which still restarts the reminders for the new time.
+ */
 export async function moveAppointmentItem(input: {
   slug: string;
   itemId: string;
   newStartISO: string;
   newStaffId?: string | null;
+  notify?: boolean;
 }): Promise<MoveResult> {
   const parsed = z
-    .object({ slug: z.string(), itemId: z.string().min(1), newStartISO: z.string().datetime(), newStaffId: z.string().nullish() })
+    .object({ slug: z.string(), itemId: z.string().min(1), newStartISO: z.string().datetime(), newStaffId: z.string().nullish(), notify: z.boolean().optional() })
     .safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid move" };
   // A Provider may move their own appointments, but not to someone else's column.
@@ -75,7 +79,27 @@ export async function moveAppointmentItem(input: {
       });
     }
     const item = await withTenant(ctx.business.id, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId) }));
-    if (item) await notifyAppointment(ctx.business, item.appointmentId, "rescheduled");
+    // A block has no client; a quiet move still moves the reminders to the new time.
+    if (item && parsed.data.notify !== false) await notifyAppointment(ctx.business, item.appointmentId, "rescheduled");
+    else if (item) await appointmentChangedSilently(ctx.business, item.appointmentId, "rescheduled");
+  } catch (e) {
+    if (e instanceof BookingError) return { ok: false, error: e.message };
+    throw e;
+  }
+  revalidatePath(`/app/${parsed.data.slug}`);
+  return { ok: true };
+}
+
+/** Called from the calendar after the bottom edge of a card is dragged: the service (or block) now ends at `newEndISO`. No message to the client; the start is unchanged. */
+export async function resizeAppointmentItem(input: { slug: string; itemId: string; newEndISO: string }): Promise<MoveResult> {
+  const parsed = z.object({ slug: z.string(), itemId: z.string().min(1), newEndISO: z.string().datetime() }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid change" };
+  const bizId = (await requireBusiness(parsed.data.slug)).business.id;
+  const itemRow = await withTenant(bizId, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId), columns: { appointmentId: true } }));
+  if (!itemRow) return { ok: false, error: "That appointment no longer exists." };
+  const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, await modeForKind(bizId, itemRow.appointmentId, "change"), { line: parsed.data.itemId });
+  try {
+    await resizeService({ businessId: ctx.business.id, itemId: parsed.data.itemId, newEndAt: new Date(parsed.data.newEndISO), actorUserId: ctx.user.id });
   } catch (e) {
     if (e instanceof BookingError) return { ok: false, error: e.message };
     throw e;
