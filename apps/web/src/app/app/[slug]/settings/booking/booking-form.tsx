@@ -20,6 +20,7 @@ export type BookingValues = {
   depositRefundAs: string;
   requireCardOnline: boolean;
   clientAccountsEnabled: boolean;
+  clientPhotosOnBooking: boolean;
   bookingPolicy: string | null;
   addressLine: string | null;
 };
@@ -62,6 +63,7 @@ export function BookingForm({ slug, v, stripeReady, paymentsHref, feeSummary, fe
               <option value="fewest_bookings">Give it to whoever has the fewest bookings that day</option>
             </Select>
           </Field>
+          <Checkbox name="clientPhotosOnBooking" defaultChecked={v.clientPhotosOnBooking} label="Let clients attach photos when booking" hint="Up to 5 pictures with their details: inspiration, a reference style, or their current lashes or brows. Shown on the appointment and kept private to your team." />
         </>
       ) : (
         <>
@@ -69,6 +71,7 @@ export function BookingForm({ slug, v, stripeReady, paymentsHref, feeSummary, fe
           <Keep name="maxAdvanceDays" value={String(v.maxAdvanceDays)} />
           <Keep name="bookingOrder" value={v.bookingOrder} />
           <Keep name="anyProviderMode" value={v.anyProviderMode} />
+          <Keep name="clientPhotosOnBooking" value={v.clientPhotosOnBooking} />
         </>
       )}
       <Field label="Cancellation window" name="cancelWindowHours" hint="Hours before the visit. Cancelling inside it counts as late." className="sm:max-w-xs"><Input name="cancelWindowHours" type="number" min={0} defaultValue={v.cancelWindowHours} /></Field>

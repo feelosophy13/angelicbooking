@@ -38,7 +38,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
         <Card className="p-4">
           <BookingForm
             slug={slug}
-            v={{ onlineBookingEnabled: business.onlineBookingEnabled, minNoticeMin: business.minNoticeMin, maxAdvanceDays: business.maxAdvanceDays, cancelWindowHours: business.cancelWindowHours, bookingOrder: business.bookingOrder, anyProviderMode: business.anyProviderMode, noShowFeeCents: business.noShowFeeCents, lateCancelFeeType: latePolicy.feeType, lateCancelFeeValue: business.lateCancelFeeValue, lateCancelDeposit: business.lateCancelDeposit, depositRefundAs: business.depositRefundAs, requireCardOnline: business.requireCardOnline, clientAccountsEnabled: business.clientAccountsEnabled, bookingPolicy: business.bookingPolicy, addressLine: business.addressLine }}
+            v={{ onlineBookingEnabled: business.onlineBookingEnabled, minNoticeMin: business.minNoticeMin, maxAdvanceDays: business.maxAdvanceDays, cancelWindowHours: business.cancelWindowHours, bookingOrder: business.bookingOrder, anyProviderMode: business.anyProviderMode, noShowFeeCents: business.noShowFeeCents, lateCancelFeeType: latePolicy.feeType, lateCancelFeeValue: business.lateCancelFeeValue, lateCancelDeposit: business.lateCancelDeposit, depositRefundAs: business.depositRefundAs, requireCardOnline: business.requireCardOnline, clientAccountsEnabled: business.clientAccountsEnabled, clientPhotosOnBooking: business.clientPhotosOnBooking, bookingPolicy: business.bookingPolicy, addressLine: business.addressLine }}
             stripeReady={isStripeConfigured() && business.stripeChargesEnabled}
             paymentsHref={paymentsHrefFor(slug, permissions)}
             feeSummary={feeSummary}

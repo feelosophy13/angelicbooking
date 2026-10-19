@@ -111,6 +111,8 @@ export const businesses = pgTable("businesses", {
   referralFriendBonusPoints: integer("referral_friend_bonus_points").notNull().default(0), // to the new client
   // Client accounts on the booking site (passwordless codes by email/SMS)
   clientAccountsEnabled: boolean("client_accounts_enabled").notNull().default(true),
+  // The booking form offers "Add photos" (inspiration pictures, their current lashes or brows); off for owners who don't want them.
+  clientPhotosOnBooking: boolean("client_photos_on_booking").notNull().default(true),
   // Online store on the booking site
   storeEnabled: boolean("store_enabled").notNull().default(false),
   giftCardsOnline: boolean("gift_cards_online").notNull().default(true),
@@ -575,7 +577,7 @@ export const visitPhotos = pgTable(
     clientId: text("client_id").references(() => clients.id, { onDelete: "set null" }),
     serviceId: text("service_id").references(() => services.id, { onDelete: "set null" }),
     staffId: text("staff_id").references(() => staff.id, { onDelete: "set null" }),
-    phase: text("phase").notNull(), // "before" | "after"
+    phase: text("phase").notNull(), // "before" | "after" | "client" (attached by the client when booking online)
     fileId: text("file_id").notNull(),
     thumbFileId: text("thumb_file_id"),
     tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
