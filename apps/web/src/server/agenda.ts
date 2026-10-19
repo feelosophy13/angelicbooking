@@ -9,6 +9,8 @@ export type AgendaItem = {
   appointmentId: string;
   staffId: string;
   serviceName: string;
+  /** The service booked (null for a block), for colouring by category. */
+  serviceId?: string | null;
   startAt: Date;
   endAt: Date;
   status: string;
@@ -49,6 +51,7 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
           appointmentId: schema.appointmentItems.appointmentId,
           staffId: schema.appointmentItems.staffId,
           serviceName: schema.appointmentItems.serviceName,
+          serviceId: schema.appointmentItems.serviceId,
           startAt: schema.appointmentItems.startAt,
           endAt: schema.appointmentItems.endAt,
           status: schema.appointmentItems.status,
@@ -86,6 +89,7 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
           notes: schema.classSessions.notes,
           locationId: schema.classSessions.locationId,
           serviceName: schema.services.name,
+          serviceId: schema.classSessions.serviceId,
           booked: sql<number>`(select count(*) from appointment_items ai where ai.class_session_id = ${schema.classSessions.id} and ai.status in ('booked','confirmed','checked_in','in_progress','completed'))`,
         })
         .from(schema.classSessions)
@@ -101,6 +105,7 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
         appointmentId: `class:${s.id}`,
         staffId: s.staffId,
         serviceName: s.serviceName,
+        serviceId: s.serviceId,
         startAt: s.startAt,
         endAt: s.endAt,
         status: s.status === "cancelled" ? "cancelled" : "class",

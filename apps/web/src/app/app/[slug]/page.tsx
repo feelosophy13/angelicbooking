@@ -19,6 +19,9 @@ import { TodayStrip } from "./today-strip";
 import { LocationPills } from "./location-pills";
 import { CalendarShortcuts, DateJump } from "./calendar-nav";
 import { ProviderChips } from "./provider-chips";
+import { DisplayMenu } from "./calendar-display";
+import { listCategories } from "@/server/categories";
+import { categoryColors, UNCATEGORIZED_COLOR } from "@/lib/calendar-palette";
 import { money } from "@/lib/format";
 import { sql } from "drizzle-orm";
 import { can } from "@angelic/core";
@@ -122,6 +125,18 @@ export default async function CalendarPage({
   const startHour = Math.max(0, Math.min(7, ...minutesSeen.map((m) => Math.floor(m / 60))));
   const endHour = Math.min(24, Math.max(21, ...minutesSeen.map((m) => Math.ceil(m / 60))));
   const staffById = new Map(staff.map((s) => [s.id, s]));
+  // "Colour by service category": each service's category and that category's palette colour (menu order).
+  const [serviceRows, categories] = await Promise.all([
+    withTenant(business.id, (tx) => tx.select({ id: schema.services.id, categoryId: schema.services.categoryId }).from(schema.services)),
+    listCategories(business.id, "service"),
+  ]);
+  const catColor = categoryColors(categories);
+  const catOf = new Map(serviceRows.map((r) => [r.id, r.categoryId]));
+  const categoryFor = (serviceId: string | null | undefined) => {
+    const cid = serviceId ? catOf.get(serviceId) : null;
+    const cat = cid ? categories.find((c) => c.id === cid) : null;
+    return cat ? { name: cat.name, color: catColor.get(cat.id) ?? UNCATEGORIZED_COLOR } : { name: "Other", color: UNCATEGORIZED_COLOR };
+  };
   // One hover card per appointment: every service on the visit, who does it, the client, and anything to know.
   const tipRows = new Map<string, TipItem[]>();
   for (const i of items) {
@@ -151,6 +166,8 @@ export default async function CalendarPage({
       subtitle: i.kind === "block" ? "Blocked time" : (i.classSessionId ? "Class" : i.serviceName.replace(" (finish)", "")) + (missingForms.has(i.appointmentId) ? " · forms due" : ""),
       status: i.kind === "block" && i.status !== "cancelled" ? "block" : i.status,
       color: staffById.get(i.staffId)?.color ?? "#6366f1",
+      categoryColor: i.kind === "block" ? UNCATEGORIZED_COLOR : categoryFor(i.serviceId).color,
+      categoryName: i.kind === "block" ? "Blocked time" : categoryFor(i.serviceId).name,
       href: i.classSessionId ? `/app/${slug}/classes/${i.classSessionId}` : `/app/${slug}/appointments/${i.appointmentId}`,
       groupKey: `${i.appointmentId}:${i.serviceName.replace(" (finish)", "")}:${i.staffId}:${instantToISODate(i.startAt, tz)}`,
       tip: tipFor(i.appointmentId),
@@ -237,6 +254,7 @@ export default async function CalendarPage({
           <LinkButton href={nav(today)} size="sm" variant={atNow ? "ghost" : "secondary"} aria-current={atNow ? "date" : undefined}>{nowLabel}</LinkButton>
           <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label={`Next ${view}`}><ChevronRight className="h-4 w-4" /></LinkButton>
           <DateJump date={date} today={today} hrefTemplate={nav("{date}")} />
+          {!noCalendar && view !== "month" ? <DisplayMenu categories={categories.length > 0} /> : null}
           {!noCalendar ? <CalendarShortcuts hrefs={{ today: nav(today), prev: nav(shiftISODate(date, -step)), next: nav(shiftISODate(date, step)), day: viewHref("day"), week: viewHref("week"), month: viewHref("month"), create: canBook ? `/app/${slug}/appointments/new?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}` : null }} /> : null}
         </div>
         {locations.length > 1 ? (

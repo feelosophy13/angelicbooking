@@ -9,6 +9,7 @@ import type { CalTip } from "@/lib/calendar-tip";
 import { CalendarTip, type AnchorRect } from "./calendar-tooltip";
 import { QuickCreate, type QuickCreateAt, type QuickCreateData } from "./quick-create";
 import { AppointmentPanel } from "./appointment-panel";
+import { DENSITY_PX, useCalendarDisplay } from "./calendar-display";
 import { toast } from "@/components/toaster";
 
 export type CalColumn = {
@@ -42,13 +43,15 @@ export type CalItem = {
   clientFirst?: string | null;
   /** The client's page, for those who may see clients. */
   clientHref?: string | null;
+  /** For "colour by service category": the service's category and its palette colour. */
+  categoryColor?: string;
+  categoryName?: string;
   /** "Tuesday, October 20, 2026", for the detail panel. */
   dateLabel?: string;
 };
 
 const DEFAULT_START_H = 7;
 const DEFAULT_END_H = 21;
-const PX_PER_MIN = 1.2;
 const LOCKED = new Set(["completed", "cancelled", "no_show", "class"]);
 const GREYED = new Set(["cancelled", "no_show", "block"]);
 
@@ -188,6 +191,11 @@ export function CalendarGrid(props: {
   const DAY_START_H = props.startHour ?? DEFAULT_START_H;
   const DAY_END_H = props.endHour ?? DEFAULT_END_H;
   const router = useRouter();
+  // Colour by provider or by service category, and how tall an hour is: the person's choice, kept in this browser (Display menu).
+  const display = useCalendarDisplay();
+  const PX_PER_MIN = DENSITY_PX[display.density];
+  const byCategory = display.color === "category";
+  const colorOf = (i: CalItem) => (byCategory ? (i.categoryColor ?? i.color) : i.color);
   const [drag, setDrag] = useState<Drag | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const [resize, setResize] = useState<Resize | null>(null);
@@ -520,7 +528,7 @@ export function CalendarGrid(props: {
                     <li key={card.key}>
                       <button onClick={() => openPanel(card)} className="flex w-full items-center gap-3 px-3 py-2 text-left">
                         <span className="w-16 shrink-0 text-xs text-stone-500">{fmt(card.startMin)}</span>
-                        <span className="h-8 w-1 rounded-full" style={{ background: card.first.color }} />
+                        <span className="h-8 w-1 rounded-full" style={{ background: colorOf(card.first) }} />
                         <span className="min-w-0 flex-1">
                           <span className={cn("block truncate text-sm font-medium", LOCKED.has(card.first.status) && card.first.status !== "completed" && card.first.status !== "class" && "text-stone-400 line-through")}>{card.first.title}</span>
                           <span className="block truncate text-xs text-stone-500">{card.first.subtitle} · {fmt(card.startMin)}–{fmt(card.endMin)}</span>
@@ -535,6 +543,14 @@ export function CalendarGrid(props: {
         })}
       </div>
 
+      {/* Colouring by category: what each colour means, built from what is on screen. */}
+      {byCategory ? (
+        <p className="hidden flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-600 md:flex" aria-label="Colours">
+          {[...new Map(items.filter((i) => i.categoryName && i.status !== "block").map((i) => [i.categoryName!, i.categoryColor!])).entries()].map(([name, color]) => (
+            <span key={name} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />{name}</span>
+          ))}
+        </p>
+      ) : null}
       {/* Desktop: time grid */}
       <div ref={scrollRef} className={cn("hidden max-h-[calc(100vh-13rem)] overflow-auto rounded-xl border border-stone-200 bg-white md:block", pending && "opacity-60")}>
         <div className="grid min-w-[640px] select-none" style={{ gridTemplateColumns: `56px repeat(${columns.length}, minmax(${props.view === "week" ? 120 : 160}px, 1fr))` }}>
@@ -634,9 +650,10 @@ export function CalendarGrid(props: {
                         height,
                         left: `calc(${(lane.lane * 100) / lane.lanes}% + 4px)`,
                         width: `calc(${100 / lane.lanes}% - ${lane.lanes > 1 ? 6 : 8}px)`,
-                        borderLeftColor: card.first.color,
-                        // Overview: the stylist's colour is the only thing on the block, so tint it (cancelled and no-shows stay grey).
-                        ...(props.overview && !GREYED.has(card.first.status) ? { backgroundColor: `color-mix(in srgb, ${card.first.color} 32%, white)` } : {}),
+                        borderLeftColor: colorOf(card.first),
+                        // Overview: the colour is the only thing on the block, so tint it (cancelled and no-shows stay grey). Colouring by
+                        // category tints every view the same way, so the kind of work reads at a glance.
+                        ...((props.overview || byCategory) && !GREYED.has(card.first.status) ? { backgroundColor: `color-mix(in srgb, ${colorOf(card.first)} ${props.overview ? 32 : 22}%, white)` } : {}),
                         transform: dragging ? `translate(${dx}px, ${dyMin * PX_PER_MIN}px)` : undefined,
                       }}
                     >

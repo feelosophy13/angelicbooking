@@ -192,6 +192,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       to bring them back, "Show all" while someone is hidden. Travels as `?hide=` so the server draws only what is shown (and the day
       strip counts only that), kept by the other filters and remembered per business in this browser like the location pills.
       Own-calendar roles never see the chips.
+- [x] Colour by provider or service category, and hour height, 2026-10-18: a quiet sliders button in the header (Day and Week) opens
+      Display: "Colour by" Provider / Service category and "Hour height" Compact / Normal / Roomy (0.8 / 1.2 / 1.8 px a minute),
+      remembered in this browser (`calendar-display.tsx`). Categories have no colour of their own, so each takes one from a twelve-hue
+      palette in menu order (`lib/calendar-palette.ts`); by category every card is tinted and a legend of the categories on screen sits
+      above the grid. Month keeps provider colours. Gap: an owner cannot pick a category's colour (would need a colour on the category form).
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
