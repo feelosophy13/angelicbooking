@@ -35,6 +35,7 @@ import { ensureReferralCode, referralsEnabled } from "./loyalty";
 import { locationTimeZones, NO_POSTAL_ADDRESS, postalAddress } from "./locations";
 import { siteUrl } from "@/lib/site-url";
 import { reportError } from "@/lib/report-error";
+import { bookedAhead, lastCompletedVisits } from "./visit-sql";
 import { APPOINTMENT_TRIGGERS, birthdayKeys, deferToDaytime, matchesFilters, messageConsent, newStepId, noVisitWindow, validateSteps, waitResumesAt, type TriggerFacts } from "@/lib/workflows-logic";
 
 type Business = typeof schema.businesses.$inferSelect;
@@ -787,15 +788,9 @@ async function scanScheduledWorkflow(business: Business, w: Workflow, now: Date,
     const win = noVisitWindow(now, days);
     const rows = await tx.execute<{ client_id: string; appointment_id: string; tags: string[] }>(sql`
       select v.client_id, v.appointment_id, c.tags
-      from (
-        select distinct on (a.client_id) a.client_id, a.id as appointment_id, i.start_at as last_visit
-        from appointments a join appointment_items i on i.appointment_id = a.id and i.sort_order = 0
-        where a.status = 'completed' and a.client_id is not null
-        order by a.client_id, i.start_at desc
-      ) v join clients c on c.id = v.client_id
+      from (${lastCompletedVisits()}) v join clients c on c.id = v.client_id
       where v.last_visit > ${win.from.toISOString()}::timestamptz and v.last_visit <= ${win.to.toISOString()}::timestamptz
-        and not exists (select 1 from appointments a2 join appointment_items i2 on i2.appointment_id = a2.id
-                        where a2.client_id = v.client_id and a2.status in ('booked','confirmed') and i2.start_at > now())
+        and not ${bookedAhead(sql`v.client_id`, sql`now()`)}
         and not exists (select 1 from workflow_runs wr where wr.workflow_id = ${w.id} and wr.dedupe_key = v.client_id || ':' || v.appointment_id)`);
     return rows.map((r) => ({ clientId: r.client_id, appointmentId: null, dedupeKey: `${r.client_id}:${r.appointment_id}`, tags: r.tags, reason: `No visit for ${days} days` }));
   });
@@ -812,15 +807,9 @@ export async function noVisitReach(business: Business, w: Workflow, now = new Da
   const win = noVisitWindow(now, w.filters.days ?? 60);
   const [row] = await withTenant(business.id, (tx) =>
     tx.execute<{ n: number }>(sql`
-      select count(*)::int as n from (
-        select distinct on (a.client_id) a.client_id, a.id as appointment_id, i.start_at as last_visit
-        from appointments a join appointment_items i on i.appointment_id = a.id and i.sort_order = 0
-        where a.status = 'completed' and a.client_id is not null
-        order by a.client_id, i.start_at desc
-      ) v
+      select count(*)::int as n from (${lastCompletedVisits()}) v
       where v.last_visit > ${win.from.toISOString()}::timestamptz and v.last_visit <= ${win.to.toISOString()}::timestamptz
-        and not exists (select 1 from appointments a2 join appointment_items i2 on i2.appointment_id = a2.id
-                        where a2.client_id = v.client_id and a2.status in ('booked','confirmed') and i2.start_at > now())
+        and not ${bookedAhead(sql`v.client_id`, sql`now()`)}
         and not exists (select 1 from workflow_runs wr where wr.workflow_id = ${w.id} and wr.dedupe_key = v.client_id || ':' || v.appointment_id)`),
   );
   return Number(row?.n ?? 0);

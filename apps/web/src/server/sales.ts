@@ -10,6 +10,7 @@ import { fulfilOfferLines, restoreCreditForLine } from "./offers";
 import { changeStoreCredit, creditedAgainstPayment } from "./store-credit";
 import { awardPointsForSale } from "./loyalty";
 import { triggerAppointmentWorkflows } from "./workflows";
+import { bookedAhead, bookedAheadAsOf, completedVisits, lastCompletedVisits } from "./visit-sql";
 import { decrementStockForSale } from "./inventory";
 import { productLabel } from "@/lib/inventory";
 import { countPromoUse, promoDiscount, validatePromo, PromoError } from "./promos";
@@ -1655,7 +1656,7 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
   });
 }
 
-export interface ChurnedClient {
+export interface LapsedClient {
   clientId: string;
   firstName: string | null;
   lastName: string | null;
@@ -1663,49 +1664,48 @@ export interface ChurnedClient {
   email: string | null;
   lastVisit: Date;
   visits: number;
-  /** Closed sales (less tips) in the 12 months before the day they lapsed. */
+  /** Closed sales (less tips) in the 12 months before the day their clock ran out. */
   spendCents: number;
 }
 
 export interface ClientCohorts {
-  /** First completed visit in the range. */
+  /** First completed visit ever in the period. */
   fresh: { count: number; revenueCents: number };
-  /** A completed visit in the range and one before it. */
+  /** A completed visit in the period and at least one before it. */
   returning: { count: number; revenueCents: number };
-  /** Lapsed during the range: `lapsedDays` passed since their last completed visit, with nothing booked after the range. */
-  churned: { count: number; revenueCents: number; top: ChurnedClient[] };
-  /** Clients with a completed visit in the equal-length range just before this one (the base for retention). */
-  activeBefore: number;
+  /** Due back in the period: the `lapsedDays` clock since their last completed visit ran out inside it. */
+  dueBack: number;
+  /** Of those, came back within `lapsedDays` of that visit, or had a visit booked ahead as of the period end. */
+  retained: number;
+  /** dueBack − retained. */
+  lost: number;
   lapsedDays: number;
 }
 
+const cohortDates = (from: Date, to: Date, days: number) => {
+  const ms = days * 86_400_000;
+  return { lapsedFrom: new Date(from.getTime() - ms), lapsedTo: new Date(to.getTime() - ms) };
+};
+const ts = (d: Date) => sql`${d.toISOString()}::timestamptz`;
+
 /**
- * Who came in a range. New: clients whose first completed visit falls in it. Returning: a completed visit in the range and at least
- * one before it. Churned: clients whose last completed visit, as of the range end, is `lapsedDays` or more days old (so they crossed
- * the line inside the range) and who have nothing booked after the range. Revenue is closed sales less tips with that client in the
- * range; for churned clients it is the 12 months before the day they lapsed (what is at risk). A visit is a completed appointment of
- * kind "visit", dated by its first line, and "last completed visit" is the same as the We miss you automation's (noVisitReach), so the
- * two agree. With `locationId`, visits and sales at that site only; "booked ahead" is checked at every site. `churned.top` lists the
- * `limit` (ten) churned clients who spent the most, with their contact details: the caller decides who may see those.
+ * Who came in a period and who was due back. New: clients whose first completed visit falls in it. Returning: a completed visit in the
+ * period and at least one before it. Due back: clients whose last completed visit before (period end − N days) falls in
+ * [period start − N, period end − N), so their N-day clock ran out inside the period; retained when they had another completed visit
+ * within N days of it or a visit booked ahead as of the period end (bookedAheadAsOf), lost otherwise. Revenue is closed sales less tips
+ * with that client in the period. A visit is a completed appointment of kind "visit", dated by its first line, the same definition the
+ * We miss you automation uses (visit-sql.ts). With `locationId`, visits and sales at that site anchor the counts; coming back or
+ * booking ahead counts at any site.
  */
-export async function clientCohorts(businessId: string, from: Date, to: Date, opts: { lapsedDays: number; locationId?: string | null; /** How many churned clients to list, by past spend; null = all of them. */ limit?: number | null }): Promise<ClientCohorts> {
+export async function clientCohorts(businessId: string, from: Date, to: Date, opts: { lapsedDays: number; locationId?: string | null }): Promise<ClientCohorts> {
   const loc = opts.locationId ?? null;
   const days = Math.max(1, Math.round(opts.lapsedDays));
-  const ms = days * 86_400_000;
-  const prevFrom = new Date(from.getTime() - (to.getTime() - from.getTime()));
-  const lapsedFrom = new Date(from.getTime() - ms);
-  const lapsedTo = new Date(to.getTime() - ms);
-  const ts = (d: Date) => sql`${d.toISOString()}::timestamptz`;
-  const visits = sql`
-    select a.client_id, i.start_at
-    from appointments a join appointment_items i on i.appointment_id = a.id and i.sort_order = 0
-    where a.status = 'completed' and a.kind = 'visit' and a.client_id is not null ${loc ? sql`and a.location_id = ${loc}` : sql``}`;
+  const { lapsedFrom, lapsedTo } = cohortDates(from, to, days);
   const saleAt = loc ? sql`and s.location_id = ${loc}` : sql``;
-  const limit = opts.limit === undefined ? 10 : opts.limit;
   return withTenant(businessId, async (tx) => {
-    const [cohorts, [before], churned] = await Promise.all([
+    const [cohorts, [due]] = await Promise.all([
       tx.execute<{ cohort: "new" | "returning"; n: number; cents: string }>(sql`
-        with visits as (${visits}),
+        with visits as (${completedVisits(loc)}),
         firsts as (select client_id, min(start_at) as first_visit from visits group by client_id),
         in_range as (select distinct client_id from visits where start_at >= ${ts(from)} and start_at < ${ts(to)}),
         cohort as (select r.client_id, case when f.first_visit >= ${ts(from)} then 'new' else 'returning' end as cohort from in_range r join firsts f using (client_id)),
@@ -1715,41 +1715,62 @@ export async function clientCohorts(businessId: string, from: Date, to: Date, op
           group by s.client_id)
         select c.cohort, count(*)::int as n, coalesce(sum(m.cents), 0)::bigint as cents
         from cohort c left join money m using (client_id) group by c.cohort`),
-      tx.execute<{ n: number }>(sql`with visits as (${visits}) select count(distinct client_id)::int as n from visits where start_at >= ${ts(prevFrom)} and start_at < ${ts(from)}`),
-      tx.execute<{ client_id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; last_visit: Date; visits: number; cents: string; total_n: number; total_cents: string }>(sql`
-        with visits as (${visits}),
-        lasts as (select client_id, max(start_at) as last_visit, count(*)::int as visits from visits where start_at < ${ts(to)} group by client_id),
-        lapsed as (
-          select l.*, l.last_visit + make_interval(days => ${days}::int) as lapsed_at from lasts l
-          where l.last_visit >= ${ts(lapsedFrom)} and l.last_visit < ${ts(lapsedTo)}
-            and not exists (select 1 from appointments a2 join appointment_items i2 on i2.appointment_id = a2.id and i2.sort_order = 0
-                            where a2.client_id = l.client_id and a2.kind = 'visit' and a2.status not in ('cancelled','no_show') and i2.start_at >= ${ts(to)})),
-        spend as (
-          select p.client_id, p.last_visit, p.visits,
-            (select coalesce(sum(s.total_cents - s.tip_cents), 0) from sales s
-             where s.client_id = p.client_id and s.status in ('paid','refunded') and s.closed_at >= p.lapsed_at - interval '365 days' and s.closed_at < p.lapsed_at ${saleAt})::bigint as cents
-          from lapsed p)
-        select x.client_id, c.first_name, c.last_name, c.phone, c.email, x.last_visit, x.visits, x.cents,
-          count(*) over ()::int as total_n, sum(x.cents) over ()::bigint as total_cents
-        from spend x join clients c on c.id = x.client_id
-        order by x.cents desc, x.last_visit desc ${limit === null ? sql`` : sql`limit ${limit}`}`),
+      tx.execute<{ due: number; retained: number }>(sql`
+        with visits as (${completedVisits(loc)}),
+        anchor as (select client_id, max(start_at) as v from visits where start_at < ${ts(lapsedTo)} group by client_id),
+        judged as (
+          select c.client_id,
+            (exists (select 1 from appointments ra join appointment_items ri on ri.appointment_id = ra.id and ri.sort_order = 0
+                     where ra.client_id = c.client_id and ra.status = 'completed' and ra.kind = 'visit'
+                       and ri.start_at > c.v and ri.start_at <= c.v + make_interval(days => ${days}::int))
+             or ${bookedAheadAsOf(sql`c.client_id`, ts(to))}) as retained
+          from anchor c where c.v >= ${ts(lapsedFrom)})
+        select count(*)::int as due, count(*) filter (where retained)::int as retained from judged`),
     ]);
     const pick = (k: "new" | "returning") => {
       const r = cohorts.find((c) => c.cohort === k);
       return { count: Number(r?.n ?? 0), revenueCents: Number(r?.cents ?? 0) };
     };
-    return {
-      fresh: pick("new"),
-      returning: pick("returning"),
-      churned: {
-        count: Number(churned[0]?.total_n ?? 0),
-        revenueCents: Number(churned[0]?.total_cents ?? 0),
-        top: churned.map((r) => ({ clientId: r.client_id, firstName: r.first_name, lastName: r.last_name, phone: r.phone, email: r.email, lastVisit: new Date(r.last_visit), visits: Number(r.visits), spendCents: Number(r.cents) })),
-      },
-      activeBefore: Number(before?.n ?? 0),
-      lapsedDays: days,
-    };
+    const dueBack = Number(due?.due ?? 0);
+    const retained = Number(due?.retained ?? 0);
+    return { fresh: pick("new"), returning: pick("returning"), dueBack, retained, lost: dueBack - retained, lapsedDays: days };
   });
+}
+
+/**
+ * Clients lapsed right now: their last completed visit is `lapsedDays` or more days before `now` and nothing is booked or confirmed
+ * ahead, exactly as the We miss you automation sees them (its reach is the slice of these whose clock ran out in the last week and who
+ * have not been messaged). `top` lists the `limit` who spent the most in the 12 months before their clock ran out (null = all).
+ */
+export async function lapsedClients(businessId: string, opts: { lapsedDays: number; locationId?: string | null; limit?: number | null; now?: Date }): Promise<{ count: number; revenueCents: number; top: LapsedClient[] }> {
+  const loc = opts.locationId ?? null;
+  const days = Math.max(1, Math.round(opts.lapsedDays));
+  const now = opts.now ?? new Date();
+  const cut = new Date(now.getTime() - days * 86_400_000);
+  const limit = opts.limit === undefined ? 10 : opts.limit;
+  const saleAt = loc ? sql`and s.location_id = ${loc}` : sql``;
+  const rows = await withTenant(businessId, (tx) =>
+    tx.execute<{ client_id: string; first_name: string | null; last_name: string | null; phone: string | null; email: string | null; last_visit: Date; visits: number; cents: string; total_n: number; total_cents: string }>(sql`
+      with lasts as (${lastCompletedVisits(loc)}),
+      lapsed as (
+        select l.client_id, l.last_visit, l.last_visit + make_interval(days => ${days}::int) as lapsed_at from lasts l
+        where l.last_visit <= ${ts(cut)} and not ${bookedAhead(sql`l.client_id`, ts(now))}),
+      spend as (
+        select p.client_id, p.last_visit,
+          (select count(*) from (${completedVisits(loc)}) v where v.client_id = p.client_id)::int as visits,
+          (select coalesce(sum(s.total_cents - s.tip_cents), 0) from sales s
+           where s.client_id = p.client_id and s.status in ('paid','refunded') and s.closed_at >= p.lapsed_at - interval '365 days' and s.closed_at < p.lapsed_at ${saleAt})::bigint as cents
+        from lapsed p)
+      select x.client_id, c.first_name, c.last_name, c.phone, c.email, x.last_visit, x.visits, x.cents,
+        count(*) over ()::int as total_n, sum(x.cents) over ()::bigint as total_cents
+      from spend x join clients c on c.id = x.client_id
+      order by x.cents desc, x.last_visit desc ${limit === null ? sql`` : sql`limit ${limit}`}`),
+  );
+  return {
+    count: Number(rows[0]?.total_n ?? 0),
+    revenueCents: Number(rows[0]?.total_cents ?? 0),
+    top: rows.map((r) => ({ clientId: r.client_id, firstName: r.first_name, lastName: r.last_name, phone: r.phone, email: r.email, lastVisit: new Date(r.last_visit), visits: Number(r.visits), spendCents: Number(r.cents) })),
+  };
 }
 
 /** Redeem a promo code on an open ticket: becomes the sale discount. */

@@ -77,7 +77,7 @@ export function BookingForm({ slug, v, stripeReady, paymentsHref, feeSummary, fe
       )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Cancellation window" name="cancelWindowHours" hint="Hours before the visit. Cancelling inside it counts as late."><Input name="cancelWindowHours" type="number" min={0} defaultValue={v.cancelWindowHours} /></Field>
-        <Field label="Consider a client lapsed after" name="lapsedAfterDays" hint="Days since their last visit with nothing booked. Reports count them as churned, with what they spent in the year before."><Input name="lapsedAfterDays" type="number" min={7} max={730} defaultValue={v.lapsedAfterDays} /></Field>
+        <Field label="Consider a client lapsed after" name="lapsedAfterDays" hint="Days since their last visit with nothing booked. Reports count who came back in time and who was lost by it, and list who is lapsed right now. Set it to your clients' usual gap between visits."><Input name="lapsedAfterDays" type="number" min={7} max={730} defaultValue={v.lapsedAfterDays} /></Field>
       </div>
       <Disclosure variant="inset" title="Fees, deposits and cards" hint={feeSummary} open={v.requireCardOnline || v.noShowFeeCents > 0 || v.lateCancelFeeType !== "none"}>
         <div className="space-y-4">

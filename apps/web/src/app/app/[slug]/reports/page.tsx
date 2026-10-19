@@ -6,7 +6,7 @@ import { ChevronRight, Download } from "lucide-react";
 export const metadata: Metadata = { title: "Sales" };
 import { can, instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
-import { clientCohorts, salesReport } from "@/server/sales";
+import { clientCohorts, lapsedClients, salesReport } from "@/server/sales";
 import { canSeeClientContact, canSeeClientSpend } from "@/lib/visibility";
 import { LinkRow } from "@/components/table-row";
 import { stockReport } from "@/server/inventory";
@@ -72,12 +72,14 @@ export default async function ReportsPage({
   ] as const);
   // Pay is not split by service, so it is left out while a service filter is on.
   const canPayroll = can(permissions, "payroll.manage") && !scoped;
-  const [{ sales, byStaff, byMethod, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, linesByLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation, refundsByStaff, refundStaffNames }, prev, cohorts, cohortsBefore, categories, pay, payBefore, payByLoc, catPay, catPayBefore] = await Promise.all([
+  const [{ sales, byStaff, byMethod, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, linesByLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation, refundsByStaff, refundStaffNames }, prev, cohorts, cohortsBefore, lapsed, categories, pay, payBefore, payByLoc, catPay, catPayBefore] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter, serviceIds),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter, serviceIds),
     // Who came: new, returning and lapsed clients. Visits are not split by service, so the card is left out while a service filter is on.
     scoped ? null : clientCohorts(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), { lapsedDays: business.lapsedAfterDays, locationId: locationFilter }),
     scoped ? null : clientCohorts(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), { lapsedDays: business.lapsedAfterDays, locationId: locationFilter }),
+    // Lapsed as of today, whatever the period: the people to call now.
+    scoped ? null : lapsedClients(business.id, { lapsedDays: business.lapsedAfterDays, locationId: locationFilter }),
     listCategories(business.id, "service"),
     // What the period cost in pay: the same calculation as Payroll, overtime off, so the numbers agree.
     canPayroll ? runPayroll(business, { start: from, end: to }, false, locationFilter, { split: true }) : null,
@@ -153,8 +155,8 @@ export default async function ReportsPage({
     return { pct, up: pct >= 0 };
   };
   const periodLabel = days === 1 ? "previous day" : `previous ${days} days`;
-  // Retention: returning clients as a share of everyone who visited in the equal-length range before, in whole percent (null = nobody to retain).
-  const retention = (c: NonNullable<typeof cohorts>) => (c.activeBefore > 0 ? Math.round((c.returning.count / c.activeBefore) * 100) : null);
+  // Retention: of the clients due back in the period, the share who came back in time or booked ahead, in whole percent (null = nobody was due).
+  const retention = (c: NonNullable<typeof cohorts>) => (c.dueBack > 0 ? Math.round((c.retained / c.dueBack) * 100) : null);
   const canContact = canSeeClientContact(permissions);
   const canSpend = canSeeClientSpend(permissions);
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: tz });
@@ -248,26 +250,31 @@ export default async function ReportsPage({
         })}
       </div>
 
-      {cohorts && cohortsBefore ? (
+      {cohorts && cohortsBefore && lapsed ? (
         <Card className="mb-6">
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Clients</h2>
           <div className="grid grid-cols-2 gap-px bg-stone-100 md:grid-cols-4">
             {(() => {
               const ret = retention(cohorts);
               const retBefore = retention(cohortsBefore);
+              const N = cohorts.lapsedDays;
+              const change = (d: ReturnType<typeof delta>) => (d === null ? `no change vs ${periodLabel}` : d.pct === null ? `new vs ${periodLabel}` : `${d.pct > 0 ? "+" : ""}${d.pct}% vs ${periodLabel}`);
               const tiles: { label: string; value: string; sub: string | null; change: string; good: boolean | null }[] = [
                 ...([
-                  ["New", cohorts.fresh, cohortsBefore.fresh, true, "brought in"],
-                  ["Returning", cohorts.returning, cohortsBefore.returning, true, "brought in"],
-                  ["Churned", cohorts.churned, cohortsBefore.churned, false, "at risk"],
-                ] as const).map(([label, cur, before, goodUp, word]) => {
+                  ["New", cohorts.fresh, cohortsBefore.fresh],
+                  ["Returning", cohorts.returning, cohortsBefore.returning],
+                ] as const).map(([label, cur, before]) => {
                   const d = delta(cur.count, before.count);
-                  return { label, value: String(cur.count), sub: cur.count ? `${money(cur.revenueCents)} ${word}` : null, change: d === null ? `no change vs ${periodLabel}` : d.pct === null ? `new vs ${periodLabel}` : `${d.pct > 0 ? "+" : ""}${d.pct}% vs ${periodLabel}`, good: d === null ? null : d.up === goodUp };
+                  return { label, value: String(cur.count), sub: cur.count ? `${money(cur.revenueCents)} brought in` : null, change: change(d), good: d === null ? null : d.up };
                 }),
+                (() => {
+                  const d = delta(cohorts.lost, cohortsBefore.lost);
+                  return { label: "Lost", value: String(cohorts.lost), sub: cohorts.dueBack ? `of ${cohorts.dueBack} due back by the ${N}-day setting` : `nobody was due back`, change: change(d), good: d === null ? null : !d.up };
+                })(),
                 {
                   label: "Retention",
                   value: ret === null ? "—" : `${ret}%`,
-                  sub: cohorts.activeBefore ? `of ${cohorts.activeBefore} active in the ${periodLabel}` : `nobody visited in the ${periodLabel}`,
+                  sub: cohorts.dueBack ? `${cohorts.retained} of ${cohorts.dueBack} came back or booked` : "nobody was due back",
                   change: ret === null || retBefore === null ? (retBefore === null ? `nothing to compare in the ${periodLabel}` : `${retBefore}% in the ${periodLabel}`) : ret === retBefore ? `no change vs ${periodLabel}` : `${ret > retBefore ? "+" : ""}${ret - retBefore} pts vs ${periodLabel}`,
                   good: ret === null || retBefore === null || ret === retBefore ? null : ret > retBefore,
                 },
@@ -282,13 +289,16 @@ export default async function ReportsPage({
               ));
             })()}
           </div>
-          {cohorts.churned.top.length ? (
-            <div className="border-t border-stone-200">
-              <p className="px-4 pt-3 text-xs font-medium text-stone-600">Churned clients worth a call{cohorts.churned.count > cohorts.churned.top.length ? ` · top ${cohorts.churned.top.length} of ${cohorts.churned.count} by past spend` : ""}</p>
-              <div className="overflow-x-auto"><table className="w-full text-sm">
+          <div className="border-t border-stone-200">
+            <p className="flex flex-wrap items-baseline gap-x-2 px-4 pt-3 text-sm">
+              <span className="font-medium text-stone-700">Lapsed right now: {lapsed.count} {lapsed.count === 1 ? "client" : "clients"}</span>
+              <span className="text-xs text-stone-500">{lapsed.count ? `${money(lapsed.revenueCents)} spent in the year before they lapsed${lapsed.count > lapsed.top.length ? ` · the ${lapsed.top.length} biggest spenders below` : ""}` : `nobody has gone ${cohorts.lapsedDays} days without a visit and nothing booked`}</span>
+            </p>
+            {lapsed.top.length ? (
+              <div className="overflow-x-auto"><table className="mt-1 w-full text-sm">
                 <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Client</th><th className="px-4 py-2">Last visit</th><th className="px-4 py-2 text-right">Visits</th>{canSpend ? <th className="px-4 py-2 text-right">Spent, year before lapsing</th> : null}<th /></tr></thead>
                 <tbody className="divide-y divide-stone-100">
-                  {cohorts.churned.top.map((c) => (
+                  {lapsed.top.map((c) => (
                     <LinkRow key={c.clientId} href={`/app/${slug}/clients/${c.clientId}`}>
                       <td className="px-4 py-2">
                         <Link href={`/app/${slug}/clients/${c.clientId}`} className="font-medium hover:underline">{`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || "Client"}</Link>
@@ -302,16 +312,25 @@ export default async function ReportsPage({
                   ))}
                 </tbody>
               </table></div>
-            </div>
-          ) : null}
-          <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
-            A visit is a completed appointment; revenue is closed sales less tips. New: first visit ever in this range. Returning: a visit in this range and one before it. Churned: {business.lapsedAfterDays} days passed since their last visit with nothing booked after this range, and that day fell in this range; the money is what they spent in the year before. Retention: returning clients as a share of everyone who visited in the {periodLabel}.
-            {locationFilter ? ` Visits and sales at ${locName(locationFilter)} only.` : ""}
-            {can(permissions, "settings.business") ? <> The {business.lapsedAfterDays} days are set under <Link href={`/app/${slug}/settings/booking`} className="text-brand-700 underline">Settings → Booking rules</Link>.</> : null}
-          </p>
+            ) : <div className="pb-3" />}
+          </div>
+          <div className="space-y-1 border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
+            <p>
+              A visit is a completed appointment; revenue is closed sales less tips.
+              {" "}New: clients whose first visit ever was in this period.
+              {" "}Returning: clients who visited in this period and had visited before.
+              {" "}Lost: clients due back this period, by your {cohorts.lapsedDays}-day setting, who did not return within {cohorts.lapsedDays} days of their last visit and had nothing booked.
+              {" "}Retention: of the clients due back this period, the share who came back in time or had a visit booked.
+              {" "}Lapsed right now: clients whose last visit was {cohorts.lapsedDays} or more days ago with nothing booked, as of today, whatever the period.
+              {locationFilter ? ` Visits and sales at ${locName(locationFilter)} anchor these; coming back or booking counts at any location.` : ""}
+            </p>
+            <p>
+              Set the lapsed-after days to your clients&apos; usual gap between visits, or retention reads low.
+              {can(permissions, "settings.business") ? <> The {cohorts.lapsedDays} days are set under <Link href={`/app/${slug}/settings/booking`} className="text-brand-700 underline">Settings → Booking rules</Link>.</> : null}
+            </p>
+          </div>
         </Card>
       ) : null}
-
       {/* min-w-0: a grid cell defaults to the width of its content, so a wide table would push the card past a phone's edge instead of scrolling inside it. */}
       <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
         {locations.length > 1 ? (

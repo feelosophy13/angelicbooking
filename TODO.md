@@ -120,23 +120,30 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Package sessions pay commission on the package's per-session price by default, 2026-10-19 (migration 0124 flips the column
       default and moves businesses still on the shipped-hours-earlier "list" default). The owner's choice: a provider earns on what the
       client actually paid for the session, not the service's list price. Settings → Payroll rules lists that option first.
-- [x] Reports: client cohorts, 2026-10-19. A "Clients" card under the summary tiles: New (first completed visit ever in the range),
-      Returning (a completed visit in the range and one before it), Churned (the business's "consider a client lapsed after" days passed
-      since their last completed visit with nothing booked after the range, and that day fell in the range) and Retention (returning ÷
-      clients who visited in the equal-length range before), each against the previous range; revenue is closed sales less tips with
-      the client in the range, and for churned clients the 12 months before the day they lapsed (what is at risk). Under the tiles, the
-      ten churned clients who spent the most (name, last visit, visits, spend, row opens the client; contact details only with
-      `clients.contact`, the spend column only with `clients.spend`), and one caption with the definitions. "Last completed visit" is
-      the We miss you automation's definition (`noVisitReach`): a completed appointment of kind visit, dated by its first line.
-      Setting `businesses.lapsed_after_days` (migration 0125, default 90) under Settings → Booking rules, next to the cancellation
-      window; a new no-visit workflow starts from it and the We miss you page says when the two differ. Export → Clients (CSV): the
-      figures against the previous range, then every churned client. Visits are not split by service, so the card is left out while a
-      service filter is on; with a location filter, visits and sales at that site (booked-ahead is checked at every site). The lower
-      grid's cards now contain their wide tables at phone width (`min-w-0`) instead of pushing the page sideways. `clientCohorts` in
-      `server/sales.ts`; DB test `reports-clients.test.ts`.
-- [ ] Reports clients card: revenue is by sale date with the client on the ticket, so a walk-in ticket with no client, or a visit paid
-      on a later day, moves money between cohorts and ranges; and a client whose only history is imported sales (no completed
-      appointment) is never New or Returning. Churn ignores class attendance by design.
+- [x] Reports: client cohorts, 2026-10-19 (reworked the same day to the owner's return-window definition). A "Clients" card under the
+      summary tiles: New (first completed visit ever in the period), Returning (a completed visit in the period and one before it),
+      Lost and Retention, each against the previous equal-length period. With N = the business's "consider a client lapsed after"
+      days: clients are *due back* in a period when their last completed visit before (period end − N) falls in [period start − N,
+      period end − N), i.e. their N-day clock ran out inside the period; *retained* when they had another completed visit within N
+      days of it or a visit booked ahead as of the period end (an appointment made before the period end, starting after it, not
+      cancelled or a no-show, so a past period reads as it did at the time); *lost* otherwise, Lost + Retained = due back; Retention =
+      retained ÷ due back, shown with "39 of 40" under it. A separate "Lapsed right now" line (as of today, whatever the period):
+      last completed visit N or more days ago with nothing booked or confirmed ahead, with what they spent in the year before their
+      clock ran out and the ten biggest spenders (name, last visit, visits, spend; contact details only with `clients.contact`, the
+      spend column only with `clients.spend`). The visit and booked-ahead definitions are shared with the We miss you automation
+      (`server/visit-sql.ts`, used by `noVisitReach` and the daily scan), whose reach is the one-week slice of "lapsed right now" not
+      yet messaged. One caption, one sentence per number, plus the hint to set the days to the usual gap between visits. Setting
+      `businesses.lapsed_after_days` (migration 0125, default 90) under Settings → Booking rules next to the cancellation window; a new
+      no-visit workflow starts from it and the We miss you page says when the two differ. Export → Clients (CSV): the figures against
+      the previous period, Lapsed right now, then every lapsed client. Visits are not split by service, so the card is left out while a
+      service filter is on; with a location filter, visits and sales at that site anchor the counts, coming back or booking counts
+      anywhere. The lower grid's cards now contain their wide tables at phone width (`min-w-0`). `clientCohorts` and `lapsedClients`
+      in `server/sales.ts`; DB test `reports-clients.test.ts`.
+- [ ] Reports Clients card: revenue is by sale date with the client on the ticket, so a walk-in ticket with no client, or a visit paid
+      on a later day, moves money between cohorts and periods; a client whose only history is imported sales (no completed
+      appointment) is never New or Returning; a client who came back late counts as Lost in the period their clock ran out and as
+      Returning in the period they came back. Demo-salon's seed history is eight weeks, so at the 90-day default every tile but New and
+      Returning is 0 there.
 - [x] Reports: package and membership money by category on the usage basis, 2026-10-19 (the owner's decision: no "attribute to"
       setting). "Revenue by service category" has Services (paid at the visit), From packages & memberships (the session's value,
       `creditCents`, in the category of the service performed, on the day it is used), Total, and with `payroll.manage` Provider pay
