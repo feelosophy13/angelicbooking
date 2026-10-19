@@ -85,6 +85,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       time off picker and the time-off list include every active staff member, not only providers; lanes run providers first in booking
       order, then front desk and other staff. The coverage strip, "no provider in" and Needs attention still count providers only
       (`lib/staff-hours.ts` `orderStaff`, `server/coverage.ts` lanes carry `provider`).
+- [x] Staff hours People filter, 2026-10-18: a select beside the service category (Everyone / Providers / Front desk & other staff /
+      one entry per distinct `staff.position`, title-cased, de-duplicated ignoring case). `?people=` (`providers`, `other`, `p:<position>`)
+      drives the lanes, the Edit hours menu and the time-off list and is kept by the other filters; the coverage strip and Needs
+      attention still judge every provider, filtered out or not (`peopleOptions` / `matchesPeople` in `lib/staff-hours.ts`).
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,

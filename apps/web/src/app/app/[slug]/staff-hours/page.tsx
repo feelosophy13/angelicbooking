@@ -8,7 +8,7 @@ import { requireAction } from "@/lib/tenant";
 import { cn, shiftISODate } from "@/lib/utils";
 import { dateLong } from "@/lib/format";
 import { describeHours, time12 } from "@/lib/hours";
-import { orderStaff } from "@/lib/staff-hours";
+import { matchesPeople, orderStaff, parsePeopleFilter, peopleOptions } from "@/lib/staff-hours";
 import { buildCoverage } from "@/server/coverage";
 import { listCategories, buildTree, flattenTree } from "@/server/categories";
 import { Card, Empty, LinkButton, PageHeader, Select } from "@/components/ui";
@@ -19,7 +19,7 @@ import { CoverageGaps, CoverageGrid, type CoverageMode } from "./coverage-grid";
 
 export const metadata: Metadata = { title: "Staff hours" };
 
-type SP = { week?: string; location?: string; scope?: string; view?: string };
+type SP = { week?: string; location?: string; scope?: string; view?: string; people?: string };
 const nextDay = (d: string) => shiftISODate(d, 1);
 
 /**
@@ -38,12 +38,18 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const weekStart = /^\d{4}-\d{2}-\d{2}$/.test(sp.week ?? "") ? mondayOf(sp.week!) : thisMonday;
   const horizon = shiftISODate(today, 90);
 
-  const { people, overrides, locations, cats } = await withTenant(business.id, async (tx) => {
+  const { people, peopleFilter, shown, overrides, locations, cats } = await withTenant(business.id, async (tx) => {
     // Everyone who is active: front desk and managers keep weekly hours and time off too, not only providers.
-    const people = orderStaff(await tx.select({ id: schema.staff.id, name: schema.staff.displayName, takesAppointments: schema.staff.takesAppointments, sortOrder: schema.staff.sortOrder }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)));
-    const ids = people.map((p) => p.id);
+    const people = orderStaff(await tx.select({ id: schema.staff.id, name: schema.staff.displayName, takesAppointments: schema.staff.takesAppointments, sortOrder: schema.staff.sortOrder, position: schema.staff.position }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)));
+    // The People filter: everyone (default), providers, front desk and other staff, or one position. It drives the lanes,
+    // the Edit hours menu and the time-off list; the coverage strip still judges every provider.
+    const peopleFilter = parsePeopleFilter(sp.people, people);
+    const shown = people.filter((p) => matchesPeople(p, peopleFilter));
+    const ids = shown.map((p) => p.id);
     return {
       people,
+      peopleFilter,
+      shown,
       overrides: ids.length
         ? await tx.select().from(schema.staffScheduleOverrides).where(and(inArray(schema.staffScheduleOverrides.staffId, ids), gte(schema.staffScheduleOverrides.date, today), lte(schema.staffScheduleOverrides.date, horizon))).orderBy(asc(schema.staffScheduleOverrides.staffId), asc(schema.staffScheduleOverrides.date))
         : [],
@@ -59,11 +65,11 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const scope = sp.scope ?? "";
   // Coverage is shown per service category (a service picker was too long to be useful).
   const categoryId = scope.startsWith("c:") && cats.some((c) => c.id === scope.slice(2)) ? scope.slice(2) : null;
-  const coverage = await buildCoverage(business, { weekStart, locationId, categoryId });
+  const coverage = await buildCoverage(business, { weekStart, locationId, categoryId, laneStaffIds: shown.map((p) => p.id) });
 
   // Query string for links, keeping the other choices.
   const qs = (over: Partial<Record<keyof SP, string | null>>) => {
-    const all: Record<keyof SP, string | null> = { week: weekStart === thisMonday ? null : weekStart, location: locationId, scope: categoryId ? `c:${categoryId}` : null, view: view === "coverage" ? "coverage" : null, ...over };
+    const all: Record<keyof SP, string | null> = { week: weekStart === thisMonday ? null : weekStart, location: locationId, scope: categoryId ? `c:${categoryId}` : null, view: view === "coverage" ? "coverage" : null, people: peopleFilter || null, ...over };
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(all)) if (v) p.set(k, v);
     return p.toString();
@@ -87,17 +93,19 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const mdw = (d: string) => new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
   const range = (g: Group) => (g.from === g.to ? dateLong(g.from) : `${mdw(g.from)} – ${mdw(g.to)}`);
   const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? "Someone";
+  const peopleChoices = peopleOptions(people);
+  const peopleLabel = peopleChoices.find((o) => o.value === peopleFilter)?.label ?? "Everyone";
 
   return (
     <>
       <PageHeader title="Staff hours">
-        {manage && people.length ? (
+        {manage && shown.length ? (
           <details className="group relative">
             <summary className="inline-flex h-9 cursor-pointer select-none items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium text-stone-800 hover:bg-stone-50 marker:content-none [&::-webkit-details-marker]:hidden">
               <Pencil className="h-4 w-4" /> Edit hours <ChevronDown className="h-4 w-4 text-stone-400 transition-transform group-open:rotate-180" aria-hidden />
             </summary>
             <ul className="absolute right-0 z-20 mt-1 w-56 rounded-lg border border-stone-200 bg-white py-1 text-sm shadow-lg">
-              {people.map((p) => (
+              {shown.map((p) => (
                 <li key={p.id}><Link href={`${base}/staff/${p.id}/hours`} className="block px-3 py-1.5 text-stone-800 hover:bg-stone-50">{p.name}</Link></li>
               ))}
             </ul>
@@ -123,6 +131,9 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
               <option value="">All services</option>
               {tree.map((c) => <option key={c.id} value={`c:${c.id}`}>{"\u00a0\u00a0".repeat(Math.max(0, c.depth))}{c.name}</option>)}
             </Select>
+            <Select name="people" defaultValue={peopleFilter} aria-label="Who to show" className="h-9 w-auto max-w-[14rem]">
+              {peopleChoices.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
           </AutoSubmitForm>
         </div>
       </Card>
@@ -144,6 +155,8 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
         </div>
         {people.length === 0 ? (
           <div className="p-4"><Empty title="No staff yet" body="Add staff and set their weekly hours." action={manage ? { href: `${base}/staff`, label: "Staff" } : undefined} /></div>
+        ) : shown.length === 0 ? (
+          <div className="p-4"><Empty title={`No one under “${peopleLabel}”`} body="Pick another group in the People filter." /></div>
         ) : (
           <CoverageGrid coverage={coverage} today={today} hoursHref={hoursHref} mode={view} />
         )}
@@ -160,11 +173,11 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="min-w-0">
           <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-2">
-            <h2 className="text-sm font-semibold text-stone-600">Time off in the next 90 days</h2>
+            <h2 className="text-sm font-semibold text-stone-600">Time off in the next 90 days{peopleFilter ? <span className="font-normal text-stone-500"> · {peopleLabel}</span> : null}</h2>
             {manage ? <LinkButton href={`${base}/staff-hours/time-off`} size="sm"><Plus className="h-4 w-4" /> Add time off</LinkButton> : null}
           </div>
           {groups.length === 0 ? (
-            <div className="p-4"><Empty title="Nothing scheduled" body="Days off and custom hours added under a person's Time off show here." /></div>
+            <div className="p-4"><Empty title="Nothing scheduled" body={`Days off and custom hours added under a person's Time off show here${peopleFilter ? ` (showing ${peopleLabel.toLowerCase()} only)` : ""}.`} /></div>
           ) : (
             <ul className="divide-y divide-stone-100 text-sm">
               {groups.map((g) => {

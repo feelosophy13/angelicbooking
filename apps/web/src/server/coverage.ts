@@ -55,7 +55,7 @@ const toMin = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); re
 
 export async function buildCoverage(
   business: { id: string; timezone: string; name: string },
-  opts: { weekStart: string; locationId: string | null; serviceId?: string | null; categoryId?: string | null },
+  opts: { weekStart: string; locationId: string | null; serviceId?: string | null; categoryId?: string | null; /** Who gets a lane (the People filter); the strip still judges every provider. Omit for everyone. */ laneStaffIds?: string[] | null },
 ): Promise<Coverage> {
   const dates = Array.from({ length: 7 }, (_, i) => shiftISODate(opts.weekStart, i));
   const { staff, services, staffServices, locations, cats } = await withTenant(business.id, async (tx) => ({
@@ -104,10 +104,12 @@ export async function buildCoverage(
   };
 
   const blocks = await workingBlocksFor({ businessId: business.id, timeZone: business.timezone, staffIds: staff.map((s) => s.id), dates, locationId: opts.locationId });
+  const shown = opts.laneStaffIds ? new Set(opts.laneStaffIds) : null;
   const days: CoverageDay[] = dates.map((date) => {
     const weekday = weekdayOf(date);
     const open = openFor(weekday);
     const lanes: CoverageLane[] = [];
+    const working: CoverageLane[] = [];
     for (const s of staff) {
       const mine = (blocks.get(`${s.id}:${date}`) ?? []).map((b) => {
         const start = toMin(instantToLocalTime(b.start, timeZone));
@@ -116,10 +118,13 @@ export async function buildCoverage(
         const end = endLocal === "00:00" ? 24 * 60 : toMin(endLocal);
         return { start, end: Math.max(end, start) };
       }).filter((b) => b.end > b.start);
-      if (mine.length) lanes.push({ staffId: s.id, name: s.name, color: s.color, provider: s.takesAppointments, blocks: mine });
+      if (!mine.length) continue;
+      const lane = { staffId: s.id, name: s.name, color: s.color, provider: s.takesAppointments, blocks: mine };
+      working.push(lane);
+      if (!shown || shown.has(s.id)) lanes.push(lane);
     }
-    // Coverage strip: per slot inside opening hours, which scoped services a provider on duty can do.
-    const providers = lanes.filter((l) => l.provider);
+    // Coverage strip: per slot inside opening hours, which scoped services a provider on duty can do (filtered out or not).
+    const providers = working.filter((l) => l.provider);
     const strip: CoverageStrip[] = [];
     const uncovered: CoverageBlock[] = [];
     if (open && scoped.length) {

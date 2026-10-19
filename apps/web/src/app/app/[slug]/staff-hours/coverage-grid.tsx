@@ -113,7 +113,8 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref, mode }: { day: C
           );
         }),
       )}
-      {mode === "people" && day.open && !day.lanes.some((l) => l.provider) ? <p className="absolute inset-x-0 px-2 text-center text-[11px] text-red-600" style={{ top: y(day.open.start) + 6 }}>{day.lanes.length ? "Open, no provider in" : "Open, nobody in"}</p> : null}
+      {/* An empty column that is open all day with no provider says so in words (the strip judges every provider, filtered out or not). */}
+      {mode === "people" && day.open && day.lanes.length === 0 && day.strip.length > 0 && day.strip.every((s) => s.state === "none") ? <p className="absolute inset-x-0 px-2 text-center text-[11px] text-red-600" style={{ top: y(day.open.start) + 6 }}>Open, no provider in</p> : null}
     </div>
   );
 }
