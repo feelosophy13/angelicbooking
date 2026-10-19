@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROLE_PERMISSIONS } from "@angelic/core";
-import { canOpenGiftCards, canSeeClassSession, canSeeClientContact, canSeeGiftCardCodes, canSeeStaffLogins, canViewPrivateFile, maskCode } from "../visibility";
+import { canOpenGiftCards, clientForViewer, canSeeClassSession, canSeeClientContact, canSeeGiftCardCodes, canSeeStaffLogins, canViewPrivateFile, maskCode } from "../visibility";
 
 const { owner, manager, front_desk: frontDesk, provider } = DEFAULT_ROLE_PERMISSIONS;
 const only = (...a: string[]) => new Set(a) as unknown as typeof provider;
@@ -67,5 +67,21 @@ describe("classes", () => {
   it("prints the roster's phone and email only with clients.read", () => {
     expect(canSeeClientContact(provider)).toBe(true);
     expect(canSeeClientContact(only("appointments.read.own", "appointments.write.own"))).toBe(false);
+  });
+});
+
+describe("a client in the mobile appointment detail", () => {
+  const client = { id: "c1", firstName: "Ana", lastName: "Lee", phone: "+15555550100", email: "ana@example.com", notes: "allergic to latex", birthday: "1990-01-01", tags: ["vip"] };
+  it("is only a name without clients.read", () => {
+    expect(clientForViewer(client, only("appointments.read.own", "appointments.write.own"))).toEqual({ id: "c1", firstName: "Ana", lastName: "Lee" });
+  });
+  it("keeps contact details but drops private notes without clients.notes", () => {
+    const seen = clientForViewer(client, only("clients.read"))!;
+    expect(seen).toMatchObject({ phone: "+15555550100", email: "ana@example.com", birthday: "1990-01-01" });
+    expect(seen).not.toHaveProperty("notes");
+  });
+  it("is complete with both, and null stays null", () => {
+    expect(clientForViewer(client, provider)).toEqual(client); // Provider: read + notes by default
+    expect(clientForViewer(null, owner)).toBeNull();
   });
 });

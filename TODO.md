@@ -80,6 +80,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Classes sidebar entry follows.
 - [x] S6 Staff directory: a co-worker's email and whether they have a login (and which role) show only with `staff.manage` or
       `members.manage`; everyone else sees name, position, location and calendar status.
+- [x] S7 Own tickets: for a role that sees only its own calendar, "own" now means credited on a line of the ticket. Having rung it up no
+      longer counts (it kept showing clients' tickets to whoever once opened them, and to a demoted login), except a ticket with no lines
+      yet that they opened in the last hour, so a sale they just started isn't lost before the first line goes on.
+- [x] S8 Mobile appointment detail strips the client's contact details (everything but the name) without `clients.read`, and the client's
+      private notes without `clients.notes`; `can.write` is false on a visit shared with a colleague.
 
 ### Full review 2026-10-16 (`REVIEW-2026-10-16.md` has every finding; the "Fix first" table is the order)
 - [x] Client-data permissions split, 2026-10-18 (migration 0114): `clients.read` ("View clients") now means only the client list, a

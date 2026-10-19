@@ -8,6 +8,7 @@ import { listCancellationReasons } from "@/server/cancellation-reasons";
 import { triggerAppointmentWorkflows } from "@/server/workflows";
 import { appointmentAccess, coversWholeAppointment, type AppointmentMode } from "@/lib/appointment-access";
 import { notifyAppointment } from "@/lib/notify";
+import { clientForViewer } from "@/lib/visibility";
 
 type Ctx = Exclude<Awaited<ReturnType<typeof mobileContext>>, { error: unknown }>;
 
@@ -36,8 +37,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const staffIds = liveStaffIds(d?.items ?? []);
   if (!d || !access(c, "read", d.appointment.kind, staffIds)) return NextResponse.json({ error: "not found" }, { status: 404 });
   const canCancel = mayChange(c, "cancel", d.appointment.kind, staffIds);
+  // The client's contact details and private notes follow the client permissions, as on the web.
   return NextResponse.json({
     ...d,
+    client: clientForViewer(d.client, c.permissions),
     can: { write: mayChange(c, "write", d.appointment.kind, staffIds), cancel: canCancel },
     cancelReasons: canCancel ? (await listCancellationReasons(c.business.id)).map((r) => ({ id: r.id, name: r.name })) : [],
   });

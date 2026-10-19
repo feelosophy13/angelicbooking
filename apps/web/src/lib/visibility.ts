@@ -44,3 +44,18 @@ export function canViewPrivateFile(kind: string, permissions: Subject, me: { sta
       return false;
   }
 }
+
+type ClientLike = { id: string; firstName: string; lastName: string | null; phone?: string | null; email?: string | null; notes?: string | null } & Record<string, unknown>;
+
+/**
+ * An appointment's client as the mobile app may see it: the name always; phone, email and everything else on the record only with
+ * "View clients"; private notes only with "Read notes and forms". The visit's own notes (what the team wrote about this appointment)
+ * stay with the appointment and are not touched here.
+ */
+export function clientForViewer<C extends ClientLike>(client: C | null, permissions: Subject): Partial<C> | null {
+  if (!client) return null;
+  if (!canSeeClientContact(permissions)) return { id: client.id, firstName: client.firstName, lastName: client.lastName } as Partial<C>;
+  if (can(permissions, "clients.notes")) return client;
+  const { notes: _notes, ...rest } = client;
+  return rest as Partial<C>;
+}
