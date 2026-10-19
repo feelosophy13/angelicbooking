@@ -1,4 +1,5 @@
 import { can } from "@angelic/core";
+import { appointmentAccess } from "./appointment-access";
 
 /** What `can` accepts: a resolved permission set, or a built-in role key as a fallback. */
 type Subject = Parameters<typeof can>[0];
@@ -17,3 +18,22 @@ export const maskCode = (code: string) => `••••${code.slice(-4)}`;
 
 /** The staff directory shows a co-worker's email and whether they have a login only to whoever manages staff or logins. */
 export const canSeeStaffLogins = (permissions: Subject) => can(permissions, "staff.manage") || can(permissions, "members.manage");
+
+/**
+ * Whether a member may view a private uploaded file (/api/files/<id>), by what the file is: a client's profile photo follows "See visit
+ * photos", a signature or form attachment follows "Read notes and forms", and a visit photo follows the appointment it belongs to (anyone
+ * who may open that appointment). `visit` carries whose lines that appointment has; an orphaned visit photo opens only for "any" roles.
+ */
+export function canViewPrivateFile(kind: string, permissions: Subject, me: { staffId: string | null }, visit?: { staffIds: string[] } | null): boolean {
+  switch (kind) {
+    case "client":
+      return can(permissions, "clients.photos");
+    case "form":
+    case "signature":
+      return can(permissions, "clients.notes");
+    case "visit":
+      return typeof permissions !== "string" && !!permissions && appointmentAccess(permissions, "read", me.staffId, visit?.staffIds ?? []) !== null;
+    default:
+      return false;
+  }
+}

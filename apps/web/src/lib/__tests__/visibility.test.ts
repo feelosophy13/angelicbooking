@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROLE_PERMISSIONS } from "@angelic/core";
-import { canOpenGiftCards, canSeeGiftCardCodes, canSeeStaffLogins, maskCode } from "../visibility";
+import { canOpenGiftCards, canSeeGiftCardCodes, canSeeStaffLogins, canViewPrivateFile, maskCode } from "../visibility";
 
 const { owner, manager, front_desk: frontDesk, provider } = DEFAULT_ROLE_PERMISSIONS;
 const only = (...a: string[]) => new Set(a) as unknown as typeof provider;
@@ -28,5 +28,30 @@ describe("staff directory", () => {
     expect(canSeeStaffLogins(only("members.manage"))).toBe(true);
     expect(canSeeStaffLogins(frontDesk)).toBe(false);
     expect(canSeeStaffLogins(provider)).toBe(false);
+  });
+});
+
+describe("private files", () => {
+  const me = { staffId: "me" };
+  it("client photos follow clients.photos; signatures and form files follow clients.notes", () => {
+    expect(canViewPrivateFile("client", provider, me)).toBe(true); // Provider has photos by default
+    expect(canViewPrivateFile("client", frontDesk, me)).toBe(false);
+    expect(canViewPrivateFile("signature", frontDesk, me)).toBe(true); // Front desk has notes by default
+    expect(canViewPrivateFile("form", only("clients.read", "clients.photos"), me)).toBe(false);
+    expect(canViewPrivateFile("form", only("clients.notes"), me)).toBe(true);
+  });
+  it("visit photos follow the appointment: anyone with every calendar, an own-calendar role only on visits they are booked on", () => {
+    expect(canViewPrivateFile("visit", frontDesk, { staffId: null }, { staffIds: ["other"] })).toBe(true);
+    expect(canViewPrivateFile("visit", provider, me, { staffIds: ["me"] })).toBe(true);
+    expect(canViewPrivateFile("visit", provider, me, { staffIds: ["me", "other"] })).toBe(true); // shared is still theirs to see
+    expect(canViewPrivateFile("visit", provider, me, { staffIds: ["other"] })).toBe(false);
+    expect(canViewPrivateFile("visit", provider, { staffId: null }, { staffIds: ["me"] })).toBe(false);
+    // A photo no appointment claims opens only for "any" roles.
+    expect(canViewPrivateFile("visit", provider, me, null)).toBe(false);
+    expect(canViewPrivateFile("visit", manager, me, null)).toBe(true);
+  });
+  it("serves nothing else, whatever the permissions", () => {
+    expect(canViewPrivateFile("import", owner, me)).toBe(false);
+    expect(canViewPrivateFile("logo", owner, me)).toBe(false);
   });
 });

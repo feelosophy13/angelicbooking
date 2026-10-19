@@ -72,6 +72,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       status (which every line follows), or move it as one. `requireAppointmentAccess` refuses shared access by default; a change opts
       in with the line it is about (`line`) or `shared: "allow"` for work that belongs to no single line. The appointment page, the calendar
       drag, quick status and the mobile API follow the same rule (the mobile detail says `can.write: false` on a shared visit).
+- [x] S4 Private file URLs (`/api/files/<id>`) follow the pages that show them: a client's profile photo needs `clients.photos`, a
+      signature or form attachment `clients.notes`, a visit photo the appointment it belongs to (whoever may open that appointment; an
+      own-calendar role only on visits they are booked on). A signed-in client still sees their own form files.
 
 ### Full review 2026-10-16 (`REVIEW-2026-10-16.md` has every finding; the "Fix first" table is the order)
 - [x] Client-data permissions split, 2026-10-18 (migration 0114): `clients.read` ("View clients") now means only the client list, a
