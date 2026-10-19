@@ -68,7 +68,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
                 <details className="mt-1 text-xs text-stone-500"><summary className="cursor-pointer">…or paste an image URL</summary><Input name="coverUrl" defaultValue={business.coverUrl ?? ""} placeholder="https://…/cover.jpg" className="mt-1" /></details>
               </div>
             </div>
-            <Field label="Brand colour" name="brandColor" hint="Buttons and highlights on the booking page and in emails."><Input name="brandColor" type="color" defaultValue={business.brandColor ?? "#6d28d9"} className="h-10 w-24 p-1" /></Field>
+            <Field label="Brand color" name="brandColor" hint="Buttons and highlights on the booking page and in emails."><Input name="brandColor" type="color" defaultValue={business.brandColor ?? "#6d28d9"} className="h-10 w-24 p-1" /></Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Website" name="website"><Input name="website" defaultValue={business.website ?? ""} placeholder="https://yoursalon.com" /></Field>
               <Field label="Instagram" name="instagram"><Input name="instagram" defaultValue={business.instagram ?? ""} placeholder="@yoursalon" /></Field>

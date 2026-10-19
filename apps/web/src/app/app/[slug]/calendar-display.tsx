@@ -71,12 +71,12 @@ export function DisplayMenu({ categories }: { /** Whether the business has servi
   );
   return (
     <div ref={box} className="relative hidden md:block">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-label="Display" title="Display: colour and density" aria-haspopup="dialog" aria-expanded={open} className={cn("inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700", (d.color !== "provider" || d.density !== "normal") && "text-stone-700")}>
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-label="Display" title="Display: color and density" aria-haspopup="dialog" aria-expanded={open} className={cn("inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700", (d.color !== "provider" || d.density !== "normal") && "text-stone-700")}>
         <SlidersHorizontal className="h-4 w-4" />
       </button>
       {open ? (
         <div role="dialog" aria-label="Display" className="absolute right-0 top-full z-30 mt-1 w-72 space-y-3 rounded-xl border border-stone-200 bg-white p-3 shadow-lg">
-          {categories ? seg("Colour by", [{ value: "provider", label: "Provider" }, { value: "category", label: "Service category" }], d.color, (v) => save({ ...d, color: v as ColorMode })) : null}
+          {categories ? seg("Color by", [{ value: "provider", label: "Provider" }, { value: "category", label: "Service category" }], d.color, (v) => save({ ...d, color: v as ColorMode })) : null}
           {seg("Hour height", [{ value: "compact", label: "Compact" }, { value: "normal", label: "Normal" }, { value: "roomy", label: "Roomy" }], d.density, (v) => save({ ...d, density: v as Density }))}
           <p className="text-xs text-stone-500">Remembered in this browser.</p>
           <button type="button" onClick={() => { setOpen(false); setTimeout(() => window.print(), 50); }} className="inline-flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white text-sm font-medium text-stone-800 hover:bg-stone-50">
