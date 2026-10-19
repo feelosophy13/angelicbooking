@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { requireAction } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
+import { photosScope } from "@/lib/visibility";
 import { listLocations } from "@/server/locations";
 import { listGallery, photoTagsInUse } from "@/server/visit-photos";
 import { serviceGroups } from "@/server/service-groups";
@@ -21,7 +22,9 @@ export const metadata: Metadata = { title: "Gallery" };
 export default async function GalleryPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<GallerySearchParams> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "clients.photos");
+  // Everyone's photos, or only the lines this person performed (C6): the stylist filter is then pinned to them.
+  const { business, permissions, staffId: myStaffId } = await requireAnyAction(slug, "clients.photos", "clients.photos.own");
+  const ownOnly = photosScope(permissions) === "own";
   const [locations, services, staff, tags, categories] = await Promise.all([
     listLocations(business.id),
     withTenant(business.id, (tx) => tx.select({ id: schema.services.id, name: schema.services.name }).from(schema.services).orderBy(asc(schema.services.name))),
@@ -31,7 +34,9 @@ export default async function GalleryPage({ params, searchParams }: { params: Pr
   ]);
   // Every category and service, grouped and searchable: a filter that hides what has no photos yet cannot be chosen before the first photo.
   const groups = await serviceGroups(business, { meta: "none", categories: true });
-  const f = parseGalleryFilters(sp, { serviceIds: services.map((s) => s.id), categoryIds: categories.map((c) => c.id), staffIds: staff.map((s) => s.id), locationIds: locations.map((l) => l.id) });
+  const parsed = parseGalleryFilters(sp, { serviceIds: services.map((s) => s.id), categoryIds: categories.map((c) => c.id), staffIds: staff.map((s) => s.id), locationIds: locations.map((l) => l.id) });
+  // An own-only viewer with no linked staff row has no photos of their own to show.
+  const f = ownOnly ? { ...parsed, staffId: myStaffId ?? "none" } : parsed;
   const { pairs, hasMore } = await listGallery(business.id, f);
   const views = pairViews(slug, pairs, business.timezone);
   const filtered = hasGalleryFilters(f);
@@ -54,7 +59,7 @@ export default async function GalleryPage({ params, searchParams }: { params: Pr
             {f.locationId ? <input type="hidden" name="location" value={f.locationId} /> : null}
             {f.clientId ? <input type="hidden" name="client" value={f.clientId} /> : null}
             <ServicePicker name="service" groups={groups} value={f.categoryId ? `c:${f.categoryId}` : f.serviceId} noneLabel="Any service" compact />
-            {staff.length > 1 ? (
+            {staff.length > 1 && !ownOnly ? (
               <Select name="staff" defaultValue={f.staffId ?? ""} aria-label="Stylist" className="h-9 w-auto">
                 <option value="">Any stylist</option>
                 {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}

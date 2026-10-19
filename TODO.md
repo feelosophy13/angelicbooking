@@ -156,6 +156,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       open. `staff.manage` still opens everyone's page and every tab. Not built: `staff.self.profile` (the plan lists it under S6 but not in
       the phase 2 list).
 
+- [x] Phase 2 visit photos (C6), 2026-10-19: the Gallery opens with `clients.photos` (everyone's) or `clients.photos.own` (pinned to the
+      lines the person performed, no stylist filter); a client profile's photos follow the same scope; a client's profile photo opens with either.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

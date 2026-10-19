@@ -12,7 +12,7 @@ import { isSmsSuppressed } from "@/server/consent";
 import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { seesOwnOnly } from "@/lib/appointment-access";
-import { canSeeAllSales, canSeeClientContact, canSeeClientSpend, canSeeReviews } from "@/lib/visibility";
+import { canSeeAllSales, canSeeClientContact, canSeeClientSpend, canSeeReviews, photosScope } from "@/lib/visibility";
 import { formatMoney, formatTime } from "@/lib/utils";
 import { BackLink, Button, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox, MoneyInput } from "@/components/ui";
 import { ImageField } from "@/components/image-field";
@@ -60,7 +60,8 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   // may not see is not fetched.
   const canNotes = can(permissions, "clients.notes");
   const canMessages = can(permissions, "clients.messages");
-  const canPhotos = can(permissions, "clients.photos");
+  const photos = photosScope(permissions); // everyone's, their own lines only, or none (C6)
+  const canPhotos = photos !== null;
   const canBalances = can(permissions, "clients.balances");
   const contact = canSeeClientContact(permissions);
   const spend = canSeeClientSpend(permissions);
@@ -167,7 +168,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
     { label: "Usually", value: stats.favouriteService ?? "—", hint: [stats.usualProvider && !ownOnly ? `with ${stats.usualProvider}` : null, stats.visitEveryDays ? `every ${stats.visitEveryDays} days` : null].filter(Boolean).join(" · ") || undefined },
   ];
 
-  const clientPhotos = canPhotos ? await listGallery(business.id, { serviceId: null, categoryId: null, staffId: null, clientId, locationId: null, tag: null, periodDays: null, q: null, bothOnly: false, shareableOnly: false, page: 1 }, 6) : { pairs: [], hasMore: false };
+  const clientPhotos = canPhotos ? await listGallery(business.id, { serviceId: null, categoryId: null, staffId: photos === "own" ? (staffId ?? "none") : null, clientId, locationId: null, tag: null, periodDays: null, q: null, bothOnly: false, shareableOnly: false, page: 1 }, 6) : { pairs: [], hasMore: false };
   const photoViews = pairViews(slug, clientPhotos.pairs, business.timezone);
   return (
     <>
