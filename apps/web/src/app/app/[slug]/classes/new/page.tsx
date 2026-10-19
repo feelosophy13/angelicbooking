@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { instantToISODate } from "@angelic/core";
-import { requireAction } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
+import { can } from "@angelic/core";
 import { listGroupServices } from "@/server/classes";
 import { getStaffAvailability, staffForService, timingFor } from "@/server/availability";
 import { formatDateLong, formatTime } from "@/lib/utils";
@@ -15,12 +16,14 @@ type SP = { date?: string; serviceId?: string; staffId?: string };
 export default async function NewClassPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "appointments.write.any");
+  // "Run every class" picks any instructor; "Run their own classes" schedules only for themselves.
+  const { business, permissions, staffId: myStaffId } = await requireAnyAction(slug, "classes.manage.any", "classes.manage.own");
+  const ownOnly = !can(permissions, "classes.manage.any");
   const tz = business.timezone;
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : instantToISODate(new Date(), tz);
   const services = await listGroupServices(business.id);
   const service = services.find((s) => s.id === sp.serviceId) ?? services[0] ?? null;
-  const eligible = service ? await staffForService(business.id, service.id) : [];
+  const eligible = (service ? await staffForService(business.id, service.id) : []).filter((s) => !ownOnly || s.id === myStaffId);
   const staffId = eligible.some((s) => s.id === sp.staffId) ? sp.staffId! : eligible[0]?.id;
   const slots = service && staffId ? await getStaffAvailability({ businessId: business.id, timeZone: tz, slotIntervalMin: business.slotIntervalMin, staffId, date, service: timingFor(service), notBefore: new Date() }) : [];
   return (

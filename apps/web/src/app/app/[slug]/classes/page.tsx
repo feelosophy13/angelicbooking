@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { can, instantToISODate } from "@angelic/core";
 import { requireAnyAction } from "@/lib/tenant";
-import { canSeeClassSession } from "@/lib/visibility";
+import { canManageSomeClass, canSeeClassSession } from "@/lib/visibility";
 import { listGroupServices, listSessions } from "@/server/classes";
 import { formatDateLong, formatTime, shiftISODate } from "@/lib/utils";
 import { Card, LinkButton, PageHeader, Empty } from "@/components/ui";
@@ -28,7 +28,7 @@ export default async function ClassesPage({ params, searchParams }: { params: Pr
     const k = instantToISODate(s.startAt, tz);
     byDate.set(k, [...(byDate.get(k) ?? []), s]);
   }
-  const write = can(permissions, "appointments.write.any");
+  const write = canManageSomeClass(permissions, staffId ?? null);
   return (
     <>
       <PageHeader title="Classes">

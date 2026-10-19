@@ -147,6 +147,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       adjustments); the tax-exempt switch needs `checkout.discount`; adding a tip to a paid ticket, or changing tips once a ticket is paid,
       needs `checkout.tips.adjust` (the forms hide without it).
 
+- [x] Phase 2 classes (A2), 2026-10-19: scheduling, filling and cancelling a class needs `classes.manage.any`, or `classes.manage.own` for a
+      class the person teaches (the New class page then offers only themselves as instructor); the API `classes:` scopes follow
+      `classes.manage.any`.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

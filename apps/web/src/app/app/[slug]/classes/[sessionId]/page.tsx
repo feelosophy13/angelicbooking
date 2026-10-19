@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { can, instantToISODate } from "@angelic/core";
 import { requireAnyAction } from "@/lib/tenant";
-import { canSeeClassSession, canSeeClientContact, canSeePrices } from "@/lib/visibility";
+import { canManageClass, canSeeClassSession, canSeeClientContact, canSeePrices } from "@/lib/visibility";
 import { getSession } from "@/server/classes";
 import { StatusBadge } from "@/components/status-badge";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
@@ -28,7 +28,8 @@ export default async function ClassSessionPage({ params }: { params: Promise<{ s
   // An own-calendar role opens only their own classes; another instructor's class is as good as absent.
   if (!s || !canSeeClassSession(permissions, staffId ?? null, s.session.staffId)) notFound();
   const tz = business.timezone;
-  const write = can(permissions, "appointments.write.any");
+  // Filling or cancelling this class: every class, or the ones this person teaches (A2).
+  const write = canManageClass(permissions, staffId ?? null, s.session.staffId);
   // The roster prints contact details only to whoever may view clients.
   const contact = canSeeClientContact(permissions);
   const open = s.session.status === "scheduled" && s.session.startAt > new Date();
