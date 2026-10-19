@@ -1,12 +1,14 @@
 "use client";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { TZDate } from "@date-fns/tz";
-import { cn } from "@/lib/utils";
+import { cn, formatDateLong } from "@/lib/utils";
 import { moveAppointmentItem, quickStatus } from "./actions";
 import { Check, LogIn } from "lucide-react";
 import type { CalTip } from "@/lib/calendar-tip";
 import { CalendarTip, type AnchorRect } from "./calendar-tooltip";
+import { QuickCreate, type QuickCreateAt, type QuickCreateData } from "./quick-create";
+import { toast } from "@/components/toaster";
 
 export type CalColumn = {
   key: string;
@@ -91,6 +93,8 @@ function groupCards(items: CalItem[]): Card[] {
 }
 
 type Drag = { key: string; originX: number; originY: number; dx: number; dy: number; moved: boolean };
+/** Drawing on empty grid: the column, where the pointer went down (grid minutes) and the range it has swept so far. */
+type Sel = { colKey: string; anchorMin: number; startMin: number; endMin: number; moved: boolean; originY: number; el: HTMLElement };
 
 /**
  * Side-by-side lanes for cards that overlap in time (double bookings, a class
@@ -154,6 +158,10 @@ export function CalendarGrid(props: {
   canMoveBlock: boolean;
   /** Clicking an empty slot starts a new appointment. */
   canBook: boolean;
+  /** Drawing on an empty slot can block that time. */
+  canBlock?: boolean;
+  /** The quick-create popover's data; null when this person can neither book nor block. */
+  quick?: QuickCreateData | null;
   todayISO: string;
   /** Grid range in hours; the page widens it to fit early/late hours and bookings. */
   startHour?: number;
@@ -176,6 +184,12 @@ export function CalendarGrid(props: {
   };
   const [pending, startTransition] = useTransition();
   const colWidth = useRef(0);
+  // Quick create: a click on empty grid, or a range drawn on it, opens a popover beside it (the drawn range stays as a ghost).
+  const canCreate = !!props.quick && (props.canBook || !!props.canBlock);
+  const [sel, setSel] = useState<Sel | null>(null);
+  const selRef = useRef<Sel | null>(null);
+  const [quickAt, setQuickAt] = useState<QuickCreateAt | null>(null);
+  const closeQuick = useCallback(() => { setQuickAt(null); setSel(null); selRef.current = null; }, []);
   const nowMin = useNowMinutes(props.timeZone);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -273,6 +287,66 @@ export function CalendarGrid(props: {
 
   const quarterLines = Array.from({ length: totalMin / 15 + 1 }, (_, i) => DAY_START_H * 60 + i * 15);
 
+  /** The grid minute under a pointer, snapped down to the booking grid and kept inside the day. */
+  const minuteAt = (el: HTMLElement, clientY: number) => {
+    const rect = el.getBoundingClientRect();
+    const raw = DAY_START_H * 60 + Math.floor((clientY - rect.top) / PX_PER_MIN / slotIntervalMin) * slotIntervalMin;
+    return Math.min(DAY_END_H * 60 - slotIntervalMin, Math.max(DAY_START_H * 60, raw));
+  };
+  const openQuick = (s: Sel, range: boolean) => {
+    const col = columns.find((c) => c.key === s.colKey);
+    if (!col) return;
+    const rect = s.el.getBoundingClientRect();
+    setQuickAt({
+      date: col.date,
+      dateLabel: formatDateLong(col.date),
+      startMin: s.startMin,
+      endMin: range ? s.endMin : null,
+      staffId: col.staffId,
+      anchor: { left: rect.left, right: rect.right, top: rect.top + top(s.startMin), bottom: rect.top + top(range ? s.endMin : s.startMin + slotIntervalMin) },
+    });
+  };
+  function onEmptyPointerDown(e: React.PointerEvent, c: CalColumn) {
+    if (!canCreate || e.button !== 0 || (e.target as HTMLElement).closest("[data-card]")) return;
+    lastPointer.current = e.pointerType;
+    // Touch scrolls the day; a tap opens the popover (onClick). Drawing a range is a mouse/pen gesture.
+    if (e.pointerType === "touch") return;
+    hideTip();
+    const el = e.currentTarget as HTMLElement;
+    const m = minuteAt(el, e.clientY);
+    const s: Sel = { colKey: c.key, anchorMin: m, startMin: m, endMin: m + slotIntervalMin, moved: false, originY: e.clientY, el };
+    selRef.current = s;
+    setSel(s);
+    setQuickAt(null);
+  }
+  useEffect(() => {
+    if (!sel) return;
+    const onMove = (e: PointerEvent) => {
+      const s = selRef.current;
+      if (!s) return;
+      const m = minuteAt(s.el, e.clientY);
+      const moved = s.moved || Math.abs(e.clientY - s.originY) > 4;
+      const next: Sel = { ...s, moved, startMin: Math.min(s.anchorMin, m), endMin: Math.max(s.anchorMin, m) + slotIntervalMin };
+      selRef.current = next;
+      setSel(next);
+    };
+    const onUp = () => {
+      const s = selRef.current;
+      window.removeEventListener("pointermove", onMove);
+      if (!s) return;
+      openQuick(s, s.moved);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp, { once: true });
+    window.addEventListener("pointercancel", onUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel?.colKey, sel?.anchorMin]);
+
   return (
     <div className="space-y-2">
       {error ? <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div> : null}
@@ -331,23 +405,29 @@ export function CalendarGrid(props: {
             return (
               <div
                 key={c.key}
-                className={cn("relative border-l border-stone-200", c.isToday && "bg-brand-50/30", props.canBook && "cursor-cell")}
+                className={cn("relative border-l border-stone-200", c.isToday && "bg-brand-50/30", canCreate && "cursor-cell")}
                 style={{ height: totalMin * PX_PER_MIN }}
+                onPointerDown={(e) => onEmptyPointerDown(e, c)}
                 onClick={
-                  props.canBook
+                  canCreate
                     ? (e) => {
-                        if ((e.target as HTMLElement).closest("[data-card]")) return;
-                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        const min = DAY_START_H * 60 + Math.floor((e.clientY - rect.top) / PX_PER_MIN / slotIntervalMin) * slotIntervalMin;
-                        const hh = String(Math.floor(min / 60)).padStart(2, "0");
-                        const mm = String(min % 60).padStart(2, "0");
-                        const q = new URLSearchParams({ date: c.date, time: `${hh}:${mm}` });
-                        if (c.staffId) q.set("staffId", c.staffId);
-                        router.push(`/app/${props.slug}/appointments/new?${q.toString()}`);
+                        // A tap (touch) opens the popover here; a mouse click already did on pointer up.
+                        if (lastPointer.current !== "touch" || (e.target as HTMLElement).closest("[data-card]")) return;
+                        const el = e.currentTarget as HTMLElement;
+                        const m = minuteAt(el, e.clientY);
+                        const s: Sel = { colKey: c.key, anchorMin: m, startMin: m, endMin: m + slotIntervalMin, moved: false, originY: e.clientY, el };
+                        selRef.current = s;
+                        setSel(s);
+                        openQuick(s, false);
                       }
                     : undefined
                 }
               >
+                {sel?.colKey === c.key && (sel.moved || quickAt) ? (
+                  <div className="pointer-events-none absolute inset-x-1 z-20 rounded-md border-2 border-dashed border-brand-400 bg-brand-100/60 px-2 py-1 text-xs font-medium text-brand-900" style={{ top: top(sel.startMin), height: Math.max(22, (sel.endMin - sel.startMin) * PX_PER_MIN - 2) }} aria-hidden>
+                    {fmt(sel.startMin)}{sel.moved ? ` – ${fmt(sel.endMin)}` : ""}
+                  </div>
+                ) : null}
                 {/* Time outside the provider's hours (or the whole day off) is hatched so gaps read at a glance. */}
                 {c.working
                   ? offBlocks(c.working, DAY_START_H * 60, DAY_END_H * 60).map((b, i) => (
@@ -455,8 +535,25 @@ export function CalendarGrid(props: {
           })}
         </div>
       </div>
-      {props.canMove || props.canMoveBlock ? <p className="hidden text-xs text-stone-500 md:block">Drag an appointment to move it. Click to open it.</p> : null}
-      {hover && !drag?.moved ? <CalendarTip tip={hover.tip} anchor={hover.anchor} fmt={fmt} /> : null}
+      {props.canMove || props.canMoveBlock || canCreate ? (
+        <p className="hidden text-xs text-stone-500 md:block">
+          {[canCreate ? (props.canBlock ? "Click or draw on an empty slot to book or block it." : "Click an empty slot to book it.") : null, props.canMove || props.canMoveBlock ? "Drag an appointment to move it. Click to open it." : null].filter(Boolean).join(" ")}
+        </p>
+      ) : null}
+      {hover && !drag?.moved && !sel ? <CalendarTip tip={hover.tip} anchor={hover.anchor} fmt={fmt} /> : null}
+      {quickAt && props.quick ? (
+        <QuickCreate
+          data={props.quick}
+          at={quickAt}
+          fmt={fmt}
+          onClose={closeQuick}
+          onBooked={(r) => {
+            closeQuick();
+            toast({ message: r.message, action: r.kind === "appointment" ? { label: "Open", onClick: () => router.push(`/app/${props.slug}/appointments/${r.appointmentId}`) } : undefined });
+            router.refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

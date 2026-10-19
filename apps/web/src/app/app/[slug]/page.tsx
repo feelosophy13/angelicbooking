@@ -25,6 +25,8 @@ import { asc, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { buildTip, type CalTip, type TipItem } from "@/lib/calendar-tip";
 import { blockingAccess, bookingAccess, seesNoCalendar, seesOwnOnly } from "@/lib/appointment-access";
+import { serviceGroups } from "@/server/service-groups";
+import type { QuickCreateData } from "./quick-create";
 
 function startOfWeek(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
@@ -147,6 +149,32 @@ export default async function CalendarPage({
       groupKey: `${i.appointmentId}:${i.serviceName.replace(" (finish)", "")}:${i.staffId}:${instantToISODate(i.startAt, tz)}`,
       tip: tipFor(i.appointmentId),
     }));
+
+  // Quick create (click or draw on an empty slot): the menu, who does what, and what this person may start. Day and week only.
+  let quick: QuickCreateData | null = null;
+  if ((canBook || canBlock) && view !== "month" && staff.length) {
+    const [groups, rows, mapping] = await Promise.all([
+      serviceGroups(business),
+      withTenant(business.id, (tx) => tx.select({ id: schema.services.id, name: schema.services.name, durationMin: schema.services.durationMin, gapMin: schema.services.gapMin, finishMin: schema.services.finishMin }).from(schema.services).where(eq(schema.services.active, true))),
+      withTenant(business.id, (tx) => tx.select({ staffId: schema.staffServices.staffId, serviceId: schema.staffServices.serviceId }).from(schema.staffServices)),
+    ]);
+    const staffFor: Record<string, string[]> = {};
+    for (const m of mapping) (staffFor[m.serviceId] ??= []).push(m.staffId);
+    quick = {
+      slug,
+      serviceGroups: groups,
+      services: Object.fromEntries(rows.map((r) => [r.id, { name: r.name, lengthMin: r.durationMin + r.gapMin + r.finishMin }])),
+      // Own-calendar roles see (and may book or block on) their own column only.
+      staff: staff.map((s) => ({ id: s.id, name: s.displayName })),
+      staffFor,
+      canBook,
+      canBlock,
+      canCreateClient: can(permissions, "clients.write"),
+      locationId: locationFilter,
+      newHref: `/app/${slug}/appointments/new`,
+      blockHref: `/app/${slug}/appointments/block`,
+    };
+  }
 
   let setup: SetupStep[] = [];
   const setupHidden = (await cookies()).get(`setup-hidden-${business.id}`)?.value === "1";
@@ -286,6 +314,8 @@ export default async function CalendarPage({
           canMove={can(permissions, "appointments.write.any") || (ownOnly && can(permissions, "appointments.change.own"))}
           canMoveBlock={can(permissions, "appointments.write.any") || (ownOnly && can(permissions, "appointments.block.own"))}
           canBook={canBook}
+          canBlock={canBlock}
+          quick={quick}
           startHour={startHour}
           endHour={endHour}
         />

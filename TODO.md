@@ -154,6 +154,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       ← → or j k or p n to move, g pick a date, d w m views, c new appointment, / search (⌘K opens from an `app:search` window event
       too), ? the list of shortcuts (a quiet keyboard icon opens it as well), Escape closes. Nothing fires while typing in a field, with a
       modifier held, or while a dialog is open. Helpers and the key map in `lib/calendar-nav.ts` (tested).
+- [x] Quick create on the grid, 2026-10-18: clicking an empty slot (or drawing a range down a column, which stays as a dashed ghost)
+      opens a popover beside it (`quick-create.tsx`) instead of leaving the page: client (search or add), service, provider (the column's
+      person, narrowed to who does the service), time, "Send the client a confirmation", Book; "More options" opens the full New
+      appointment page with the same choices. A "Block time" tab (for those allowed) blocks the drawn range with a reason. Server
+      actions `quickBook` / `quickBlock` (`[slug]/actions.ts`) follow the full form's rules: own-calendar roles only on their own column,
+      "Book anyway" offered to those who may double-book, confirmation then workflows. Success is a client toast (`toast()` in
+      `components/toaster.tsx`, one at a time, optional action such as Open) and the grid refreshes. Touch: a tap opens the popover,
+      a drag still scrolls. Not built: a popover on the phone agenda list (no empty slots there; "+ New" covers it).
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
