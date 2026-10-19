@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
-import { CARD_FEE_METHODS, computePayroll, isScheduledPeriod, periodContaining, rangesOverlap, salaryShare, weekStartOf, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type OmittedLine, type PayrollEmployee, type PayrollLine, type PayrollResult, type PaySchedule, type TipPart } from "@angelic/core";
+import { CARD_FEE_METHODS, computePayroll, isScheduledPeriod, lineCommissionCents, periodContaining, rangesOverlap, salaryShare, weekStartOf, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type OmittedLine, type PayrollEmployee, type PayrollLine, type PayrollResult, type PaySchedule, type TipPart } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
 import { ratesForPeriod, syncCurrentRates } from "@/server/pay-rates";
 import { PayrollLockedError } from "@/server/payroll-lock";
@@ -264,6 +264,7 @@ export async function buildPayrollLinesDetailed(business: Business, period: Payr
           discountCents: disc,
           amtPaidCents: net + tip,
           locationId: sale.locationId,
+          saleLineId: l.id,
           ...(houseDiscount ? { houseDiscountCents: houseDiscount } : {}),
         };
         if (kind === "fee") omit(l, "not commissionable", "fee line with a stylist on it: fees are not commissionable", booked.date);
@@ -496,6 +497,37 @@ export async function payrollByLocation(business: Business, period: PayrollPerio
     });
     const sum = (k: keyof LocationPay) => result.employees.reduce((n, e) => n + e[k], 0);
     out.set(key, { mainCommissionCents: sum("mainCommissionCents"), productCommissionCents: sum("productCommissionCents"), wageCents: sum("wageCents"), totalCents: sum("totalCents"), serviceRevenueCents: sum("serviceRevenueCents") });
+  }
+  return out;
+}
+
+/**
+ * Service commission by the performed service's category for reports: what Payroll credits providers on the service lines it pays in the
+ * period (visit-dated, at that day's rates, with the house's share of discounts and a package or membership session's value in the base),
+ * less the clawbacks of refunds made in the period. Key `null` is "no category". Hourly and salary pay is not tied to a line, so it is not here.
+ */
+export async function payByCategory(business: Business, period: PayrollPeriod, locationId?: string | null): Promise<Map<string | null, number>> {
+  const inputs = await getPayrollInputs(business, period, locationId);
+  const emp = new Map(inputs.employees.map((e) => [e.staffId, e]));
+  const byLine = new Map<string, number>();
+  for (const l of inputs.lines) {
+    const e = emp.get(l.staffId);
+    if (!e || l.kind !== "service" || !l.saleLineId) continue;
+    byLine.set(l.saleLineId, (byLine.get(l.saleLineId) ?? 0) + lineCommissionCents(e, l));
+  }
+  const out = new Map<string | null, number>();
+  if (!byLine.size) return out;
+  const rows = await withTenant(business.id, (tx) =>
+    tx
+      .select({ id: schema.saleLines.id, categoryId: schema.services.categoryId })
+      .from(schema.saleLines)
+      .leftJoin(schema.services, eq(schema.services.id, schema.saleLines.serviceId))
+      .where(inArray(schema.saleLines.id, [...byLine.keys()])),
+  );
+  const category = new Map(rows.map((r) => [r.id, r.categoryId ?? null]));
+  for (const [id, cents] of byLine) {
+    const key = category.get(id) ?? null;
+    out.set(key, (out.get(key) ?? 0) + cents);
   }
   return out;
 }

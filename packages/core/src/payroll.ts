@@ -79,6 +79,8 @@ export interface PayrollLine {
    * so the provider is paid as if the client had paid full price. Amt Paid stays what the client paid.
    */
   houseDiscountCents?: number;
+  /** The sale line this row pays for (goods rows and their refund rows), so reports can group pay by what was sold. */
+  saleLineId?: string;
 }
 
 export interface HoursEntry {
@@ -246,6 +248,16 @@ export function roundCents(x: number): number {
 
 const bps = (cents: number, b: number) => roundCents((cents * b) / 10_000);
 
+/** The commission base of a row: what was paid for the goods (no tips), plus any discount the house absorbs. */
+export function serviceMoney(l: PayrollLine): number {
+  return l.amtPaidCents - l.cashTipCents - l.cardTipCents + (l.houseDiscountCents ?? 0);
+}
+
+/** Service commission on one row at the rates in force on its date (a refund row carries a negative base, so this is negative too). */
+export function lineCommissionCents(emp: PayrollEmployee, l: PayrollLine): number {
+  return bps(serviceMoney(l), ratesOn(emp, l.date).mainCommissionBps);
+}
+
 export function isMiscKind(kind: LineKind): boolean {
   return kind !== "service";
 }
@@ -351,7 +363,6 @@ export function computePayroll(input: PayrollInput): PayrollResult {
     const mainRows = live.filter((l) => !isMiscKind(l.kind));
     const miscRows = live.filter((l) => isMiscKind(l.kind));
 
-    const serviceMoney = (l: PayrollLine) => l.amtPaidCents - l.cashTipCents - l.cardTipCents + (l.houseDiscountCents ?? 0);
     const feeShareCents = miscRows.filter((l) => l.kind === "fee").reduce((s, l) => s + l.amtPaidCents, 0);
     const mainRevenueCents = mainRows.reduce((s, l) => s + serviceMoney(l), 0);
     const commissionable = miscRows.filter((l) => l.kind !== "membership" && l.kind !== "fee" && !looksLikeMembership(l.name));
@@ -383,7 +394,7 @@ export function computePayroll(input: PayrollInput): PayrollResult {
 
     // Service commission for anyone with a rate: the whole pay for commission providers,
     // a bonus on top of wages for employees.
-    const mainCommissionCents = dated ? mainRows.reduce((s, l) => s + bps(serviceMoney(l), ratesOn(emp, l.date).mainCommissionBps), 0) : bps(mainRevenueCents, emp.mainCommissionBps);
+    const mainCommissionCents = dated ? mainRows.reduce((s, l) => s + lineCommissionCents(emp, l), 0) : bps(mainRevenueCents, emp.mainCommissionBps);
     // Commission (and bonuses marked as pay) are part of the regular rate for overtime (FLSA): spread over all hours worked, overtime adds
     // half of it per hour on top.
     const bonusCents = input.adjustments.filter((a) => a.staffId === emp.staffId && a.countsAsPay && a.amountCents > 0).reduce((s, a) => s + a.amountCents, 0);

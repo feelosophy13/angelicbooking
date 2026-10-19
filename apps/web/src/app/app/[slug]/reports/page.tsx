@@ -10,7 +10,7 @@ import { salesReport } from "@/server/sales";
 import { stockReport } from "@/server/inventory";
 import { productLabel } from "@/lib/inventory";
 import { withTenant } from "@angelic/db";
-import { payrollByLocation, runPayroll } from "@/server/payroll";
+import { payByCategory, payrollByLocation, runPayroll } from "@/server/payroll";
 import { storeCreditSummary } from "@/server/store-credit";
 import { refundsByItem, refundsByReason } from "@/server/refund-reasons";
 import { cancellationsByReason } from "@/server/cancellation-reasons";
@@ -19,7 +19,8 @@ import { formatDateLong, formatMoney, shiftISODate } from "@/lib/utils";
 import { Button, Card, Input, PageHeader, Empty, LinkButton } from "@/components/ui";
 import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
-import { listCategories, pathTo } from "@/server/categories";
+import { listCategories } from "@/server/categories";
+import { rollUpCategories, withPrevious, type CategoryRow } from "@/lib/category-rollup";
 import { CategoryTable, type CategoryLine } from "./category-table";
 import { ServicePicker } from "@/components/service-picker";
 import { AutoSubmitForm } from "@/components/auto-submit-form";
@@ -69,7 +70,7 @@ export default async function ReportsPage({
   ] as const);
   // Pay is not split by service, so it is left out while a service filter is on.
   const canPayroll = can(permissions, "payroll.manage") && !scoped;
-  const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation }, prev, categories, pay, payBefore, payByLoc] = await Promise.all([
+  const [{ sales, byStaff, byMethod, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation }, prev, categories, pay, payBefore, payByLoc, catPay, catPayBefore] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter, serviceIds),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter, serviceIds),
     listCategories(business.id, "service"),
@@ -78,6 +79,9 @@ export default async function ReportsPage({
     canPayroll ? runPayroll(business, { start: prevFrom, end: prevTo }, false, locationFilter, { split: true }) : null,
     // Pay by site (always every site, like the sales split) so the table adds up to the whole.
     canPayroll && locations.length > 1 ? payrollByLocation(business, { start: from, end: to }, locations.map((l) => l.id)) : null,
+    // Commission by the performed service's category, the same way, so Profit on the category table is revenue less what Payroll pays on it.
+    canPayroll ? payByCategory(business, { start: from, end: to }, locationFilter) : null,
+    canPayroll ? payByCategory(business, { start: prevFrom, end: prevTo }, locationFilter) : null,
   ]);
   const payRows = (pay?.employees ?? []).filter((e) => e.hasActivity && (e.totalCents !== 0 || e.serviceRevenueCents !== 0));
   const payTotal = (rows: typeof payRows, k: "wageCents" | "mainCommissionCents" | "productCommissionCents" | "totalCents" | "serviceRevenueCents") => rows.reduce((s, e) => s + e[k], 0);
@@ -107,42 +111,28 @@ export default async function ReportsPage({
     return rows.sort((a, b) => (a.locationName === null ? 1 : b.locationName === null ? -1 : a.locationName.localeCompare(b.locationName)));
   })();
   const laborPct = (cost: number, rev: number) => (rev > 0 ? `${Math.round((cost / rev) * 100)}%` : "—");
-  // Service revenue by category: leaves roll up into their top-level category, with the second level shown under it.
-  type CatRow = { id: string; name: string; amount: number; count: number; before: number; children: CatRow[] };
-  const rollUp = (rows: { categoryId: string | null; amount: number; count: number }[]) => {
-    const tops = new Map<string, CatRow>();
-    const other: CatRow = { id: "none", name: "Uncategorised", amount: 0, count: 0, before: 0, children: [] };
-    for (const r of rows) {
-      const path = r.categoryId ? pathTo(categories, r.categoryId) : [];
-      const top = path[0];
-      if (!top) { other.amount += Number(r.amount); other.count += Number(r.count); continue; }
-      if (!tops.has(top.id)) tops.set(top.id, { id: top.id, name: top.name, amount: 0, count: 0, before: 0, children: [] });
-      const t = tops.get(top.id)!;
-      t.amount += Number(r.amount); t.count += Number(r.count);
-      const second = path[1];
-      if (second) {
-        let c = t.children.find((x) => x.id === second.id);
-        if (!c) { c = { id: second.id, name: second.name, amount: 0, count: 0, before: 0, children: [] }; t.children.push(c); }
-        c.amount += Number(r.amount); c.count += Number(r.count);
-      }
-    }
-    const out = [...tops.values()];
-    if (other.count) out.push(other);
-    return out;
-  };
-  const catRows = rollUp(byCategory);
-  const catBefore = rollUp(prev.byCategory);
-  for (const t of catRows) {
-    const b = catBefore.find((x) => x.id === t.id);
-    t.before = b?.amount ?? 0;
-    for (const c of t.children) c.before = b?.children.find((x) => x.id === c.id)?.amount ?? 0;
-    t.children.sort((x, y) => y.amount - x.amount);
-  }
-  catRows.sort((x, y) => y.amount - x.amount);
-  const serviceRevenue = catRows.reduce((s, r) => s + r.amount, 0);
-  const toLine = (r: CatRow): CategoryLine => {
-    const d = delta(r.amount, r.before);
-    return { id: r.id, name: r.name, count: r.count, revenue: money(r.amount), share: serviceRevenue ? (r.amount / serviceRevenue) * 100 : 0, change: d === null ? "—" : d.pct === null ? "new" : `${d.pct > 0 ? "+" : ""}${d.pct}%`, tone: d === null ? "flat" : d.up ? "up" : "down", children: r.children.map(toLine) };
+  // Service revenue by category: leaves roll up into their top-level category, with the second level shown under it. Paid at the visit and
+  // sessions used (package or membership credit, at the session's value) are kept apart; the sort and share are on their sum.
+  const catRows = withPrevious(rollUpCategories(byCategory, categories, catPay), rollUpCategories(prev.byCategory, categories, catPayBefore));
+  const catTotal = (k: "count" | "paid" | "credit") => catRows.reduce((s, r) => s + r[k], 0);
+  const catPayTotal = catPay ? catRows.reduce((s, r) => s + (r.pay ?? 0), 0) : null;
+  const serviceRevenue = catTotal("paid") + catTotal("credit");
+  const toLine = (r: CategoryRow): CategoryLine => {
+    const total = r.paid + r.credit;
+    const d = delta(total, r.before);
+    return {
+      id: r.id,
+      name: r.name,
+      count: r.count,
+      services: money(r.paid),
+      prepaid: money(r.credit),
+      total: money(total),
+      share: serviceRevenue ? (total / serviceRevenue) * 100 : 0,
+      change: d === null ? "—" : d.pct === null ? "new" : `${d.pct > 0 ? "+" : ""}${d.pct}%`,
+      tone: d === null ? "flat" : d.up ? "up" : "down",
+      ...(r.pay !== null ? { pay: money(r.pay), profit: money(total - r.pay) } : {}),
+      children: r.children.map(toLine),
+    };
   };
   const money = (c: number) => formatMoney(Number(c), business.currency);
   type K = "subtotalCents" | "discountCents" | "taxCents" | "tipCents" | "totalCents" | "refundedCents";
@@ -194,6 +184,7 @@ export default async function ReportsPage({
             <summary className="flex cursor-pointer select-none items-center gap-1 rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden"><Download className="h-4 w-4" /> Export</summary>
             <div className="absolute right-0 z-20 mt-1 w-48 rounded-lg border border-stone-200 bg-white py-1 text-sm shadow-lg">
               {sales.length ? <a href={`/app/${slug}/reports/export?kind=sales&from=${from}&to=${to}${lq}`} className="block px-3 py-1.5 hover:bg-stone-50">Sales (CSV)</a> : null}
+              {catRows.length ? <a href={`/app/${slug}/reports/export?kind=categories&from=${from}&to=${to}${lq}`} className="block px-3 py-1.5 hover:bg-stone-50">Revenue by category (CSV)</a> : null}
               {appts.length ? <a href={`/app/${slug}/reports/export?kind=appointments&from=${from}&to=${to}${lq}`} className="block px-3 py-1.5 hover:bg-stone-50">Appointments (CSV)</a> : null}
             </div>
           </details>
@@ -207,7 +198,7 @@ export default async function ReportsPage({
         </p>
       ) : null}
 
-      <div className={`mb-6 grid gap-3 sm:grid-cols-2 ${scoped ? "lg:grid-cols-5" : "lg:grid-cols-6"}`}>
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {(
           [
             ["Sales", sum("totalCents") - sum("tipCents"), sum("totalCents", prev.sales) - sum("tipCents", prev.sales), true],
@@ -216,6 +207,9 @@ export default async function ReportsPage({
             ["Tax collected", sum("taxCents"), sum("taxCents", prev.sales), true],
             ["Refunds", refundsCents, prev.refundsCents, false],
             ["Store credit issued", credit.issuedCents, creditBefore.issuedCents, false],
+            // Prepaid: money taken for packages and membership periods (part of Sales), and the value of the sessions used in the range.
+            ["Prepaid sold", prepaidSold.packagesCents + prepaidSold.membershipCents, prev.prepaidSold.packagesCents + prev.prepaidSold.membershipCents, true],
+            ["Prepaid used", prepaidUsedCents, prev.prepaidUsedCents, true],
           ] as [string, number, number, boolean][]
         ).filter(([label]) => !(scoped && label === "Store credit issued")).map(([label, v, before, goodUp]) => {
           const d = delta(v, before);
@@ -225,6 +219,8 @@ export default async function ReportsPage({
               <p className="text-xs uppercase tracking-wide text-stone-500">{label}</p>
               <p className="text-xl font-semibold">{money(v)}</p>
               {label === "Tips" && v > 0 ? <p className="text-xs text-stone-500">cash {money(tipCashCents)} · card {money(tipCardCents)}</p> : null}
+              {label === "Prepaid sold" && v > 0 ? <p className="text-xs text-stone-500">packages {money(prepaidSold.packagesCents)} · membership fees {money(prepaidSold.membershipCents)}</p> : null}
+              {label === "Prepaid used" && v > 0 ? <p className="text-xs text-stone-500">sessions used, at their value</p> : null}
               {d ? (
                 <p className={`mt-1 text-xs ${positive ? "text-emerald-700" : "text-stone-500"}`} title={`${money(before)} in the ${periodLabel}`}>
                   {d.pct === null ? "new" : `${d.pct > 0 ? "+" : ""}${d.pct}%`} vs {periodLabel}
@@ -462,9 +458,13 @@ export default async function ReportsPage({
         <Card className="lg:col-span-2">
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Revenue by service category</h2>
           {catRows.length === 0 ? <div className="p-4"><Empty title="No services sold in this range" /></div> : (
-            <CategoryTable rows={catRows.map(toLine)} total={{ count: catRows.reduce((s, r) => s + r.count, 0), revenue: money(serviceRevenue) }} periodLabel={periodLabel} />
+            <CategoryTable rows={catRows.map(toLine)} total={{ count: catTotal("count"), services: money(catTotal("paid")), prepaid: money(catTotal("credit")), total: money(serviceRevenue), ...(catPayTotal !== null ? { pay: money(catPayTotal), profit: money(serviceRevenue - catPayTotal) } : {}) }} periodLabel={periodLabel} />
           )}
-          <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Service lines on paid tickets, by the service's category today. Sub-categories are listed when a category has more than one.</p>
+          <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
+            Package and membership sessions count in the category of the service performed, at the session&apos;s value, on the day it is used. Package sales and membership fees are shown as Prepaid sold and are not category revenue.
+            {" "}Service lines on paid tickets, by the service&apos;s category today; sub-categories are listed when a category has more than one.
+            {catPayTotal !== null ? " Provider pay is the commission Payroll credits on these lines for these dates (visit date, that day's rates, discounts as set under Payroll rules), less refunds clawed back in the range; hourly and salary pay is not split by category. Profit is Total less Provider pay." : ""}
+          </p>
         </Card>
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Top services &amp; products</h2>

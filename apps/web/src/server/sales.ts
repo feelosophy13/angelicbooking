@@ -1462,32 +1462,47 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
         .where(and(closed, sql`${schema.payments.status} in ('succeeded','partially_refunded','refunded')`))
         .groupBy(schema.payments.method),
     ]);
-    const [byService, byCategory, appts] = await Promise.all([
+    // Membership fees (the first period at the desk and every renewal) are one line, never a category: a plan is not a service.
+    const itemName = sql<string>`case when ${schema.saleLines.kind} = 'membership' then 'Membership fees' else ${schema.saleLines.name} end`;
+    const [byService, byCategory, prepaid, appts] = await Promise.all([
       tx
         .select({
-          name: schema.saleLines.name,
+          name: itemName,
           kind: schema.saleLines.kind,
           count: sql<number>`count(*)`,
           amount: sql<number>`coalesce(sum(${schema.saleLines.amountCents}), 0)`,
         })
         .from(schema.saleLines)
         .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
-        .where(and(closed, sql`${schema.saleLines.kind} in ('service','product')`))
-        .groupBy(schema.saleLines.name, schema.saleLines.kind)
+        .where(and(closed, sql`${schema.saleLines.kind} in ('service','product','package','membership')`))
+        .groupBy(itemName, schema.saleLines.kind)
         .orderBy(sql`sum(${schema.saleLines.amountCents}) desc`)
         .limit(25),
-      // Service revenue per (leaf) category; the page rolls leaves up into their parents.
+      // Service revenue per (leaf) category; the page rolls leaves up into their parents. `amount` is what was paid at the visit;
+      // `credit` is the value of the package and membership sessions used on these services (the line's amount is 0 then).
       tx
         .select({
           categoryId: schema.services.categoryId,
           count: sql<number>`count(*)`,
           amount: sql<number>`coalesce(sum(${schema.saleLines.amountCents}), 0)`,
+          credit: sql<number>`coalesce(sum(${schema.saleLines.creditCents}), 0)`,
         })
         .from(schema.saleLines)
         .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
         .leftJoin(schema.services, eq(schema.services.id, schema.saleLines.serviceId))
         .where(and(closed, eq(schema.saleLines.kind, "service")))
         .groupBy(schema.services.categoryId),
+      // Prepaid money taken in the range: packages sold and membership fees collected. Not category revenue; it is reported when used.
+      tx
+        .select({
+          packagesCents: sql<number>`coalesce(sum(${schema.saleLines.amountCents}) filter (where ${schema.saleLines.kind} = 'package'), 0)::int`,
+          packagesCount: sql<number>`count(*) filter (where ${schema.saleLines.kind} = 'package')::int`,
+          membershipCents: sql<number>`coalesce(sum(${schema.saleLines.amountCents}) filter (where ${schema.saleLines.kind} = 'membership'), 0)::int`,
+          membershipCount: sql<number>`count(*) filter (where ${schema.saleLines.kind} = 'membership')::int`,
+        })
+        .from(schema.saleLines)
+        .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
+        .where(and(closed, sql`${schema.saleLines.kind} in ('package','membership')`)),
       tx
         .select({ status: schema.appointments.status, source: schema.appointments.source, count: sql<number>`count(*)` })
         .from(schema.appointments)
@@ -1580,7 +1595,16 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
       .groupBy(schema.sales.locationId);
     const refundsByLocation = new Map(refundRows.map((r) => [r.locationId, Number(r.cents)]));
     const refundsCents = refundRows.filter((r) => !locationId || r.locationId === locationId).reduce((n, r) => n + Number(r.cents), 0);
-    return { sales, byStaff, byMethod: byMethodReal, byService, byCategory, appts, byLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation };
+    const p = prepaid[0];
+    const prepaidSold = { packagesCents: Number(p?.packagesCents ?? 0), packagesCount: Number(p?.packagesCount ?? 0), membershipCents: Number(p?.membershipCents ?? 0), membershipCount: Number(p?.membershipCount ?? 0) };
+    // The fees line is always among the top items when there were any, however small next to a busy month's services.
+    if (prepaidSold.membershipCount > 0 && !byService.some((r) => r.kind === "membership")) {
+      byService.push({ name: "Membership fees", kind: "membership", count: prepaidSold.membershipCount, amount: prepaidSold.membershipCents });
+      byService.sort((a, b) => Number(b.amount) - Number(a.amount));
+    }
+    // Sessions used in the range, at their value, whatever the client paid for them and whenever.
+    const prepaidUsedCents = byCategory.reduce((n, r) => n + Number(r.credit), 0);
+    return { sales, byStaff, byMethod: byMethodReal, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation };
   });
 }
 

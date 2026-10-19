@@ -4,10 +4,13 @@ import { can, instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { salesReport } from "@/server/sales";
 import { serviceIdsInScope } from "@/server/service-groups";
+import { listCategories } from "@/server/categories";
+import { rollUpCategories } from "@/lib/category-rollup";
+import { payByCategory } from "@/server/payroll";
 import { csvResponse } from "@/lib/csv";
 import { shiftISODate } from "@/lib/utils";
 
-/** CSV export of closed sales or appointments for a date range: ?kind=sales|appointments&from&to */
+/** CSV export of closed sales, appointments or revenue by category for a date range: ?kind=sales|appointments|categories&from&to */
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, permissions } = await requireAction(slug, "reports.view");
@@ -41,6 +44,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     const withPhone = can(permissions, "clients.read");
     const header = ["Start", "End", "Client", ...(withPhone ? ["Phone"] : []), "Service", "Staff", "Location", "Status", "Source", "Price", "Notes"];
     return csvResponse(`appointments-${from}-${to}.csv`, header, rows.map((r) => [fmt(r.start), fmt(r.end), `${r.first ?? ""} ${r.last ?? ""}`.trim(), ...(withPhone ? [r.phone] : []), r.service, r.staff, r.location, r.status, r.source, $(r.price), r.notes]));
+  }
+  if (url.searchParams.get("kind") === "categories") {
+    // The page's "Revenue by service category" table, one row per top-level category and one per sub-category under it. Pay columns
+    // need the payroll permission and no service filter (pay is not split by service), like the page.
+    const withPay = can(permissions, "payroll.manage") && !serviceIds;
+    const [{ byCategory }, categories, pay] = await Promise.all([salesReport(business.id, start, end, locationId, serviceIds), listCategories(business.id, "service"), withPay ? payByCategory(business, { start: from, end: to }, locationId) : null]);
+    const rows = rollUpCategories(byCategory, categories, pay);
+    const header = ["Category", "Sub-category", "Qty", "Services", "From packages & memberships", "Total", ...(withPay ? ["Provider pay", "Profit"] : [])];
+    const line = (parent: string, sub: string, r: { count: number; paid: number; credit: number; pay: number | null }) => [parent, sub, r.count, $(r.paid), $(r.credit), $(r.paid + r.credit), ...(withPay ? [$(r.pay ?? 0), $(r.paid + r.credit - (r.pay ?? 0))] : [])];
+    const out = rows.flatMap((t) => [line(t.name, "", t), ...t.children.map((c) => line(t.name, c.name, c))]);
+    const all = { count: rows.reduce((n, r) => n + r.count, 0), paid: rows.reduce((n, r) => n + r.paid, 0), credit: rows.reduce((n, r) => n + r.credit, 0), pay: withPay ? rows.reduce((n, r) => n + (r.pay ?? 0), 0) : null };
+    return csvResponse(`revenue-by-category-${from}-${to}.csv`, header, [...out, line("All services", "", all)]);
   }
   const { sales } = await salesReport(business.id, start, end, locationId, serviceIds);
   return csvResponse(`sales-${from}-${to}.csv`, ["Sale #", "Closed", "Location", "Client", "Status", "Subtotal", "Discount", "Tax", "Tips", "Total", "Refunded"], sales.map((s) => [s.number, fmt(s.closedAt), s.locationName, s.clientFirst ? `${s.clientFirst} ${s.clientLast ?? ""}`.trim() : "Walk-in", s.status, $(s.subtotalCents), $(s.discountCents), $(s.taxCents), $(s.tipCents), $(s.totalCents), $(s.refundedCents)]));

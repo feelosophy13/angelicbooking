@@ -106,6 +106,18 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Package sessions pay commission on the package's per-session price by default, 2026-10-19 (migration 0124 flips the column
       default and moves businesses still on the shipped-hours-earlier "list" default). The owner's choice: a provider earns on what the
       client actually paid for the session, not the service's list price. Settings → Payroll rules lists that option first.
+- [x] Reports: package and membership money by category on the usage basis, 2026-10-19 (the owner's decision: no "attribute to"
+      setting). "Revenue by service category" has Services (paid at the visit), From packages & memberships (the session's value,
+      `creditCents`, in the category of the service performed, on the day it is used), Total, and with `payroll.manage` Provider pay
+      (the commission Payroll credits on those lines, `payByCategory` over the payroll line builder, so discount-absorb, dated rates,
+      the package base and refund clawbacks all agree with Payroll) and Profit; sorted and shared on Total; CSV under Export →
+      Revenue by category. Summary cards Prepaid sold (package and membership lines of closed sales) and Prepaid used (credit redeemed);
+      membership fees are one "Membership fees" line among the top items, never a category. Category revenue stays gross of refunds
+      like service lines (refunds are the Refunds card, by date); Provider pay is net of clawbacks dated in the range. A membership
+      session has no per-session price, so it is valued at the service's list (pre-member) price. Tests: `category-rollup.test.ts`,
+      DB `reports-prepaid.test.ts`.
+- [ ] Reports: hourly and salary pay is not split by category, so Profit on the category table is before wages; the Staff card's
+      Cost of revenue is the place for that. Consider allocating wages by service minutes if the owner asks for a fully loaded margin.
 - [x] Payroll workbook, 2026-10-19: the W-2 tab's Hours worked dates show the weekday ("Mon, Oct 5, 2026"), and Procedures
       performed has an Amt Paid column (the service amount without tips, the service-commission base) with its own total, like
       the Products table.
