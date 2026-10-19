@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
+import { orderStaff } from "@/lib/staff-hours";
 import { FormPage, Input, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { addOverride } from "../../staff/actions";
@@ -14,8 +15,11 @@ export default async function AddTimeOffPage({ params, searchParams }: { params:
   const { slug } = await params;
   const sp = await searchParams;
   const { business } = await requireAction(slug, "staff.manage");
-  const people = await withTenant(business.id, (tx) =>
-    tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
+  // Everyone active, providers first: front desk and managers take time off too.
+  const people = orderStaff(
+    await withTenant(business.id, (tx) =>
+      tx.select({ id: schema.staff.id, name: schema.staff.displayName, takesAppointments: schema.staff.takesAppointments, sortOrder: schema.staff.sortOrder }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
+    ),
   );
   // Nobody is picked by default: choosing the wrong person silently is worse than being asked.
   const preset = people.some((p) => p.id === sp.staff) ? sp.staff! : "";

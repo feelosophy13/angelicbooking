@@ -123,6 +123,20 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Enter, replacing the address instead of adding a back step per letter) and dates (apply once the date is whole). Appointments,
       Gallery and Reviews lost their Apply buttons; Products, Stock and Inventory history search now follow as you type. DESIGN.md →
       Toolbars and filters updated.
+- [x] Staff hours shows the whole team, 2026-10-18 (REVIEW-2026-10-18 Part 3): the people lanes, the Edit hours menu, the team-wide Add
+      time off picker and the time-off list include every active staff member, not only providers; lanes run providers first in booking
+      order, then front desk and other staff. The coverage strip, "no provider in" and Needs attention still count providers only
+      (`lib/staff-hours.ts` `orderStaff`, `server/coverage.ts` lanes carry `provider`).
+- [x] Staff hours People filter, 2026-10-18: a select beside the service category (Everyone / Providers / Front desk & other staff /
+      one entry per distinct `staff.position`, title-cased, de-duplicated ignoring case). `?people=` (`providers`, `other`, `p:<position>`)
+      drives the lanes, the Edit hours menu and the time-off list and is kept by the other filters; the coverage strip and Needs
+      attention still judge every provider, filtered out or not (`peopleOptions` / `matchesPeople` in `lib/staff-hours.ts`).
+- [x] Staff hours Month view, 2026-10-18: a Week / Month pill beside the arrows (`?period=month&month=YYYY-MM`; arrows move a month,
+      "This month" replaces "This week"). Month is a Monday-first calendar where each day lists everyone in the People filter with
+      their hours ("9–5", "Off", "Custom 10–2", "Time off") from the same resolved schedule as the week (`buildCoverage` now takes
+      `dates` and reports each day's overrides); closed days are hatched; a date opens that week; days stack with the date as a row
+      header below `md`. Needs attention, the coverage strip and the People / Coverage switch stay week-only
+      (`staff-hours/month-grid.tsx`, month helpers in `lib/staff-hours.ts`).
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
