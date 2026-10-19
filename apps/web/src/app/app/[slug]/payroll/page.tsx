@@ -164,6 +164,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           {active.length ? <div className="flex gap-2">
             <LinkButton href={`/app/${slug}/payroll/export?${qs}`} size="sm"><Download className="h-4 w-4" /> Workbook (.xlsx)</LinkButton>
             {manage ? <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=w2`} size="sm"><Download className="h-4 w-4" /> W-2 summary</LinkButton> : null}
+            {manage ? <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=csv`} size="sm" variant="ghost"><Download className="h-4 w-4" /> Summary CSV</LinkButton> : null}
             {locationFilter || !manage || paid ? null : <form action={finalize}>
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="start" value={start} />

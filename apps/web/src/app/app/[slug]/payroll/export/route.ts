@@ -3,7 +3,8 @@ import { instantToISODate, payPeriodLabel } from "@angelic/core";
 import { can } from "@angelic/core";
 import { PermissionError, requireAnyAction } from "@/lib/tenant";
 import { currentPeriod, forHomeLocation, forOwnRow, payrollForPeriod } from "@/server/payroll";
-import { buildPayrollWorkbook, buildW2Workbook } from "@/server/payroll-xlsx";
+import { buildPayrollWorkbook, buildSummaryCsv, buildW2Workbook } from "@/server/payroll-xlsx";
+import { listLocations } from "@/server/locations";
 import { eq } from "drizzle-orm";
 import { auditEvent } from "@/lib/audit";
 import { schema, withTenant } from "@angelic/db";
@@ -34,16 +35,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const end = isDate(url.searchParams.get("end")) ? url.searchParams.get("end")! : cur.end;
   // Same default as the Payroll page: on unless the link says "0". A finalized period keeps the setting it was finalized with.
   const overtimeAsked = url.searchParams.getAll("overtime").at(-1) !== "0";
-  const kind = url.searchParams.get("kind") === "w2" && manage ? "w2" : "full";
+  const kind = url.searchParams.get("kind") === "w2" && manage ? "w2" : url.searchParams.get("kind") === "csv" && manage ? "csv" : "full";
   // A location is the people based there (their whole pay), the way the owner runs one sheet per site; a value that isn't one of ours is ignored.
   const askedLocation = url.searchParams.get("location") || null;
   const location = askedLocation ? await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, askedLocation), columns: { id: true, name: true } })) : null;
   const { result: whole, finalized, overtime } = await payrollForPeriod(business, { start, end }, overtimeAsked);
   const result = manage ? forHomeLocation(whole, location?.id ?? null) : forOwnRow(whole, myStaffId ?? null);
-  const opts = { salon: business.name, periodLabel: `${payPeriodLabel({ start, end })}${location ? ` - ${location.name}` : ""}` };
+  const locations = await listLocations(business.id);
+  const opts = { salon: business.name, periodLabel: payPeriodLabel({ start, end }), period: { start, end }, currency: business.currency, location: location?.name ?? null, finalizedAt: finalized?.createdAt ?? null, paidOn: finalized?.paidOn ?? null, paymentRef: finalized?.paymentRef ?? null, overtime, weekStart: business.weekStart, locations: locations.map((l) => ({ id: l.id, name: l.name })) };
   // Pay sheets carry everyone's pay: note who downloaded which.
   await auditEvent(business.id, user.id, "payroll.export", "payroll", `${start}_${end}`, { kind, overtime, locationId: location?.id ?? null, own: !manage, finalized: !!finalized });
   const stem = `${start.replace(/-/g, "")}_${end.replace(/-/g, "")}_${kind === "w2" ? "W2_Summary" : location ? location.name.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "") : business.slug}`;
+  if (kind === "csv") {
+    return new NextResponse(buildSummaryCsv(result, opts), { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${stem}_Summary.csv"` } });
+  }
   const buf = kind === "w2" ? await buildW2Workbook(result, opts) : await buildPayrollWorkbook(result, opts);
   return new NextResponse(new Uint8Array(buf), {
     headers: {

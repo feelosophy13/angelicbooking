@@ -79,6 +79,18 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       one-sheet-per-site rule; `forHomeLocation`), not "sales at that site only". `buildPayrollLinesDetailed` also returns the Quality
       Check ledger (`omitted`: no staff credited, inactive staff, out of period, not commissionable, paid in an earlier period), saved in the
       snapshot. Whole-ticket refunds no longer claw back tips (item 4, landed here with the rewrite). Tests in `payroll-clawback.test.ts`.
+- [x] Item 3, the workbook, 2026-10-19 (`server/payroll-xlsx.ts` rewritten): real Excel dates (`mmm d, yyyy`); every section total, weekly
+      hours subtotal, Total hours, summary line and TOTAL is a SUM / ROUND formula with its value cached (viewers that don't recalculate still
+      see numbers); the Summary tab has Employee, Position, Pay type (1099 / W-2), Rate, Hours, OT hours, Commission, Wage, Cash tip, Card tip,
+      Card-tip fee, Adjustments, Tax, Net (= SUM of the money columns, equal to the engine's total) and the revenue / profit pair, a TOTAL
+      row that foots, and the period dates, finalized date and paid-on / reference in the title rows; frozen header rows and an autofilter
+      on each tab's main table (Excel allows one per sheet); currency format from `business.currency`; no $0 product rows; per-person tabs in
+      the owner's layout (Checkout By in column 2, Total = Amt Paid, pay summary in A/B, "July 12 2026 - July 25 2026" label, W-2 tabs with the
+      hours table first with weekly subtotals and Total hours, Procedures performed and Products & Package Sales with Checkout By and Total
+      rows, memberships listed separately, a Refunded Transactions section) and a Quality Check tab last. Per-location workbook (`?location=`:
+      the people based there, filename `<start>_<end>_<Location>.xlsx`), a Summary CSV (`?kind=csv`), and the accountant's W-2 file as one
+      Summary tab per location with no revenue / profit columns. Active hourly and salaried people with no punches and no sales get a $0 row
+      (item 4). Dev check: `apps/web/scripts/payroll-workbook.mts <slug> <start> <end> <outDir>` writes the three files the route would send.
 
 - [x] Demo seed, 2026-10-19: sale lines (service, product, tip) carry the sale's own close time. They used to default to the seed run
       time, so payroll treated every one of the 368 demo tips as "Tip (added later)" on the seed day; now none are.
