@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "New form" };
 export default async function NewFormPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ template?: string }> }) {
   const { slug } = await params;
   const { template } = await searchParams;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "forms.manage");
   const t = template === "blank" ? "blank" : formTemplate(template);
   if (!t) {
     return (

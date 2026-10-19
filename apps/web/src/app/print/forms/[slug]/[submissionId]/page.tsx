@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { getSubmission } from "@/server/forms";
 import { SubmissionView } from "@/components/submission-view";
@@ -10,7 +11,7 @@ export const metadata: Metadata = { title: "Signed form" };
 /** Clean copy of a signed form for the file: print it or save it as a PDF from the browser's print dialog. */
 export default async function PrintSubmissionPage({ params }: { params: Promise<{ slug: string; submissionId: string }> }) {
   const { slug, submissionId } = await params;
-  const { business } = await requireAction(slug, "clients.notes");
+  const { business, permissions } = await requireAction(slug, "clients.notes");
   const row = await getSubmission(business.id, submissionId);
   if (!row) notFound();
   const form = row.s.formSnapshot ?? { name: row.form.name, fields: row.form.fields, description: row.form.description };
@@ -27,7 +28,7 @@ export default async function PrintSubmissionPage({ params }: { params: Promise<
             </div>
             <PrintButton />
           </div>
-          <SubmissionView submission={row.s} form={form} timeZone={business.timezone} clientName={clientName} assistedByName={row.assistedByName} />
+          <SubmissionView submission={row.s} form={form} timeZone={business.timezone} clientName={clientName} assistedByName={row.assistedByName} showIp={can(permissions, "audit.view")} />
           <p className="mt-8 text-[10px] text-stone-400">Record {row.s.id} · exported {new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone }).format(new Date())}</p>
         </div>
     </div>

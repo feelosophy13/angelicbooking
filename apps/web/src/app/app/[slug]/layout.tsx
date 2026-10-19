@@ -139,7 +139,7 @@ export default async function AppLayout({ children, params }: { children: React.
           {children}
         </main>
       </div>
-      {viewAsEnabled() ? (
+      {viewAsEnabled() && (realRole ?? role) === "owner" ? (
         <DevViewAs
           roles={roles.map((r) => ({ key: r.key, name: r.name, needsStaff: !(r.permissions as string[]).includes("appointments.read.any") && (r.permissions as string[]).includes("appointments.read.own") }))}
           staff={viewAsStaff}

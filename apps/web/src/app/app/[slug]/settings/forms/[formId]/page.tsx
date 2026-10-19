@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Edit form" };
 
 export default async function EditFormPage({ params }: { params: Promise<{ slug: string; formId: string }> }) {
   const { slug, formId } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "forms.manage");
   const [form, tree] = await Promise.all([getForm(business.id, formId), serviceTree(business)]);
   if (!form) notFound();
   const recent = await withTenant(business.id, (tx) =>

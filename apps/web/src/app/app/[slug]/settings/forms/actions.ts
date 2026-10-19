@@ -34,7 +34,7 @@ function parse(d: z.infer<typeof fields>, raw: FormData) {
 }
 
 export const createForm = formAction(fields, async (d, raw) => {
-  const ctx = await requireAction(d.slug, "business.manage");
+  const ctx = await requireAction(d.slug, "forms.manage");
   const { defs, serviceIds, renewDays } = parse(d, raw);
   const [row] = await withTenant(ctx.business.id, async (tx) =>
     tx.insert(schema.forms).values({ businessId: ctx.business.id, name: d.name, kind: d.kind, description: d.description, fields: defs, requireSignature: d.requireSignature, applyToAll: d.applyToAll, serviceIds, renewDays, locationIds: await validAtFromForm(tx, raw), active: true }).returning({ id: schema.forms.id }),
@@ -45,7 +45,7 @@ export const createForm = formAction(fields, async (d, raw) => {
 });
 
 export const updateForm = formAction(fields, async (d, raw) => {
-  const ctx = await requireAction(d.slug, "business.manage");
+  const ctx = await requireAction(d.slug, "forms.manage");
   const { defs, serviceIds, renewDays } = parse(d, raw);
   await withTenant(ctx.business.id, async (tx) =>
     tx.update(schema.forms).set({ name: d.name, kind: d.kind, description: d.description, fields: defs, requireSignature: d.requireSignature, applyToAll: d.applyToAll, serviceIds, renewDays, locationIds: await validAtFromForm(tx, raw), active: d.active }).where(eq(schema.forms.id, d.formId ?? "")),
@@ -57,7 +57,7 @@ export const updateForm = formAction(fields, async (d, raw) => {
 
 export async function deleteForm(formData: FormData) {
   const d = z.object({ slug: z.string(), formId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "business.manage");
+  const ctx = await requireAction(d.slug, "forms.manage");
   // Submissions reference the form; keep them by deactivating instead of deleting when any exist.
   const used = await withTenant(ctx.business.id, (tx) => tx.query.formSubmissions.findFirst({ where: eq(schema.formSubmissions.formId, d.formId) }));
   await withTenant(ctx.business.id, (tx) => (used ? tx.update(schema.forms).set({ active: false }).where(eq(schema.forms.id, d.formId)) : tx.delete(schema.forms).where(eq(schema.forms.id, d.formId))));
@@ -68,7 +68,7 @@ export async function deleteForm(formData: FormData) {
 
 export async function duplicateFormAction(formData: FormData) {
   const d = z.object({ slug: z.string(), formId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "business.manage");
+  const ctx = await requireAction(d.slug, "forms.manage");
   const id = await duplicateForm(ctx.business.id, d.formId);
   if (!id) return;
   await setFlash("Copy created. It stays inactive until you turn it on.");
@@ -76,9 +76,10 @@ export async function duplicateFormAction(formData: FormData) {
   redirect(`/app/${d.slug}/settings/forms/${id}`);
 }
 
+// Voiding, moving or emailing a signed copy is managing forms (C8), not editing clients.
 export async function voidSubmissionAction(formData: FormData) {
   const d = z.object({ slug: z.string(), submissionId: z.string().min(1), reason: z.string().trim().max(200).optional() }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "clients.write");
+  const ctx = await requireAction(d.slug, "forms.manage");
   await voidSubmission(ctx.business.id, d.submissionId, d.reason || null, ctx.user.id);
   await setFlash("Submission voided");
   revalidatePath(`/app/${d.slug}/settings/forms/submissions/${d.submissionId}`);
@@ -86,7 +87,7 @@ export async function voidSubmissionAction(formData: FormData) {
 
 export async function reassignSubmissionAction(formData: FormData) {
   const d = z.object({ slug: z.string(), submissionId: z.string().min(1), clientId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "clients.write");
+  const ctx = await requireAction(d.slug, "forms.manage");
   try {
     await reassignSubmission(ctx.business.id, d.submissionId, d.clientId, ctx.user.id);
     await setFlash("Moved to the other client");
@@ -99,7 +100,7 @@ export async function reassignSubmissionAction(formData: FormData) {
 
 export async function emailSubmissionAction(formData: FormData) {
   const d = z.object({ slug: z.string(), submissionId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "clients.write");
+  const ctx = await requireAction(d.slug, "forms.manage");
   const sent = await emailSubmissionCopy(ctx.business, d.submissionId);
   await setFlash(sent ? "A copy is on its way to the client" : "This client has no email address", sent ? undefined : "error");
   revalidatePath(`/app/${d.slug}/settings/forms/submissions/${d.submissionId}`);

@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Forms" };
 
 export default async function FormsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "forms.manage");
   const forms = await listForms(business.id);
   const outstanding = (await outstandingForms(business, 7)).length;
   return (

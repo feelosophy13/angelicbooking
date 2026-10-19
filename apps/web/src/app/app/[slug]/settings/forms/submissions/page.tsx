@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { can } from "@angelic/core";
 import Link from "next/link";
 import { requireAction } from "@/lib/tenant";
+import { seesOwnOnly } from "@/lib/appointment-access";
 import { listForms, listSubmissions, outstandingForms } from "@/server/forms";
 import { BackLink, Card, Empty, Input, PageHeader, Select } from "@/components/ui";
 import { LinkRow } from "@/components/table-row";
@@ -11,17 +13,19 @@ export const metadata: Metadata = { title: "Form submissions" };
 export default async function SubmissionsInboxPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ form?: string; q?: string; page?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "clients.notes");
+  const { business, permissions, staffId } = await requireAction(slug, "clients.notes");
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
   const limit = 50;
-  const [forms, { rows, total }, due] = await Promise.all([listForms(business.id), listSubmissions(business.id, { formId: sp.form || null, q: sp.q || null, limit, offset: (page - 1) * limit }), outstandingForms(business, 7)]);
+  // "Still to sign" lists other people's clients only to roles that see every calendar (C7); an own-calendar role sees its own visits.
+  const dueScope = seesOwnOnly(permissions) ? { staffId: staffId ?? null } : undefined;
+  const [forms, { rows, total }, due] = await Promise.all([listForms(business.id), listSubmissions(business.id, { formId: sp.form || null, q: sp.q || null, limit, offset: (page - 1) * limit }), outstandingForms(business, 7, dueScope)]);
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
   const day = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: business.timezone });
   const pages = Math.max(1, Math.ceil(total / limit));
   const qs = (p: number) => `?${new URLSearchParams({ ...(sp.form ? { form: sp.form } : {}), ...(sp.q ? { q: sp.q } : {}), page: String(p) })}`;
   return (
     <>
-      <div className="mb-2"><BackLink href={`/app/${slug}/settings/forms`}>Forms</BackLink></div>
+      {can(permissions, "forms.manage") ? <div className="mb-2"><BackLink href={`/app/${slug}/settings/forms`}>Forms</BackLink></div> : null}
       <PageHeader title="Form submissions" />
       {due.length ? (
         <Card className="mb-5">

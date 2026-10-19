@@ -2,7 +2,9 @@ import type { FormAnswer, FormFieldDef } from "@angelic/db";
 import { answerText, answersEqual, fieldVisible } from "@/lib/forms-logic";
 
 /** Read-only rendering of a signed form (staff view, print view and the client's copy). */
-export function SubmissionView({ submission, form, timeZone, clientName, previous, assistedByName }: {
+export function SubmissionView({ submission, form, timeZone, clientName, previous, assistedByName, showIp = false }: {
+  /** Print the signer's IP address (staff with "See the activity log" only; never on the client's copy). */
+  showIp?: boolean;
   submission: { answers: Record<string, FormAnswer>; signatureName: string | null; signatureFileId?: string | null; signedAt: Date | null; createdAt: Date; ipAddress: string | null; voidedAt?: Date | null; voidReason?: string | null };
   form: { name: string; description: string | null; fields: FormFieldDef[] };
   timeZone: string;
@@ -46,9 +48,9 @@ export function SubmissionView({ submission, form, timeZone, clientName, previou
           <img src={`/api/files/${submission.signatureFileId}`} alt="Signature" className="mb-2 h-20 rounded border border-stone-200 bg-white" />
         ) : null}
         {submission.signatureName ? (
-          <p>Signed <span className="font-serif text-base italic text-stone-900">{submission.signatureName}</span> by {clientName} on {fmt.format(submission.signedAt ?? submission.createdAt)}{submission.ipAddress ? ` · IP ${submission.ipAddress}` : ""}</p>
+          <p>Signed <span className="font-serif text-base italic text-stone-900">{submission.signatureName}</span> by {clientName} on {fmt.format(submission.signedAt ?? submission.createdAt)}{showIp && submission.ipAddress ? ` · IP ${submission.ipAddress}` : ""}</p>
         ) : (
-          <p>Submitted {fmt.format(submission.createdAt)} by {clientName}{submission.ipAddress ? ` · IP ${submission.ipAddress}` : ""}</p>
+          <p>Submitted {fmt.format(submission.createdAt)} by {clientName}{showIp && submission.ipAddress ? ` · IP ${submission.ipAddress}` : ""}</p>
         )}
         {assistedByName ? <p>Completed at the front desk with {assistedByName}.</p> : null}
         {previous ? <p>Previous copy: {fmt.format(previous.createdAt)}. Answers marked “changed” differ from it.</p> : null}

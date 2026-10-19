@@ -99,6 +99,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       shows the seat price only with `catalog.prices`; the Waitlist page needs `waitlist.view` (phone with `clients.contact`) and booking
       from it or closing entries needs `waitlist.manage`.
 
+- [x] Phase 1 forms and settings (C7, C8, T3), 2026-10-19: designing forms (Settings → Forms list, New form, a form's page, its CSV export,
+      create / save / delete / duplicate) needs `forms.manage` (was `business.manage`); voiding, moving or emailing a signed copy needs
+      `forms.manage` (was `clients.write`), and so does the "Edit form" link on a signed copy. The submissions inbox's "Still to sign this
+      week" lists only the viewer's own upcoming visits for an own-calendar role (`outstandingForms` takes a scope). The signer's IP address
+      shows only with `audit.view` (staff view and print view; never on the client's copy). The development "View as" pill is drawn only for
+      a real owner.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

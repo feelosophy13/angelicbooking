@@ -502,16 +502,21 @@ export async function listSubmissions(businessId: string, opts: { formId?: strin
 }
 
 /** Upcoming visits (next `days`) whose client still owes a form, oldest visit first. */
-export async function outstandingForms(business: typeof schema.businesses.$inferSelect, days = 7) {
+/**
+ * Upcoming visits still missing a required form. `scope.staffId` keeps only the visits that person is booked on (an own-calendar role's
+ * view); `null` there means a login not linked to a staff member, which has none.
+ */
+export async function outstandingForms(business: typeof schema.businesses.$inferSelect, days = 7, scope?: { staffId: string | null }) {
   return withTenant(business.id, async (tx) => {
     const now = new Date();
     const until = new Date(now.getTime() + days * 86_400_000);
+    const mine = scope ? (scope.staffId ? sql`exists (select 1 from appointment_items ai where ai.appointment_id = ${schema.appointments.id} and ai.staff_id = ${scope.staffId})` : sql`false`) : undefined;
     const rows = await tx
       .select({ id: schema.appointments.id, clientId: schema.appointments.clientId, startAt: schema.appointmentItems.startAt, serviceName: schema.appointmentItems.serviceName, firstName: schema.clients.firstName, lastName: schema.clients.lastName })
       .from(schema.appointments)
       .innerJoin(schema.appointmentItems, and(eq(schema.appointmentItems.appointmentId, schema.appointments.id), eq(schema.appointmentItems.sortOrder, 0)))
       .innerJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
-      .where(and(gte(schema.appointmentItems.startAt, now), lt(schema.appointmentItems.startAt, until), inArray(schema.appointments.status, ["booked", "confirmed"])))
+      .where(and(gte(schema.appointmentItems.startAt, now), lt(schema.appointmentItems.startAt, until), inArray(schema.appointments.status, ["booked", "confirmed"]), mine))
       .orderBy(asc(schema.appointmentItems.startAt));
     if (!rows.length) return [];
     const missing = await appointmentsMissingForms(tx, rows.map((r) => r.id));
