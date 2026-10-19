@@ -55,7 +55,13 @@ export async function moveAppointmentItem(input: {
   const itemRow = await withTenant(bizId, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId), columns: { appointmentId: true } }));
   if (!itemRow) return { ok: false, error: "That appointment no longer exists." };
   // Dragging a block of time is a block permission; dragging a visit is a change to the booking.
-  const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, await modeForKind(bizId, itemRow.appointmentId, "change"), { line: parsed.data.itemId });
+  let ctx: Awaited<ReturnType<typeof requireAppointmentAccess>>;
+  try {
+    ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, await modeForKind(bizId, itemRow.appointmentId, "change"), { line: parsed.data.itemId });
+  } catch (e) {
+    if (e instanceof PermissionError) return { ok: false, error: "You can't move this appointment." };
+    throw e;
+  }
   if (ctx.access !== "any" && parsed.data.newStaffId && parsed.data.newStaffId !== ctx.staffId) return { ok: false, error: "You can only move your own appointments to your own column." };
   try {
     const newStartAt = new Date(parsed.data.newStartISO);
@@ -90,16 +96,31 @@ export async function moveAppointmentItem(input: {
   return { ok: true };
 }
 
-/** Called from the calendar after the bottom edge of a card is dragged: the service (or block) now ends at `newEndISO`. No message to the client; the start is unchanged. */
-export async function resizeAppointmentItem(input: { slug: string; itemId: string; newEndISO: string }): Promise<MoveResult> {
-  const parsed = z.object({ slug: z.string(), itemId: z.string().min(1), newEndISO: z.string().datetime() }).safeParse(input);
-  if (!parsed.success) return { ok: false, error: "Invalid change" };
+/**
+ * Called from the calendar after an edge of a card is dragged: the service (or block) now ends at `newEndISO` and/or starts at
+ * `newStartISO`. A new end sends nothing (the start the client was told is unchanged); a new start is a time change, so the client is
+ * told unless `notify` is false (the calendar asks), and the reminders follow either way.
+ */
+export async function resizeAppointmentItem(input: { slug: string; itemId: string; newStartISO?: string | null; newEndISO?: string | null; notify?: boolean }): Promise<MoveResult> {
+  const parsed = z.object({ slug: z.string(), itemId: z.string().min(1), newStartISO: z.string().datetime().nullish(), newEndISO: z.string().datetime().nullish(), notify: z.boolean().optional() }).safeParse(input);
+  if (!parsed.success || (!parsed.data.newStartISO && !parsed.data.newEndISO)) return { ok: false, error: "Invalid change" };
   const bizId = (await requireBusiness(parsed.data.slug)).business.id;
   const itemRow = await withTenant(bizId, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId), columns: { appointmentId: true } }));
   if (!itemRow) return { ok: false, error: "That appointment no longer exists." };
-  const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, await modeForKind(bizId, itemRow.appointmentId, "change"), { line: parsed.data.itemId });
+  const mode = await modeForKind(bizId, itemRow.appointmentId, "change");
+  let ctx: Awaited<ReturnType<typeof requireAppointmentAccess>>;
   try {
-    await resizeService({ businessId: ctx.business.id, itemId: parsed.data.itemId, newEndAt: new Date(parsed.data.newEndISO), actorUserId: ctx.user.id });
+    ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, mode, { line: parsed.data.itemId });
+  } catch (e) {
+    if (e instanceof PermissionError) return { ok: false, error: "You can't change this appointment." };
+    throw e;
+  }
+  try {
+    await resizeService({ businessId: ctx.business.id, itemId: parsed.data.itemId, newStartAt: parsed.data.newStartISO ? new Date(parsed.data.newStartISO) : null, newEndAt: parsed.data.newEndISO ? new Date(parsed.data.newEndISO) : null, actorUserId: ctx.user.id });
+    if (parsed.data.newStartISO && mode !== "block") {
+      if (parsed.data.notify !== false) await notifyAppointment(ctx.business, itemRow.appointmentId, "rescheduled");
+      else await appointmentChangedSilently(ctx.business, itemRow.appointmentId, "rescheduled");
+    }
   } catch (e) {
     if (e instanceof BookingError) return { ok: false, error: e.message };
     throw e;
@@ -165,7 +186,8 @@ export async function quickBook(input: { slug: string; clientId: string | null; 
     .safeParse(input);
   if (!parsed.success) return { ok: false, error: "Pick a service, a provider and a time." };
   const d = parsed.data;
-  const ctx = await requireBookingAccess(d.slug);
+  const ctx = await requireBookingAccess(d.slug).catch((e) => { if (e instanceof PermissionError) return null; throw e; });
+  if (!ctx) return { ok: false, error: "You can't book appointments here." };
   if (ctx.access === "own" && d.staffId !== ctx.staffId) return { ok: false, error: "You can only book appointments on your own calendar." };
   const location = d.locationId ? await withTenant(ctx.business.id, (tx) => tx.query.locations.findFirst({ where: eq(dbSchema.locations.id, d.locationId!) })) : null;
   if (d.locationId && !location) return { ok: false, error: "That location isn't available. Reload the page and try again." };
@@ -193,7 +215,8 @@ export async function quickBlock(input: { slug: string; staffId: string; date: s
     .safeParse(input);
   if (!parsed.success) return { ok: false, error: "Pick a provider and a start and end time." };
   const d = parsed.data;
-  const ctx = await requireBlockAccess(d.slug);
+  const ctx = await requireBlockAccess(d.slug).catch((e) => { if (e instanceof PermissionError) return null; throw e; });
+  if (!ctx) return { ok: false, error: "You can't block time here." };
   if (ctx.access === "own" && d.staffId !== ctx.staffId) return { ok: false, error: "You can only block time on your own calendar." };
   const location = d.locationId ? await withTenant(ctx.business.id, (tx) => tx.query.locations.findFirst({ where: eq(dbSchema.locations.id, d.locationId!) })) : null;
   const tz = tzFor(ctx.business, location ?? null);

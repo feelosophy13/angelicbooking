@@ -391,11 +391,12 @@ export async function rescheduleAppointment(input: { businessId: string; appoint
  * there; then the appointment and the client's home location follow.
  */
 /**
- * Change when a service (or a block of time) ends, from the calendar's resize handle: the last live segment of that service line grows
- * or shrinks to `newEndAt`, so a visit that is running long gets its real length and a lunch block can be stretched. Nothing before
- * the end moves. The new end must stay inside the provider's hours; busy clashes are the DB's job.
+ * Change when a service (or a block of time) starts or ends, from the calendar's resize handles. The end: the last live segment of
+ * that service line grows or shrinks to `newEndAt` (a visit running long gets its real length, a lunch block stretches). The start:
+ * the first segment begins at `newStartAt` and the end stays (the client came early, the lunch starts later). The changed edge must
+ * stay inside the provider's hours and off their classes; busy clashes are the DB's job.
  */
-export async function resizeService(input: { businessId: string; itemId: string; newEndAt: Date; actorUserId: string }) {
+export async function resizeService(input: { businessId: string; itemId: string; newStartAt?: Date | null; newEndAt?: Date | null; actorUserId: string }) {
   try {
     await withTenant(input.businessId, async (tx) => {
       const item = await tx.query.appointmentItems.findFirst({ where: eq(schema.appointmentItems.id, input.itemId) });
@@ -408,21 +409,35 @@ export async function resizeService(input: { businessId: string; itemId: string;
         .where(and(eq(schema.appointmentItems.appointmentId, item.appointmentId), item.serviceId ? eq(schema.appointmentItems.serviceId, item.serviceId) : eq(schema.appointmentItems.id, item.id), eq(schema.appointmentItems.staffId, item.staffId))))
         .filter((s) => s.status !== "cancelled")
         .sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+      const first = siblings[0] ?? item;
       const last = siblings[siblings.length - 1] ?? item;
-      if (input.newEndAt.getTime() === last.endAt.getTime()) return;
-      if (input.newEndAt <= last.startAt) throw new BookingError("An appointment has to end after it starts.");
       const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
       const tz = biz?.timezone ?? "America/New_York";
-      const day = instantToISODate(last.startAt, tz);
-      const blocks = (await workingBlocksFor({ businessId: input.businessId, timeZone: tz, staffIds: [item.staffId], dates: [day] })).get(`${item.staffId}:${day}`) ?? [];
       const target = await tx.query.staff.findFirst({ where: eq(schema.staff.id, item.staffId), columns: { displayName: true } });
-      if (input.newEndAt > last.endAt && !withinWorkingBlocks(blocks, [{ start: last.startAt, end: input.newEndAt }])) {
-        throw new BookingError(`${target?.displayName ?? "This provider"} isn't working until ${new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz }).format(input.newEndAt)}. Pick an earlier end, or change their hours under Staff.`);
-      }
-      if (input.newEndAt > last.endAt) await assertNoClassClash(tx, item.staffId, [{ start: last.endAt, end: input.newEndAt }]);
+      const clock = (d: Date) => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz }).format(d);
+      const hours = async (d: Date) => (await workingBlocksFor({ businessId: input.businessId, timeZone: tz, staffIds: [item.staffId], dates: [instantToISODate(d, tz)] })).get(`${item.staffId}:${instantToISODate(d, tz)}`) ?? [];
       await tx.execute(sql`set constraints appointment_items_no_double_booking deferred`);
-      await tx.update(schema.appointmentItems).set({ endAt: input.newEndAt, allowOverlap: false }).where(eq(schema.appointmentItems.id, last.id));
-      await audit(tx, input.businessId, input.actorUserId, "appointment.resize", item.appointmentId, { itemId: last.id, from: last.endAt, to: input.newEndAt });
+      const diff: Record<string, unknown> = {};
+      if (input.newEndAt && input.newEndAt.getTime() !== last.endAt.getTime()) {
+        if (input.newEndAt <= last.startAt) throw new BookingError("An appointment has to end after it starts.");
+        if (input.newEndAt > last.endAt) {
+          if (!withinWorkingBlocks(await hours(last.startAt), [{ start: last.startAt, end: input.newEndAt }])) throw new BookingError(`${target?.displayName ?? "This provider"} isn't working until ${clock(input.newEndAt)}. Pick an earlier end, or change their hours under Staff.`);
+          await assertNoClassClash(tx, item.staffId, [{ start: last.endAt, end: input.newEndAt }]);
+        }
+        await tx.update(schema.appointmentItems).set({ endAt: input.newEndAt, allowOverlap: false }).where(eq(schema.appointmentItems.id, last.id));
+        Object.assign(diff, { itemId: last.id, fromEnd: last.endAt, toEnd: input.newEndAt });
+      }
+      if (input.newStartAt && input.newStartAt.getTime() !== first.startAt.getTime()) {
+        if (input.newStartAt >= first.endAt) throw new BookingError("An appointment has to start before it ends.");
+        if (input.newStartAt < first.startAt) {
+          if (!withinWorkingBlocks(await hours(first.startAt), [{ start: input.newStartAt, end: first.endAt }])) throw new BookingError(`${target?.displayName ?? "This provider"} isn't working at ${clock(input.newStartAt)}. Pick a later start, or change their hours under Staff.`);
+          await assertNoClassClash(tx, item.staffId, [{ start: input.newStartAt, end: first.startAt }]);
+        }
+        await tx.update(schema.appointmentItems).set({ startAt: input.newStartAt, allowOverlap: false }).where(eq(schema.appointmentItems.id, first.id));
+        Object.assign(diff, { itemId: first.id, fromStart: first.startAt, toStart: input.newStartAt });
+      }
+      if (!Object.keys(diff).length) return;
+      await audit(tx, input.businessId, input.actorUserId, "appointment.resize", item.appointmentId, diff);
     });
   } catch (e) {
     translate(e);

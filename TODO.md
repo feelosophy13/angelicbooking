@@ -183,6 +183,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       same path as a mouse drop ("Move and tell / Move quietly", Undo toast, error toast). A slide or the browser's own scroll within
       the hold cancels the lift, and a plain tap still opens the detail sheet. Verified by driving pointer events with touch type in the
       browser pane (the pane's taps arrive as mouse clicks, so not on a real finger). Resize by touch not built.
+- [x] Resize the start edge, 2026-10-18: the top edge of a card is a handle too (the client came early, lunch starts later): the
+      service's first segment starts where it is dropped and the end stays. A new start is a time change, so a reachable client is
+      asked about like a move ("Change and tell / Change quietly") and the reminders follow; Undo puts the old start back the same way.
+      `resizeService` takes `newStartAt` and/or `newEndAt`; `resizeAppointmentItem` takes `newStartISO`, `newEndISO`, `notify`.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
