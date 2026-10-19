@@ -686,6 +686,20 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Suspend closes the staff app, booking page, client self-service links, calendar feeds, clock kiosk, mobile API and outgoing messages, and the daily sweep pauses the Stripe subscription (untested against Stripe). Stripe/Twilio webhooks still process.
 - [ ] Read-only view-as / impersonation was **not** built: it needs a read-only mode enforced across every server action in `apps/web`. The admin app
       shows locations, staff and logins instead. Worth doing only if support needs it.
+- [x] Settings → Billing shows what the business pays, 2026-10-19: a "This month" card (plan with its allowances, extra staff and
+      locations as count × unit price, the text number, texts sent against the allowance and the 2¢ overage, the projected total with the
+      billing period, next charge date, card on file, trial end or "No card on file"), an "Add-ons" card (each number with its status,
+      fee and a link to Text messaging, plus "Your pricing" when the platform set a per-business price) and an "Invoices" card (Stripe
+      invoices newest first, 12 a page, number, date, amount, status, row opens the PDF, "Manage payment method" to the Customer Portal,
+      empty state before a customer exists). With a subscription the figures come from Stripe's upcoming-invoice preview
+      (`server/billing-overview.ts`, lines told apart by product id); on trial, or when Stripe is unreachable, from the price book and
+      today's counts with a quiet notice (`lib/billing-breakdown.ts`, unit-tested; `billing-page.test.ts` renders the Invoices card with
+      Stripe stood in). The Settings directory's "Your plan" row carries the fixed monthly figure from the price book; a manager with
+      business settings but not billing sees that row read-only (title, blurb, figure, no link); `billing.manage` still gates the page.
+      Known limits: the directory figure is the price-book estimate, so a subscription started under an older price book (prices are
+      not re-applied to existing subscribers on purpose) shows a different amount there than on the Billing page; a number bought while
+      the fee was $0 keeps that fee on its line (the add-on shows the current list price beside it); the Stripe path was verified with a
+      script against the sandbox subscription of `angelic-salon`, not in the browser (its owner login is not the demo one).
 - [ ] Platform billing overview (real MRR, failed payments) once Stripe keys exist.
 
 - [x] Render Postgres upgraded 2026-10-17 from the free tier to `basic_256mb` (about $6/month: daily backups and point-in-time

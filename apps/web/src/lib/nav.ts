@@ -1,6 +1,7 @@
 import { can, type Action, type Permissions } from "@angelic/core";
 import { blockingAccess, bookingAccess } from "./appointment-access";
 import { canOpenGiftCards, canOpenSales, canSeeReviews } from "./visibility";
+import { formatMoney } from "./utils";
 
 /**
  * The dashboard's navigation, in one place: the sidebar sections, the Settings directory and the ⌘K page
@@ -75,7 +76,18 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
   ].filter((s) => s.items.length > 0);
 }
 
-export type SettingsEntry = { href: string; title: string; blurb: string; status?: string; /** What opens the page; "settings.business" when omitted. */ action?: Action };
+export type SettingsEntry = {
+  href: string;
+  title: string;
+  blurb: string;
+  status?: string;
+  /** What opens the page; "settings.business" when omitted. */
+  action?: Action;
+  /** A permission that may see this row's title and status without opening the page (the row is then not a link). */
+  view?: Action;
+  /** Set on the rows the viewer may see but not open. */
+  readOnly?: boolean;
+};
 export type SettingsGroup = { title: string; entries: SettingsEntry[] };
 
 export interface SettingsStatusSource {
@@ -86,6 +98,9 @@ export interface SettingsStatusSource {
   customDomain: string | null;
   stripeChargesEnabled: boolean;
   locationCount: number;
+  /** The fixed monthly platform cost from the price book (server/billing.ts planMonthlyCents); null when comped. */
+  planMonthlyCents: number | null;
+  currency: string;
 }
 
 /**
@@ -123,7 +138,8 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
         { href: `${sb}/refund-reasons`, title: "Refund reasons", blurb: "The list staff pick from when refunding; Reports group refunds by it." },
         { href: `${sb}/cancellation-reasons`, title: "Cancellation reasons", blurb: "The list staff pick from when cancelling an appointment; Reports group cancellations by it." },
         { href: `${sb}/payroll`, title: "Payroll rules", blurb: "Pay schedule; who absorbs discounts, fee sharing and the package commission base.", action: "settings.booking" },
-        { href: `${sb}/billing`, title: "Your plan", blurb: "Subscription, card on file and this month's usage.", action: "billing.manage" },
+        // Managers with business settings see what the business pays (read-only, no link): the plan, the card and the invoices stay with billing.manage.
+        { href: `${sb}/billing`, title: "Your plan", blurb: "Subscription, card on file, this month's cost and invoices.", status: s ? (s.planMonthlyCents == null ? "complimentary" : `${formatMoney(s.planMonthlyCents, s.currency)} / month`) : undefined, action: "billing.manage", view: "settings.business" },
       ],
     },
     {
@@ -142,7 +158,16 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
       ],
     },
   ];
-  return groups.map((g) => ({ ...g, entries: g.entries.filter((e) => can(permissions, e.action ?? "settings.business")) })).filter((g) => g.entries.length > 0);
+  return groups
+    .map((g) => ({
+      ...g,
+      entries: g.entries.flatMap((e) => {
+        if (can(permissions, e.action ?? "settings.business")) return [e];
+        if (e.view && can(permissions, e.view)) return [{ ...e, readOnly: true, blurb: "What the business pays each month. Only the owner can change the plan, the card or see the invoices." }];
+        return [];
+      }),
+    }))
+    .filter((g) => g.entries.length > 0);
 }
 
 /**
@@ -161,7 +186,7 @@ export function searchPages(base: string, permissions: Perms, staffId: string | 
     ...(ok("inventory.manage") ? [{ title: "Receive stock", href: `${base}/inventory/receive`, keywords: "inventory delivery" }, { title: "Count stock", href: `${base}/inventory/count`, keywords: "inventory stocktake" }, { title: "Reorder", href: `${base}/inventory/reorder`, keywords: "inventory low stock purchase order" }, { title: "Purchase orders", href: `${base}/inventory/orders`, keywords: "inventory suppliers" }, { title: "Stock history", href: `${base}/inventory/history`, keywords: "inventory movements ledger log audit" }] : []),
     ...(ok("marketing.send") ? [{ title: "Campaigns", href: `${base}/marketing`, keywords: "marketing email text" }, { title: "Promo codes", href: `${base}/marketing/promos`, keywords: "marketing discount" }] : []),
   ];
-  const settings = settingsGroups(base, permissions).flatMap((g) => g.entries.map((e) => ({ title: e.title === "Forms" || e.title === "Reviews" ? `${e.title} settings` : e.title, href: e.href, keywords: `settings ${g.title} ${e.blurb}` })));
+  const settings = settingsGroups(base, permissions).flatMap((g) => g.entries.filter((e) => !e.readOnly).map((e) => ({ title: e.title === "Forms" || e.title === "Reviews" ? `${e.title} settings` : e.title, href: e.href, keywords: `settings ${g.title} ${e.blurb}` })));
   const seen = new Set<string>();
   return [...nav, ...extras, ...settings].filter((p) => (seen.has(p.href) ? false : (seen.add(p.href), true)));
 }

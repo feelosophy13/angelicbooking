@@ -21,6 +21,9 @@ export function configFromBook(book: PriceBook): BillingConfig {
   return { baseCents: book.baseCents, numberCents: book.numberCents, smsUsageCents: book.smsUsageCents, smsIncluded: book.smsIncluded, trialDays: book.trialDays };
 }
 
+/** Stripe product ids on the platform account, fixed so a line on an invoice can be told apart by product (server/billing.ts creates them). */
+export const PRODUCT_IDS = { base: "angelic_platform", number: "angelic_sms_number", usage: "angelic_sms_usage", location: "angelic_extra_location", staff: "angelic_extra_staff" } as const;
+
 /** Every number-fee price's lookup key starts with this, whatever the amount. */
 export const NUMBER_KEY_PREFIX = "angelic_sms_number_monthly_";
 

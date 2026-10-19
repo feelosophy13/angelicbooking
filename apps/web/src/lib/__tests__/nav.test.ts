@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROLE_PERMISSIONS } from "@angelic/core";
-import { navSections, searchPages } from "../nav";
+import { navSections, searchPages, settingsGroups } from "../nav";
 
 /** Every sidebar entry opens a page the viewer may load: a link that ends in "Not allowed" is a bug. */
 const labels = (perms: Parameters<typeof navSections>[1]) => navSections("/app/x", perms).flatMap((s) => s.items.map((i) => i.label));
@@ -62,5 +62,21 @@ describe("sidebar entries match their pages", () => {
     expect(labels(only("reports.view"))).not.toContain("Gift cards");
     expect(labels(only("giftcards.view"))).toContain("Gift cards");
     expect(labels(DEFAULT_ROLE_PERMISSIONS.manager)).toContain("Gift cards");
+  });
+});
+
+describe("the Settings directory's Your plan row", () => {
+  const status = { onlineBookingEnabled: true, loyaltyEnabled: false, storeEnabled: false, giftCardsOnline: false, customDomain: null, stripeChargesEnabled: false, locationCount: 1, planMonthlyCents: 2500, currency: "usd" };
+  const plan = (perms: Parameters<typeof settingsGroups>[1]) => settingsGroups("/app/x", perms, status).flatMap((g) => g.entries).find((e) => e.title === "Your plan");
+  it("opens for billing.manage with the monthly figure, and is read-only for a manager with business settings", () => {
+    expect(plan(DEFAULT_ROLE_PERMISSIONS.owner)).toMatchObject({ status: "$25.00 / month" });
+    expect(plan(DEFAULT_ROLE_PERMISSIONS.owner)?.readOnly).toBeFalsy();
+    expect(plan(DEFAULT_ROLE_PERMISSIONS.manager)).toMatchObject({ status: "$25.00 / month", readOnly: true });
+    expect(plan(only("settings.booking"))).toBeUndefined();
+    expect(settingsGroups("/app/x", only("settings.business"), { ...status, planMonthlyCents: null }).flatMap((g) => g.entries).find((e) => e.title === "Your plan")?.status).toBe("complimentary");
+  });
+  it("is never a ⌘K destination for someone who may only see it", () => {
+    expect(searchPages("/app/x", DEFAULT_ROLE_PERMISSIONS.manager).map((p) => p.href)).not.toContain("/app/x/settings/billing");
+    expect(searchPages("/app/x", DEFAULT_ROLE_PERMISSIONS.owner).map((p) => p.href)).toContain("/app/x/settings/billing");
   });
 });

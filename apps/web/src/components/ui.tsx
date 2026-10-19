@@ -248,12 +248,13 @@ export function BackLink({ href, children }: { href: string; children: React.Rea
   );
 }
 
-export function Notice({ kind = "error", children }: { kind?: "error" | "success"; children: React.ReactNode }) {
+/** "info" is the quiet one: a fact the person should know (a figure is an estimate, a service was unreachable), not a problem to fix. */
+export function Notice({ kind = "error", children }: { kind?: "error" | "success" | "info"; children: React.ReactNode }) {
   return (
     <div
       className={cn(
         "rounded-lg px-3 py-2 text-sm",
-        kind === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-green-50 text-green-700 border border-green-200",
+        kind === "error" ? "bg-red-50 text-red-700 border border-red-200" : kind === "success" ? "bg-green-50 text-green-700 border border-green-200" : "bg-stone-50 text-stone-600 border border-stone-200",
       )}
     >
       {children}

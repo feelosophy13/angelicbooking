@@ -12,12 +12,13 @@ import type Stripe from "stripe";
 import { eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { appUrl, isStripeConfigured, stripe } from "@/lib/stripe";
-import { and, inArray, sql } from "drizzle-orm";
+import { and, gte, inArray, isNull, sql } from "drizzle-orm";
 import type { PriceBook } from "@angelic/core/platform-pricing";
-import { canBuyNumber, configFromBook, isDelinquent, isSubscribed, lookupKeys, NUMBER_KEY_PREFIX, SMS_METER_EVENT, smsPausedReason, type BillingConfig } from "@/lib/billing-config";
+import { canBuyNumber, configFromBook, isDelinquent, isSubscribed, lookupKeys, NUMBER_KEY_PREFIX, PRODUCT_IDS, SMS_METER_EVENT, smsPausedReason, type BillingConfig } from "@/lib/billing-config";
 import { checkoutTrial } from "@/lib/access";
 import { desiredItems, pauseAction, planChanges, priceKey, SUSPEND_PAUSE_MARKER, type ManagedKind } from "@/lib/billing-plan";
 import { platformPriceBook, priceBookFor } from "@/server/price-book";
+import { priceBookBreakdown, type PriceBookUsage } from "@/lib/billing-breakdown";
 
 type Business = typeof schema.businesses.$inferSelect;
 
@@ -30,8 +31,6 @@ export function billingEnabled(): boolean {
 // ---------------------------------------------------------------------------
 // Catalog (idempotent)
 // ---------------------------------------------------------------------------
-
-const PRODUCT_IDS = { base: "angelic_platform", number: "angelic_sms_number", usage: "angelic_sms_usage", location: "angelic_extra_location", staff: "angelic_extra_staff" } as const;
 
 async function ensureProduct(id: keyof typeof PRODUCT_IDS, name: string, description: string): Promise<string> {
   const s = stripe();
@@ -137,6 +136,35 @@ export async function billableUsage(businessId: string): Promise<{ locations: nu
     const [st] = await tx.select({ n: sql<number>`count(*)::int` }).from(schema.staff).where(eq(schema.staff.active, true));
     return { locations: Number(l?.n ?? 0), activeStaff: Number(st?.n ?? 0) };
   });
+}
+
+/**
+ * Everything the price-book breakdown needs from our own database: the counts, the numbers held (at the fee each was
+ * bought for) and the texts sent since `since` (the local count; Stripe's meter is the source once a subscription bills).
+ */
+export async function localBillingUsage(businessId: string, since: Date): Promise<PriceBookUsage> {
+  const [counts, rest] = await Promise.all([
+    billableUsage(businessId),
+    withTenant(businessId, async (tx) => {
+      const numbers = await tx.select({ phoneNumber: schema.messagingNumbers.phoneNumber, monthlyFeeCents: schema.messagingNumbers.monthlyFeeCents }).from(schema.messagingNumbers).where(isNull(schema.messagingNumbers.releasedAt)).orderBy(schema.messagingNumbers.purchasedAt);
+      const [sms] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(schema.notifications)
+        .where(and(eq(schema.notifications.channel, "sms"), eq(schema.notifications.status, "sent"), gte(schema.notifications.sentAt, since)));
+      return { numbers, smsSent: Number(sms?.n ?? 0) };
+    }),
+  ]);
+  return { ...counts, ...rest };
+}
+
+/**
+ * The fixed monthly amount from the price book and today's counts (plan, extras, text number; no text usage), for the
+ * Settings directory. Null for a comped business. Not a Stripe call: the Billing page has the figure Stripe will charge.
+ */
+export async function planMonthlyCents(business: Pick<Business, "id" | "comped" | "currency">): Promise<number | null> {
+  if (business.comped) return null;
+  const [book, usage] = await Promise.all([priceBookFor(business.id), localBillingUsage(business.id, new Date())]);
+  return priceBookBreakdown(book, usage, business.currency).recurringCents;
 }
 
 // ---------------------------------------------------------------------------

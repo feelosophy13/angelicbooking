@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import { ChevronRight } from "lucide-react";
 import { asc } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
+import { can } from "@angelic/core";
+import { planMonthlyCents } from "@/server/billing";
 import { requireAnyAction } from "@/lib/tenant";
 import { Card, PageHeader } from "@/components/ui";
 import { SETTINGS_ACTIONS, settingsGroups } from "@/lib/nav";
@@ -13,8 +15,11 @@ export const metadata: Metadata = { title: "Settings" };
 export default async function SettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, permissions } = await requireAnyAction(slug, ...SETTINGS_ACTIONS);
-  const locations = await withTenant(business.id, (tx) => tx.select({ id: schema.locations.id }).from(schema.locations).orderBy(asc(schema.locations.name)));
-  const groups = settingsGroups(`/app/${slug}`, permissions, { ...business, locationCount: locations.length });
+  const [locations, monthly] = await Promise.all([
+    withTenant(business.id, (tx) => tx.select({ id: schema.locations.id }).from(schema.locations).orderBy(asc(schema.locations.name))),
+    can(permissions, "billing.manage") || can(permissions, "settings.business") ? planMonthlyCents(business) : null,
+  ]);
+  const groups = settingsGroups(`/app/${slug}`, permissions, { ...business, locationCount: locations.length, planMonthlyCents: monthly });
   return (
     <>
       <PageHeader title="Settings" />
@@ -26,14 +31,24 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
               <ul className="divide-y divide-stone-100">
                 {g.entries.map((e) => (
                   <li key={e.href}>
-                    <Link href={e.href} className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50">
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium text-stone-900">{e.title}</span>
-                        <span className="block truncate text-xs text-stone-500">{e.blurb}</span>
-                      </span>
-                      {e.status ? <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">{e.status}</span> : null}
-                      <ChevronRight className="h-4 w-4 shrink-0 text-stone-300" aria-hidden />
-                    </Link>
+                    {e.readOnly ? (
+                      <div className="flex items-center gap-3 px-4 py-3">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium text-stone-900">{e.title}</span>
+                          <span className="block truncate text-xs text-stone-500">{e.blurb}</span>
+                        </span>
+                        {e.status ? <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">{e.status}</span> : null}
+                      </div>
+                    ) : (
+                      <Link href={e.href} className="flex items-center gap-3 px-4 py-3 hover:bg-stone-50">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium text-stone-900">{e.title}</span>
+                          <span className="block truncate text-xs text-stone-500">{e.blurb}</span>
+                        </span>
+                        {e.status ? <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-xs text-stone-600">{e.status}</span> : null}
+                        <ChevronRight className="h-4 w-4 shrink-0 text-stone-300" aria-hidden />
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>

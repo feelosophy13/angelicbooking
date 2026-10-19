@@ -21,11 +21,17 @@ export async function platformPriceBook(): Promise<PriceBook> {
 }
 
 export async function priceBookFor(businessId: string): Promise<PriceBook> {
-  const [book, override] = await Promise.all([
+  return (await priceBookDetailFor(businessId)).book;
+}
+
+/** The business's price book with its parts: the platform's book and the fields the platform admin set just for this business ("Your pricing"). */
+export async function priceBookDetailFor(businessId: string): Promise<{ platform: PriceBook; overrides: Row; book: PriceBook }> {
+  const [platform, override] = await Promise.all([
     platformPriceBook(),
     withTenant(businessId, async (tx) => (await tx.select().from(schema.businessPricing).where(eq(schema.businessPricing.businessId, businessId)))[0]),
   ]);
-  return effectivePriceBook(book, pick(override));
+  const overrides = pick(override);
+  return { platform, overrides, book: effectivePriceBook(platform, overrides) };
 }
 
 type Tx = Parameters<Parameters<typeof withTenant>[1]>[0];
