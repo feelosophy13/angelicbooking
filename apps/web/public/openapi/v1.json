@@ -9360,8 +9360,8 @@
         ],
         "operationId": "getStaffIdSchedule",
         "summary": "weekly hours (24h local time), upcoming days off or changed hours, and the services they perform with any own price or length.",
-        "description": "weekly hours (24h local time), upcoming days off or changed hours, and the services they perform with any own price or length.",
-        "x-scope": "catalog:read",
+        "description": "weekly hours (24h local time), upcoming days off or changed hours, and the services they perform with any own price or length. A person's hours are team data (S5 in PERMISSIONS-PLAN-2026-10-18.md), so this reads with staff:read (it was catalog:read).",
+        "x-scope": "staff:read",
         "parameters": [
           {
             "name": "id",

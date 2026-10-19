@@ -63,7 +63,7 @@ beforeAll(async () => {
     const [sale] = await withTenant(id, (tx) => tx.insert(schema.sales).values({ businessId: id, number: 1 }).returning());
     ids[`sale${id}`] = sale!.id;
   }
-  keys.aAll = await mkKey(A, "all", ["catalog:write", "clients:write", "appointments:write", "sales:read", "inventory:write", "reviews:read"]);
+  keys.aAll = await mkKey(A, "all", ["catalog:write", "clients:write", "appointments:write", "sales:read", "inventory:write", "reviews:read", "staff:read"]);
   keys.aRead = await mkKey(A, "ro", ["clients:read"]);
   keys.bAll = await mkKey(B, "all", ["catalog:read", "clients:write", "appointments:write", "sales:read"]);
   keys.revoked = await mkKey(A, "rev", ["clients:read"], { revokedAt: new Date() });

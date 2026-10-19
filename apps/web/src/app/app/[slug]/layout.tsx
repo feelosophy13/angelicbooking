@@ -56,7 +56,7 @@ export default async function AppLayout({ children, params }: { children: React.
     it(base, "Calendar", "CalendarDays", true),
     ...(can(permissions, "clients.read") ? [it(`${base}/clients`, "Clients", "Users")] : []),
     can(permissions, "checkout.take") ? it(`${base}/sales`, "Checkout", "Receipt") : can(permissions, "reports.view") ? it(`${base}/reports`, "Reports", "BarChart3") : it(`${base}/time`, "Time", "Clock"),
-    it(`${base}/staff`, "Staff", "UserCog"),
+    ...(can(permissions, "staff.directory") ? [it(`${base}/staff`, "Staff", "UserCog")] : []),
   ];
 
   // Trial over, no subscription: no sidebar, just the page they are allowed to open (billing, or the locked notice).

@@ -106,6 +106,21 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       shows only with `audit.view` (staff view and print view; never on the client's copy). The development "View as" pill is drawn only for
       a real owner.
 
+- [x] Phase 1 API and mobile (T2, R3, S3, S5, C1, A1), 2026-10-19: every API scope now maps to the permission its creator must hold
+      (`SCOPE_NEEDS`): `staff:read` ← `staff.schedules.view`, `reviews:read` ← `reviews.view`, `time:read` ← `time.view.all`, `time:write` /
+      `time:delete` ← `time.edit`, `forms:write` / `forms:void` / `forms:delete` ← `forms.manage`, `sales:read` ← `sales.view.all`,
+      `waitlist:write` ← `waitlist.manage`. `GET /staff/{id}/schedule` reads with `staff:read` (was `catalog:read`; a version-1 key holding only
+      `catalog:read` now gets 403 there; the developers page and `public/openapi/v1.json` say so). The mobile agenda drops the client's phone,
+      the visit's notes and the price without `clients.contact`, `clients.notes` and `catalog.prices`; the phone menu's Staff tab needs
+      `staff.directory`. Default change: Manager keeps `reviews.view.own` and `sales.view.own` (the plan lists them for Provider only) because a
+      manager may only edit a role whose permissions they all hold.
+- [x] Phase 1 nav and search (A5 and the sidebar), 2026-10-19: Clients needs `clients.read`, Staff `staff.directory`, Staff hours
+      `staff.schedules.view`, Waitlist `waitlist.view`, Services / Products / Packages / Memberships `catalog.view`, Inventory
+      `inventory.manage` or `inventory.view` (Log supplies with `inventory.log` alone), Gift cards `giftcards.view`, Sales any of
+      `checkout.take` / `sales.view.*`, Reviews `reviews.view` / `reviews.view.own`, Forms (sidebar and Settings directory) `forms.manage`.
+      ⌘K offers New appointment and Block time only with booking / blocking access (an own-calendar role also needs a linked staff member)
+      and New client only with `clients.write`; service hits need `catalog.view`.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

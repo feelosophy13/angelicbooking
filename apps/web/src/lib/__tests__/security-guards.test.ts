@@ -55,11 +55,23 @@ describe("API key scopes", () => {
     expect(scopesBeyond(["settings:read", "policies:write", "catalog:read"], perms("integrations.manage", "billing.manage", "services.manage"), false)).toEqual(["settings:read", "policies:write"]);
     expect(scopesBeyond(["roles:read", "roles:write"], perms("business.manage", "integrations.manage"), false)).toEqual(["roles:read", "roles:write"]);
   });
+  it("the phase 1 view permissions sit behind their scopes: staff, reviews, time, forms, sales and the waitlist", () => {
+    expect(scopesBeyond(["staff:read", "reviews:read", "time:read", "time:write", "time:delete", "forms:write", "forms:void", "forms:delete", "sales:read", "waitlist:write"], perms("clients.read", "clients.write", "appointments.write.any", "reports.view", "payroll.view", "staff.manage"), false)).toEqual(["staff:read", "reviews:read", "time:read", "time:write", "time:delete", "forms:write", "forms:void", "forms:delete", "sales:read", "waitlist:write"]);
+    expect(scopesBeyond(["staff:read"], perms("staff.schedules.view"), false)).toEqual([]);
+    expect(scopesBeyond(["reviews:read"], perms("reviews.view"), false)).toEqual([]);
+    expect(scopesBeyond(["reviews:read"], perms("reviews.view.own"), false)).toEqual(["reviews:read"]); // a key has no "own"
+    expect(scopesBeyond(["time:read", "time:write"], perms("time.view.all"), false)).toEqual(["time:write"]);
+    expect(scopesBeyond(["time:write", "time:delete"], perms("time.edit"), false)).toEqual([]);
+    expect(scopesBeyond(["forms:read", "forms:write"], perms("clients.notes", "forms.manage"), false)).toEqual([]);
+    expect(scopesBeyond(["sales:read"], perms("sales.view.all"), false)).toEqual([]);
+    expect(scopesBeyond(["sales:read"], perms("sales.view.own", "checkout.take"), false)).toEqual(["sales:read"]);
+    expect(scopesBeyond(["waitlist:write"], perms("waitlist.manage"), false)).toEqual([]);
+  });
   it("each split scope follows its own permission", () => {
     expect(scopesBeyond(["client-notes:read", "client-notes:write", "forms:read"], perms("clients.read", "clients.notes"), false)).toEqual([]);
     expect(scopesBeyond(["clients:balances"], perms("clients.read", "clients.balances"), false)).toEqual([]);
     expect(scopesBeyond(["messages:read", "messages:write"], perms("clients.read", "clients.messages"), false)).toEqual(["messages:write"]);
-    expect(scopesBeyond(["messages:write", "forms:write"], perms("clients.write"), false)).toEqual([]);
+    expect(scopesBeyond(["messages:write", "forms:write"], perms("clients.write"), false)).toEqual(["forms:write"]);
     expect(scopesBeyond(["client-notes:read"], perms("clients.write", "clients.messages", "clients.balances"), false)).toEqual(["client-notes:read"]);
   });
 });

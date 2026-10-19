@@ -204,7 +204,9 @@ describe.skipIf(!up)("API team: weekly hours", () => {
     expect(r.body.data.weekly).toHaveLength(3);
     expect(r.body.data.rotation_weeks).toBe(1);
     expect(r.body.data.rotation_anchor).toBeNull();
-    const g = await json(await call(getSchedule, catalogKey, { id: id.staffA! }));
+    // A person's hours read with staff:read (S5 in PERMISSIONS-PLAN-2026-10-18.md); the catalog scope no longer opens them.
+    expect((await call(getSchedule, catalogKey, { id: id.staffA! })).status).toBe(403);
+    const g = await json(await call(getSchedule, readOnly, { id: id.staffA! }));
     expect(g.body.data.weekly.map((w: any) => `${w.weekday} ${w.start}-${w.end}`)).toEqual(["1 09:00-12:00", "1 13:00-17:00", "3 10:00-18:00"]);
     // Two-week rotation: anchor is a Monday, week 2 rows are kept.
     const two = await json(await call(putSchedule, key, { id: id.staffA! }, send("PUT", { rotation_weeks: 2, this_week_is: 1, weekly: [{ weekday: 2, week_index: 0, start: "09:00", end: "10:00" }, { weekday: 2, week_index: 1, start: "11:00", end: "12:00" }] })));

@@ -112,7 +112,7 @@ export default function DevelopersPage() {
       <Endpoint method="GET" path="/services/{id}" scope="catalog:read" />
       <Endpoint method="GET" path="/staff" scope="catalog:read"><p>Active team members: name, position, bio and photo. Pay, contact details and logins are never included.</p></Endpoint>
       <Endpoint method="GET" path="/staff/{id}" scope="catalog:read" />
-      <Endpoint method="GET" path="/staff/{id}/schedule" scope="catalog:read"><p>Weekly hours (24-hour local time, <code>weekday</code> 0 = Sunday), upcoming days off or changed hours, and the services the person performs with any price or length of their own.</p></Endpoint>
+      <Endpoint method="GET" path="/staff/{id}/schedule" scope="staff:read"><p>Weekly hours (24-hour local time, <code>weekday</code> 0 = Sunday), upcoming days off or changed hours, and the services the person performs with any price or length of their own.</p></Endpoint>
       <Endpoint method="GET" path="/products" scope="catalog:read"><p>Active products with price and (when tracked) stock. Cost and supplier are not included.</p></Endpoint>
       <Endpoint method="GET" path="/products/{id}" scope="catalog:read" />
       <Endpoint method="GET" path="/locations" scope="catalog:read"><p>Your sites: address, phone and opening hours. Also <code>/locations/{"{id}"}</code>.</p></Endpoint>

@@ -22,7 +22,7 @@ export function TeamDocs() {
       </Endpoint>
 
       <h2>Hours, time off and services</h2>
-      <p>Read a person&apos;s schedule with <code>GET /staff/{"{id}"}/schedule</code> (needs <code>catalog:read</code>); it returns the weekly hours, upcoming time off and the services they perform.</p>
+      <p>Read a person&apos;s schedule with <code>GET /staff/{"{id}"}/schedule</code> (needs <code>staff:read</code>); it returns the weekly hours, upcoming time off and the services they perform.</p>
       <Endpoint method="PUT" path="/staff/{id}/schedule" scope="staff:write">
         <p>Replaces the weekly hours. Body: <code>weekly</code> (required): a list of blocks <code>{`{"weekday": 1, "start": "09:00", "end": "17:00"}`}</code>, <code>weekday</code> 0 (Sunday) to 6, 24-hour local time, optional <code>week_index</code> (0 to 3, default 0) and <code>location_id</code>. A day with a lunch break or split shift is several blocks. A day with no block is a day off. An empty list clears all hours.</p>
         <p>Optional: <code>rotation_weeks</code> (1 to 4: hours repeat every N weeks) and <code>this_week_is</code> (0-based: which week of the cycle the current week is; default 0). Leave both out to keep the current rotation. Rules, as in the app: <code>start</code> before <code>end</code>, blocks on one day may not overlap, at most 12 blocks per day, <code>week_index</code> below <code>rotation_weeks</code> (<code>422</code> otherwise). In a single-location business the location is stored as &quot;the only one&quot;. Returns the new schedule.</p>
