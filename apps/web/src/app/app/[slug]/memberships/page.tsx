@@ -4,7 +4,8 @@ import { Plus } from "lucide-react";
 import { can, isMembershipInterval, periodLabel, periodNoun } from "@angelic/core";
 
 export const metadata: Metadata = { title: "Membership plans" };
-import { requireBusiness } from "@/lib/tenant";
+import { requireAction } from "@/lib/tenant";
+import { canSeePrices } from "@/lib/visibility";
 import { getOffersCatalog } from "@/server/offers";
 import { listLocations } from "@/server/locations";
 import { formatMoney } from "@/lib/utils";
@@ -14,7 +15,8 @@ import { togglePlan } from "../catalog-actions";
 
 export default async function MembershipsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, permissions } = await requireBusiness(slug);
+  const { business, permissions } = await requireAction(slug, "catalog.view");
+  const prices = canSeePrices(permissions);
   const { plans, services } = await getOffersCatalog(business.id);
   const locations = await listLocations(business.id);
   const validAtLabel = (ids: string[]) => (ids.length ? ` · valid at ${ids.map((id) => locations.find((l) => l.id === id)?.name.replace(/^.*? - /, "") ?? "?").join(", ")} only` : "");
@@ -42,7 +44,7 @@ export default async function MembershipsPage({ params }: { params: Promise<{ sl
                     p.description ?? "",
                   ].filter(Boolean).join(" · ")}{validAtLabel(p.validLocationIds)}</p>
                 </div>
-                <span className="w-32 shrink-0 text-right font-medium tabular-nums">{formatMoney(p.priceCents, business.currency)} <span className="font-normal text-stone-500">/ {periodNoun(iv(p.interval), p.intervalCount)}</span></span>
+                <span className="w-32 shrink-0 text-right font-medium tabular-nums">{prices ? formatMoney(p.priceCents, business.currency) : ""} <span className="font-normal text-stone-500">/ {periodNoun(iv(p.interval), p.intervalCount)}</span></span>
                 {manage ? <form action={togglePlan} className={rowControl}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={p.id} /><input type="hidden" name="active" value={p.active ? "false" : "true"} /><Button size="sm" variant="ghost" type="submit">{p.active ? "Hide" : "Show"}</Button></form> : null}
               </li>
             ))}

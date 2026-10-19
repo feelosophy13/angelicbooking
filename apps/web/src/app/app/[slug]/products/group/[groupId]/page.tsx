@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { can } from "@angelic/core";
 import { requireAction, requireBusiness } from "@/lib/tenant";
+import { canSeeCosts } from "@/lib/visibility";
 import { listCategories } from "@/server/categories";
 import { listSuppliers } from "@/server/inventory";
 import { getGroup } from "@/server/product-groups";
@@ -89,7 +90,7 @@ export default async function ProductGroupPage({ params }: { params: Promise<{ s
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {group.kind === "retail" ? <Field label="Price" name="price"><MoneyInput name="price" currency={business.currency} placeholder={options[0] ? (options[0].priceCents / 100).toFixed(2) : "0.00"} /></Field> : null}
-                  <Field label="Cost" name="cost"><MoneyInput name="cost" currency={business.currency} placeholder={options[0]?.costCents ? (options[0].costCents / 100).toFixed(2) : "0.00"} /></Field>
+                  {canSeeCosts(permissions) ? <Field label="Cost" name="cost"><MoneyInput name="cost" currency={business.currency} placeholder={options[0]?.costCents ? (options[0].costCents / 100).toFixed(2) : "0.00"} /></Field> : null}
                 </div>
                 <SubmitButton variant="secondary" pendingText="Adding…">Add options</SubmitButton>
               </ActionForm>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { requireAction } from "@/lib/tenant";
+import { canSeeCosts } from "@/lib/visibility";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { listCategories } from "@/server/categories";
@@ -15,7 +16,7 @@ export const metadata: Metadata = { title: "New product" };
 export default async function NewProductPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ from?: string }> }) {
   const { slug } = await params;
   const { from } = await searchParams;
-  const { business } = await requireAction(slug, "services.manage");
+  const { business, permissions } = await requireAction(slug, "services.manage");
   const [categories, suppliers, source] = await Promise.all([
     listCategories(business.id, "product"),
     listSuppliers(business.id),
@@ -27,7 +28,7 @@ export default async function NewProductPage({ params, searchParams }: { params:
     <FormPage title={source ? `New option of ${source.name}` : "New product"} backHref={`/app/${slug}/products`} backLabel="Products">
       <ActionForm action={createProduct}>
         <input type="hidden" name="slug" value={slug} />
-        <ProductFields mode="new" product={start} category={<CategoryPicker name="categoryId" categories={categories} value={start?.categoryId ?? null} />} suppliers={suppliers} currency={business.currency} storeOn={business.storeEnabled} slug={slug} />
+        <ProductFields mode="new" showCost={canSeeCosts(permissions)} product={start} category={<CategoryPicker name="categoryId" categories={categories} value={start?.categoryId ?? null} />} suppliers={suppliers} currency={business.currency} storeOn={business.storeEnabled} slug={slug} />
         <SubmitButton pendingText="Saving…">Create product</SubmitButton>
       </ActionForm>
     </FormPage>

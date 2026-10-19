@@ -82,6 +82,17 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `time.view.all`, adds, edits and removes rows with `time.edit` (the kiosk QR codes stay `staff.manage`); the Log usage page's recent
       list is the team's only with `inventory.view` or `inventory.manage`, else the viewer's own entries.
 
+- [x] Phase 1 catalog and inventory (I1–I3), 2026-10-19: Services (index, All, a category), Packages, Memberships and Products need
+      `catalog.view` (was any member); prices and deposit amounts show only with `catalog.prices`; stock chips and the "Out, low or off"
+      filter only with `inventory.view`; the product cost field (new, edit, options, Edit all) and the product export need `catalog.costs`
+      (the actions keep a cost they were not sent). Inventory → Stock and History open read-only with `inventory.view` (no Receive, Import,
+      Export or cost figures without the permissions behind them); Reorder, Orders, Suppliers, Count and Report stay `inventory.manage`.
+- [x] Phase 1 sales and gift cards (M1, M2, M6), 2026-10-19: the Sales list and a ticket open with `checkout.take`, `sales.view.own` or
+      `sales.view.all`; without `sales.view.all` the list and the ticket are filtered to tickets the viewer is credited on (the old
+      `seesOwnOnly` side effect is gone), and Start sale needs `checkout.take`. A refund (and changing a refund's reason) needs
+      `checkout.refund` on a ticket the viewer may see; refunding a deposit needs `checkout.refund` on an appointment the viewer may work
+      on. The Gift cards page opens with `giftcards.view` (so the desk can look up a balance); issuing and full codes stay `giftcards.issue`.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

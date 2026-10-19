@@ -33,7 +33,7 @@ const fields = z.object({
   description: f.optional(400).optional(),
   trackStock: f.checkbox(),
   lowStockThreshold: f.int(0, 100000).default(3),
-  cost: f.moneyOptional(),
+  cost: f.moneyOptional().optional(), // absent when the form hides it (no "See product cost and margins"): the saved cost is kept
   // New product only: the options it comes in (one per line), and a second kind of option to multiply them by.
   options: f.optional(3000).optional(),
   options2: f.optional(3000).optional(),
@@ -83,7 +83,7 @@ export const createProduct = formAction(fields, async (d, raw) => {
     // A product that comes in options: the group holds what they share, and each option gets the price, cost and levels typed here (a barcode and SKU belong to each option, so they are added afterwards).
     if (d.barcode || d.sku) throw new FormError("Barcodes and SKUs belong to each option. Leave them blank and add them to each option after.", d.barcode ? "barcode" : "sku");
     try {
-      const { group } = await createGroup({ businessId: ctx.business.id, shared: { name: d.name, description: d.description ?? null, imageUrl: image, categoryId, kind: d.kind, taxable: d.taxable, sellOnline: x.sellOnline, supplierId: x.supplierId }, labels, defaults: { priceCents: d.price, costCents: d.cost, lowStockThreshold: d.lowStockThreshold, reorderUpTo: x.reorderUpTo, trackStock: x.trackStock } });
+      const { group } = await createGroup({ businessId: ctx.business.id, shared: { name: d.name, description: d.description ?? null, imageUrl: image, categoryId, kind: d.kind, taxable: d.taxable, sellOnline: x.sellOnline, supplierId: x.supplierId }, labels, defaults: { priceCents: d.price, costCents: d.cost ?? 0, lowStockThreshold: d.lowStockThreshold, reorderUpTo: x.reorderUpTo, trackStock: x.trackStock } });
       await setFlash(`${d.name} added with ${labels.length} option${labels.length === 1 ? "" : "s"}`);
       revalidatePath(`/app/${d.slug}/products`);
       redirect(`/app/${d.slug}/products/group/${group.id}`);
@@ -92,7 +92,7 @@ export const createProduct = formAction(fields, async (d, raw) => {
       throw e;
     }
   }
-  await withTenant(ctx.business.id, (tx) => tx.insert(schema.products).values({ businessId: ctx.business.id, categoryId, name: d.name, variantLabel: d.variantLabel, kind: d.kind, sku: d.sku, barcode: d.barcode, priceCents: d.price, taxable: d.taxable, sellOnline: x.sellOnline, description: d.description, trackStock: x.trackStock, lowStockThreshold: d.lowStockThreshold, reorderUpTo: x.reorderUpTo, supplierId: x.supplierId, costCents: d.cost, imageUrl: image }));
+  await withTenant(ctx.business.id, (tx) => tx.insert(schema.products).values({ businessId: ctx.business.id, categoryId, name: d.name, variantLabel: d.variantLabel, kind: d.kind, sku: d.sku, barcode: d.barcode, priceCents: d.price, taxable: d.taxable, sellOnline: x.sellOnline, description: d.description, trackStock: x.trackStock, lowStockThreshold: d.lowStockThreshold, reorderUpTo: x.reorderUpTo, supplierId: x.supplierId, costCents: d.cost ?? 0, imageUrl: image }));
   await setFlash(`${d.name} added`);
   revalidatePath(`/app/${d.slug}/products`);
   redirect(`/app/${d.slug}/products`);
@@ -114,14 +114,14 @@ export const updateProduct = formAction(fields, async (d, raw) => {
     // An option's own photo: a new upload replaces it; removing it goes back to the product's photo.
     const groupImage = (await withTenant(ctx.business.id, (tx) => tx.query.productGroups.findFirst({ where: eq(schema.productGroups.id, current.groupId!), columns: { imageUrl: true } })))?.imageUrl ?? null;
     const nextImage = image ?? (removeImage ? groupImage : undefined);
-    await withTenant(ctx.business.id, (tx) => tx.update(schema.products).set({ variantLabel: label, sku: d.sku, barcode: d.barcode, priceCents: d.kind === "backbar" ? 0 : d.price, costCents: d.cost, trackStock: x.trackStock, lowStockThreshold: d.lowStockThreshold, reorderUpTo: x.reorderUpTo, ...(nextImage !== undefined ? { imageUrl: nextImage } : {}) }).where(eq(schema.products.id, d.productId ?? "")));
+    await withTenant(ctx.business.id, (tx) => tx.update(schema.products).set({ variantLabel: label, sku: d.sku, barcode: d.barcode, priceCents: d.kind === "backbar" ? 0 : d.price, ...(d.cost !== undefined ? { costCents: d.cost } : {}), trackStock: x.trackStock, lowStockThreshold: d.lowStockThreshold, reorderUpTo: x.reorderUpTo, ...(nextImage !== undefined ? { imageUrl: nextImage } : {}) }).where(eq(schema.products.id, d.productId ?? "")));
     // Only a picture that was this option's own is deleted; the product's stays for the others.
     if (nextImage !== undefined && current.imageUrl && current.imageUrl !== groupImage && current.imageUrl !== nextImage) await deleteFileByUrl(current.imageUrl);
     revalidatePath(`/app/${d.slug}/products`);
     revalidatePath(`/app/${d.slug}/products/${d.productId}`);
     return "Option saved";
   }
-  await withTenant(ctx.business.id, (tx) => tx.update(schema.products).set({ categoryId, name: d.name, variantLabel: d.variantLabel, kind: d.kind, sku: d.sku, barcode: d.barcode, priceCents: d.price, taxable: d.taxable, sellOnline: x.sellOnline, description: d.description, trackStock: x.trackStock, lowStockThreshold: d.lowStockThreshold, reorderUpTo: x.reorderUpTo, supplierId: x.supplierId, costCents: d.cost, ...(image ? { imageUrl: image } : removeImage ? { imageUrl: null } : {}) }).where(eq(schema.products.id, d.productId ?? "")));
+  await withTenant(ctx.business.id, (tx) => tx.update(schema.products).set({ categoryId, name: d.name, variantLabel: d.variantLabel, kind: d.kind, sku: d.sku, barcode: d.barcode, priceCents: d.price, taxable: d.taxable, sellOnline: x.sellOnline, description: d.description, trackStock: x.trackStock, lowStockThreshold: d.lowStockThreshold, reorderUpTo: x.reorderUpTo, supplierId: x.supplierId, ...(d.cost !== undefined ? { costCents: d.cost } : {}), ...(image ? { imageUrl: image } : removeImage ? { imageUrl: null } : {}) }).where(eq(schema.products.id, d.productId ?? "")));
   if ((image || removeImage) && current?.imageUrl) await deleteFileByUrl(current.imageUrl);
   revalidatePath(`/app/${d.slug}/products`);
   revalidatePath(`/app/${d.slug}/products/${d.productId}`);

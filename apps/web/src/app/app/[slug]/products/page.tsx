@@ -4,7 +4,8 @@ import { ChevronRight, Download, Pencil, Plus, Search, Upload } from "lucide-rea
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
-import { requireBusiness } from "@/lib/tenant";
+import { requireAction } from "@/lib/tenant";
+import { canSeeCosts, canSeePrices, canSeeStock } from "@/lib/visibility";
 import { formatMoney } from "@/lib/utils";
 import { Button, Card, Input, LinkButton, PageHeader, Empty, Select } from "@/components/ui";
 import { AutoSubmitForm } from "@/components/auto-submit-form";
@@ -22,7 +23,11 @@ type Row = { p: typeof schema.products.$inferSelect; category: string | null };
 export default async function ProductsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ q?: string; show?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions } = await requireBusiness(slug);
+  // The product list is "See the service and product menu" (I2); prices, stock counts and the export (it carries costs) each have their own.
+  const { business, permissions } = await requireAction(slug, "catalog.view");
+  const prices = canSeePrices(permissions);
+  const stock = canSeeStock(permissions);
+  const canExport = canSeeCosts(permissions);
   const [allRows, extraCodes] = await Promise.all([withTenant(business.id, (tx) =>
     tx
       .select({ p: schema.products, category: schema.productCategories.name })
@@ -84,7 +89,7 @@ export default async function ProductsPage({ params, searchParams }: { params: P
         {manage ? <LinkButton href={`/app/${slug}/products/categories`}>Categories</LinkButton> : null}
         {manage && allRows.length ? <LinkButton href={`/app/${slug}/products/bulk`}><Pencil className="h-4 w-4" /> Edit all</LinkButton> : null}
         {manage ? <LinkButton href={`/app/${slug}/products/import`}><Upload className="h-4 w-4" /> Import</LinkButton> : null}
-        {allRows.length ? <LinkButton href={`/app/${slug}/products/export`}><Download className="h-4 w-4" /> Export</LinkButton> : null}
+        {canExport && allRows.length ? <LinkButton href={`/app/${slug}/products/export`}><Download className="h-4 w-4" /> Export</LinkButton> : null}
         {manage ? <LinkButton href={`/app/${slug}/products/new`} variant="primary"><Plus className="h-4 w-4" /> New product</LinkButton> : null}
       </PageHeader>
       {allRows.length ? (
@@ -95,7 +100,7 @@ export default async function ProductsPage({ params, searchParams }: { params: P
           </div>
           <Select name="show" defaultValue={show} aria-label="Show" className="h-10 w-auto">
             <option value="">All products</option>
-            <option value="attention">Out, low or off</option>
+            {stock ? <option value="attention">Out, low or off</option> : null}
             <option value="backbar">Back-bar only</option>
             <option value="hidden">Hidden only</option>
           </Select>
@@ -118,9 +123,9 @@ export default async function ProductsPage({ params, searchParams }: { params: P
                       <Thumb src={p.imageUrl} />
                       <div className="min-w-0 flex-1">
                         {canOpen ? <RowLink href={`/app/${slug}/products/${p.id}`} className={`font-medium ${p.active ? "" : "text-stone-400 line-through"}`}>{productLabel(p)}</RowLink> : <p className={p.active ? "font-medium" : "font-medium text-stone-400 line-through"}>{productLabel(p)}</p>}
-                        <p className="text-xs text-stone-500">{[p.kind === "backbar" ? "back-bar (not sold)" : null, p.sku, p.barcode, p.kind === "backbar" ? null : p.taxable ? "taxable" : "tax-free", p.sellOnline ? "online" : null].filter(Boolean).join(" · ")}{p.trackStock ? stockChip(p.id, p.stockQty) : null}</p>
+                        <p className="text-xs text-stone-500">{[p.kind === "backbar" ? "back-bar (not sold)" : null, p.sku, p.barcode, p.kind === "backbar" ? null : p.taxable ? "taxable" : "tax-free", p.sellOnline ? "online" : null].filter(Boolean).join(" · ")}{p.trackStock && stock ? stockChip(p.id, p.stockQty) : null}</p>
                       </div>
-                      <span className="w-28 shrink-0 text-right font-medium tabular-nums">{p.kind === "backbar" ? <span className="text-stone-400">—</span> : money(p.priceCents)}</span>
+                      {prices ? <span className="w-28 shrink-0 text-right font-medium tabular-nums">{p.kind === "backbar" ? <span className="text-stone-400">—</span> : money(p.priceCents)}</span> : null}
                       {manage ? (
                         <form action={toggleProductActive} className={rowControl}>
                           <input type="hidden" name="slug" value={slug} />
@@ -146,10 +151,10 @@ export default async function ProductsPage({ params, searchParams }: { params: P
                           {canOpen ? <RowLink href={`/app/${slug}/products/group/${g.id}`} className={`font-medium ${groupActive ? "" : "text-stone-400 line-through"}`}>{g.name}</RowLink> : <p className="font-medium">{g.name}</p>}
                           <p className="text-xs text-stone-500">
                             {sum.options} option{sum.options === 1 ? "" : "s"}{first.kind === "backbar" ? " · back-bar (not sold)" : ""}{first.sellOnline ? " · online" : ""}
-                            {sum.anyTracked ? <span className={`ml-2 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium ${sum.worst === "negative" || sum.worst === "out" ? "bg-red-50 text-red-700" : sum.worst === "low" ? "bg-amber-50 text-amber-800" : "bg-stone-100 text-stone-600"}`}>{sum.worst === "negative" ? "Count is off" : sum.worst === "out" ? "An option is out" : sum.worst === "low" ? "An option is low" : `${sum.totalStock} in stock`}</span> : null}
+                            {sum.anyTracked && stock ? <span className={`ml-2 whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-medium ${sum.worst === "negative" || sum.worst === "out" ? "bg-red-50 text-red-700" : sum.worst === "low" ? "bg-amber-50 text-amber-800" : "bg-stone-100 text-stone-600"}`}>{sum.worst === "negative" ? "Count is off" : sum.worst === "out" ? "An option is out" : sum.worst === "low" ? "An option is low" : `${sum.totalStock} in stock`}</span> : null}
                           </p>
                         </div>
-                        <span className="w-36 shrink-0 whitespace-nowrap text-right font-medium tabular-nums">{first.kind === "backbar" ? <span className="text-stone-400">—</span> : priceRange(sum.minPrice, sum.maxPrice, money)}</span>
+                        {prices ? <span className="w-36 shrink-0 whitespace-nowrap text-right font-medium tabular-nums">{first.kind === "backbar" ? <span className="text-stone-400">—</span> : priceRange(sum.minPrice, sum.maxPrice, money)}</span> : null}
                         {manage ? (
                           <form action={toggleGroupActive} className={rowControl}>
                             <input type="hidden" name="slug" value={slug} />
@@ -164,9 +169,9 @@ export default async function ProductsPage({ params, searchParams }: { params: P
                           <li key={p.id} className={`flex items-center gap-3 py-2 pl-14 pr-4 ${canOpen ? rowClass : ""}`}>
                             <div className="min-w-0 flex-1">
                               {canOpen ? <RowLink href={`/app/${slug}/products/${p.id}`} className={`text-sm ${p.active ? "" : "text-stone-400 line-through"}`}>{p.variantLabel}</RowLink> : <p className="text-sm">{p.variantLabel}</p>}
-                              <p className="text-xs text-stone-500">{[p.sku, p.barcode].filter(Boolean).join(" · ")}{p.trackStock ? stockChip(p.id, p.stockQty) : null}</p>
+                              <p className="text-xs text-stone-500">{[p.sku, p.barcode].filter(Boolean).join(" · ")}{p.trackStock && stock ? stockChip(p.id, p.stockQty) : null}</p>
                             </div>
-                            <span className="w-28 shrink-0 text-right text-sm tabular-nums">{p.kind === "backbar" ? <span className="text-stone-400">—</span> : money(p.priceCents)}</span>
+                            {prices ? <span className="w-28 shrink-0 text-right text-sm tabular-nums">{p.kind === "backbar" ? <span className="text-stone-400">—</span> : money(p.priceCents)}</span> : null}
                             {manage ? <span className="w-[4.5rem] shrink-0" /> : null}
                           </li>
                         ))}

@@ -9,12 +9,18 @@ export const metadata: Metadata = { title: "Inventory" };
 /** Inventory's pages share a header and tabs: stock, what to reorder, orders to suppliers, suppliers, counting and the report. */
 export default async function InventoryLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  // Managing stock sees every tab; someone who only logs supplies sees just that page. Each page checks its own permission.
+  // Managing stock sees every tab; "See stock levels" gets Stock and History read-only; someone who only logs supplies sees just that
+  // page. Each page checks its own permission.
   const { permissions } = await requireBusiness(slug);
   const manage = can(permissions, "inventory.manage");
-  if (!manage) await requireAction(slug, "inventory.log");
+  const view = can(permissions, "inventory.view");
+  if (!manage && !view) await requireAction(slug, "inventory.log");
   const base = `/app/${slug}/inventory`;
-  const tabs = !manage ? [{ href: `${base}/use`, label: "Log usage" }] : [
+  const tabs = !manage ? [
+    ...(view ? [{ href: base, label: "Stock" }] : []),
+    ...(can(permissions, "inventory.log") ? [{ href: `${base}/use`, label: "Log usage" }] : []),
+    ...(view ? [{ href: `${base}/history`, label: "History" }] : []),
+  ] : [
     { href: base, label: "Stock" },
     { href: `${base}/reorder`, label: "Reorder" },
     { href: `${base}/orders`, label: "Orders" },

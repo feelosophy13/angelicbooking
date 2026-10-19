@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { requireAction } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
+import { can } from "@angelic/core";
 import { historyPeople, listLocations, stockHistory } from "@/server/inventory";
 import { MOVEMENT_REASONS, REASON_GROUPS, REASON_GROUP_LABELS, movementReason } from "@/lib/inventory";
 import { HISTORY_RANGES, historyFilterFromParams, type HistoryParams } from "@/lib/history-filter";
@@ -18,7 +19,8 @@ export const metadata: Metadata = { title: "History · Inventory" };
 export default async function StockHistoryPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<HistoryParams> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "inventory.manage");
+  // Readable with "See stock levels"; the CSV (it carries costs) stays with managing inventory.
+  const { business, permissions } = await requireAnyAction(slug, "inventory.manage", "inventory.view");
   const { filter, page, range, fromDate, toDate } = historyFilterFromParams(sp, business.timezone);
   const [h, people, locations] = await Promise.all([stockHistory(business.id, filter, page), historyPeople(business.id), listLocations(business.id)]);
   const money = (c: number) => formatMoney(c, business.currency);
@@ -40,7 +42,7 @@ export default async function StockHistoryPage({ params, searchParams }: { param
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-stone-600">Every change to stock, with the reason and who made it. An undo is kept as its own line so nothing is ever rewritten.</p>
-        <LinkButton href={`/app/${slug}/inventory/history/export${exportQuery}`} variant="secondary" size="sm"><Download className="h-4 w-4" /> Export CSV</LinkButton>
+        {can(permissions, "inventory.manage") ? <LinkButton href={`/app/${slug}/inventory/history/export${exportQuery}`} variant="secondary" size="sm"><Download className="h-4 w-4" /> Export CSV</LinkButton> : null}
       </div>
 
       <AutoSubmitForm className="flex flex-wrap items-center gap-2">

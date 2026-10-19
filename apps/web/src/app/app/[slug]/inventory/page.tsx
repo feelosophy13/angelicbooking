@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Download, PackagePlus, Search, Upload } from "lucide-react";
-import { requireAction } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
+import { can } from "@angelic/core";
+import { canSeeCosts } from "@/lib/visibility";
 import { formatMoney } from "@/lib/utils";
 import { findProductByCode, listLocations, stockOverview } from "@/server/inventory";
 import { productLabel } from "@/lib/inventory";
@@ -21,7 +23,10 @@ const BADGE = {
 export default async function InventoryStockPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "inventory.manage");
+  // Stock levels are readable with "See stock levels"; receiving, importing and the cost figures each need their own permission.
+  const { business, permissions } = await requireAnyAction(slug, "inventory.manage", "inventory.view");
+  const manage = can(permissions, "inventory.manage");
+  const costs = canSeeCosts(permissions);
   const base = `/app/${slug}/inventory`;
   // A scanned or typed barcode / SKU that matches exactly goes straight to the product.
   const q = (sp.q ?? "").trim();
@@ -67,17 +72,17 @@ export default async function InventoryStockPage({ params, searchParams }: { par
             <option value="attention">Needs attention ({attention})</option>
           </Select>
         </AutoSubmitForm>
-        <div className="ml-auto flex flex-wrap gap-2">
+        {manage ? <div className="ml-auto flex flex-wrap gap-2">
           <LinkButton href={`${base}/receive`} variant="primary" size="sm"><PackagePlus className="h-4 w-4" /> Receive stock</LinkButton>
           <LinkButton href={`/app/${slug}/products/import`} size="sm"><Upload className="h-4 w-4" /> Import</LinkButton>
-          <LinkButton href={`/app/${slug}/products/export`} size="sm"><Download className="h-4 w-4" /> Export</LinkButton>
-        </div>
+          {costs ? <LinkButton href={`/app/${slug}/products/export`} size="sm"><Download className="h-4 w-4" /> Export</LinkButton> : null}
+        </div> : null}
       </div>
 
-      <Card className="grid grid-cols-2 divide-x divide-stone-100 text-sm sm:grid-cols-4">
+      <Card className={`grid grid-cols-2 divide-x divide-stone-100 text-sm ${costs ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
         <Stat label="Products tracked" value={String(items.length)} />
         <Stat label="Need attention" value={String(attention)} tone={attention ? "text-amber-700" : undefined} />
-        <Stat label="Value at cost" value={money(totalValue)} />
+        {costs ? <Stat label="Value at cost" value={money(totalValue)} /> : null}
         <Stat label="Value at retail" value={money(totalRetail)} />
       </Card>
 
@@ -117,7 +122,7 @@ export default async function InventoryStockPage({ params, searchParams }: { par
                   {i.onOrder ? <Link href={`${base}/orders`} className="relative z-10 text-xs text-brand-700 underline">{i.onOrder} on order</Link> : null}
                   <span className="w-14 shrink-0 text-right text-xs text-stone-500">low at {i.lowStockThreshold}</span>
                   <span className={`w-14 shrink-0 text-right text-base font-semibold tabular-nums ${qty < 0 ? "text-red-700" : ""}`}>{qty}</span>
-                  <span className="hidden w-24 shrink-0 text-right text-sm text-stone-600 tabular-nums sm:block">{i.costCents ? money(qty * i.costCents) : "—"}</span>
+                  {costs ? <span className="hidden w-24 shrink-0 text-right text-sm text-stone-600 tabular-nums sm:block">{i.costCents ? money(qty * i.costCents) : "—"}</span> : null}
                 </li>
               )];
             })}

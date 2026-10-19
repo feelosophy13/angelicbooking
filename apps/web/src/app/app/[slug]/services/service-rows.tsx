@@ -25,7 +25,8 @@ export type ServiceRow = {
 };
 
 /** One card listing services (a category's, or a group on the full list) with move / hide controls. */
-export function ServiceRows({ slug, title, titleHref, services, currency, manage, onlyAt, emptyText }: { slug: string; title?: string; titleHref?: string; services: ServiceRow[]; currency: string; manage: boolean; onlyAt: (serviceId: string) => string; emptyText?: string }) {
+/** `prices` false hides the price column and the deposit amount ("See prices" is its own permission). */
+export function ServiceRows({ slug, title, titleHref, services, currency, manage, onlyAt, emptyText, prices = true }: { slug: string; title?: string; titleHref?: string; services: ServiceRow[]; currency: string; manage: boolean; onlyAt: (serviceId: string) => string; emptyText?: string; prices?: boolean }) {
   const list = services;
   return (
     <Card>
@@ -53,13 +54,13 @@ export function ServiceRows({ slug, title, titleHref, services, currency, manage
                 {s.gapMin ? ` + ${duration(s.gapMin)} processing` : ""}
                 {s.finishMin ? ` + ${duration(s.finishMin)} finish` : ""}
                 {s.bufferAfterMin ? ` + ${duration(s.bufferAfterMin)} buffer` : ""}
-                {s.depositType === "full" ? " · paid in full online" : s.depositType === "percent" && s.depositPercent ? ` · ${s.depositPercent}% deposit` : s.depositCents ? ` · deposit ${formatMoney(s.depositCents, currency)}` : ""}
+                {s.depositType === "full" ? " · paid in full online" : s.depositType === "percent" && s.depositPercent ? ` · ${s.depositPercent}% deposit` : s.depositCents ? (prices ? ` · deposit ${formatMoney(s.depositCents, currency)}` : " · deposit") : ""}
                 {s.capacity > 1 ? ` · class of ${s.capacity}` : ""}
                 {!s.bookableOnline ? " · not online" : ""}
                 {onlyAt(s.id)}
               </p>
             </div>
-            <span className="w-28 shrink-0 text-right font-medium tabular-nums">{formatMoney(s.priceCents, currency)}</span>
+            {prices ? <span className="w-28 shrink-0 text-right font-medium tabular-nums">{formatMoney(s.priceCents, currency)}</span> : null}
             {manage ? (
               <form action={toggleServiceActive} className={rowControl}>
                 <input type="hidden" name="slug" value={slug} />

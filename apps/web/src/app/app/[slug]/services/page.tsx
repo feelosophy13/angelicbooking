@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, FolderPlus, List, Plus } from "lucide-react";
 import { can } from "@angelic/core";
-import { requireBusiness } from "@/lib/tenant";
+import { requireAction } from "@/lib/tenant";
+import { canSeePrices } from "@/lib/visibility";
 import { buildTree, subtreeIds } from "@/server/categories";
 import { Empty, LinkButton, PageHeader } from "@/components/ui";
 import { CategoryCard } from "@/components/categories";
@@ -15,8 +16,10 @@ export const metadata: Metadata = { title: "Services" };
 /** The menu, browsed by category: tiles for each top-level category, then anything uncategorised. */
 export default async function ServicesPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, permissions } = await requireBusiness(slug);
+  // The menu is "See the service and product menu" (I1); prices on it are "See prices".
+  const { business, permissions } = await requireAction(slug, "catalog.view");
   const manage = can(permissions, "services.manage");
+  const prices = canSeePrices(permissions);
   const { services, categories, onlyAt } = await loadServicesAdmin(business.id);
   const tree = buildTree(categories);
   const countIn = (id: string) => { const ids = subtreeIds(categories, id); return services.filter((s) => s.active && s.categoryId && ids.includes(s.categoryId)).length; };
@@ -55,7 +58,7 @@ export default async function ServicesPage({ params }: { params: Promise<{ slug:
       {loose.length ? (
         <section>
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">{tree.length ? "Uncategorised" : "Services"}</h2>
-          <ServiceRows slug={slug} services={loose} currency={business.currency} manage={manage} onlyAt={onlyAt} />
+          <ServiceRows slug={slug} services={loose} currency={business.currency} manage={manage} onlyAt={onlyAt} prices={prices} />
           {manage && tree.length ? <p className="mt-2 text-xs text-stone-500">Open a service to put it in a category.</p> : null}
         </section>
       ) : null}

@@ -26,7 +26,7 @@ type Product = {
 };
 
 /** The body of the new / edit product forms: one place, so the two never drift. */
-export function ProductFields({ product, category, suppliers, currency, storeOn, slug, mode = "plain" }: { product?: Product; /** The category picker, built by the page (it reads from the server). */ category: React.ReactNode; suppliers: { id: string; name: string }[]; currency: string; /** Whether the online store is on (Settings → Online store). */ storeOn: boolean; slug: string; /** new: may come in options; option: one option of a product (the shared details are the group's); plain: a product on its own. */ mode?: "new" | "option" | "plain" }) {
+export function ProductFields({ product, category, suppliers, currency, storeOn, slug, mode = "plain", showCost = true }: { product?: Product; /** False hides the cost field ("See product cost and margins"); the saved cost is then left as it is. */ showCost?: boolean; /** The category picker, built by the page (it reads from the server). */ category: React.ReactNode; suppliers: { id: string; name: string }[]; currency: string; /** Whether the online store is on (Settings → Online store). */ storeOn: boolean; slug: string; /** new: may come in options; option: one option of a product (the shared details are the group's); plain: a product on its own. */ mode?: "new" | "option" | "plain" }) {
   const option = mode === "option";
   const [kind, setKind] = useState(product?.kind ?? "retail");
   const [tracked, setTracked] = useState(product?.trackStock ?? false);
@@ -64,7 +64,7 @@ export function ProductFields({ product, category, suppliers, currency, storeOn,
       ) : null}
       <div className="grid grid-cols-2 gap-3">
         {retail ? <Field label="Price" name="price" required><MoneyInput name="price" currency={currency} defaultValue={product ? (product.priceCents / 100).toFixed(2) : ""} required /></Field> : null}
-        <Field label="Cost per unit" name="cost" hint="For stock value and orders."><MoneyInput name="cost" currency={currency} defaultValue={product?.costCents ? (product.costCents / 100).toFixed(2) : ""} /></Field>
+        {showCost ? <Field label="Cost per unit" name="cost" hint="For stock value and orders."><MoneyInput name="cost" currency={currency} defaultValue={product?.costCents ? (product.costCents / 100).toFixed(2) : ""} /></Field> : null}
         {mode !== "new" ? <Field label="SKU" name="sku"><Input name="sku" defaultValue={product?.sku ?? ""} /></Field> : null}
         {mode !== "new" ? <Field label="Barcode" name="barcode" hint="What a scanner reads (UPC / EAN)."><Input name="barcode" inputMode="numeric" defaultValue={product?.barcode ?? ""} /></Field> : null}
       </div>

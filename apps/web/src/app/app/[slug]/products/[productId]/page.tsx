@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireAction, requireBusiness } from "@/lib/tenant";
+import { canSeeCosts } from "@/lib/visibility";
 import { listCategories } from "@/server/categories";
 import { Button, Card, FormPage, Input, LinkButton, Select } from "@/components/ui";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
@@ -42,6 +43,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
   const canEdit = can(permissions, "services.manage");
   const canStock = can(permissions, "inventory.manage");
   if (!canEdit && !canStock) await requireAction(slug, "services.manage");
+  const showCost = canSeeCosts(permissions); // I3: what a product costs is its own permission
   const [product, categories, suppliers, locations] = await Promise.all([
     withTenant(business.id, (tx) => tx.query.products.findFirst({ where: eq(schema.products.id, productId) })),
     listCategories(business.id, "product"),
@@ -162,7 +164,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
           <ActionForm action={updateProduct}>
             <input type="hidden" name="slug" value={slug} />
             <input type="hidden" name="productId" value={product.id} />
-            <ProductFields mode={product.groupId ? "option" : "plain"} product={product} category={<CategoryPicker name="categoryId" categories={categories} value={product.categoryId} />} suppliers={suppliers} currency={business.currency} storeOn={business.storeEnabled} slug={slug} />
+            <ProductFields mode={product.groupId ? "option" : "plain"} showCost={showCost} product={product} category={<CategoryPicker name="categoryId" categories={categories} value={product.categoryId} />} suppliers={suppliers} currency={business.currency} storeOn={business.storeEnabled} slug={slug} />
             <SubmitButton pendingText="Saving…">Save {product.groupId ? "option" : "product"}</SubmitButton>
           </ActionForm>
         </>

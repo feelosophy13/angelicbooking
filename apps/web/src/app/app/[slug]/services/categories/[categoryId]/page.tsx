@@ -3,7 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowDown, ArrowUp, ChevronRight, FolderPlus, Pencil, Plus } from "lucide-react";
 import { can } from "@angelic/core";
-import { requireBusiness } from "@/lib/tenant";
+import { requireAction } from "@/lib/tenant";
+import { canSeePrices } from "@/lib/visibility";
 import { buildTree, pathTo, subtreeIds } from "@/server/categories";
 import { BackLink, LinkButton, PageHeader } from "@/components/ui";
 import { CategoryCard, CategoryThumb } from "@/components/categories";
@@ -13,7 +14,7 @@ import { categoryMeta, loadServicesAdmin } from "../../data";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; categoryId: string }> }): Promise<Metadata> {
   const { slug, categoryId } = await params;
-  const { business } = await requireBusiness(slug);
+  const { business } = await requireAction(slug, "catalog.view");
   const { categories } = await loadServicesAdmin(business.id);
   const c = categories.find((x) => x.id === categoryId);
   return { title: c ? `${c.name} · Services` : "Services" };
@@ -22,8 +23,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 /** One category: its sub-categories as tiles, then its services. */
 export default async function CategoryPage({ params }: { params: Promise<{ slug: string; categoryId: string }> }) {
   const { slug, categoryId } = await params;
-  const { business, permissions } = await requireBusiness(slug);
+  const { business, permissions } = await requireAction(slug, "catalog.view");
   const manage = can(permissions, "services.manage");
+  const prices = canSeePrices(permissions);
   const { services, categories, onlyAt } = await loadServicesAdmin(business.id);
   const me = categories.find((c) => c.id === categoryId);
   if (!me) notFound();
@@ -68,7 +70,7 @@ export default async function CategoryPage({ params }: { params: Promise<{ slug:
       ) : null}
       <section>
         <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-stone-500">Services{node.children.length ? ` in ${me.name}` : ""}</h2>
-        <ServiceRows slug={slug} services={mine} currency={business.currency} manage={manage} onlyAt={onlyAt} emptyText={node.children.length ? "No services directly in this category; browse the sub-categories above." : "No services here yet."} />
+        <ServiceRows slug={slug} services={mine} currency={business.currency} manage={manage} onlyAt={onlyAt} prices={prices} emptyText={node.children.length ? "No services directly in this category; browse the sub-categories above." : "No services here yet."} />
       </section>
     </>
   );
