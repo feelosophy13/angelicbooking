@@ -70,7 +70,7 @@ export default async function ReportsPage({
   ] as const);
   // Pay is not split by service, so it is left out while a service filter is on.
   const canPayroll = can(permissions, "payroll.manage") && !scoped;
-  const [{ sales, byStaff, byMethod, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation }, prev, categories, pay, payBefore, payByLoc, catPay, catPayBefore] = await Promise.all([
+  const [{ sales, byStaff, byMethod, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, linesByLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation, refundsByStaff, refundStaffNames }, prev, categories, pay, payBefore, payByLoc, catPay, catPayBefore] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter, serviceIds),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter, serviceIds),
     listCategories(business.id, "service"),
@@ -87,25 +87,30 @@ export default async function ReportsPage({
   const payTotal = (rows: typeof payRows, k: "wageCents" | "mainCommissionCents" | "productCommissionCents" | "totalCents" | "serviceRevenueCents") => rows.reduce((s, e) => s + e[k], 0);
   const payBeforeRows = (payBefore?.employees ?? []).filter((e) => e.hasActivity);
   // One row per person: what was rung up (always) and what they cost (payroll permission only).
-  type StaffRow = { staffId: string | null; name: string; services: number; products: number; tips: number; e: (typeof payRows)[number] | null };
+  type StaffRow = { staffId: string | null; name: string; services: number; products: number; tips: number; refunded: number; e: (typeof payRows)[number] | null };
   const staffRows: StaffRow[] = (() => {
     const map = new Map<string, StaffRow>();
-    for (const r of byStaff) map.set(r.staffId ?? "none", { staffId: r.staffId, name: r.staffName ?? "Unassigned", services: Number(r.services), products: Number(r.products), tips: Number(r.tips), e: null });
+    for (const r of byStaff) map.set(r.staffId ?? "none", { staffId: r.staffId, name: r.staffName ?? "Unassigned", services: Number(r.services), products: Number(r.products), tips: Number(r.tips), refunded: refundsByStaff.get(r.staffId) ?? 0, e: null });
     for (const e of payRows) {
-      const row = map.get(e.employee.staffId) ?? { staffId: e.employee.staffId, name: e.employee.name, services: 0, products: 0, tips: 0, e: null };
+      const row = map.get(e.employee.staffId) ?? { staffId: e.employee.staffId, name: e.employee.name, services: 0, products: 0, tips: 0, refunded: refundsByStaff.get(e.employee.staffId) ?? 0, e: null };
       row.e = e;
       map.set(e.employee.staffId, row);
+    }
+    // Someone refunded in the range with nothing rung up in it still gets a row, so the refunds column foots.
+    for (const [staffId, cents] of refundsByStaff) {
+      const key = staffId ?? "none";
+      if (cents && !map.has(key)) map.set(key, { staffId, name: staffId ? (refundStaffNames.get(staffId) ?? "Former staff") : "Unassigned", services: 0, products: 0, tips: 0, refunded: cents, e: null });
     }
     return [...map.values()].sort((a, b) => (a.staffId === null ? 1 : b.staffId === null ? -1 : (b.e?.totalCents ?? 0) - (a.e?.totalCents ?? 0) || b.services - a.services));
   })();
   // By location: every site that had sales or pay in the range.
-  type LocRow = { locationId: string | null; locationName: string | null; sales: number; tips: number; tax: number; refunded: number; count: number };
+  type LocRow = { locationId: string | null; locationName: string | null; sales: number; services: number; products: number; tips: number; tax: number; refunded: number; count: number };
   const locRows: LocRow[] = (() => {
-    const rows: LocRow[] = byLocation.map((r) => ({ locationId: r.locationId, locationName: r.locationName, sales: Number(r.sales), tips: Number(r.tips), tax: Number(r.tax), refunded: refundsByLocation.get(r.locationId) ?? 0, count: Number(r.count) }));
+    const rows: LocRow[] = byLocation.map((r) => ({ locationId: r.locationId, locationName: r.locationName, sales: Number(r.sales), services: linesByLocation.get(r.locationId)?.services ?? 0, products: linesByLocation.get(r.locationId)?.products ?? 0, tips: Number(r.tips), tax: Number(r.tax), refunded: refundsByLocation.get(r.locationId) ?? 0, count: Number(r.count) }));
     if (payByLoc) {
       for (const [id, p] of payByLoc) {
         if (rows.some((r) => r.locationId === id) || (p.totalCents === 0 && p.wageCents === 0)) continue;
-        rows.push({ locationId: id, locationName: id ? locName(id) : null, sales: 0, tips: 0, tax: 0, refunded: refundsByLocation.get(id) ?? 0, count: 0 });
+        rows.push({ locationId: id, locationName: id ? locName(id) : null, sales: 0, services: 0, products: 0, tips: 0, tax: 0, refunded: refundsByLocation.get(id) ?? 0, count: 0 });
       }
     }
     return rows.sort((a, b) => (a.locationName === null ? 1 : b.locationName === null ? -1 : a.locationName.localeCompare(b.locationName)));
@@ -241,7 +246,7 @@ export default async function ReportsPage({
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="text-left text-xs text-stone-500">
                   <tr>
-                    <th className="py-2 pl-3 pr-2">Location</th><th className="px-2 py-2 text-right">Sales</th><th className="px-2 py-2 text-right">Tips</th><th className="px-2 py-2 text-right">Tax</th><th className="px-2 py-2 text-right">Refunded</th><th className="px-2 py-2 text-right">Tickets</th>
+                    <th className="py-2 pl-3 pr-2">Location</th><th className="px-2 py-2 text-right">Sales</th><th className="px-2 py-2 text-right">Services</th><th className="px-2 py-2 text-right">Products</th><th className="px-2 py-2 text-right">Tips</th><th className="px-2 py-2 text-right">Tax</th><th className="px-2 py-2 text-right">Refunded</th><th className="px-2 py-2 text-right">Tickets</th>
                     {payByLoc ? <><th className="px-2 py-2 text-right">Service commission</th><th className="px-2 py-2 text-right">Product commission</th><th className="px-2 py-2 text-right">Hourly / salary</th><th className="px-2 py-2 text-right">Total pay</th><th className="px-2 py-2 text-right">Cost of revenue</th></> : null}
                   </tr>
                 </thead>
@@ -251,7 +256,7 @@ export default async function ReportsPage({
                     return (
                       <tr key={r.locationId ?? "none"} className={r.locationId === locationFilter ? "bg-brand-50/40" : ""}>
                         <td className="whitespace-nowrap py-2 pl-3 pr-2"><Link href={`?from=${from}&to=${to}&location=${r.locationId ?? ""}`} className="hover:underline">{siteLabel(r.locationName)}</Link></td>
-                        <td className="px-2 py-2 text-right">{money(r.sales)}</td><td className="px-2 py-2 text-right">{money(r.tips)}</td><td className="px-2 py-2 text-right">{money(r.tax)}</td><td className="px-2 py-2 text-right">{money(r.refunded)}</td><td className="px-2 py-2 text-right">{r.count}</td>
+                        <td className="px-2 py-2 text-right">{money(r.sales)}</td><td className="px-2 py-2 text-right">{money(r.services)}</td><td className="px-2 py-2 text-right">{money(r.products)}</td><td className="px-2 py-2 text-right">{money(r.tips)}</td><td className="px-2 py-2 text-right">{money(r.tax)}</td><td className="px-2 py-2 text-right">{money(r.refunded)}</td><td className="px-2 py-2 text-right">{r.count}</td>
                         {lp ? (
                           <>
                             <td className="px-2 py-2 text-right tabular-nums">{money(lp.mainCommissionCents)}</td>
@@ -269,7 +274,7 @@ export default async function ReportsPage({
                   <tfoot className="border-t border-stone-200 font-semibold">
                     <tr>
                       <td className="py-2 pl-3 pr-2">Total</td>
-                      <td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.sales, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.tips, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.tax, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.refunded, 0))}</td><td className="px-2 py-2 text-right">{locRows.reduce((n, r) => n + r.count, 0)}</td>
+                      <td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.sales, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.services, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.products, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.tips, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.tax, 0))}</td><td className="px-2 py-2 text-right">{money(locRows.reduce((n, r) => n + r.refunded, 0))}</td><td className="px-2 py-2 text-right">{locRows.reduce((n, r) => n + r.count, 0)}</td>
                       {(() => {
                         const all = [...payByLoc.values()];
                         const sum = (k: "mainCommissionCents" | "productCommissionCents" | "wageCents" | "totalCents" | "serviceRevenueCents") => all.reduce((n, p) => n + p[k], 0);
@@ -331,7 +336,7 @@ export default async function ReportsPage({
               <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead className="text-left text-xs text-stone-500">
                   <tr>
-                    <th className="py-2 pl-3 pr-2">Staff</th><th className="px-2 py-2 text-right">Services</th><th className="px-2 py-2 text-right">Products</th><th className="px-2 py-2 text-right">Tips</th>
+                    <th className="py-2 pl-3 pr-2">Staff</th><th className="px-2 py-2 text-right">Services</th><th className="px-2 py-2 text-right">Products</th><th className="px-2 py-2 text-right">Tips</th><th className="px-2 py-2 text-right">Refunded</th>
                     {canPayroll ? <><th className="px-2 py-2 text-right">Service commission</th><th className="px-2 py-2 text-right">Product commission</th><th className="px-2 py-2 text-right">Hourly / salary</th><th className="px-2 py-2 text-right">Total pay</th><th className="px-2 py-2 text-right">Cost of revenue</th></> : null}
                   </tr>
                 </thead>
@@ -339,7 +344,7 @@ export default async function ReportsPage({
                   {staffRows.map((r) => (
                     <tr key={r.staffId ?? "none"}>
                       <td className="whitespace-nowrap py-2 pl-3 pr-2"><span className="font-medium">{r.name}</span>{canPayroll && r.e ? <span className="block text-xs text-stone-500">{r.e.employee.payType === "commission" ? "Commission" : r.e.employee.payType === "hourly" ? "Hourly" : "Salary"}</span> : null}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{money(r.services)}</td><td className="px-2 py-2 text-right tabular-nums">{money(r.products)}</td><td className="px-2 py-2 text-right tabular-nums">{money(r.tips)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{money(r.services)}</td><td className="px-2 py-2 text-right tabular-nums">{money(r.products)}</td><td className="px-2 py-2 text-right tabular-nums">{money(r.tips)}</td><td className="px-2 py-2 text-right tabular-nums">{money(r.refunded)}</td>
                       {canPayroll ? (
                         r.e ? (
                           <>
@@ -357,7 +362,7 @@ export default async function ReportsPage({
                 <tfoot className="border-t border-stone-200 font-semibold">
                   <tr>
                     <td className="py-2 pl-3 pr-2">Total</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{money(staffRows.reduce((n, r) => n + r.services, 0))}</td><td className="px-2 py-2 text-right tabular-nums">{money(staffRows.reduce((n, r) => n + r.products, 0))}</td><td className="px-2 py-2 text-right tabular-nums">{money(staffRows.reduce((n, r) => n + r.tips, 0))}</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{money(staffRows.reduce((n, r) => n + r.services, 0))}</td><td className="px-2 py-2 text-right tabular-nums">{money(staffRows.reduce((n, r) => n + r.products, 0))}</td><td className="px-2 py-2 text-right tabular-nums">{money(staffRows.reduce((n, r) => n + r.tips, 0))}</td><td className="px-2 py-2 text-right tabular-nums">{money(staffRows.reduce((n, r) => n + r.refunded, 0))}</td>
                     {canPayroll ? (
                       <>
                         <td className="px-2 py-2 text-right tabular-nums">{money(payTotal(payRows, "mainCommissionCents"))}</td>

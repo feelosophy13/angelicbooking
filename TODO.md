@@ -103,6 +103,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       when the session is used (`offers.ts` redeemCredit), so earlier tickets keep what they were credited. Memberships still credit the
       list price. Tests: core `payroll.test.ts` (house share, fee share, onSheet), DB `payroll-rules.test.ts`.
 
+- [x] Reports tables, 2026-10-19: By location gains Services and Products (net of the ticket discount, like the Staff table), and the
+      Staff table gains Refunded: itemized refunds against whoever was credited on the refunded lines, an amount refund split across the
+      ticket's service and product lines by share, on the refund date; a person refunded with nothing rung up still gets a row so the
+      column foots (`refundsByStaff`, `linesByLocation` in `salesReport`).
 - [x] Reports category table, 2026-10-19: category names line up whether or not the row has an expand chevron (the spacer takes the
       button's footprint). Demo seed: up to two recent visits of each package holder and active member become the covered service paid
       with a session (amount 0, credit = the package's per-session price or the service's list price for a membership; the ticket's

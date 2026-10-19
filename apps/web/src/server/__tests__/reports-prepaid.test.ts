@@ -129,6 +129,14 @@ describe.skipIf(!up)("reports: prepaid sold and used by category", () => {
     const r = await rows();
     const hair = r.find((x) => x.id === hairId)!;
     expect([hair.paid, hair.credit, hair.pay]).toEqual([10_000, 5_000, 2_500]);
-    expect((await report()).refundsCents).toBe(10_000);
+    const rep = await report();
+    expect(rep.refundsCents).toBe(10_000);
+    // The Staff table shows the refund against whoever was credited on the refunded ticket (an amount refund splits by line share;
+    // here the ticket is one Color line of Sam's), and By location shows what each site rang up in services and products.
+    expect(rep.refundsByStaff.get(staffId)).toBe(10_000);
+    expect(rep.refundStaffNames.get(staffId)).toBe("Sam");
+    const sites = [...rep.linesByLocation.values()];
+    expect(sites.reduce((n, l) => n + l.services, 0)).toBe(10_000);
+    expect(sites.reduce((n, l) => n + l.products, 0)).toBe(0);
   });
 });

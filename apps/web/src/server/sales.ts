@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { CARD_FEE_METHODS, allocateProportionally, computeTotals, isMembershipInterval, splitTips, subtractMembershipPeriod, tipsPerPayment, type Discount } from "@angelic/core";
 import { after } from "next/server";
@@ -1594,6 +1594,53 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
       .where(and(gte(schema.refunds.createdAt, from), lt(schema.refunds.createdAt, to), ...(hasService ? [hasService] : [])))
       .groupBy(schema.sales.locationId);
     const refundsByLocation = new Map(refundRows.map((r) => [r.locationId, Number(r.cents)]));
+    // What each site rang up in services and products (net of each line's share of the ticket discount, like the Staff table).
+    const locLines = await tx
+      .select({
+        locationId: schema.sales.locationId,
+        services: sql<number>`coalesce(round(sum(${schema.saleLines.amountCents} * (1 - ${schema.sales.discountCents}::numeric / nullif(${schema.sales.subtotalCents}, 0))) filter (where ${schema.saleLines.kind} = 'service')), 0)`,
+        products: sql<number>`coalesce(round(sum(${schema.saleLines.amountCents} * (1 - ${schema.sales.discountCents}::numeric / nullif(${schema.sales.subtotalCents}, 0))) filter (where ${schema.saleLines.kind} = 'product')), 0)`,
+      })
+      .from(schema.saleLines)
+      .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
+      .where(allClosed)
+      .groupBy(schema.sales.locationId);
+    const linesByLocation = new Map(locLines.map((r) => [r.locationId, { services: Number(r.services), products: Number(r.products) }]));
+    // Refunds by the staff member credited on what was refunded, on the day of the refund: itemized refunds take back exactly their
+    // lines; a refund of an amount (no items) is split across the ticket's service and product lines by their share, like payroll.
+    const refundLines = await tx
+      .select({ refundId: schema.refunds.id, saleId: schema.sales.id, cents: schema.refunds.amountCents, lineId: schema.refundItems.saleLineId, itemCents: schema.refundItems.amountCents })
+      .from(schema.refunds)
+      .innerJoin(schema.payments, eq(schema.payments.id, schema.refunds.paymentId))
+      .innerJoin(schema.sales, eq(schema.sales.id, schema.payments.saleId))
+      .leftJoin(schema.refundItems, eq(schema.refundItems.refundId, schema.refunds.id))
+      .where(and(gte(schema.refunds.createdAt, from), lt(schema.refunds.createdAt, to), ...(hasService ? [hasService] : [])));
+    const refundsByStaff = new Map<string | null, number>();
+    const addRefund = (staffId: string | null, cents: number) => refundsByStaff.set(staffId, (refundsByStaff.get(staffId) ?? 0) + cents);
+    const refundSaleIds = [...new Set(refundLines.map((r) => r.saleId))];
+    const refundSaleLines = refundSaleIds.length
+      ? await tx.select({ id: schema.saleLines.id, saleId: schema.saleLines.saleId, staffId: schema.saleLines.staffId, staffName: schema.staff.displayName, kind: schema.saleLines.kind, amountCents: schema.saleLines.amountCents }).from(schema.saleLines).leftJoin(schema.staff, eq(schema.staff.id, schema.saleLines.staffId)).where(inArray(schema.saleLines.saleId, refundSaleIds))
+      : [];
+    const lineById = new Map(refundSaleLines.map((l) => [l.id, l]));
+    const refundStaffNames = new Map(refundSaleLines.filter((l) => l.staffId && l.staffName).map((l) => [l.staffId!, l.staffName!]));
+    const seenRefund = new Set<string>();
+    for (const r of refundLines) {
+      if (r.lineId) {
+        addRefund(lineById.get(r.lineId)?.staffId ?? null, Number(r.itemCents ?? 0));
+        continue;
+      }
+      if (seenRefund.has(r.refundId)) continue;
+      seenRefund.add(r.refundId);
+      const goods = refundSaleLines.filter((l) => l.saleId === r.saleId && (l.kind === "service" || l.kind === "product") && l.amountCents > 0);
+      const base = goods.reduce((n, l) => n + l.amountCents, 0);
+      if (!base) { addRefund(null, Number(r.cents)); continue; }
+      let left = Number(r.cents);
+      goods.forEach((l, i) => {
+        const part = i === goods.length - 1 ? left : Math.round((Number(r.cents) * l.amountCents) / base);
+        left -= part;
+        addRefund(l.staffId, part);
+      });
+    }
     const refundsCents = refundRows.filter((r) => !locationId || r.locationId === locationId).reduce((n, r) => n + Number(r.cents), 0);
     const p = prepaid[0];
     const prepaidSold = { packagesCents: Number(p?.packagesCents ?? 0), packagesCount: Number(p?.packagesCount ?? 0), membershipCents: Number(p?.membershipCents ?? 0), membershipCount: Number(p?.membershipCount ?? 0) };
@@ -1604,7 +1651,7 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
     }
     // Sessions used in the range, at their value, whatever the client paid for them and whenever.
     const prepaidUsedCents = byCategory.reduce((n, r) => n + Number(r.credit), 0);
-    return { sales, byStaff, byMethod: byMethodReal, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation };
+    return { sales, byStaff, byMethod: byMethodReal, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, linesByLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation, refundsByStaff, refundStaffNames };
   });
 }
 
