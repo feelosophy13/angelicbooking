@@ -19,6 +19,8 @@ import { TodayStrip } from "./today-strip";
 import { LocationPills } from "./location-pills";
 import { CalendarShortcuts, DateJump } from "./calendar-nav";
 import { ProviderChips } from "./provider-chips";
+import { AgendaList } from "./agenda-list";
+import { startOfWeek } from "@/lib/calendar-nav";
 import { DisplayMenu } from "./calendar-display";
 import { listCategories } from "@/server/categories";
 import { categoryColors, UNCATEGORIZED_COLOR } from "@/lib/calendar-palette";
@@ -31,12 +33,6 @@ import { buildTip, type CalTip, type TipItem } from "@/lib/calendar-tip";
 import { blockingAccess, bookingAccess, seesNoCalendar, seesOwnOnly } from "@/lib/appointment-access";
 import { serviceGroups } from "@/server/service-groups";
 import type { QuickCreateData } from "./quick-create";
-
-function startOfWeek(date: string): string {
-  const [y, m, d] = date.split("-").map(Number);
-  const dow = new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay(); // 0 = Sunday
-  return shiftISODate(date, -((dow + 6) % 7)); // Monday
-}
 
 export default async function CalendarPage({
   params,
@@ -60,11 +56,14 @@ export default async function CalendarPage({
   const tz = tzFor(business, locationFilter ? locations.find((l) => l.id === locationFilter) : null);
   const today = instantToISODate(new Date(), tz);
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : today;
-  const view = sp.view === "week" ? "week" : sp.view === "month" ? "month" : "day";
+  const view = sp.view === "week" ? "week" : sp.view === "month" ? "month" : sp.view === "agenda" ? "agenda" : "day";
+  // The week starts on the business's own first day (Settings → Profile).
+  const weekStart = business.weekStart;
   const monthStart = `${date.slice(0, 7)}-01`;
   const daysInMonth = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate();
-  const from = view === "week" ? startOfWeek(date) : view === "month" ? monthStart : date;
-  const days = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
+  // Agenda: the coming seven days from the chosen date, as a list.
+  const from = view === "week" ? startOfWeek(date, weekStart) : view === "month" ? monthStart : date;
+  const days = view === "week" || view === "agenda" ? 7 : view === "month" ? daysInMonth : 1;
   const agenda = await getRangeAgenda(business.id, tz, from, days);
   // Day view: who works at this location on that weekday; week/month: anyone who works there on some day.
   const filtered = filterAgendaByLocation(agenda, locationFilter, view === "day" ? weekdayOf(date) : null);
@@ -93,7 +92,7 @@ export default async function CalendarPage({
 
   // Working hours per column: each provider's blocks (day view), one provider's week, or everyone's union per day.
   const gridDates = view === "week" ? Array.from({ length: 7 }, (_, i) => shiftISODate(from, i)) : [date];
-  const blocks = view === "month" ? new Map<string, { start: Date; end: Date }[]>() : await workingBlocksFor({ businessId: business.id, timeZone: tz, staffIds: staff.map((s) => s.id), dates: gridDates, locationId: locationFilter });
+  const blocks = view === "month" || view === "agenda" ? new Map<string, { start: Date; end: Date }[]>() : await workingBlocksFor({ businessId: business.id, timeZone: tz, staffIds: staff.map((s) => s.id), dates: gridDates, locationId: locationFilter });
   const toMinutes = (b: { start: Date; end: Date }) => ({ startMin: minuteOf(b.start), endMin: minuteOf(b.end) <= minuteOf(b.start) ? 24 * 60 : minuteOf(b.end) });
   const unionFor = (d: string) => {
     const all = staff.flatMap((s) => (blocks.get(`${s.id}:${d}`) ?? []).map(toMinutes)).sort((a, b) => a.startMin - b.startMin);
@@ -180,7 +179,7 @@ export default async function CalendarPage({
 
   // Quick create (click or draw on an empty slot): the menu, who does what, and what this person may start. Day and week only.
   let quick: QuickCreateData | null = null;
-  if ((canBook || canBlock) && view !== "month" && staff.length) {
+  if ((canBook || canBlock) && (view === "day" || view === "week") && staff.length) {
     const [groups, rows, mapping] = await Promise.all([
       serviceGroups(business),
       withTenant(business.id, (tx) => tx.select({ id: schema.services.id, name: schema.services.name, durationMin: schema.services.durationMin, gapMin: schema.services.gapMin, finishMin: schema.services.finishMin }).from(schema.services).where(eq(schema.services.active, true))),
@@ -231,14 +230,15 @@ export default async function CalendarPage({
   }
   const nav = (d: string) => `?view=${view}&date=${d}${staffParam ? `&staff=${staffParam}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${formsFilter ? "&forms=missing" : ""}${hideParam}`;
   // Switching views keeps the location (and the staff pick when going to the week).
-  const viewHref = (v: "day" | "week" | "month") => `?view=${v}&date=${date}${v === "week" && sp.staff ? `&staff=${sp.staff}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${hideParam}`;
-  const step = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
+  const viewHref = (v: "day" | "week" | "month" | "agenda") => `?view=${v}&date=${date}${v === "week" && sp.staff ? `&staff=${sp.staff}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${hideParam}`;
+  const step = view === "week" || view === "agenda" ? 7 : view === "month" ? daysInMonth : 1;
   // The button back to now is named for the view (a week or a month is not "today"). Away from now it says where it goes
   // ("Back to today"), so it never reads as a label for the date on screen; at now it is a quiet "Today".
-  const atNow = view === "week" ? from === startOfWeek(today) : view === "month" ? date.slice(0, 7) === today.slice(0, 7) : date === today;
+  const atNow = view === "week" ? from === startOfWeek(today, weekStart) : view === "month" ? date.slice(0, 7) === today.slice(0, 7) : date === today;
   const nowName = view === "week" ? "this week" : view === "month" ? "this month" : "today";
   const nowLabel = atNow ? nowName.charAt(0).toUpperCase() + nowName.slice(1) : `Back to ${nowName}`;
-  const title = view === "week" ? `Week of ${formatDateLong(from)}` : view === "month" ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(monthStart + "T00:00:00Z")) : formatDateLong(date);
+  const shortDay = (d: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
+  const title = view === "week" ? `Week of ${formatDateLong(from)}` : view === "month" ? new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(monthStart + "T00:00:00Z")) : view === "agenda" ? `Agenda · ${shortDay(date)} – ${shortDay(shiftISODate(date, 6))}` : formatDateLong(date);
 
   return (
     <>
@@ -247,15 +247,16 @@ export default async function CalendarPage({
           <a href={viewHref("day")} className={`rounded-md px-3 py-1 ${view === "day" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Day</a>
           <a href={viewHref("week")} className={`rounded-md px-3 py-1 ${view === "week" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Week</a>
           <a href={viewHref("month")} className={`rounded-md px-3 py-1 ${view === "month" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Month</a>
+          <a href={viewHref("agenda")} className={`rounded-md px-3 py-1 ${view === "agenda" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Agenda</a>
         </div>
         {/* Fixed place, whatever the view: Prev, a button back to now named for the view, Next. Optional controls follow it. */}
         <div className="flex items-center gap-1">
           <LinkButton href={nav(shiftISODate(date, -step))} size="sm" aria-label={`Previous ${view}`}><ChevronLeft className="h-4 w-4" /></LinkButton>
           <LinkButton href={nav(today)} size="sm" variant={atNow ? "ghost" : "secondary"} aria-current={atNow ? "date" : undefined}>{nowLabel}</LinkButton>
           <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label={`Next ${view}`}><ChevronRight className="h-4 w-4" /></LinkButton>
-          <DateJump date={date} today={today} hrefTemplate={nav("{date}")} />
-          {!noCalendar && view !== "month" ? <DisplayMenu categories={categories.length > 0} /> : null}
-          {!noCalendar ? <CalendarShortcuts hrefs={{ today: nav(today), prev: nav(shiftISODate(date, -step)), next: nav(shiftISODate(date, step)), day: viewHref("day"), week: viewHref("week"), month: viewHref("month"), create: canBook ? `/app/${slug}/appointments/new?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}` : null }} /> : null}
+          <DateJump date={date} today={today} hrefTemplate={nav("{date}")} weekStart={weekStart} />
+          {!noCalendar && (view === "day" || view === "week") ? <DisplayMenu categories={categories.length > 0} /> : null}
+          {!noCalendar ? <CalendarShortcuts hrefs={{ today: nav(today), prev: nav(shiftISODate(date, -step)), next: nav(shiftISODate(date, step)), day: viewHref("day"), week: viewHref("week"), month: viewHref("month"), agenda: viewHref("agenda"), create: canBook ? `/app/${slug}/appointments/new?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}` : null }} /> : null}
         </div>
         {locations.length > 1 ? (
           <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffParam ? `&staff=${staffParam}` : ""}${hideParam}`} />
@@ -334,7 +335,9 @@ export default async function CalendarPage({
       ) : staff.length === 0 ? (
         <Empty title="No staff yet" body="Add a staff member before booking appointments." action={{ href: `/app/${slug}/staff/new`, label: "Add a staff member" }} />
       ) : view === "month" ? (
-        <MonthGrid monthStart={monthStart} daysInMonth={daysInMonth} today={today} items={calItems.filter((i) => i.status !== "cancelled")} staff={staff} slug={slug} staffFilter={staffFilter} />
+        <MonthGrid monthStart={monthStart} daysInMonth={daysInMonth} today={today} items={calItems.filter((i) => i.status !== "cancelled")} staff={staff} slug={slug} staffFilter={staffFilter} weekStart={weekStart} />
+      ) : view === "agenda" ? (
+        <AgendaList days={Array.from({ length: 7 }, (_, i) => shiftISODate(date, i))} items={calItems} staff={staff} today={today} />
       ) : (
         <CalendarGrid
           todayISO={today}

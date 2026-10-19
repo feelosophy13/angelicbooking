@@ -37,6 +37,13 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
                   {[5, 10, 15, 20, 30, 60].map((n) => <option key={n} value={n}>{n} minutes</option>)}
                 </Select>
               </Field>
+              <Field label="Week starts on" name="weekStart" hint="For the calendar's Week and Month views.">
+                <Select name="weekStart" defaultValue={String(business.weekStart)}>
+                  <option value="0">Sunday</option>
+                  <option value="1">Monday</option>
+                  <option value="6">Saturday</option>
+                </Select>
+              </Field>
             </div>
             <SubmitButton pendingText="Saving…">Save basics</SubmitButton>
           </ActionForm>

@@ -1225,6 +1225,24 @@ runs several salons on separate accounts.
       in the client portal (notes can hold remarks a client shouldn't see, so showing them should be a per-salon
       choice) and the public API (nothing asks for it yet).
 
+### Client photos on booking (built 2026-10-18, migration 0117)
+- [x] Clients can attach up to 5 pictures on the booking form (inspiration, a reference style, their current lashes or brows): an
+      "Add photos" tile with previews and an (x) each, camera roll and multiple select on a phone, works in the embed at 375 px.
+      Big pictures are shrunk in the browser first; the server runs them through `optimizeUpload` as kind "visit" (working size +
+      thumbnail, EXIF dropped) and files them as `visit_photos` rows with phase "client" on the visit's first service and provider, so
+      `/api/files/<id>` applies the appointment's own rule (whoever may open the appointment; another provider gets 404). Shown on
+      the appointment's Photos card as "From the client" with a lightbox and remove, in the Gallery and the client's Photos as a
+      third group of the pair ("2 from the client"), in the calendar hover card ("2 photos from client"), in the "New online booking"
+      automation and the business alert email ("2 photos from the client are on the appointment"), and in the activity log
+      ("the client attached 2 photos to the booking"). A picture that cannot be used (an unreadable HEIC, not a picture, over 10 MB)
+      is left out by name on the confirmation page; the booking never fails because of a photo. Settings → Online booking: "Let
+      clients attach photos when booking" (on by default). Tests: `booking-photos.test.ts`, `calendar-tip.test.ts`, `visit-photos.test.ts`.
+- [ ] Limits and open questions: HEIC that the phone does not convert is refused, not stored (the image library cannot decode HEIC;
+      iPhones normally hand the browser a JPEG). The client cannot see or change their photos afterwards (nothing on the manage
+      page or in the client account). Photos stay with the appointment when the client record is deleted (`client_id` goes null, like
+      staff photos); decide whether a client's account deletion should also delete what they sent. Not built: photos on the waitlist
+      form, on a reschedule, or from the SMS inbox straight onto the appointment.
+
 ### Needs a real Stripe/Twilio run before relying on it (2026-10-10)
 - [ ] Online deposit + card on file at booking (test cards on a connected test account), including the
       automatic refund when a slot is taken after the charge and the refund on online cancellation.

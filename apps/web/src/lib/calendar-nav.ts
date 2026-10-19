@@ -3,7 +3,19 @@
  * shortcuts (the same keys Google Calendar uses, so a desk that knows one knows the other). Pure, so it is tested.
  */
 
-const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Weekday headings starting on the business's first day (0 = Sunday … 6 = Saturday). */
+export function weekdayLabels(weekStart = 1): string[] {
+  return Array.from({ length: 7 }, (_, i) => WEEKDAYS[(weekStart + i) % 7]!);
+}
+
+/** The first day of the week `date` falls in, for a week that starts on `weekStart` (0 = Sunday … 6 = Saturday). */
+export function startOfWeek(date: string, weekStart = 1): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const dow = new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
+  return new Date(Date.UTC(y!, m! - 1, d! - ((dow - weekStart + 7) % 7))).toISOString().slice(0, 10);
+}
 
 /** `YYYY-MM-DD` for the given UTC day. */
 const iso = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10);
@@ -26,13 +38,13 @@ export function monthLabel(monthStart: string): string {
 }
 
 /**
- * The cells of a Monday-first mini month: whole weeks, with the days of the months before and after filled in (they are
- * `outside`) so the grid is always a block of full rows, like the month view.
+ * The cells of a mini month that starts its weeks on `weekStart`: whole weeks, with the days of the months before and after filled in
+ * (they are `outside`) so the grid is always a block of full rows, like the month view.
  */
-export function miniMonthCells(monthStart: string): { date: string; day: number; outside: boolean }[] {
+export function miniMonthCells(monthStart: string, weekStart = 1): { date: string; day: number; outside: boolean }[] {
   const [y, m] = monthStart.split("-").map(Number);
   const first = new Date(Date.UTC(y!, m! - 1, 1));
-  const lead = (first.getUTCDay() + 6) % 7; // Monday = 0
+  const lead = (first.getUTCDay() - weekStart + 7) % 7;
   const daysInMonth = new Date(Date.UTC(y!, m!, 0)).getUTCDate();
   const total = Math.ceil((lead + daysInMonth) / 7) * 7;
   return Array.from({ length: total }, (_, i) => {
@@ -41,9 +53,8 @@ export function miniMonthCells(monthStart: string): { date: string; day: number;
   });
 }
 
-export const MINI_MONTH_WEEKDAYS = WEEKDAYS;
 
-export type CalendarShortcut = "today" | "prev" | "next" | "day" | "week" | "month" | "create" | "search" | "help" | "pick";
+export type CalendarShortcut = "today" | "prev" | "next" | "day" | "week" | "month" | "agenda" | "create" | "search" | "help" | "pick";
 
 /** What a key does on the calendar, in the order shown in the shortcuts help. */
 export const SHORTCUTS: { keys: string[]; action: CalendarShortcut; label: string }[] = [
@@ -54,6 +65,7 @@ export const SHORTCUTS: { keys: string[]; action: CalendarShortcut; label: strin
   { keys: ["d"], action: "day", label: "Day view" },
   { keys: ["w"], action: "week", label: "Week view" },
   { keys: ["m"], action: "month", label: "Month view" },
+  { keys: ["a"], action: "agenda", label: "Agenda view" },
   { keys: ["c"], action: "create", label: "New appointment" },
   { keys: ["/"], action: "search", label: "Search" },
   { keys: ["?"], action: "help", label: "These shortcuts" },
@@ -61,7 +73,7 @@ export const SHORTCUTS: { keys: string[]; action: CalendarShortcut; label: strin
 
 const BY_KEY = new Map<string, CalendarShortcut>([
   ["t", "today"], ["ArrowLeft", "prev"], ["j", "prev"], ["p", "prev"], ["ArrowRight", "next"], ["k", "next"], ["n", "next"],
-  ["g", "pick"], ["d", "day"], ["w", "week"], ["m", "month"], ["c", "create"], ["/", "search"], ["?", "help"],
+  ["g", "pick"], ["d", "day"], ["w", "week"], ["m", "month"], ["a", "agenda"], ["c", "create"], ["/", "search"], ["?", "help"],
 ]);
 
 /**

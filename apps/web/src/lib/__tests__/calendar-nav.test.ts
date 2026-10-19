@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { miniMonthCells, monthLabel, monthStartOf, shiftMonth, shortcutFor } from "../calendar-nav";
+import { miniMonthCells, monthLabel, monthStartOf, shiftMonth, shortcutFor, startOfWeek, weekdayLabels } from "../calendar-nav";
 
 describe("mini month", () => {
   it("lays the month out Monday-first in whole weeks, padding with the neighbouring months", () => {
@@ -13,6 +13,16 @@ describe("mini month", () => {
   it("needs six rows when a long month starts late in the week", () => {
     // August 2026 starts on a Saturday.
     expect(miniMonthCells("2026-08-01")).toHaveLength(42);
+  });
+  it("follows the business's first day of the week", () => {
+    // Sunday-first: October 2026 starts on a Thursday, so 4 lead days (Sun 27 Sep … Wed 30 Sep).
+    const cells = miniMonthCells("2026-10-01", 0);
+    expect(cells[0]!.date).toBe("2026-09-27");
+    expect(weekdayLabels(0)).toEqual(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]);
+    expect(weekdayLabels(1)[0]).toBe("Mon");
+    expect(startOfWeek("2026-10-18", 1)).toBe("2026-10-12"); // a Sunday belongs to the Monday-first week before it
+    expect(startOfWeek("2026-10-18", 0)).toBe("2026-10-18");
+    expect(startOfWeek("2026-10-20", 6)).toBe("2026-10-17");
   });
   it("steps months across a year end and names them", () => {
     expect(shiftMonth("2026-12-01", 1)).toBe("2027-01-01");

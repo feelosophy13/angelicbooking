@@ -62,6 +62,8 @@ export const businesses = pgTable("businesses", {
   // Last day (business-local, YYYY-MM-DD) the low-stock email went out, so it goes once a day.
   inventoryDigestOn: text("inventory_digest_on"),
   slotIntervalMin: smallint("slot_interval_min").notNull().default(15),
+  // First day of the calendar week (0 = Sunday … 6 = Saturday); Week, Month and the mini date picker follow it.
+  weekStart: smallint("week_start").notNull().default(1),
   phone: text("phone"),
   email: text("email"),
   // Stripe Connect (Phase 2)

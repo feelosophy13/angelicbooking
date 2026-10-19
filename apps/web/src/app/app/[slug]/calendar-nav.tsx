@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { CalendarDays, ChevronLeft, ChevronRight, Keyboard } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isTypingTarget, MINI_MONTH_WEEKDAYS, miniMonthCells, monthLabel, monthStartOf, SHORTCUTS, shiftMonth, shortcutFor, type CalendarShortcut } from "@/lib/calendar-nav";
+import { isTypingTarget, miniMonthCells, monthLabel, monthStartOf, SHORTCUTS, shiftMonth, shortcutFor, weekdayLabels, type CalendarShortcut } from "@/lib/calendar-nav";
 
 /** Fired on `window` to open the date picker from a shortcut (g). */
 const PICK_EVENT = "calendar:pick-date";
@@ -15,7 +15,7 @@ export const SEARCH_EVENT = "app:search";
  * "Pick a date": a small button beside the arrows that opens a mini month. Clicking a day goes to it in the current view, with
  * the other filters kept (`hrefTemplate` has `{date}` where the day goes). Closes on a pick, Escape or a click outside.
  */
-export function DateJump({ date, today, hrefTemplate }: { date: string; today: string; hrefTemplate: string }) {
+export function DateJump({ date, today, hrefTemplate, weekStart = 1 }: { date: string; today: string; hrefTemplate: string; /** 0 = Sunday … 6 = Saturday. */ weekStart?: number }) {
   const [open, setOpen] = useState(false);
   const [month, setMonth] = useState(monthStartOf(date));
   // On a phone the button can sit anywhere in a wrapped header, so the popover slides left or right to stay on screen (px from the button's left edge).
@@ -37,7 +37,7 @@ export function DateJump({ date, today, hrefTemplate }: { date: string; today: s
     return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
   }, [open]);
   const href = (d: string) => hrefTemplate.replace("{date}", d);
-  const cells = miniMonthCells(month);
+  const cells = miniMonthCells(month, weekStart);
   return (
     <div ref={box} className="relative">
       <button
@@ -63,7 +63,7 @@ export function DateJump({ date, today, hrefTemplate }: { date: string; today: s
             <button type="button" onClick={() => setMonth((m) => shiftMonth(m, 1))} aria-label="Next month" className="rounded-lg p-1.5 text-stone-600 hover:bg-stone-100"><ChevronRight className="h-4 w-4" /></button>
           </div>
           <div className="grid grid-cols-7 text-center text-[11px] font-semibold uppercase tracking-wide text-stone-400">
-            {MINI_MONTH_WEEKDAYS.map((d) => <div key={d} className="py-1">{d.slice(0, 2)}</div>)}
+            {weekdayLabels(weekStart).map((d) => <div key={d} className="py-1">{d.slice(0, 2)}</div>)}
           </div>
           <div className="grid grid-cols-7">
             {cells.map((c) => (
@@ -98,7 +98,7 @@ export function DateJump({ date, today, hrefTemplate }: { date: string; today: s
  * views, c for a new appointment, / for search, ? for this list. Nothing fires while typing in a field or with a modifier held.
  * Renders a small "?" button in the corner of the page that opens the same list.
  */
-export function CalendarShortcuts({ hrefs }: { hrefs: { today: string; prev: string; next: string; day: string; week: string; month: string; create: string | null } }) {
+export function CalendarShortcuts({ hrefs }: { hrefs: { today: string; prev: string; next: string; day: string; week: string; month: string; agenda: string; create: string | null } }) {
   const router = useRouter();
   const [help, setHelp] = useState(false);
   useEffect(() => {
@@ -115,6 +115,7 @@ export function CalendarShortcuts({ hrefs }: { hrefs: { today: string; prev: str
         day: () => go(hrefs.day),
         week: () => go(hrefs.week),
         month: () => go(hrefs.month),
+        agenda: () => go(hrefs.agenda),
         create: () => go(hrefs.create),
         pick: () => { e.preventDefault(); window.dispatchEvent(new Event(PICK_EVENT)); },
         search: () => { e.preventDefault(); window.dispatchEvent(new Event(SEARCH_EVENT)); },

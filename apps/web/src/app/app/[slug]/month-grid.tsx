@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { CalItem } from "./calendar-grid";
+import { weekdayLabels } from "@/lib/calendar-nav";
 
 const shift = (iso: string, n: number) => {
   const [y, m, d] = iso.split("-").map(Number);
@@ -8,15 +9,15 @@ const shift = (iso: string, n: number) => {
 };
 
 /** Month overview: a cell per day with up to three appointments and a count. */
-export function MonthGrid({ monthStart, daysInMonth, today, items, staff, slug, staffFilter }: { monthStart: string; daysInMonth: number; today: string; items: CalItem[]; staff: { id: string; displayName: string; color: string }[]; slug: string; staffFilter: string | null }) {
-  const firstDow = (new Date(monthStart + "T00:00:00Z").getUTCDay() + 6) % 7; // Monday-first
+export function MonthGrid({ monthStart, daysInMonth, today, items, staff, slug, staffFilter, weekStart = 1 }: { monthStart: string; daysInMonth: number; today: string; items: CalItem[]; staff: { id: string; displayName: string; color: string }[]; slug: string; staffFilter: string | null; /** 0 = Sunday … 6 = Saturday (Settings → Profile). */ weekStart?: number }) {
+  const firstDow = (new Date(monthStart + "T00:00:00Z").getUTCDay() - weekStart + 7) % 7;
   const byDay = new Map<string, CalItem[]>();
   for (const i of items) byDay.set(i.columnKey, [...(byDay.get(i.columnKey) ?? []), i]);
   const fmt = (min: number) => `${((Math.floor(min / 60) + 11) % 12) + 1}:${String(min % 60).padStart(2, "0")}`;
   return (
     <div className="overflow-hidden rounded-xl border border-stone-200 bg-white">
       <div className="grid grid-cols-7 border-b border-stone-200 text-center text-xs font-semibold uppercase tracking-wide text-stone-500">
-        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} className="py-2">{d}</div>)}
+        {weekdayLabels(weekStart).map((d) => <div key={d} className="py-2">{d}</div>)}
       </div>
       <div className="grid grid-cols-7">
         {Array.from({ length: firstDow }).map((_, i) => <div key={`e${i}`} className="min-h-28 border-b border-r border-stone-100 bg-stone-50/50" />)}
