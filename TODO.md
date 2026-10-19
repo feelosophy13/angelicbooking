@@ -75,6 +75,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] S4 Private file URLs (`/api/files/<id>`) follow the pages that show them: a client's profile photo needs `clients.photos`, a
       signature or form attachment `clients.notes`, a visit photo the appointment it belongs to (whoever may open that appointment; an
       own-calendar role only on visits they are booked on). A signed-in client still sees their own form files.
+- [x] S5 Classes: the list and a session page need a calendar permission (`appointments.read.any` or `.own`); an own-calendar role sees
+      only the classes they teach (another instructor's is a 404); the roster prints phone and email only with `clients.read`. The
+      Classes sidebar entry follows.
+- [x] S6 Staff directory: a co-worker's email and whether they have a login (and which role) show only with `staff.manage` or
+      `members.manage`; everyone else sees name, position, location and calendar status.
 
 ### Full review 2026-10-16 (`REVIEW-2026-10-16.md` has every finding; the "Fix first" table is the order)
 - [x] Client-data permissions split, 2026-10-18 (migration 0114): `clients.read` ("View clients") now means only the client list, a
