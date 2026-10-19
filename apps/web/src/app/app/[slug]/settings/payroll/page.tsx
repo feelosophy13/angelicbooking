@@ -45,10 +45,10 @@ export default async function PayrollRulesPage({ params }: { params: Promise<{ s
               <Field label="Share of no-show and late fees to the provider (%)" name="feeSharePct" hint="Paid in full to the appointment's provider, on top of commission. 0 means the house keeps the fee.">
                 <Input name="feeSharePct" type="number" step="1" min={0} max={100} defaultValue={(business.feeShareBps / 100).toString()} />
               </Field>
-              <Field label="Package sessions pay commission on" name="packageRedemptionBase" hint="Set when the session is used on a ticket; earlier tickets keep what they were credited.">
+              <Field label="Package sessions pay commission on" name="packageRedemptionBase" hint="What the client paid per session is the default. Set when the session is used on a ticket; earlier tickets keep what they were credited.">
                 <Select name="packageRedemptionBase" defaultValue={business.packageRedemptionBase}>
-                  <option value="list">The service's list price</option>
                   <option value="package_share">The package price per session (what the client paid)</option>
+                  <option value="list">The service's list price</option>
                 </Select>
               </Field>
             </div>

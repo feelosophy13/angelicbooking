@@ -869,6 +869,13 @@
       "when": 1795201200000,
       "tag": "0123_commission_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1795201300000,
+      "tag": "0124_package_share_default",
+      "breakpoints": true
     }
   ]
 }

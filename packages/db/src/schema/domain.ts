@@ -73,9 +73,10 @@ export const businesses = pgTable("businesses", {
   discountAbsorb: text("discount_absorb").$type<"provider" | "house" | "split">().notNull().default("provider"),
   // Share of a no-show or late-cancellation fee credited to the appointment's provider, in basis points (5000 = half). 0 = the house keeps it.
   feeShareBps: integer("fee_share_bps").notNull().default(0),
-  // What a provider is paid on when a package session covers a service: the service's list price (default) or the package's per-session
-  // price (what the client actually paid for it). Recorded on the sale line when the credit is used, so past tickets don't move.
-  packageRedemptionBase: text("package_redemption_base").$type<"list" | "package_share">().notNull().default("list"),
+  // What a provider is paid on when a package session covers a service: the package's per-session price (what the client actually paid
+  // for it; the default, the owner's choice 2026-10-19) or the service's list price. Recorded on the sale line when the credit is used,
+  // so past tickets don't move.
+  packageRedemptionBase: text("package_redemption_base").$type<"list" | "package_share">().notNull().default("package_share"),
   phone: text("phone"),
   email: text("email"),
   // Stripe Connect (Phase 2)

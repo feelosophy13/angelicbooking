@@ -90,7 +90,7 @@ describe.skipIf(!up)("payroll: commission rules", () => {
     await setRules({ feeShareBps: 0 });
   });
 
-  it("a package session credits the list price by default, or the package's per-session price when set", async () => {
+  it("a package session credits the package's per-session price by default, or the list price when set", async () => {
     const packageId = await withTenant(kit.A, async (tx) => {
       const [p] = await tx.insert(schema.packages).values({ businessId: kit.A, name: "4 colors", serviceId, sessions: 4, priceCents: 30_000 }).returning({ id: schema.packages.id });
       await tx.insert(schema.clientPackages).values({ businessId: kit.A, clientId, packageId: p!.id, serviceId, remaining: 4 });
@@ -104,9 +104,9 @@ describe.skipIf(!up)("payroll: commission rules", () => {
       await redeemCredit({ businessId: kit.A, saleId, lineId: line.id, source: "package", sourceId: cp.id, actorUserId: userId });
       return (await getSale(kit.A, saleId))!.lines[0]!.creditCents;
     };
-    expect(await redeem()).toBe(10_000);
-    await setRules({ packageRedemptionBase: "package_share" });
     expect(await redeem()).toBe(7_500);
     await setRules({ packageRedemptionBase: "list" });
+    expect(await redeem()).toBe(10_000);
+    await setRules({ packageRedemptionBase: "package_share" });
   });
 });
