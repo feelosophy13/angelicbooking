@@ -34,6 +34,9 @@ export const ACTIONS = [
   "checkout.discount", // discounts, price changes and voids on a ticket (Manager and Front desk by default)
   "giftcards.issue", // create a gift card nobody paid for (a comp or a correction); selling one at checkout is checkout.take
   "reports.view",
+  // Split out of "reports.view" 2026-10-18 (migration 0116 back-fills stored roles): reading the money reports no longer lets someone text or
+  // email every client. Campaigns, promo codes and the Marketing pages; automations themselves are business.manage.
+  "marketing.send",
   "checkout.refund", // send money back: refunds, store credit, deposit refunds
   "payroll.view",
   "inventory.log", // record the supplies used on a visit (Provider and Front desk by default)
@@ -77,6 +80,12 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
       { action: "reports.view", label: "View sales reports", description: "Sales, tips and refunds across the business." },
       { action: "checkout.refund", label: "Refund payments", description: "Refund a sale, give store credit, or refund a deposit." },
       { action: "payroll.view", label: "Run payroll", description: "See pay rules and generate pay sheets for everyone." },
+    ],
+  },
+  {
+    title: "Marketing",
+    items: [
+      { action: "marketing.send", label: "Send marketing", description: "Campaigns by text or email to groups of clients, and promo codes. Automations are part of Business settings." },
     ],
   },
   {

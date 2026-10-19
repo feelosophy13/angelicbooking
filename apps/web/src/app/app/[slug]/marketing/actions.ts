@@ -32,7 +32,7 @@ function parseAudience(d: { visitedWithinDays?: string; lapsedDays?: string; ser
 const campaignFields = z.object({ slug: z.string(), campaignId: z.string().optional(), name: f.text(1, 100), channel: z.enum(["email", "sms"]), subject: f.optional(150), body: f.text(1, 2000), ...audienceFields });
 
 export const createCampaign = formAction(campaignFields, async (d) => {
-  const ctx = await requireAction(d.slug, "reports.view");
+  const ctx = await requireAction(d.slug, "marketing.send");
   if (d.channel === "sms" && !(await smsAvailableFor(ctx.business.id))) throw new FormError("Texting needs a verified text number (Settings → Text messaging).", "channel");
   if (d.channel === "email" && !d.subject) throw new FormError("Add a subject line", "subject");
   if (d.channel === "sms" && d.body.length > 320) throw new FormError("Keep texts under 320 characters (2 segments)", "body");
@@ -43,7 +43,7 @@ export const createCampaign = formAction(campaignFields, async (d) => {
 });
 
 export const updateCampaign = formAction(campaignFields, async (d) => {
-  const ctx = await requireAction(d.slug, "reports.view");
+  const ctx = await requireAction(d.slug, "marketing.send");
   if (d.channel === "sms" && !(await smsAvailableFor(ctx.business.id))) throw new FormError("Texting needs a verified text number (Settings → Text messaging).", "channel");
   if (d.channel === "email" && !d.subject) throw new FormError("Add a subject line", "subject");
   const audience = parseAudience(d);
@@ -54,7 +54,7 @@ export const updateCampaign = formAction(campaignFields, async (d) => {
 
 export async function sendCampaignAction(formData: FormData) {
   const d = z.object({ slug: z.string(), campaignId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "reports.view");
+  const ctx = await requireAction(d.slug, "marketing.send");
   try {
     const n = await sendCampaign(ctx.business, d.campaignId, ctx.user.id);
     await setFlash(`Sending to ${n} client${n === 1 ? "" : "s"}`);
@@ -67,7 +67,7 @@ export async function sendCampaignAction(formData: FormData) {
 
 export async function deleteCampaign(formData: FormData) {
   const d = z.object({ slug: z.string(), campaignId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "reports.view");
+  const ctx = await requireAction(d.slug, "marketing.send");
   await withTenant(ctx.business.id, (tx) => tx.delete(schema.campaigns).where(eq(schema.campaigns.id, d.campaignId)));
   await setFlash("Campaign deleted");
   revalidatePath(`/app/${d.slug}/marketing`);
@@ -77,7 +77,7 @@ export async function deleteCampaign(formData: FormData) {
 export const createPromo = formAction(
   z.object({ slug: z.string(), code: f.text(2, 30), type: z.enum(["percent", "amount"]), value: z.string().trim(), startsAt: z.string().optional(), expiresAt: z.string().optional(), maxUses: z.string().trim().optional(), minSubtotal: f.moneyOptional() }),
   async (d, raw) => {
-    const ctx = await requireAction(d.slug, "reports.view");
+    const ctx = await requireAction(d.slug, "marketing.send");
     const code = d.code.toUpperCase().replace(/[^A-Z0-9-]/g, "");
     if (code.length < 2) throw new FormError("Letters and numbers only", "code");
     let value: number;
@@ -105,7 +105,7 @@ export const createPromo = formAction(
 
 export async function togglePromo(formData: FormData) {
   const d = z.object({ slug: z.string(), id: z.string().min(1), active: z.string() }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "reports.view");
+  const ctx = await requireAction(d.slug, "marketing.send");
   await withTenant(ctx.business.id, (tx) => tx.update(schema.promoCodes).set({ active: d.active === "true" }).where(eq(schema.promoCodes.id, d.id)));
   revalidatePath(`/app/${d.slug}/marketing/promos`);
 }

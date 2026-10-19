@@ -1,16 +1,20 @@
 import { and, eq, or, sql } from "drizzle-orm";
-import { db, schema, withJobs } from "@angelic/db";
+import { db, schema, withJobs, withTenant } from "@angelic/db";
 import { getSession } from "@/lib/session";
 import { getClientSessionId } from "@/lib/client-session";
 import { getObject, publicObjectUrl, r2Config } from "@/lib/object-storage";
 import { PRIVATE_KINDS, PUBLIC_KINDS } from "@/lib/files";
+import { canViewPrivateFile } from "@/lib/visibility";
+import { permissionsForRole } from "@/server/roles";
 
 /**
  * Serve an uploaded file. Branding, product, service and category images are public and immutable
  * (cacheable for a year); one that lives in R2 is redirected to its CDN address, so old links keep
- * working. Form attachments, signatures, visit photos and client photos are private: only a member of
- * the business (or, for form files, the client who signed) may view them, never cached by intermediaries, and they are read from the private bucket
- * here. Anything else stored in `files` (e.g. staged imports) is not served at all.
+ * working. Form attachments, signatures, visit photos and client photos are private: a member of the
+ * business sees them by the same permissions as the pages that show them (lib/visibility.ts: client photos need "See visit photos",
+ * signatures and form files "Read notes and forms", visit photos the appointment itself), the client who signed sees their own form
+ * files; never cached by intermediaries, and read from the private bucket here. Anything else stored in `files` (e.g. staged imports)
+ * is not served at all.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -46,8 +50,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 async function mayViewPrivate(businessId: string, fileId: string, kind: string): Promise<boolean> {
   const session = await getSession();
   if (session) {
-    const member = await db.query.member.findFirst({ where: and(eq(schema.member.organizationId, businessId), eq(schema.member.userId, session.user.id)), columns: { id: true } });
-    if (member) return true;
+    const member = await db.query.member.findFirst({ where: and(eq(schema.member.organizationId, businessId), eq(schema.member.userId, session.user.id)), columns: { role: true } });
+    if (member) {
+      const permissions = await permissionsForRole(businessId, member.role);
+      const { me, visit } = await withTenant(businessId, async (tx) => {
+        const me = await tx.query.staff.findFirst({ where: eq(schema.staff.userId, session.user.id), columns: { id: true } });
+        if (kind !== "visit") return { me, visit: null };
+        // The appointment this photo belongs to, and whose lines it still has (a colleague's cancelled line no longer counts).
+        const photo = await tx.query.visitPhotos.findFirst({ where: or(eq(schema.visitPhotos.fileId, fileId), eq(schema.visitPhotos.thumbFileId, fileId)), columns: { appointmentId: true } });
+        if (!photo) return { me, visit: null };
+        const items = await tx.select({ staffId: schema.appointmentItems.staffId, status: schema.appointmentItems.status }).from(schema.appointmentItems).where(eq(schema.appointmentItems.appointmentId, photo.appointmentId));
+        const live = items.filter((i) => i.status !== "cancelled");
+        return { me, visit: { staffIds: (live.length ? live : items).map((i) => i.staffId) } };
+      });
+      // A member without the permission falls through to the client rule below: they may still be the client who signed the form.
+      if (canViewPrivateFile(kind, permissions, { staffId: me?.id ?? null }, visit)) return true;
+    }
   }
   // Client photos and visit photos are staff-only; a signed-in client may only see their own form files.
   if (kind !== "form" && kind !== "signature") return false;

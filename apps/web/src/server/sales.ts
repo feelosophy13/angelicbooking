@@ -302,15 +302,19 @@ export type SalesListFilter = {
   to?: Date;
   page?: number;
   pageSize?: number;
-  /** For a role that sees only its own calendar: only tickets this person is credited on or rang up. */
+  /** For a role that sees only its own calendar: only tickets this person is credited on (or just opened and not yet filled). */
   own?: { staffId?: string | null; userId: string };
 };
 
-/** A ticket this person may open when they see only their own work: credited on a line, or they rang it up. */
+
+/**
+ * A ticket this person may open when they see only their own work: one they are credited on a line of. Having rung a ticket up is not
+ * ownership (it would keep showing a client's ticket to whoever once opened it, and to a demoted login), with one exception: a ticket
+ * with no lines yet that they opened in the last hour, so a sale they just started isn't lost to them before the first line is added.
+ */
 function ownSaleCondition(own: { staffId?: string | null; userId: string }) {
-  return own.staffId
-    ? sql`(${schema.sales.createdByUserId} = ${own.userId} or exists (select 1 from sale_lines sl where sl.sale_id = ${schema.sales.id} and sl.staff_id = ${own.staffId}))`
-    : sql`${schema.sales.createdByUserId} = ${own.userId}`;
+  const fresh = sql`(${schema.sales.createdByUserId} = ${own.userId} and ${schema.sales.createdAt} > now() - interval '1 hour' and not exists (select 1 from sale_lines sl where sl.sale_id = ${schema.sales.id}))`;
+  return own.staffId ? sql`(exists (select 1 from sale_lines sl where sl.sale_id = ${schema.sales.id} and sl.staff_id = ${own.staffId}) or ${fresh})` : fresh;
 }
 
 export async function isOwnSale(businessId: string, saleId: string, own: { staffId?: string | null; userId: string }): Promise<boolean> {

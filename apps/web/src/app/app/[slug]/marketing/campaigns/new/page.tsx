@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "New campaign" };
 
 export default async function NewCampaignPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "reports.view");
+  const { business } = await requireAction(slug, "marketing.send");
   const sms = await smsAvailableFor(business.id);
   const [services, staff, locations] = await withTenant(business.id, async (tx) => [
     await serviceGroups(business, { meta: "none" }),

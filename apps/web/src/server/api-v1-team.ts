@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, schema, withTenant } from "@angelic/db";
-import { ACTIONS, DEFAULT_ROLE_META, DEFAULT_ROLE_PERMISSIONS, PERMISSION_GROUPS, ROLES, instantToISODate, mondayOf } from "@angelic/core";
-import { ApiErrors, apiAudit, firstForeign, list, pageParams, readBody, type ApiContext, probe } from "@/lib/api";
+import { ACTIONS, PERMISSION_GROUPS, instantToISODate, mondayOf } from "@angelic/core";
+import { ApiErrors, apiAudit, apiError, firstForeign, list, pageParams, readBody, type ApiContext, probe } from "@/lib/api";
+import { createRole, deleteRole, ensureDefaultRoles, permissionsForRole, RoleError, updateRole, type RoleActor } from "@/server/roles";
 import { rateAsOf } from "@/lib/pay-rates";
 import { shiftISODate } from "@/lib/utils";
 import { listPayRates, recordPayChange } from "@/server/pay-rates";
@@ -484,25 +485,16 @@ export async function deleteTimeEntryApi(ctx: ApiContext, id: string) {
 // ---------------------------------------------------------------------------
 // Roles (roles:read / roles:write)
 // ---------------------------------------------------------------------------
-// The login system keeps its own copy of each custom role (for invitations). A key cannot reach it: the calls that sync it need a signed-in person.
-// So a role made or changed here lives in the roles table only, and is registered with the login system the next time someone saves it in the app.
+// Every write goes through server/roles.ts with the same rules as the app: nobody grants, removes or deletes permissions their own role
+// lacks, nobody edits their own role, and the Owner role is locked. A key has no person at the keyboard, so it acts as the person who
+// created it (api_keys.created_by_user_id), with that person's current role and permissions; once the creator is gone or no longer a
+// member, the key can't change roles at all (403). The login system keeps its own copy of each custom role (for invitations), which only
+// a signed-in person can update: a role made or changed here is registered with it the next time someone saves it in the app.
 
 type RoleRow = typeof schema.roles.$inferSelect;
 const serializeRole = (r: RoleRow, members: number) => ({
   id: r.id, key: r.key, name: r.name, description: r.description, permissions: r.permissions, is_system: r.isSystem, is_locked: r.key === "owner", member_count: members, sort_order: r.sortOrder,
 });
-
-/** Make sure the business has the four built-in roles (idempotent), as the app does before listing roles. */
-async function ensureDefaultRolesApi(businessId: string) {
-  await withTenant(businessId, async (tx) => {
-    const have = new Set((await tx.select({ key: schema.roles.key }).from(schema.roles).where(eq(schema.roles.businessId, businessId))).map((r) => r.key));
-    const missingKeys = ROLES.filter((k) => !have.has(k));
-    if (!missingKeys.length) return;
-    await tx.insert(schema.roles).values(missingKeys.map((key) => ({
-      businessId, key, name: DEFAULT_ROLE_META[key].name, description: DEFAULT_ROLE_META[key].description, permissions: [...DEFAULT_ROLE_PERMISSIONS[key]], isSystem: true, sortOrder: ROLES.indexOf(key),
-    })));
-  });
-}
 
 /** How many logins hold each role key (a count only; nobody's identity is read). */
 async function memberCounts(businessId: string) {
@@ -511,7 +503,7 @@ async function memberCounts(businessId: string) {
 }
 
 export async function listRolesApi(ctx: ApiContext) {
-  await ensureDefaultRolesApi(ctx.business.id);
+  await ensureDefaultRoles(ctx.business.id);
   const [roles, counts] = await Promise.all([
     withTenant(ctx.business.id, (tx) => tx.select().from(schema.roles).where(eq(schema.roles.businessId, ctx.business.id)).orderBy(asc(schema.roles.sortOrder), asc(schema.roles.name))),
     memberCounts(ctx.business.id),
@@ -520,7 +512,7 @@ export async function listRolesApi(ctx: ApiContext) {
 }
 
 async function findRole(businessId: string, id: string) {
-  await ensureDefaultRolesApi(businessId);
+  await ensureDefaultRoles(businessId);
   return withTenant(businessId, (tx) => tx.query.roles.findFirst({ where: and(eq(schema.roles.id, id), eq(schema.roles.businessId, businessId)) }));
 }
 
@@ -541,29 +533,39 @@ export const rolePatch = z.object({
 }).partial().strict();
 export const roleCreate = rolePatch.required({ name: true, permissions: true });
 
-/** Same key rule as the app: a slug of the name, made unique with _2, _3 ... */
-function slugifyKey(name: string): string {
-  return name.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+const noActor = () => apiError(403, "forbidden", "This key can't change roles: the person who created it is no longer a member of the business. Create a new key.");
+
+/**
+ * The person a key acts as when it changes roles: its creator, with the role and permissions they hold right now. Null when the key has no
+ * recorded creator (keys made before creators were recorded) or the creator has left the business.
+ */
+async function apiRoleActor(ctx: ApiContext): Promise<RoleActor | null> {
+  const key = await withTenant(ctx.business.id, (tx) => tx.query.apiKeys.findFirst({ where: and(eq(schema.apiKeys.id, ctx.keyId), eq(schema.apiKeys.businessId, ctx.business.id)), columns: { createdByUserId: true } }));
+  if (!key?.createdByUserId) return null;
+  const membership = await db.query.member.findFirst({ where: and(eq(schema.member.organizationId, ctx.business.id), eq(schema.member.userId, key.createdByUserId)), columns: { role: true } });
+  if (!membership) return null;
+  return { userId: key.createdByUserId, role: membership.role, permissions: await permissionsForRole(ctx.business.id, membership.role) };
+}
+
+function roleFailure(e: unknown) {
+  if (!(e instanceof RoleError)) throw e;
+  if (e.kind === "forbidden") return apiError(403, "forbidden", e.message);
+  if (e.kind === "not_found") return ApiErrors.notFound("role");
+  return ApiErrors.conflict(e.message);
 }
 
 export async function createRoleApi(ctx: ApiContext, req: Request) {
   const body = await readBody(req, roleCreate);
   if ("error" in body) return body.error;
   const d = body.data;
-  await ensureDefaultRolesApi(ctx.business.id);
-  const row = await withTenant(ctx.business.id, async (tx) => {
-    const keys = new Set((await tx.select({ key: schema.roles.key }).from(schema.roles).where(eq(schema.roles.businessId, ctx.business.id))).map((r) => r.key));
-    let key = slugifyKey(d.name) || "role";
-    if (keys.has(key) || (ROLES as readonly string[]).includes(key)) {
-      let i = 2;
-      while (keys.has(`${key}_${i}`)) i++;
-      key = `${key}_${i}`;
-    }
-    const [r] = await tx.insert(schema.roles).values({ businessId: ctx.business.id, key, name: d.name, description: d.description ?? null, permissions: d.permissions, isSystem: false, sortOrder: 100 }).returning();
-    return r!;
-  });
-  await apiAudit(ctx, "api.role.create", "role", row.id, { name: row.name, permissions: row.permissions });
-  return NextResponse.json({ data: serializeRole(row, 0) }, { status: 201 });
+  const actor = await apiRoleActor(ctx);
+  if (!actor) return noActor();
+  try {
+    const row = await createRole(ctx.business.id, { name: d.name, description: d.description ?? null, permissions: d.permissions }, actor, { syncAuth: false, viaKeyId: ctx.keyId });
+    return NextResponse.json({ data: serializeRole(row, 0) }, { status: 201 });
+  } catch (e) {
+    return roleFailure(e);
+  }
 }
 
 export async function patchRoleApi(ctx: ApiContext, req: Request, id: string) {
@@ -572,25 +574,26 @@ export async function patchRoleApi(ctx: ApiContext, req: Request, id: string) {
   const d = body.data;
   const cur = await findRole(ctx.business.id, id);
   if (!cur) return ApiErrors.notFound("role");
-  if (cur.key === "owner") return ApiErrors.conflict("The Owner role can't be changed.");
-  const set: Partial<typeof schema.roles.$inferInsert> = {};
-  if (d.name !== undefined) set.name = d.name;
-  if (d.description !== undefined) set.description = d.description;
-  if (d.permissions !== undefined) set.permissions = d.permissions;
-  const row = Object.keys(set).length
-    ? (await withTenant(ctx.business.id, (tx) => tx.update(schema.roles).set(set).where(and(eq(schema.roles.id, id), eq(schema.roles.businessId, ctx.business.id))).returning()))[0]!
-    : cur;
-  await apiAudit(ctx, "api.role.update", "role", id, d);
-  return NextResponse.json({ data: serializeRole(row, (await memberCounts(ctx.business.id)).get(row.key) ?? 0) });
+  const actor = await apiRoleActor(ctx);
+  if (!actor) return noActor();
+  try {
+    // Omitted fields stay as they are (the app's form always sends all three).
+    const row = await updateRole(ctx.business.id, id, { name: d.name ?? cur.name, description: d.description === undefined ? cur.description : d.description, permissions: d.permissions ?? cur.permissions }, actor, { syncAuth: false, viaKeyId: ctx.keyId });
+    return NextResponse.json({ data: serializeRole(row, (await memberCounts(ctx.business.id)).get(row.key) ?? 0) });
+  } catch (e) {
+    return roleFailure(e);
+  }
 }
 
 export async function deleteRoleApi(ctx: ApiContext, id: string) {
   const role = await findRole(ctx.business.id, id);
   if (!role) return ApiErrors.notFound("role");
-  if (role.isSystem) return ApiErrors.conflict("Built-in roles can't be deleted. You can edit their permissions instead.");
-  const n = (await memberCounts(ctx.business.id)).get(role.key) ?? 0;
-  if (n > 0) return ApiErrors.conflict(`${n} member(s) still have this role. Move them to another role first.`);
-  await withTenant(ctx.business.id, (tx) => tx.delete(schema.roles).where(and(eq(schema.roles.id, id), eq(schema.roles.businessId, ctx.business.id))));
-  await apiAudit(ctx, "api.role.delete", "role", id, { key: role.key });
-  return NextResponse.json({ data: { id, deleted: true } });
+  const actor = await apiRoleActor(ctx);
+  if (!actor) return noActor();
+  try {
+    await deleteRole(ctx.business.id, id, actor, { syncAuth: false, viaKeyId: ctx.keyId });
+    return NextResponse.json({ data: { id, deleted: true } });
+  } catch (e) {
+    return roleFailure(e);
+  }
 }

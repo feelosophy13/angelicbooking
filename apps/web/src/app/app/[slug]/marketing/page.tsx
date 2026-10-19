@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Campaigns" };
 
 export default async function CampaignsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "reports.view");
+  const { business } = await requireAction(slug, "marketing.send");
   const rows = await listCampaigns(business.id);
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
   return (

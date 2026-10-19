@@ -813,6 +813,13 @@
       "when": 1795200400000,
       "tag": "0115_settings_permissions",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1795200500000,
+      "tag": "0116_marketing_send",
+      "breakpoints": true
     }
   ]
 }

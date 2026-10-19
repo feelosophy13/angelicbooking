@@ -8,7 +8,7 @@ import { ConfirmSubmit } from "@/components/form";
 import { notFound } from "next/navigation";
 import { instantToISODate, isInsideCancelWindow, lateCancelFee } from "@angelic/core";
 import { requireAppointmentAccess } from "@/server/appointment-access";
-import { bookingAccess } from "@/lib/appointment-access";
+import { bookingAccess, coversLine } from "@/lib/appointment-access";
 import { getAppointmentDetail } from "@/server/appointments";
 import { getStaffAvailability } from "@/server/availability";
 import { timingForStaff } from "@/server/stylist-pricing";
@@ -73,14 +73,18 @@ export default async function AppointmentPage({
   if (!data) notFound();
   const canWriteAny = can(permissions, "appointments.write.any");
   // What a Provider may do to their own appointment: status, notes, photos and checkout. Changing the booking itself (services, moves, series, cancelling) stays with the desk.
+  // On a visit shared with a colleague ("shared" access) the status reaches the colleague's lines too, so only notes, photos, supplies and
+  // checkout stay open, and the booking controls work on their own lines alone.
+  const mine = access !== "any";
   const canEdit = canWriteAny || (access === "own" && can(permissions, "appointments.write.own"));
+  const canNote = canWriteAny || (mine && can(permissions, "appointments.write.own"));
   // The owner decides whether a Provider may also change the booking itself, cancel it, or book more.
-  const canChange = canWriteAny || (access === "own" && can(permissions, "appointments.change.own"));
+  const canChange = canWriteAny || (mine && can(permissions, "appointments.change.own"));
   const canCancel = canWriteAny || (access === "own" && can(permissions, "appointments.cancel.own"));
   const canBook = !!bookingAccess(permissions, staffId ?? null);
   // Someone working their own calendar can only add or move services onto themselves, so there is no one to choose.
-  const ownStaff = access === "own" ? (staffId ?? null) : null;
-  const canCheckout = canEdit && can(permissions, "checkout.take");
+  const ownStaff = mine ? (staffId ?? null) : null;
+  const canCheckout = canNote && can(permissions, "checkout.take");
   const canFillForms = can(permissions, "clients.write");
   const { appointment, items, client, services, staff } = data;
   const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, id), ne(schema.sales.status, "void")), orderBy: desc(schema.sales.createdAt) }));
@@ -246,7 +250,7 @@ export default async function AppointmentPage({
                       </p>
                     </div>
                     <span className="text-sm">{formatMoney(segs.reduce((s, i) => s + i.priceCents, 0), business.currency)}</span>
-                    {!locked && !cancelled && canChange ? (
+                    {!locked && !cancelled && canChange && coversLine(access, staffId ?? null, head.staffId) ? (
                       <div className="flex gap-1">
                         <LinkButton href={`${self}?moveItemId=${head.id}`} variant="ghost" size="sm">Move</LinkButton>
                         <form action={removeService}>
@@ -263,7 +267,7 @@ export default async function AppointmentPage({
             </ul>
           </Card>
 
-          {moveItem && canChange ? (
+          {moveItem && canChange && coversLine(access, staffId ?? null, moveItem.staffId) ? (
             <Card className="p-4 ring-2 ring-brand-200">
               <h2 className="mb-1 font-medium">Move {moveItem.serviceName.replace(" (finish)", "")}</h2>
               <form className={`mb-3 grid items-end gap-2 ${ownStaff ? "grid-cols-[1fr_auto]" : "grid-cols-[1fr_1fr_auto]"}`}>
@@ -321,7 +325,7 @@ export default async function AppointmentPage({
 
           <Card className="p-4">
             <h2 className="mb-2 font-medium">Notes</h2>
-            {canEdit ? (
+            {canNote ? (
               <form action={saveNotes} className="space-y-2">
                 <input type="hidden" name="slug" value={slug} />
                 <input type="hidden" name="appointmentId" value={id} />
@@ -347,8 +351,8 @@ export default async function AppointmentPage({
             </Card>
           ) : null}
 
-          {appointment.kind === "visit" && canEdit && can(permissions, "inventory.log") ? <SuppliesCard slug={slug} businessId={business.id} appointmentId={id} /> : null}
-          {appointment.kind === "visit" && canEdit ? <VisitPhotosCard slug={slug} appointmentId={id} groups={photoGroups} pairs={photoPairs} tagSuggestions={photoTags} /> : null}
+          {appointment.kind === "visit" && canNote && can(permissions, "inventory.log") ? <SuppliesCard slug={slug} businessId={business.id} appointmentId={id} /> : null}
+          {appointment.kind === "visit" && canNote ? <VisitPhotosCard slug={slug} appointmentId={id} groups={photoGroups.filter((g) => coversLine(access, staffId ?? null, g.staffId))} pairs={photoPairs} tagSuggestions={photoTags} /> : null}
         </div>
 
         <div className="space-y-6">

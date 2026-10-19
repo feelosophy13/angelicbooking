@@ -3,6 +3,7 @@ import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { addMembershipPeriod, isMembershipInterval, periodNoun, renewedCredits } from "@angelic/core";
 import { SaleError } from "./sales";
 import { validAtLocation } from "./locations";
+import { maskCode } from "@/lib/visibility";
 
 /** Gift cards, packages and memberships: catalog, selling at checkout, redemption. */
 
@@ -133,7 +134,7 @@ export async function fulfilOfferLines(tx: TenantDb, businessId: string, saleId:
   }
 }
 
-/** Pay (part of) a sale with a gift card. */
+/** Pay (part of) a sale with a gift card. The payment and the audit row name who redeemed it; neither keeps the full code (a code plus a balance is spendable anywhere). */
 export async function redeemGiftCard(input: { businessId: string; saleId: string; code: string; amountCents: number; actorUserId: string }) {
   return withTenant(input.businessId, async (tx) => {
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
@@ -153,8 +154,8 @@ export async function redeemGiftCard(input: { businessId: string; saleId: string
       .where(and(eq(schema.giftCards.id, card.id), sql`${schema.giftCards.balanceCents} >= ${amount}`))
       .returning({ id: schema.giftCards.id });
     if (!spent.length) throw new SaleError("That gift card no longer has enough balance.");
-    await tx.insert(schema.payments).values({ businessId: input.businessId, saleId: sale.id, method: "gift_card", status: "succeeded", amountCents: amount, tipCents: 0, note: `Gift card ${code}`, giftCardId: card.id, createdByUserId: input.actorUserId });
-    await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "payment.gift_card", entity: "sale", entityId: sale.id, diff: JSON.stringify({ code, amount }) });
+    await tx.insert(schema.payments).values({ businessId: input.businessId, saleId: sale.id, method: "gift_card", status: "succeeded", amountCents: amount, tipCents: 0, note: `Gift card ${maskCode(code)}`, giftCardId: card.id, createdByUserId: input.actorUserId });
+    await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "payment.gift_card", entity: "sale", entityId: sale.id, diff: JSON.stringify({ giftCardId: card.id, code: maskCode(code), amount, redeemedByUserId: input.actorUserId }) });
     return amount;
   });
 }

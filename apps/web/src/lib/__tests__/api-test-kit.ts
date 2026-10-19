@@ -19,9 +19,9 @@ export const send = (method: string, body?: unknown): RequestInit => ({ method, 
  * Make a key. By default it is an OLDER key (scope version 1: its scopes expand to everything they used to allow), which is what most
  * integration tests want; pass `version: 2` for a key that holds exactly the scopes given.
  */
-export async function mkKey(businessId: string, scopes: string[], opts: { version?: 1 | 2; allowedIps?: string[]; rateLimitPerMin?: number } = {}): Promise<string> {
+export async function mkKey(businessId: string, scopes: string[], opts: { version?: 1 | 2; allowedIps?: string[]; rateLimitPerMin?: number; /** The member who made the key: role writes act as this person. */ createdBy?: string | null } = {}): Promise<string> {
   const k = generateKey();
-  await withTenant(businessId, (tx) => tx.insert(schema.apiKeys).values({ businessId, name: "test", prefix: k.prefix, keyHash: k.hash, scopes, scopeVersion: opts.version ?? 1, allowedIps: opts.allowedIps ?? [], rateLimitPerMin: opts.rateLimitPerMin ?? null }));
+  await withTenant(businessId, (tx) => tx.insert(schema.apiKeys).values({ businessId, name: "test", prefix: k.prefix, keyHash: k.hash, scopes, scopeVersion: opts.version ?? 1, allowedIps: opts.allowedIps ?? [], rateLimitPerMin: opts.rateLimitPerMin ?? null, createdByUserId: opts.createdBy ?? null }));
   return k.key;
 }
 

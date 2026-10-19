@@ -56,6 +56,44 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ## 2. Before real customers
 
+### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
+- [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
+      the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts
+      as the person who created it (`api_keys.created_by_user_id`) with their current role; a key with no recorded creator, or whose
+      creator left the business, gets 403 on every role write. Audit rows carry the creator as actor and the key id. The login system's
+      copy of a custom role is still only synced when someone saves it in the app (a key has no session to call it with).
+- [x] S2 Gift cards: the page (and its sidebar entry) needs `giftcards.issue` or `reports.view`; codes show in full only to issuers,
+      others see the last four. Redeeming a card at checkout records who redeemed it on the payment and in the audit log, and neither
+      keeps the full code (the ticket note and the log say "Gift card ••••1234"). Gap: Front desk can no longer look up a card's balance
+      on that page; selling and redeeming at checkout still work with `checkout.take`.
+- [x] S3 Partial ownership: `appointmentAccess` now answers "own" (every live line is mine) or "shared" (some lines are a colleague's).
+      On a shared visit an own-calendar role may read it, edit notes, add or remove photos of their own service, log supplies and start
+      checkout, and (with "change their own bookings") add, move or remove their own lines only; they may not cancel it, change its
+      status (which every line follows), or move it as one. `requireAppointmentAccess` refuses shared access by default; a change opts
+      in with the line it is about (`line`) or `shared: "allow"` for work that belongs to no single line. The appointment page, the calendar
+      drag, quick status and the mobile API follow the same rule (the mobile detail says `can.write: false` on a shared visit).
+- [x] S4 Private file URLs (`/api/files/<id>`) follow the pages that show them: a client's profile photo needs `clients.photos`, a
+      signature or form attachment `clients.notes`, a visit photo the appointment it belongs to (whoever may open that appointment; an
+      own-calendar role only on visits they are booked on). A signed-in client still sees their own form files.
+- [x] S5 Classes: the list and a session page need a calendar permission (`appointments.read.any` or `.own`); an own-calendar role sees
+      only the classes they teach (another instructor's is a 404); the roster prints phone and email only with `clients.read`. The
+      Classes sidebar entry follows.
+- [x] S6 Staff directory: a co-worker's email and whether they have a login (and which role) show only with `staff.manage` or
+      `members.manage`; everyone else sees name, position, location and calendar status.
+- [x] S7 Own tickets: for a role that sees only its own calendar, "own" now means credited on a line of the ticket. Having rung it up no
+      longer counts (it kept showing clients' tickets to whoever once opened them, and to a demoted login), except a ticket with no lines
+      yet that they opened in the last hour, so a sale they just started isn't lost before the first line goes on.
+- [x] S8 Mobile appointment detail strips the client's contact details (everything but the name) without `clients.read`, and the client's
+      private notes without `clients.notes`; `can.write` is false on a visit shared with a colleague.
+- [x] Nav and page mismatches (Part 2b), 2026-10-18 (migration 0116): new permission `marketing.send` ("Send marketing", in the role
+      editor's own Marketing group; Manager by default, Front desk and Provider not) gates the Marketing pages (campaigns, promo codes,
+      sending) and the Marketing sidebar and ⌘K entries instead of `reports.view`; the `campaigns:` API scopes need it too. Back-fill rule
+      for stored roles: reports.view → marketing.send. Automations (list, new, edit, toggle, the sidebar entry and the Marketing tile) are
+      `business.manage` throughout. Sidebar entries now match their pages: Waitlist needs `appointments.read.any`, Reviews `clients.read`,
+      Classes a calendar permission, Gift cards `giftcards.issue` or `reports.view`; the phone menu's Clients tab needs `clients.read`.
+      The Access tab disables the Owner option for non-owners and the Change role button (with the reason) whenever the action would
+      refuse; the rules live in `lib/role-rules.ts`, shared by the page and `setMemberRole`.
+
 ### Full review 2026-10-16 (`REVIEW-2026-10-16.md` has every finding; the "Fix first" table is the order)
 - [x] Client-data permissions split, 2026-10-18 (migration 0114): `clients.read` ("View clients") now means only the client list, a
       client's contact details and visit history. Split out of it: `clients.export` (the CSV download, now in the activity log with the

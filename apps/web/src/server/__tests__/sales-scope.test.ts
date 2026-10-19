@@ -1,5 +1,6 @@
 /**
- * Integration test: a role that sees only its own calendar sees only its own tickets (credited on a line, or rang it up).
+ * Integration test: a role that sees only its own calendar sees only its own tickets: credited on a line, or an empty ticket they opened in
+ * the last hour. Having rung a ticket up is not ownership once it has lines (a demoted login would keep seeing clients' tickets).
  * Needs Postgres at DATABASE_URL (the app role, RLS forced); skipped otherwise.
  */
 import "../../../../../packages/db/src/env";
@@ -41,17 +42,29 @@ describe.skipIf(!up)("own tickets", () => {
     await db.delete(schema.user).where(eq(schema.user.id, ava));
   });
 
-  it("shows a provider her own tickets and the ones she rang up, not a colleague's", async () => {
+  it("shows a provider the tickets she is credited on and the empty one she just opened, not a colleague's or one she merely rang up", async () => {
     const mine = await openWalkInSale({ businessId: kit.A, actorUserId: owner, currency: "usd" });
     await addServiceLine({ businessId: kit.A, saleId: mine, serviceId, staffId: avaStaff, taxRateBps: 0, actorUserId: owner });
     const priyas = await openWalkInSale({ businessId: kit.A, actorUserId: owner, currency: "usd" });
     await addServiceLine({ businessId: kit.A, saleId: priyas, serviceId, staffId: priyaStaff, taxRateBps: 0, actorUserId: owner });
-    const rangUp = await openWalkInSale({ businessId: kit.A, actorUserId: ava, currency: "usd" });
+    // Just opened by Ava, nothing on it yet: hers to finish.
+    const justOpened = await openWalkInSale({ businessId: kit.A, actorUserId: ava, currency: "usd" });
+    // Rang up by Ava for Priya's work: Priya's ticket, not Ava's.
+    const rangUpForPriya = await openWalkInSale({ businessId: kit.A, actorUserId: ava, currency: "usd" });
+    await addServiceLine({ businessId: kit.A, saleId: rangUpForPriya, serviceId, staffId: priyaStaff, taxRateBps: 0, actorUserId: ava });
+    // Opened by Ava two hours ago and never filled: no longer hers.
+    const stale = await openWalkInSale({ businessId: kit.A, actorUserId: ava, currency: "usd" });
+    await withTenant(kit.A, (tx) => tx.update(schema.sales).set({ createdAt: new Date(Date.now() - 2 * 3_600_000) }).where(eq(schema.sales.id, stale)));
     const own = { staffId: avaStaff, userId: ava };
     expect(await isOwnSale(kit.A, mine, own)).toBe(true);
     expect(await isOwnSale(kit.A, priyas, own)).toBe(false);
-    expect(await isOwnSale(kit.A, rangUp, own)).toBe(true);
+    expect(await isOwnSale(kit.A, justOpened, own)).toBe(true);
+    expect(await isOwnSale(kit.A, rangUpForPriya, own)).toBe(false);
+    expect(await isOwnSale(kit.A, stale, own)).toBe(false);
     const { rows } = await listSales(kit.A, { status: "all", own });
-    expect(rows.map((r) => r.sale.id).sort()).toEqual([mine, rangUp].sort());
+    expect(rows.map((r) => r.sale.id).sort()).toEqual([mine, justOpened].sort());
+    // A login not linked to a staff member gets only the empty ticket it just opened.
+    expect(await isOwnSale(kit.A, justOpened, { staffId: null, userId: ava })).toBe(true);
+    expect(await isOwnSale(kit.A, rangUpForPriya, { staffId: null, userId: ava })).toBe(false);
   });
 });

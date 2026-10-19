@@ -1,4 +1,5 @@
 import { can, type Action } from "@angelic/core";
+import { canOpenGiftCards } from "./visibility";
 
 /**
  * The dashboard's navigation, in one place: the sidebar sections, the Settings directory and the ⌘K page
@@ -29,8 +30,8 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     { title: "Schedule", items: [
       it(base, "Calendar", "CalendarDays", { exact: true }),
       ...(ok("appointments.read.any") ? [it(`${base}/appointments`, "Appointments", "CalendarCheck"), it(`${base}/staff-hours`, "Staff hours", "CalendarClock")] : []),
-      it(`${base}/classes`, "Classes", "GraduationCap"),
-      it(`${base}/waitlist`, "Waitlist", "ListOrdered"),
+      ...(ok("appointments.read.any") || ok("appointments.read.own") ? [it(`${base}/classes`, "Classes", "GraduationCap")] : []),
+      ...(ok("appointments.read.any") ? [it(`${base}/waitlist`, "Waitlist", "ListOrdered")] : []),
       it(`${base}/time`, "Time clock", "Clock"),
     ] },
     // Who: the client and team directories, and who may do what.
@@ -53,7 +54,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       ...(ok("inventory.manage") ? [it(`${base}/inventory`, "Inventory", "Boxes")] : ok("inventory.log") ? [it(`${base}/inventory/use`, "Log supplies", "Boxes")] : []),
       it(`${base}/packages`, "Packages", "Package"),
       it(`${base}/memberships`, "Memberships", "BadgePercent"),
-      it(`${base}/gift-cards`, "Gift cards", "Gift"),
+      ...(canOpenGiftCards(permissions) ? [it(`${base}/gift-cards`, "Gift cards", "Gift")] : []),
     ] },
     { title: "Money", items: [
       ...(ok("checkout.take") ? [it(`${base}/sales`, "Sales & checkout", "Receipt")] : []),
@@ -62,9 +63,9 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     ] },
     // Bringing clients back: campaigns and promo codes, automated messages, loyalty, and what clients say.
     { title: "Grow", items: [
-      ...(ok("reports.view") ? [it(`${base}/marketing`, "Marketing", "Megaphone", { exclude: [`${base}/marketing/automations`] }), it(`${base}/marketing/automations`, "Automations", "Workflow")] : []),
-      ...(ok("business.manage") ? [it(`${base}/loyalty`, "Loyalty & referrals", "Heart", { exclude: [`${base}/settings/loyalty`] })] : []),
-      it(`${base}/reviews`, "Reviews", "Star"),
+      ...(ok("marketing.send") ? [it(`${base}/marketing`, "Marketing", "Megaphone", { exclude: [`${base}/marketing/automations`] })] : []),
+      ...(ok("business.manage") ? [it(`${base}/marketing/automations`, "Automations", "Workflow"), it(`${base}/loyalty`, "Loyalty & referrals", "Heart", { exclude: [`${base}/settings/loyalty`] })] : []),
+      ...(ok("clients.read") ? [it(`${base}/reviews`, "Reviews", "Star")] : []),
     ] },
     { title: "", items: [
       ...(ok("integrations.manage") ? [it(`${base}/settings/api`, "API", "KeyRound")] : []),
@@ -151,7 +152,7 @@ export function searchPages(base: string, permissions: Perms): { title: string; 
     { title: "Block time", href: `${base}/appointments/block`, keywords: "schedule time off" },
     { title: "New client", href: `${base}/clients/new` },
     ...(ok("inventory.manage") ? [{ title: "Receive stock", href: `${base}/inventory/receive`, keywords: "inventory delivery" }, { title: "Count stock", href: `${base}/inventory/count`, keywords: "inventory stocktake" }, { title: "Reorder", href: `${base}/inventory/reorder`, keywords: "inventory low stock purchase order" }, { title: "Purchase orders", href: `${base}/inventory/orders`, keywords: "inventory suppliers" }, { title: "Stock history", href: `${base}/inventory/history`, keywords: "inventory movements ledger log audit" }] : []),
-    ...(ok("reports.view") ? [{ title: "Campaigns", href: `${base}/marketing`, keywords: "marketing email text" }, { title: "Promo codes", href: `${base}/marketing/promos`, keywords: "marketing discount" }] : []),
+    ...(ok("marketing.send") ? [{ title: "Campaigns", href: `${base}/marketing`, keywords: "marketing email text" }, { title: "Promo codes", href: `${base}/marketing/promos`, keywords: "marketing discount" }] : []),
   ];
   const settings = settingsGroups(base, permissions).flatMap((g) => g.entries.map((e) => ({ title: e.title === "Forms" || e.title === "Reviews" ? `${e.title} settings` : e.title, href: e.href, keywords: `settings ${g.title} ${e.blurb}` })));
   const seen = new Set<string>();

@@ -49,17 +49,18 @@ export async function moveAppointmentItem(input: {
   const itemRow = await withTenant(bizId, (tx) => tx.query.appointmentItems.findFirst({ where: eq(dbSchema.appointmentItems.id, parsed.data.itemId), columns: { appointmentId: true } }));
   if (!itemRow) return { ok: false, error: "That appointment no longer exists." };
   // Dragging a block of time is a block permission; dragging a visit is a change to the booking.
-  const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, await modeForKind(bizId, itemRow.appointmentId, "change"));
-  if (ctx.access === "own" && parsed.data.newStaffId && parsed.data.newStaffId !== ctx.staffId) return { ok: false, error: "You can only move your own appointments to your own column." };
+  const ctx = await requireAppointmentAccess(parsed.data.slug, itemRow.appointmentId, await modeForKind(bizId, itemRow.appointmentId, "change"), { line: parsed.data.itemId });
+  if (ctx.access !== "any" && parsed.data.newStaffId && parsed.data.newStaffId !== ctx.staffId) return { ok: false, error: "You can only move your own appointments to your own column." };
   try {
     const newStartAt = new Date(parsed.data.newStartISO);
     // A visit with several services moves as one when it is dragged to a new time in the same column (each service keeps its place
-    // relative to the others). Dropping it in another stylist's column hands over just that service.
+    // relative to the others). Dropping it in another stylist's column hands over just that service. Someone who shares the visit with a
+    // colleague moves only their own service: moving it as one would move the colleague's too.
     const items = await withTenant(ctx.business.id, (tx) => tx.select().from(dbSchema.appointmentItems).where(eq(dbSchema.appointmentItems.appointmentId, itemRow.appointmentId)));
     const live = items.filter((i) => i.status !== "cancelled" && i.status !== "completed" && i.status !== "no_show");
     const dragged = live.find((i) => i.id === parsed.data.itemId);
     const sameColumn = !parsed.data.newStaffId || parsed.data.newStaffId === dragged?.staffId;
-    if (dragged && sameColumn && live.length > 1 && !dragged.classSessionId) {
+    if (dragged && sameColumn && live.length > 1 && !dragged.classSessionId && ctx.access !== "shared") {
       const first = live.reduce((a, b) => (a.startAt < b.startAt ? a : b));
       await rescheduleAppointment({ businessId: ctx.business.id, appointmentId: itemRow.appointmentId, newStartAt: new Date(newStartAt.getTime() - (dragged.startAt.getTime() - first.startAt.getTime())), actorUserId: ctx.user.id });
     } else {

@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { can, instantToISODate } from "@angelic/core";
-import { requireBusiness } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
+import { canSeeClassSession, canSeeClientContact } from "@/lib/visibility";
 import { getSession } from "@/server/classes";
 import { StatusBadge } from "@/components/status-badge";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
@@ -15,18 +16,21 @@ import { changeStatus } from "../../appointments/[id]/actions";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; sessionId: string }> }): Promise<Metadata> {
   const { slug, sessionId } = await params;
-  const { business } = await requireBusiness(slug);
+  const { business, permissions, staffId } = await requireAnyAction(slug, "appointments.read.any", "appointments.read.own");
   const s = await getSession(business.id, sessionId);
-  return { title: s?.service ? `${s.service.name} · Classes` : "Class" };
+  return { title: s?.service && canSeeClassSession(permissions, staffId ?? null, s.session.staffId) ? `${s.service.name} · Classes` : "Class" };
 }
 
 export default async function ClassSessionPage({ params }: { params: Promise<{ slug: string; sessionId: string }> }) {
   const { slug, sessionId } = await params;
-  const { business, permissions } = await requireBusiness(slug);
+  const { business, permissions, staffId } = await requireAnyAction(slug, "appointments.read.any", "appointments.read.own");
   const s = await getSession(business.id, sessionId);
-  if (!s) notFound();
+  // An own-calendar role opens only their own classes; another instructor's class is as good as absent.
+  if (!s || !canSeeClassSession(permissions, staffId ?? null, s.session.staffId)) notFound();
   const tz = business.timezone;
   const write = can(permissions, "appointments.write.any");
+  // The roster prints contact details only to whoever may view clients.
+  const contact = canSeeClientContact(permissions);
   const open = s.session.status === "scheduled" && s.session.startAt > new Date();
   const date = instantToISODate(s.session.startAt, tz);
   return (
@@ -48,7 +52,7 @@ export default async function ClassSessionPage({ params }: { params: Promise<{ s
                   <li key={r.appointmentId} className="flex flex-wrap items-center gap-3 px-4 py-2">
                     <div className="min-w-0 flex-1">
                       <Link href={`/app/${slug}/appointments/${r.appointmentId}`} className={`font-medium hover:underline ${r.status === "cancelled" || r.status === "no_show" ? "text-stone-400 line-through" : ""}`}>{r.firstName ? `${r.firstName} ${r.lastName ?? ""}`.trim() : "Walk-in"}</Link>
-                      <p className="text-xs text-stone-500">{[r.phone, r.email, r.source === "online" ? "booked online" : null, r.depositStatus === "paid" || r.depositStatus === "applied" ? "deposit paid" : null].filter(Boolean).join(" · ")}</p>
+                      <p className="text-xs text-stone-500">{[contact ? r.phone : null, contact ? r.email : null, r.source === "online" ? "booked online" : null, r.depositStatus === "paid" || r.depositStatus === "applied" ? "deposit paid" : null].filter(Boolean).join(" · ")}</p>
                     </div>
                     <StatusBadge status={r.status} />
                     {write && open && (r.status === "booked" || r.status === "confirmed") ? (

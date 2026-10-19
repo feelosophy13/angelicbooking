@@ -54,7 +54,7 @@ export default async function AppLayout({ children, params }: { children: React.
   const sections = navSections(base, permissions).map((s) => ({ ...s, items: s.items.map((n) => (n.href === `${base}/inbox` ? { ...n, badge: <UnreadBadge slug={slug} initial={unreadTexts} /> } : n)) }));
   const tabs: Item[] = [
     it(base, "Calendar", "CalendarDays", true),
-    it(`${base}/clients`, "Clients", "Users"),
+    ...(can(permissions, "clients.read") ? [it(`${base}/clients`, "Clients", "Users")] : []),
     can(permissions, "checkout.take") ? it(`${base}/sales`, "Checkout", "Receipt") : can(permissions, "reports.view") ? it(`${base}/reports`, "Reports", "BarChart3") : it(`${base}/time`, "Time", "Clock"),
     it(`${base}/staff`, "Staff", "UserCog"),
   ];
