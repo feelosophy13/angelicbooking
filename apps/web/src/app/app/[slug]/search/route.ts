@@ -4,6 +4,7 @@ import { schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireBusiness } from "@/lib/tenant";
 import { seesOwnOnly } from "@/lib/appointment-access";
+import { canSeeClientContact } from "@/lib/visibility";
 import { clientSearchWhere } from "@/server/clients";
 import { dateTime } from "@/lib/format";
 import { searchPages } from "@/lib/nav";
@@ -56,7 +57,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     return { clients, appts, services };
   });
   const hits = [
-    ...clients.map((c) => ({ kind: "client" as const, title: `${c.firstName} ${c.lastName}`.trim(), subtitle: [c.phone, c.email].filter(Boolean).join(" · "), href: `${base}/clients/${c.id}` })),
+    // Phone and email under a hit need "See phone, email, address and birthday" (C1).
+    ...clients.map((c) => ({ kind: "client" as const, title: `${c.firstName} ${c.lastName}`.trim(), subtitle: canSeeClientContact(permissions) ? [c.phone, c.email].filter(Boolean).join(" · ") : "", href: `${base}/clients/${c.id}` })),
     ...appts.map((a) => ({ kind: "appointment" as const, title: `${a.who} · ${a.service}`, subtitle: `${dateTime(a.startAt, business.timezone)}${a.startAt < new Date() ? " · past" : ""}${a.status === "cancelled" ? " · cancelled" : a.status === "no_show" ? " · no-show" : ""}`, href: `${base}/appointments/${a.id}` })),
     ...services.map((s) => ({ kind: "service" as const, title: s.name, subtitle: `${s.durationMin} min`, href: can(permissions, "services.manage") ? `${base}/services/${s.id}` : `${base}/services` })),
     ...pageHits,

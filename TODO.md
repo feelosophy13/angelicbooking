@@ -66,6 +66,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       the Roles page is regrouped into Calendar, Clients, Reviews, Checkout and money, Staff, Catalog and inventory, Marketing and forms,
       Settings, each group with a one-line description; `lib/visibility.ts` holds the shared "who sees what" helpers.
 
+- [x] Phase 1 clients (C1–C5), 2026-10-19: the client list hides phone and email and the Lifetime spend column (and sort) without
+      `clients.contact` / `clients.spend`; the profile hides contact details, the Spent tile and ticket amounts the same way, filters the
+      visit history to the viewer's own appointments for own-calendar roles (retail tickets need `sales.view.all`), shows ratings only with a
+      reviews permission (own ones only with `reviews.view.own`), and its tab title needs `clients.read` like the page. The appointment page
+      shows the client's phone and email only with `clients.contact` and the record notes and pinned notes only with `clients.notes`; ⌘K
+      client hits drop phone and email without `clients.contact`. Gap left: the list's search still matches on phone and email for a role
+      without `clients.contact` (it confirms a number belongs to someone); the shared `clientSearchWhere` would need a contact-less variant.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

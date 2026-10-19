@@ -9,6 +9,7 @@ import { notFound } from "next/navigation";
 import { instantToISODate, isInsideCancelWindow, lateCancelFee } from "@angelic/core";
 import { requireAppointmentAccess } from "@/server/appointment-access";
 import { bookingAccess, coversLine } from "@/lib/appointment-access";
+import { canSeeClientContact } from "@/lib/visibility";
 import { getAppointmentDetail } from "@/server/appointments";
 import { getStaffAvailability } from "@/server/availability";
 import { timingForStaff } from "@/server/stylist-pricing";
@@ -93,7 +94,10 @@ export default async function AppointmentPage({
   const cancelReasonName = appointment.cancellationReasonId ? ((await listCancellationReasons(business.id, { includeRetired: true })).find((r) => r.id === appointment.cancellationReasonId)?.name ?? null) : null;
   const activity = await appointmentActivity(business, id);
   const fmtDay = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
-  const pinnedNotes = client ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
+  // The client's contact details and private notes follow the client permissions (C1, C2), not the appointment's.
+  const canContact = canSeeClientContact(permissions);
+  const canClientNotes = can(permissions, "clients.notes");
+  const pinnedNotes = client && canClientNotes ? await withTenant(business.id, (tx) => tx.select().from(schema.clientNotes).where(eq(schema.clientNotes.clientId, client.id)).orderBy(desc(schema.clientNotes.pinned), desc(schema.clientNotes.createdAt)).limit(3)) : [];
   // The client's latest lash map, on any visit where they have one or a lash service is booked.
   const lash = client && appointment.kind === "visit" ? await withTenant(business.id, async (tx) => ({ map: (await lashMapsFor(tx, client.id, 1))[0] ?? null, write: await canWriteLashMaps(tx, { permissions, staffId }, client.id) })) : null;
   const showLash = !!lash && (!!lash.map || (lash.write && items.some((i) => /lash/i.test(i.serviceName))));
@@ -523,11 +527,11 @@ export default async function AppointmentPage({
             {client ? (
               <div className="space-y-1 text-sm">
                 <p className="font-medium">{client.firstName} {client.lastName}</p>
-                {client.phone ? <p className="text-stone-600">{client.phone}</p> : null}
-                {client.email ? <p className="text-stone-600">{client.email}</p> : null}
-                {client.notes ? <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">{client.notes}</p> : null}
+                {canContact && client.phone ? <p className="text-stone-600">{client.phone}</p> : null}
+                {canContact && client.email ? <p className="text-stone-600">{client.email}</p> : null}
+                {canClientNotes && client.notes ? <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">{client.notes}</p> : null}
                 {pinnedNotes.map((n) => <p key={n.id} className="mt-2 whitespace-pre-line rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">{n.body}</p>)}
-                <Link href={`/app/${slug}/clients/${client.id}`} className="mt-2 inline-block text-xs text-brand-700 underline">Open client</Link>
+                {can(permissions, "clients.read") ? <Link href={`/app/${slug}/clients/${client.id}`} className="mt-2 inline-block text-xs text-brand-700 underline">Open client</Link> : null}
               </div>
             ) : (
               <p className="text-sm text-stone-500">No client attached.</p>

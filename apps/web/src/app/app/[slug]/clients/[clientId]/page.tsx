@@ -6,11 +6,13 @@ import { rowClass, RowLink } from "@/components/row";
 import { HistoryTimeline } from "./history-timeline";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
 import { notFound } from "next/navigation";
-import { and, asc, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { isSmsSuppressed } from "@/server/consent";
 import { can } from "@angelic/core";
-import { requireAction, requireBusiness } from "@/lib/tenant";
+import { requireAction } from "@/lib/tenant";
+import { seesOwnOnly } from "@/lib/appointment-access";
+import { canSeeAllSales, canSeeClientContact, canSeeClientSpend, canSeeReviews } from "@/lib/visibility";
 import { formatMoney, formatTime } from "@/lib/utils";
 import { BackLink, Button, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox, MoneyInput } from "@/components/ui";
 import { ImageField } from "@/components/image-field";
@@ -45,7 +47,8 @@ import { smsAvailableFor } from "@/server/messaging";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
-  const { business } = await requireBusiness(slug);
+  // The same guard as the page (C5): a member without "View clients" learns no client's name from the tab title.
+  const { business } = await requireAction(slug, "clients.read");
   const c = await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) }));
   return { title: c ? `${c.firstName} ${c.lastName}`.trim() + " · Clients" : "Client" };
 }
@@ -59,6 +62,12 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const canMessages = can(permissions, "clients.messages");
   const canPhotos = can(permissions, "clients.photos");
   const canBalances = can(permissions, "clients.balances");
+  const contact = canSeeClientContact(permissions);
+  const spend = canSeeClientSpend(permissions);
+  // A role that sees only its own calendar sees only the visits it is booked on (C4): no other provider's name, service or ticket.
+  const ownOnly = seesOwnOnly(permissions);
+  const onMyVisit = ownOnly ? (staffId ? sql`exists (select 1 from appointment_items ai where ai.appointment_id = ${schema.appointments.id} and ai.staff_id = ${staffId})` : sql`false`) : undefined;
+  const reviewScope = canSeeReviews(permissions);
   const data = await withTenant(business.id, async (tx) => {
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
     if (!client) return null;
@@ -72,7 +81,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
         .innerJoin(schema.appointments, eq(schema.appointments.id, schema.appointmentItems.appointmentId))
         .innerJoin(schema.staff, eq(schema.staff.id, schema.appointmentItems.staffId))
         .leftJoin(schema.locations, eq(schema.locations.id, schema.appointments.locationId))
-        .where(and(eq(schema.appointments.clientId, clientId), eq(schema.appointmentItems.sortOrder, 0)))
+        .where(and(eq(schema.appointments.clientId, clientId), eq(schema.appointmentItems.sortOrder, 0), onMyVisit))
         .orderBy(desc(schema.appointmentItems.startAt))
         .limit(50),
       tx.select().from(schema.sales).where(eq(schema.sales.clientId, clientId)).orderBy(desc(schema.sales.createdAt)).limit(20),
@@ -100,7 +109,8 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const [submissions, loyalty, reviews, thread, storeCredit, referrals, smsReady, referredBy] = await Promise.all([
     canNotes ? listSubmissionsForClient(business.id, clientId) : Promise.resolve([]),
     business.loyaltyEnabled && canBalances ? getClientLoyalty(business.id, clientId) : Promise.resolve(null),
-    reviewsForClient(business.id, clientId),
+    // Ratings follow the reviews permissions: every rating, only those on visits they performed, or none.
+    reviewScope ? reviewsForClient(business.id, clientId).then((rows) => (reviewScope === "all" ? rows : rows.filter((r) => !!staffId && r.staffId === staffId))) : Promise.resolve([]),
     canMessages ? clientThread(business.id, clientId) : Promise.resolve([]),
     canBalances ? getClientStoreCredit(business.id, clientId) : Promise.resolve(null),
     withTenant(business.id, (tx) => referralsOf(tx, clientId)),
@@ -130,6 +140,8 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   // One timeline: past visits carry their ticket and rating; sales with no visit (retail, gift cards, open tickets) are rows too.
   const reviewFor = new Map(reviews.filter((r) => r.appointmentId).map((r) => [r.appointmentId!, r]));
   const saleFor = new Map(sales.filter((s) => s.appointmentId).map((s) => [s.appointmentId!, s]));
+  // Tickets with no visit (retail, gift cards, open tickets) are the business's sales, not anyone's own: for "see every ticket" only.
+  const retailSales = canSeeAllSales(permissions) ? sales.filter((s) => !s.appointmentId) : [];
   const reviewAverage = reviews.length ? reviews.reduce((a, r) => a + (r.rating ?? 0), 0) / reviews.length : 0;
   type TimelineRow = { key: string; at: Date; kind: "visit" | "sale"; href: string; title: string; meta: string; status: string; sale: { id: string; number: number; totalCents: number; status: string } | null; review: { rating: number | null; comment: string | null } | null };
   const timeline: TimelineRow[] = [
@@ -138,7 +150,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
       const r = reviewFor.get(v.id);
       return { key: `v:${v.id}`, at: v.startAt, kind: "visit", href: `/app/${slug}/appointments/${v.id}`, title: `${v.serviceName} with ${v.staffName}`, meta: at(v).replace(/^ · /, "· "), status: v.status, sale: s ? { id: s.id, number: s.number, totalCents: s.totalCents, status: s.status } : null, review: r ? { rating: r.rating, comment: r.comment } : null };
     }),
-    ...sales.filter((s) => !s.appointmentId).map((s): TimelineRow => ({ key: `s:${s.id}`, at: s.closedAt ?? s.createdAt, kind: "sale", href: `/app/${slug}/sales/${s.id}`, title: `Ticket #${s.number}`, meta: s.status === "open" ? "· not an appointment · still open" : "· retail, gift card or package", status: s.status, sale: { id: s.id, number: s.number, totalCents: s.totalCents, status: s.status }, review: null })),
+    ...retailSales.map((s): TimelineRow => ({ key: `s:${s.id}`, at: s.closedAt ?? s.createdAt, kind: "sale", href: `/app/${slug}/sales/${s.id}`, title: `Ticket #${s.number}`, meta: s.status === "open" ? "· not an appointment · still open" : "· retail, gift card or package", status: s.status, sale: { id: s.id, number: s.number, totalCents: s.totalCents, status: s.status }, review: null })),
   ].sort((a, b) => b.at.getTime() - a.at.getTime());
   const stats = await withTenant(business.id, (tx) => clientStats(tx, client));
   const fmtMonth = new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric", timeZone: tz });
@@ -148,9 +160,11 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const glance: { label: string; value: string; hint?: string; tone?: "warn" }[] = [
     { label: "Client since", value: fmtMonth.format(stats.since), hint: stats.sinceIsFirstVisit ? `${sinceLabel} · first visit` : `${sinceLabel} · no visit yet` },
     { label: "Visits", value: String(stats.completed), hint: [stats.upcoming ? `${stats.upcoming} upcoming` : null, stats.noShows ? `${stats.noShows} no-show${stats.noShows === 1 ? "" : "s"}` : null, stats.cancelled ? `${stats.cancelled} cancelled` : null].filter(Boolean).join(" · ") || "none upcoming", tone: stats.noShows >= 2 ? "warn" : undefined },
-    { label: "Spent (before tips)", value: money(stats.spentCents), hint: stats.ticketCount ? `${money(stats.averageTicketCents)} per visit · plus ${money(stats.tipsCents)} tips` : "no paid visits yet" },
+    // What the client spends is its own permission (C3).
+    ...(spend ? [{ label: "Spent (before tips)", value: money(stats.spentCents), hint: stats.ticketCount ? `${money(stats.averageTicketCents)} per visit · plus ${money(stats.tipsCents)} tips` : "no paid visits yet" }] : []),
     { label: stats.nextVisit ? "Next visit" : "Last visit", value: stats.nextVisit ? fmtDate.format(stats.nextVisit) : stats.lastVisit ? fmtDate.format(stats.lastVisit) : "—", hint: stats.nextVisit && stats.lastVisit ? `last ${fmtDate.format(stats.lastVisit)}` : lapsed != null ? `${lapsed} days ago${stats.visitEveryDays && lapsed > stats.visitEveryDays * 1.5 ? " · overdue" : ""}` : undefined, tone: lapsed != null && stats.visitEveryDays && lapsed > stats.visitEveryDays * 1.5 ? "warn" : undefined },
-    { label: "Usually", value: stats.favouriteService ?? "—", hint: [stats.usualProvider ? `with ${stats.usualProvider}` : null, stats.visitEveryDays ? `every ${stats.visitEveryDays} days` : null].filter(Boolean).join(" · ") || undefined },
+    // An own-calendar role is not told which colleague the client usually sees.
+    { label: "Usually", value: stats.favouriteService ?? "—", hint: [stats.usualProvider && !ownOnly ? `with ${stats.usualProvider}` : null, stats.visitEveryDays ? `every ${stats.visitEveryDays} days` : null].filter(Boolean).join(" · ") || undefined },
   ];
 
   const clientPhotos = canPhotos ? await listGallery(business.id, { serviceId: null, categoryId: null, staffId: null, clientId, locationId: null, tag: null, periodDays: null, q: null, bothOnly: false, shareableOnly: false, page: 1 }, 6) : { pairs: [], hasMore: false };
@@ -163,7 +177,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
         {can(permissions, "appointments.write.any") ? <LinkButton href={`/app/${slug}/appointments/new?clientId=${client.id}`} variant="primary"><Plus className="h-4 w-4" /> Book appointment</LinkButton> : null}
       </PageHeader>
       {/* At a glance: the numbers the desk asks about before anything else. */}
-      <Card className="mb-6 grid grid-cols-2 gap-px overflow-hidden bg-stone-100 sm:grid-cols-3 lg:grid-cols-5">
+      <Card className={`mb-6 grid grid-cols-2 gap-px overflow-hidden bg-stone-100 ${glance.length === 5 ? "sm:grid-cols-3 lg:grid-cols-5" : "sm:grid-cols-4"}`}>
         {glance.map((g) => (
           <div key={g.label} className="bg-white px-4 py-3">
             <p className="text-xs uppercase tracking-wide text-stone-500">{g.label}</p>
@@ -282,7 +296,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                   href: t.href,
                   status: t.status,
                   dim: t.kind === "visit" && (t.status === "cancelled" || t.status === "no_show"),
-                  sale: t.sale ? { href: `/app/${slug}/sales/${t.sale.id}`, label: `${money(t.sale.totalCents)}${t.sale.status === "open" ? " due" : t.sale.status === "refunded" ? " refunded" : ""}`, open: t.sale.status === "open", title: `Ticket #${t.sale.number}` } : null,
+                  sale: t.sale ? { href: `/app/${slug}/sales/${t.sale.id}`, label: spend ? `${money(t.sale.totalCents)}${t.sale.status === "open" ? " due" : t.sale.status === "refunded" ? " refunded" : ""}` : `Ticket #${t.sale.number}${t.sale.status === "open" ? " · due" : t.sale.status === "refunded" ? " · refunded" : ""}`, open: t.sale.status === "open", title: `Ticket #${t.sale.number}` } : null,
                   review: t.review ? { rating: t.review.rating ?? 0, comment: t.review.comment } : null,
                 }))}
               />
@@ -291,14 +305,21 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
         </div>
         <div className="space-y-6">
           <Card className="p-4">
-            <h2 className="mb-2 font-medium">Contact</h2>
+            <h2 className="mb-2 font-medium">{contact ? "Contact" : "About"}</h2>
             <div className="space-y-1 text-sm">
-              {client.phone ? <p>{client.phone}{client.smsOptIn ? "" : <span className="ml-2 text-xs text-stone-400">no texts</span>}</p> : <p className="text-stone-400">No phone</p>}
-              {client.email ? <p className="truncate">{client.email}{client.emailOptIn ? "" : <span className="ml-2 text-xs text-stone-400">no emails</span>}</p> : <p className="text-stone-400">No email</p>}
-              {client.birthday ? <p className="text-stone-600">Birthday {client.birthday.slice(5).replace("-", "/")}</p> : null}
+              {/* Phone, email and birthday are "See phone, email, address and birthday" (C1); the notes are "Read notes and forms". */}
+              {contact ? (
+                <>
+                  {client.phone ? <p>{client.phone}{client.smsOptIn ? "" : <span className="ml-2 text-xs text-stone-400">no texts</span>}</p> : <p className="text-stone-400">No phone</p>}
+                  {client.email ? <p className="truncate">{client.email}{client.emailOptIn ? "" : <span className="ml-2 text-xs text-stone-400">no emails</span>}</p> : <p className="text-stone-400">No email</p>}
+                  {client.birthday ? <p className="text-stone-600">Birthday {client.birthday.slice(5).replace("-", "/")}</p> : null}
+                </>
+              ) : (
+                <p className="text-stone-400">{client.phone || client.email ? `Contact details are kept for the desk${client.smsOptIn && client.phone ? " · takes texts" : ""}` : "No contact details on file"}</p>
+              )}
               {canNotes && client.notes ? <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">{client.notes}</p> : null}
             </div>
-            {write ? (
+            {write && contact ? (
               <Disclosure variant="inset" title="Edit details" className="mt-3">
               <ActionForm action={updateClient}>
                 <input type="hidden" name="slug" value={slug} />
