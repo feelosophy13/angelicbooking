@@ -14,7 +14,6 @@ import { LinkRow } from "@/components/table-row";
 import { StatusBadge } from "@/components/status-badge";
 import { ClientPicker } from "@/components/client-picker";
 import { quickCreateClient } from "../clients/actions";
-import { newSale } from "./actions";
 
 export const metadata: Metadata = { title: "Sales & checkout" };
 
@@ -56,8 +55,8 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
           </div>
         </Card>
         <Card className="p-3">
-          <form action={newSale} className="space-y-2">
-            <input type="hidden" name="slug" value={slug} />
+          {/* Opens the blank checkout; the ticket is saved only when its first item goes on. */}
+          <form action={`/app/${slug}/sales/new`} className="space-y-2">
             <p className="text-sm font-medium">Sell a product or gift card</p>
             <ClientPicker slug={slug} initial={null} canCreate={can(permissions, "clients.write")} createClient={quickCreateClient} placeholder="Client (optional, blank for a walk-in)" />
             {locations.length > 1 ? (

@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { can, normalizePhone, parseMoney } from "@angelic/core";
 import { PermissionError, requireAction, requireBusiness } from "@/lib/tenant";
@@ -36,7 +37,7 @@ import { queueOneOff } from "@/lib/notify";
 import { receiptEmail } from "@/lib/notify/templates";
 import { setFlash } from "@/lib/flash";
 import { formatMoney } from "@/lib/utils";
-import { getSale, isOwnSale } from "@/server/sales";
+import { discardEmptySale, getSale, isOwnSale, openWalkInSale } from "@/server/sales";
 import { paymentContextForSale } from "@/server/locations";
 import { browserStripe } from "@/lib/stripe-demo";
 import { TerminalError, terminalConnectionToken, terminalLocationFor } from "@/server/stripe-terminal";
@@ -45,7 +46,11 @@ import { productLabel } from "@/lib/inventory";
 
 export type SaleActionState = { error?: string; ok?: boolean } | undefined;
 
-const base = z.object({ slug: z.string(), saleId: z.string().min(1) });
+// The blank checkout page posts NEW_SALE with the client and location chosen there; the other forms post a ticket's id.
+const base = z.object({ slug: z.string(), saleId: z.string().min(1), clientId: z.string().optional(), locationId: z.string().optional() });
+
+/** The blank checkout page's ticket id. Nothing is saved until the first item goes on, so an abandoned "+ Sale" leaves no ticket behind. */
+const NEW_SALE = "new";
 
 function friendly(e: unknown): SaleActionState {
   if (e instanceof SaleError || e instanceof StripeNotConfigured || e instanceof StoreCreditError) return { error: e.message };
@@ -65,8 +70,24 @@ async function requireRefund(slug: string) {
  */
 async function ctxFor(slug: string, saleId: string) {
   const ctx = await requireAction(slug, "checkout.take");
-  if (seesOwnOnly(ctx.permissions) && !(await isOwnSale(ctx.business.id, saleId, { staffId: ctx.staffId, userId: ctx.user.id }))) throw new PermissionError();
+  // A ticket that doesn't exist yet will be theirs: they ring it up.
+  if (saleId !== NEW_SALE && seesOwnOnly(ctx.permissions) && !(await isOwnSale(ctx.business.id, saleId, { staffId: ctx.staffId, userId: ctx.user.id }))) throw new PermissionError();
   return ctx;
+}
+
+type Ctx = Awaited<ReturnType<typeof ctxFor>>;
+
+/** The ticket to add to: the one posted, or, from the blank checkout page, a new one opened now for its first item. */
+async function ticketFor(ctx: Ctx, d: { saleId: string; clientId?: string; locationId?: string }) {
+  if (d.saleId !== NEW_SALE) return d.saleId;
+  return openWalkInSale({ businessId: ctx.business.id, actorUserId: ctx.user.id, currency: ctx.business.currency, clientId: d.clientId || null, locationId: d.locationId || null });
+}
+
+/** After a first add from the blank page: on to the new ticket, or, when that add failed, take the empty ticket back and stay put. */
+async function landOnTicket(ctx: Ctx, d: { slug: string; saleId: string }, saleId: string) {
+  if (d.saleId !== NEW_SALE) return;
+  if (await discardEmptySale(ctx.business.id, saleId)) return;
+  redirect(`/app/${d.slug}/sales/${saleId}`);
 }
 
 /** Discounts, price changes and voids need their own permission. */
@@ -91,7 +112,14 @@ export async function addProduct(formData: FormData) {
     revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
     return;
   }
-  await addProductLine({ businessId: ctx.business.id, saleId: d.saleId, productId: d.productId, quantity: d.quantity, staffId: credit.staffId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+  const saleId = await ticketFor(ctx, d);
+  try {
+    await addProductLine({ businessId: ctx.business.id, saleId, productId: d.productId, quantity: d.quantity, staffId: credit.staffId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+  } catch (e) {
+    if (!(e instanceof SaleError)) throw e;
+    await setFlash(e.message, "error");
+  }
+  await landOnTicket(ctx, d, saleId);
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
 
@@ -113,13 +141,15 @@ export async function addProductByCode(formData: FormData) {
   const product = await findProductByCode(ctx.business.id, d.code);
   if (!product || product.kind !== "retail") await setFlash(`No product with the barcode or SKU "${d.code}".`, "error");
   else {
+    const saleId = await ticketFor(ctx, d);
     try {
-      await addProductLine({ businessId: ctx.business.id, saleId: d.saleId, productId: product.id, quantity: 1, staffId: credit.staffId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+      await addProductLine({ businessId: ctx.business.id, saleId, productId: product.id, quantity: 1, staffId: credit.staffId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
       await setFlash(`${productLabel(product)} added`, "success");
     } catch (e) {
       if (e instanceof SaleError) await setFlash(e.message, "error");
       else throw e;
     }
+    await landOnTicket(ctx, d, saleId);
   }
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
@@ -412,16 +442,14 @@ export async function addOffer(formData: FormData) {
     revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
     return;
   }
+  const saleId = await ticketFor(ctx, d);
   try {
-    await addOfferLine({ businessId: ctx.business.id, saleId: d.saleId, kind: d.kind, refId: d.refId || null, amountCents: d.amount ? parseMoney(d.amount) : null, recipientName: d.recipientName?.trim() || null, staffId: credit.staffId });
+    await addOfferLine({ businessId: ctx.business.id, saleId, kind: d.kind, refId: d.refId || null, amountCents: d.amount ? parseMoney(d.amount) : null, recipientName: d.recipientName?.trim() || null, staffId: credit.staffId });
   } catch (e) {
-    if (e instanceof SaleError) {
-      await setFlash(e.message, "error");
-      revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
-      return;
-    }
-    throw e;
+    if (!(e instanceof SaleError)) throw e;
+    await setFlash(e.message, "error");
   }
+  await landOnTicket(ctx, d, saleId);
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
 
@@ -625,12 +653,14 @@ export async function addServiceToSale(formData: FormData) {
     revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
     return;
   }
+  const saleId = await ticketFor(ctx, d);
   try {
-    await addServiceLine({ businessId: ctx.business.id, saleId: d.saleId, serviceId: d.serviceId, staffId: credit.staffId, priceCents: price, taxRateBps: ctx.business.taxRateBps, actorUserId: ctx.user.id });
+    await addServiceLine({ businessId: ctx.business.id, saleId, serviceId: d.serviceId, staffId: credit.staffId, priceCents: price, taxRateBps: ctx.business.taxRateBps, actorUserId: ctx.user.id });
   } catch (e) {
     if (e instanceof SaleError) await setFlash(e.message, "error");
     else throw e;
   }
+  await landOnTicket(ctx, d, saleId);
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
 

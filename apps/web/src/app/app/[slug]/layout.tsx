@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox, Plus } from "lucide-react";
+import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox } from "lucide-react";
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
@@ -21,7 +21,8 @@ import { UnreadBadge } from "./unread-badge";
 import { NavLink } from "./nav-link";
 import { lowStockCount } from "@/server/inventory";
 import { MobileNav, type NavSection } from "./mobile-nav";
-import { newSale } from "./sales/actions";
+import { NewMenu, type NewItem } from "./new-menu";
+import { blockingAccess, bookingAccess } from "@/lib/appointment-access";
 
 const ICON: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox };
 
@@ -38,20 +39,14 @@ export default async function AppLayout({ children, params }: { children: React.
   const base = `/app/${slug}`;
   // What clients see: the public booking page (custom domain when one is set). Opens in a new tab.
   const bookingUrl = business.customDomain ? `https://${business.customDomain}` : appUrl(`/book/${business.slug}`);
-  // New appointment / new sale: one button each, in the sidebar and at the top of the phone menu.
-  const quickActions = can(permissions, "appointments.write.any") || can(permissions, "checkout.take") ? (
-    <div className="flex gap-2">
-      {can(permissions, "appointments.write.any") ? (
-        <Link href={`${base}/appointments/new`} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-2 py-2 text-sm font-medium text-white hover:bg-brand-700"><Plus className="h-4 w-4" /> Appointment</Link>
-      ) : null}
-      {can(permissions, "checkout.take") ? (
-        <form action={newSale} className="flex flex-1">
-          <input type="hidden" name="slug" value={slug} />
-          <button type="submit" className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-stone-300 bg-white px-2 py-2 text-sm font-medium text-stone-800 hover:bg-stone-50"><Plus className="h-4 w-4" /> Sale</button>
-        </form>
-      ) : null}
-    </div>
-  ) : null;
+  // "+ New": what can be started from any page, in the sidebar and at the top of the phone menu.
+  const newItems: NewItem[] = [
+    ...(bookingAccess(permissions, staffId ?? null) ? [{ href: `${base}/appointments/new`, label: "Appointment", hint: "Book a client in", icon: "appointment" as const }] : []),
+    ...(can(permissions, "checkout.take") ? [{ href: `${base}/sales/new`, label: "Sale", hint: "Products, gift cards, a walk-in", icon: "sale" as const }] : []),
+    ...(can(permissions, "clients.write") ? [{ href: `${base}/clients/new`, label: "Client", hint: "Add to your client list", icon: "client" as const }] : []),
+    ...(blockingAccess(permissions, staffId ?? null) ? [{ href: `${base}/appointments/block`, label: "Blocked time", hint: "Lunch, a meeting, time away", icon: "block" as const }] : []),
+  ];
+  const quickActions = newItems.length ? <NewMenu items={newItems} /> : null;
   type Item = { href: string; label: string; iconName: string; exact?: boolean };
   const it = (href: string, label: string, iconName: string, exact?: boolean): Item => ({ href, label, iconName, exact });
   // Sidebar sections, the Settings directory and ⌘K share one definition: lib/nav.ts.

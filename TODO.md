@@ -750,7 +750,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       admin row, copied from `admin_credentials` by the migration.
       Existing sessions end at deploy (old cookies name nobody). `admin_credentials` is now unused (row copied by the migration).
 - [x] 2026-10-15: checkout review (migration 0090: `sales.notes`, `sales.tax_exempt`, `businesses.receipt_footer`). Sidebar entry is "Sales & checkout"
-      with + Appointment / + Sale buttons (also in the phone menu). An empty ticket opens "Add to this ticket" with a searchable product
+      with + Appointment / + Sale buttons (also in the phone menu; replaced by + New on 2026-10-18). An empty ticket opens "Add to this ticket" with a searchable product
       list (`sale-product-picker.tsx`, pictures, stock, Enter adds a single match; staff credit defaults to the person at the desk). Cash shows
       "cash received" shortcuts and the change due (kept on the payment note and printed on the receipt). Tips: 15/20/25% presets, and they work
       on a products-only ticket (an unassigned tip follows who is credited on the products; with nobody credited you pick the person).
@@ -1086,6 +1086,10 @@ runs several salons on separate accounts.
 - [x] Spike editing (2026-10-18): a "Spikes" row under the zone buttons ("3–4 · 12 mm") opens each spike; the spike
       panel shows its length against the longer neighbouring zone, has previous / next spike, and "Copy to all
       spikes" (everything but length).
+- [x] + New and blank checkout (2026-10-18): the sidebar's + Appointment / + Sale pair is one "+ New" menu (Appointment,
+      Sale, Client, Blocked time, each by permission; also in the phone menu). "+ Sale" and Sales → Start sale open
+      `/sales/new`, a blank ticket that saves nothing until the first item goes on (client and location ride along in
+      the address); a failed first add deletes the empty ticket and its "opened" entry so the number comes back.
 - [ ] Not built on purpose: spikes inside a zone (dividers cover wispy styles; notes cover the rest); lash maps
       in the client portal (notes can hold remarks a client shouldn't see, so showing them should be a per-salon
       choice) and the public API (nothing asks for it yet).

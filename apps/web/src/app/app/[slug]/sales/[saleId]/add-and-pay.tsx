@@ -21,9 +21,11 @@ const ADD_LABELS: Record<AddKind, string> = { product: "Product", service: "Serv
  * sees the fields for that one thing. Kinds with nothing to offer (no packages, no plans, no client for a
  * membership) are not offered at all.
  */
-export function AddToTicket({ slug, saleId, staff, products, productsHref, autoFocus, groups, packages, plans, actions }: {
+export function AddToTicket({ slug, saleId, start, staff, products, productsHref, autoFocus, groups, packages, plans, actions }: {
   slug: string;
   saleId: string;
+  /** On the blank checkout page: the client and location the ticket opens with when its first item goes on. */
+  start?: { clientId: string | null; locationId: string | null };
   staff: Staff[];
   products: PickerProduct[];
   productsHref: string;
@@ -41,6 +43,8 @@ export function AddToTicket({ slug, saleId, staff, products, productsHref, autoF
     <>
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
+      {start?.clientId ? <input type="hidden" name="clientId" value={start.clientId} /> : null}
+      {start?.locationId ? <input type="hidden" name="locationId" value={start.locationId} /> : null}
     </>
   );
   const whoSold = (label: string) => (

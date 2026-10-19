@@ -193,6 +193,11 @@ it ignores the mouse so it cannot get in the way of dragging, and it is not show
   under People), it does not belong there: leave it in Settings and rely on cross-links and ⌘K.
 - A sidebar item lights up only for its own pages: pass `exclude` when a sub-path belongs to another item
   (Staff excludes Staff hours).
+- What can be started from any page sits behind one **+ New** button at the top of the sidebar and the phone menu
+  (`new-menu.tsx`): Appointment, Sale, Client, Blocked time, each only for those allowed to. With one choice it is
+  that choice's button. Add to that menu, never a second button beside it.
+- Starting something never saves it. "+ New → Sale" opens a blank checkout (`/sales/new`); the ticket, and its number,
+  is made only when the first item goes on, and a first item that can't go on takes the ticket back.
 
 ## Status, colour and type
 

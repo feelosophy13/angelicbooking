@@ -261,6 +261,21 @@ export async function openWalkInSale(input: { businessId: string; actorUserId: s
   });
 }
 
+/**
+ * Undo a ticket opened for a first item that then couldn't be added (no price, not available): with nothing on it and nothing paid it is
+ * deleted with its "opened" entry, and its number goes back (numbers are max + 1), so a failed first add leaves no trace.
+ */
+export async function discardEmptySale(businessId: string, saleId: string): Promise<boolean> {
+  return withTenant(businessId, async (tx) => {
+    const [line] = await tx.select({ id: schema.saleLines.id }).from(schema.saleLines).where(eq(schema.saleLines.saleId, saleId)).limit(1);
+    const [pay] = await tx.select({ id: schema.payments.id }).from(schema.payments).where(eq(schema.payments.saleId, saleId)).limit(1);
+    if (line || pay) return false;
+    await tx.delete(schema.auditLog).where(and(eq(schema.auditLog.entityId, saleId), eq(schema.auditLog.action, "sale.open")));
+    await tx.delete(schema.sales).where(and(eq(schema.sales.id, saleId), eq(schema.sales.status, "open")));
+    return true;
+  });
+}
+
 /** Attach (or change) the client on an open ticket so loyalty, saved cards and receipts work. */
 export async function setSaleClient(input: { businessId: string; saleId: string; clientId: string | null; actorUserId: string }) {
   await withTenant(input.businessId, async (tx) => {
@@ -341,6 +356,23 @@ export async function listSales(businessId: string, f: SalesListFilter) {
   });
 }
 
+const ticketStaff = (tx: TenantDb) => tx.select().from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName));
+const ticketProducts = (tx: TenantDb) =>
+  tx
+    .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, trackStock: schema.products.trackStock, priceCents: schema.products.priceCents, taxable: schema.products.taxable, imageUrl: schema.products.imageUrl, category: schema.productCategories.name })
+    .from(schema.products)
+    .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
+    .where(and(eq(schema.products.active, true), eq(schema.products.kind, "retail")))
+    .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name), asc(schema.products.variantLabel));
+
+/** What the blank checkout page offers before a ticket exists: the same staff and products an open ticket does. */
+export async function ticketCatalog(businessId: string) {
+  return withTenant(businessId, async (tx) => {
+    const [staff, products] = await Promise.all([ticketStaff(tx), ticketProducts(tx)]);
+    return { staff, products };
+  });
+}
+
 export async function getSale(businessId: string, saleId: string) {
   return withTenant(businessId, async (tx) => {
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, saleId) });
@@ -349,13 +381,8 @@ export async function getSale(businessId: string, saleId: string) {
       tx.select().from(schema.saleLines).where(eq(schema.saleLines.saleId, saleId)).orderBy(asc(schema.saleLines.sortOrder), asc(schema.saleLines.id)),
       tx.select().from(schema.payments).where(eq(schema.payments.saleId, saleId)).orderBy(asc(schema.payments.createdAt)),
       sale.clientId ? tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) }) : Promise.resolve(null),
-      tx.select().from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)),
-      tx
-        .select({ id: schema.products.id, name: schema.products.name, variantLabel: schema.products.variantLabel, barcode: schema.products.barcode, trackStock: schema.products.trackStock, priceCents: schema.products.priceCents, taxable: schema.products.taxable, imageUrl: schema.products.imageUrl, category: schema.productCategories.name })
-        .from(schema.products)
-        .leftJoin(schema.productCategories, eq(schema.productCategories.id, schema.products.categoryId))
-        .where(and(eq(schema.products.active, true), eq(schema.products.kind, "retail")))
-        .orderBy(asc(schema.productCategories.sortOrder), asc(schema.productCategories.name), asc(schema.products.name), asc(schema.products.variantLabel)),
+      ticketStaff(tx),
+      ticketProducts(tx),
     ]);
     const refunds = pays.length
       ? await tx.select().from(schema.refunds).where(sql`${schema.refunds.paymentId} in ${pays.map((p) => p.id)}`)

@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { buildPayrollLines } from "@/server/payroll";
 import { getSaleApi } from "@/server/api-v1";
-import { addProductLine, addTipAfterPayment, completeNoCharge, getSale, openWalkInSale, recordManualPayment, removeLine, salesReport, setSaleNotes, setTaxExempt, setTips } from "@/server/sales";
+import { addProductLine, addTipAfterPayment, completeNoCharge, discardEmptySale, getSale, openWalkInSale, recordManualPayment, removeLine, salesReport, setSaleNotes, setTaxExempt, setTips } from "@/server/sales";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
 
 const up = await reachable();
@@ -64,6 +64,23 @@ describe.skipIf(!up)("checkout: a products-only ticket", () => {
     expect([s.taxExempt, s.taxCents]).toEqual([false, 780]);
     await setSaleNotes({ businessId: kit.A, saleId, notes: "  gift for Maria ", actorUserId: userId });
     expect((await getSale(kit.A, saleId))!.sale.notes).toBe("gift for Maria");
+  });
+
+  it("takes back a ticket whose first item couldn't go on, number and all, but never one with something on it", async () => {
+    const kept = await open();
+    await addProductLine({ ...base(), saleId: kept, productId, quantity: 1, staffId: null });
+    const keptNo = (await getSale(kit.A, kept))!.sale.number;
+    const failed = await open();
+    expect((await getSale(kit.A, failed))!.sale.number).toBe(keptNo + 1);
+    expect(await discardEmptySale(kit.A, failed)).toBe(true);
+    expect(await getSale(kit.A, failed)).toBeNull();
+    const opened = await withTenant(kit.A, (tx) => tx.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, failed)));
+    expect(opened).toEqual([]);
+    // The next ticket gets the number back.
+    const next = await open();
+    expect((await getSale(kit.A, next))!.sale.number).toBe(keptNo + 1);
+    expect(await discardEmptySale(kit.A, kept)).toBe(false);
+    expect((await getSale(kit.A, kept))!.lines.length).toBe(1);
   });
 
   it("closes a ticket with nothing due only when it has something on it", async () => {
