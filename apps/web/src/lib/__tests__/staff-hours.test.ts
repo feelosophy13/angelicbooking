@@ -1,47 +1,49 @@
 import { describe, expect, it } from "vitest";
 import { hoursShort, matchesPeople, monthDates, monthLabel, monthLeadingBlanks, monthOf, orderStaff, parsePeopleFilter, peopleOptions, shiftMonth } from "../staff-hours";
 
-const s = (name: string, takesAppointments: boolean, sortOrder: number, position: string | null = null) => ({ id: name, name, takesAppointments, sortOrder, position });
+const s = (name: string, takesAppointments: boolean, sortOrder: number, role: string | null = null) => ({ id: name, name, takesAppointments, sortOrder, role });
+const ROLES = [{ key: "owner", name: "Owner" }, { key: "manager", name: "Manager" }, { key: "provider", name: "Provider" }, { key: "front_desk", name: "Front desk" }, { key: "senior_stylist", name: "Senior stylist" }];
 
 describe("orderStaff", () => {
   it("puts providers first in booking order, then other staff", () => {
-    const people = [s("Dana", false, 5, "Front Desk"), s("Mina", true, 4), s("Owner", false, 0, "Owner"), s("Ava", true, 0), s("Jordan", true, 1)];
+    const people = [s("Dana", false, 5, "front_desk"), s("Mina", true, 4), s("Owner", false, 0, "owner"), s("Ava", true, 0), s("Jordan", true, 1)];
     expect(orderStaff(people).map((p) => p.name)).toEqual(["Ava", "Jordan", "Mina", "Owner", "Dana"]);
   });
 });
 
 describe("peopleOptions", () => {
-  it("lists the fixed choices, then each position once, title-cased", () => {
-    const people = [s("Ava", true, 0, "lash artist"), s("Jordan", true, 1, "Lash Artist"), s("Dana", false, 5, "front desk"), s("Mina", true, 4, "Color Consultant & PMU Artist"), s("Owner", false, 0, null), s("Sofia", true, 3, "  brow & wax   specialist ")];
-    expect(peopleOptions(people)).toEqual([
+  it("offers Everyone, the roles somebody holds in the business's order, then No login yet", () => {
+    const people = [s("Ava", true, 0, "manager"), s("Jordan", true, 1, "provider"), s("Dana", false, 5, "front_desk"), s("Owner", false, 0, "owner"), s("Sofia", true, 3, null)];
+    expect(peopleOptions(people, ROLES)).toEqual([
       { value: "", label: "Everyone" },
-      { value: "providers", label: "Providers" },
-      { value: "other", label: "Front desk & other staff" },
-      { value: "p:brow & wax specialist", label: "Brow & Wax Specialist" },
-      { value: "p:color consultant & pmu artist", label: "Color Consultant & PMU Artist" },
-      { value: "p:front desk", label: "Front Desk" },
-      { value: "p:lash artist", label: "Lash Artist" },
+      { value: "r:owner", label: "Owner" },
+      { value: "r:manager", label: "Manager" },
+      { value: "r:provider", label: "Provider" },
+      { value: "r:front_desk", label: "Front desk" },
+      { value: "nologin", label: "No login yet" },
     ]);
+  });
+  it("leaves out roles nobody holds and No login yet when everyone has one", () => {
+    expect(peopleOptions([s("Owner", false, 0, "owner")], ROLES)).toEqual([{ value: "", label: "Everyone" }, { value: "r:owner", label: "Owner" }]);
   });
 });
 
 describe("parsePeopleFilter / matchesPeople", () => {
-  const people = [s("Ava", true, 0, "Lash Artist"), s("Dana", false, 5, "Front Desk"), s("Owner", false, 0, null)];
-  it("accepts the fixed values and known positions, falls back to everyone", () => {
-    expect(parsePeopleFilter("providers", people)).toBe("providers");
-    expect(parsePeopleFilter("other", people)).toBe("other");
-    expect(parsePeopleFilter("p:front desk", people)).toBe("p:front desk");
-    expect(parsePeopleFilter("p:ceo", people)).toBe("");
-    expect(parsePeopleFilter(undefined, people)).toBe("");
-    expect(parsePeopleFilter("x", people)).toBe("");
+  const people = [s("Ava", true, 0, "provider"), s("Dana", false, 5, "front_desk"), s("Owner", false, 0, "owner"), s("Temp", true, 9, null)];
+  it("accepts held roles and nologin, falls back to everyone", () => {
+    expect(parsePeopleFilter("r:provider", people, ROLES)).toBe("r:provider");
+    expect(parsePeopleFilter("nologin", people, ROLES)).toBe("nologin");
+    expect(parsePeopleFilter("r:manager", people, ROLES)).toBe("");
+    expect(parsePeopleFilter("r:ceo", people, ROLES)).toBe("");
+    expect(parsePeopleFilter(undefined, people, ROLES)).toBe("");
+    expect(parsePeopleFilter("x", people, ROLES)).toBe("");
   });
-  it("filters by provider flag or by position, ignoring case", () => {
+  it("filters by login role or by having none", () => {
     const names = (f: Parameters<typeof matchesPeople>[1]) => people.filter((p) => matchesPeople(p, f)).map((p) => p.name);
-    expect(names("")).toEqual(["Ava", "Dana", "Owner"]);
-    expect(names("providers")).toEqual(["Ava"]);
-    expect(names("other")).toEqual(["Dana", "Owner"]);
-    expect(names("p:front desk")).toEqual(["Dana"]);
-    expect(matchesPeople(s("X", true, 0, "FRONT  DESK"), "p:front desk")).toBe(true);
+    expect(names("")).toEqual(["Ava", "Dana", "Owner", "Temp"]);
+    expect(names("r:provider")).toEqual(["Ava"]);
+    expect(names("r:front_desk")).toEqual(["Dana"]);
+    expect(names("nologin")).toEqual(["Temp"]);
   });
 });
 

@@ -127,22 +127,25 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       time off picker and the time-off list include every active staff member, not only providers; lanes run providers first in booking
       order, then front desk and other staff. The coverage strip, "no provider in" and Needs attention still count providers only
       (`lib/staff-hours.ts` `orderStaff`, `server/coverage.ts` lanes carry `provider`).
-- [x] Staff hours People filter, 2026-10-18: a select beside the service category (Everyone / Providers / Front desk & other staff /
-      one entry per distinct `staff.position`, title-cased, de-duplicated ignoring case). `?people=` (`providers`, `other`, `p:<position>`)
-      drives the lanes, the Edit hours menu and the time-off list and is kept by the other filters; the coverage strip and Needs
-      attention still judge every provider, filtered out or not (`peopleOptions` / `matchesPeople` in `lib/staff-hours.ts`).
+- [x] Staff hours People filter, 2026-10-18: a select beside the service category: Everyone, then each login role somebody holds
+      (the business's own Roles in their order: Owner, Manager, Front desk, Provider, custom ones), then "No login yet" for staff who
+      have not accepted an invite. `?people=` (`r:<role key>`, `nologin`) drives the lanes, the Edit hours menu and the time-off list
+      and is kept by the other filters; the coverage strip and Needs attention still judge every provider (`peopleOptions` /
+      `matchesPeople` in `lib/staff-hours.ts`). Job titles (`staff.position`) were tried first and made too many options.
 - [x] Staff hours Month view, 2026-10-18: a Week / Month pill beside the arrows (`?period=month&month=YYYY-MM`; arrows move a month,
       "This month" replaces "This week"). Month is a Monday-first calendar where each day lists everyone in the People filter with
       their hours ("9–5", "Off", "Custom 10–2", "Time off") from the same resolved schedule as the week (`buildCoverage` now takes
       `dates` and reports each day's overrides); closed days are hatched; a date opens that week; days stack with the date as a row
       header below `md`. Needs attention, the coverage strip and the People / Coverage switch stay week-only
       (`staff-hours/month-grid.tsx`, month helpers in `lib/staff-hours.ts`).
-- [x] Staff hours Month view "Everyone / Only working" pill, 2026-10-18 (`?off=hide`): Only working leaves out the people who are off
-      or on time off that day, and a day where nobody in the People filter works says "Nobody in". Kept by the other filters; week view
-      has no such switch (its lanes only ever show people who are in).
-- [x] Demo tenants have receptionists, 2026-10-18: Dana Whitfield is Front Desk Lead; Marcus Bell (Tue–Sat) and Leila Haddad (late
-      shifts and the weekend; home site Reston in `demo-twosites`) are Receptionists, hourly, no calendar column, with front-desk time
-      off in the next weeks, so Staff hours, the People filter, the time clock and payroll have front-desk people to show.
+- [x] Staff hours Month view "Only working / Everyone" pill, 2026-10-18: Only working is the default and leaves out the people who are
+      off or on time off that day (a day where nobody in the People filter works says "Nobody in"); Everyone (`?off=show`) lists them
+      all with "Off". Kept by the other filters; week view has no such switch (its lanes only ever show people who are in).
+- [x] Demo tenants have receptionists and staff logins, 2026-10-18: Dana Whitfield is Front Desk Lead; Marcus Bell (Tue–Sat) and Leila
+      Haddad (late shifts and the weekend; home site Reston in `demo-twosites`) are Receptionists, hourly, no calendar column, with
+      front-desk time off in the next weeks. Every demo staff member now has a login with the demo password in their role (Ava is a
+      Manager, the artists Providers, the desk Front desk), linked to their staff row like an accepted invite, shared between the two
+      demo businesses; so the People filter, Roles and Staff → Access show real members and the demo can be walked as each role.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,

@@ -10,6 +10,8 @@
  *
  * Profiles:
  *   luxe (default)  demo@angelicbooking.com  / demo-salon-2026  slug demo-salon     one studio
+ *   Every staff member also has a login with the same password (ava@luxebeauty.demo is a Manager, the artists are Providers,
+ *   dana@/marcus@/leila@luxebeauty.demo are Front desk), so the demo can be walked as each role without the dev View-as pill.
  *   glow            demo2@angelicbooking.com / demo-salon-2026  slug demo-twosites  two locations (Arlington, Reston)
  * --reset deletes that demo business first (never any other tenant) and rebuilds it.
  * Hosted demo (Render cron job angelic-booking-demo-refresh): DEMO_ALLOW_REMOTE=1 and DEMO_PASSWORD=<secret> are set there;
@@ -237,22 +239,23 @@ const MENU: Cat[] = [
 
 /** weekday (0 = Sunday) -> [start, end]. Hours differ by person and day so coverage differs by category. */
 type Hours = Record<number, [string, string]>;
-type StaffDef = { name: string; email: string; color: string; position: string; payType: "commission" | "hourly" | "salary"; main?: number; product: number; hourly?: number; salary?: number; skills: string[]; hours: Hours; frontDesk?: boolean };
+/** `role` is the login role (a key from the business's Roles page); every demo staff member gets a login with DEMO_PASSWORD so the demo can be walked as a manager, a provider or the front desk. */
+type StaffDef = { name: string; email: string; color: string; position: string; role: "manager" | "provider" | "front_desk"; payType: "commission" | "hourly" | "salary"; main?: number; product: number; hourly?: number; salary?: number; skills: string[]; hours: Hours; frontDesk?: boolean };
 const STAFF: StaffDef[] = [
   // Lashes: Ava owns Thursday evenings and Saturdays, Jordan Mondays and Friday evenings; Thursday mornings have no lash artist.
-  { name: "Ava Martinez", email: "ava@luxebeauty.demo", color: "#db2777", position: "Signature Master Lash Artist", payType: "commission", main: 4500, product: 1000, skills: ["Lash Extensions", "Korean Lash Lift & Tint"], hours: { 2: ["09:00", "18:00"], 3: ["09:00", "18:00"], 4: ["12:00", "20:00"], 5: ["09:00", "18:00"], 6: ["09:00", "17:00"] } },
-  { name: "Jordan Lee", email: "jordan@luxebeauty.demo", color: "#2563eb", position: "Lash Artist", payType: "hourly", hourly: 2200, main: 1500, product: 500, skills: ["Lash Extensions", "Korean Lash Lift & Tint"], hours: { 1: ["10:00", "18:00"], 2: ["12:00", "19:00"], 3: ["09:00", "15:00"], 5: ["09:00", "19:00"] } },
+  { name: "Ava Martinez", email: "ava@luxebeauty.demo", color: "#db2777", position: "Signature Master Lash Artist", role: "manager", payType: "commission", main: 4500, product: 1000, skills: ["Lash Extensions", "Korean Lash Lift & Tint"], hours: { 2: ["09:00", "18:00"], 3: ["09:00", "18:00"], 4: ["12:00", "20:00"], 5: ["09:00", "18:00"], 6: ["09:00", "17:00"] } },
+  { name: "Jordan Lee", email: "jordan@luxebeauty.demo", color: "#2563eb", position: "Lash Artist", role: "provider", payType: "hourly", hourly: 2200, main: 1500, product: 500, skills: ["Lash Extensions", "Korean Lash Lift & Tint"], hours: { 1: ["10:00", "18:00"], 2: ["12:00", "19:00"], 3: ["09:00", "15:00"], 5: ["09:00", "19:00"] } },
   // Facials: only Priya, so Mondays, Fridays and Thursday afternoons are uncovered.
-  { name: "Priya Nair", email: "priya@luxebeauty.demo", color: "#059669", position: "Esthetician", payType: "commission", main: 5000, product: 500, skills: ["Facial Treatments", "Waxing"], hours: { 2: ["09:00", "19:00"], 3: ["09:00", "19:00"], 4: ["09:00", "16:00"], 6: ["09:00", "17:00"] } },
+  { name: "Priya Nair", email: "priya@luxebeauty.demo", color: "#059669", position: "Esthetician", role: "provider", payType: "commission", main: 5000, product: 500, skills: ["Facial Treatments", "Waxing"], hours: { 2: ["09:00", "19:00"], 3: ["09:00", "19:00"], 4: ["09:00", "16:00"], 6: ["09:00", "17:00"] } },
   // Brows: only Sofia (no Tuesday or Saturday). Waxing: Priya and Sofia overlap only some days.
-  { name: "Sofia Rossi", email: "sofia@luxebeauty.demo", color: "#7c3aed", position: "Brow & Wax Specialist", payType: "hourly", hourly: 2000, main: 2000, product: 500, skills: ["Brow Lamination & Tint", "Waxing", "Korean Lash Lift & Tint"], hours: { 1: ["10:00", "18:00"], 3: ["09:00", "19:00"], 4: ["12:00", "20:00"], 5: ["09:00", "19:00"] } },
+  { name: "Sofia Rossi", email: "sofia@luxebeauty.demo", color: "#7c3aed", position: "Brow & Wax Specialist", role: "provider", payType: "hourly", hourly: 2000, main: 2000, product: 500, skills: ["Brow Lamination & Tint", "Waxing", "Korean Lash Lift & Tint"], hours: { 1: ["10:00", "18:00"], 3: ["09:00", "19:00"], 4: ["12:00", "20:00"], 5: ["09:00", "19:00"] } },
   // Colour analysis and permanent makeup: Mina is out Wednesdays and Fridays.
-  { name: "Mina Park", email: "mina@luxebeauty.demo", color: "#d97706", position: "Color Consultant & PMU Artist", payType: "commission", main: 5500, product: 500, skills: ["Personal Color Analysis", "Permanent Makeup"], hours: { 1: ["10:00", "18:00"], 2: ["10:00", "19:00"], 4: ["09:00", "17:00"], 6: ["09:00", "17:00"] } },
+  { name: "Mina Park", email: "mina@luxebeauty.demo", color: "#d97706", position: "Color Consultant & PMU Artist", role: "provider", payType: "commission", main: 5500, product: 500, skills: ["Personal Color Analysis", "Permanent Makeup"], hours: { 1: ["10:00", "18:00"], 2: ["10:00", "19:00"], 4: ["09:00", "17:00"], 6: ["09:00", "17:00"] } },
   // Front desk: Dana leads it on weekdays, Marcus covers Tuesday to Saturday, Leila does the late shifts and the weekend. None of them
   // take appointments, so they have no calendar column; they show on Staff hours, the time clock and payroll.
-  { name: "Dana Whitfield", email: "dana@luxebeauty.demo", color: "#64748b", position: "Front Desk Lead", payType: "salary", salary: 180000, product: 500, skills: [], hours: { 1: ["10:00", "18:00"], 2: ["09:00", "18:00"], 3: ["09:00", "18:00"], 4: ["09:00", "18:00"], 5: ["09:00", "18:00"] }, frontDesk: true },
-  { name: "Marcus Bell", email: "marcus@luxebeauty.demo", color: "#0891b2", position: "Receptionist", payType: "hourly", hourly: 1900, product: 500, skills: [], hours: { 2: ["09:00", "17:00"], 3: ["09:00", "17:00"], 4: ["09:00", "17:00"], 5: ["09:00", "17:00"], 6: ["09:00", "17:00"] }, frontDesk: true },
-  { name: "Leila Haddad", email: "leila@luxebeauty.demo", color: "#a16207", position: "Receptionist", payType: "hourly", hourly: 1800, product: 500, skills: [], hours: { 0: ["10:00", "16:00"], 4: ["14:00", "20:00"], 5: ["13:00", "19:00"], 6: ["11:00", "17:00"] }, frontDesk: true },
+  { name: "Dana Whitfield", email: "dana@luxebeauty.demo", color: "#64748b", position: "Front Desk Lead", role: "front_desk", payType: "salary", salary: 180000, product: 500, skills: [], hours: { 1: ["10:00", "18:00"], 2: ["09:00", "18:00"], 3: ["09:00", "18:00"], 4: ["09:00", "18:00"], 5: ["09:00", "18:00"] }, frontDesk: true },
+  { name: "Marcus Bell", email: "marcus@luxebeauty.demo", color: "#0891b2", position: "Receptionist", role: "front_desk", payType: "hourly", hourly: 1900, product: 500, skills: [], hours: { 2: ["09:00", "17:00"], 3: ["09:00", "17:00"], 4: ["09:00", "17:00"], 5: ["09:00", "17:00"], 6: ["09:00", "17:00"] }, frontDesk: true },
+  { name: "Leila Haddad", email: "leila@luxebeauty.demo", color: "#a16207", position: "Receptionist", role: "front_desk", payType: "hourly", hourly: 1800, product: 500, skills: [], hours: { 0: ["10:00", "16:00"], 4: ["14:00", "20:00"], 5: ["13:00", "19:00"], 6: ["11:00", "17:00"] }, frontDesk: true },
 ];
 
 // ---- Dates and working windows (all relative to the day the script runs) ----
@@ -308,6 +311,9 @@ async function main() {
   // Demo pictures stay in Postgres, never in the real R2 bucket; and this script only ever runs against a local database.
   process.env.R2_ACCESS_KEY_ID = "";
   process.env.R2_SECRET_ACCESS_KEY = "";
+  // Sign-up has a bot check (Turnstile) that a script can't pass; the staff logins are made through the same sign-up call, so the
+  // check is off for this process only (the guard above already refuses non-local databases without --allow-remote).
+  delete process.env.TURNSTILE_SECRET_KEY;
   const local = /@(localhost|127\.0\.0\.1|\[::1\])(:|\/)/.test(process.env.DATABASE_URL ?? "");
   const remoteOk = process.argv.includes("--allow-remote") || process.env.DEMO_ALLOW_REMOTE === "1";
   if (!local && !remoteOk) throw new Error("DATABASE_URL is not a local database. Pass --allow-remote (or set DEMO_ALLOW_REMOTE=1) if you really mean to seed a hosted demo.");
@@ -335,6 +341,15 @@ async function main() {
     return created;
   };
   let user = (await db.query.user.findFirst({ where: eq(schema.user.email, EMAIL) })) ?? (await makeUser());
+  /** A staff member's login: the existing user for that email, else a new verified one with the demo password. */
+  const loginFor = async (email: string, name: string) => {
+    const found = await db.query.user.findFirst({ where: eq(schema.user.email, email) });
+    if (found) return found;
+    await auth.api.signUpEmail({ body: { email, password: PASSWORD, name } });
+    const created = (await db.query.user.findFirst({ where: eq(schema.user.email, email) }))!;
+    await db.update(schema.user).set({ emailVerified: true }).where(eq(schema.user.id, created.id));
+    return created;
+  };
   let signIn;
   try {
     signIn = await auth.api.signInEmail({ body: { email: EMAIL, password: PASSWORD }, returnHeaders: true });
@@ -431,6 +446,12 @@ async function main() {
       const mine = serviceIds.filter((sv) => s.skills.includes(sv.group) || s.skills.includes(sv.root));
       if (mine.length) await tx.insert(schema.staffServices).values(mine.map((sv) => ({ businessId, staffId: row!.id, serviceId: sv.id })));
       staffRows.push({ id: row!.id, name: s.name, skills: s.skills, hours: s.hours, homeSite, siteByDay, hourly: s.payType !== "commission", frontDesk: !!s.frontDesk, locationId: staffLoc });
+
+      // A login for each person, in their role, linked to their staff row the way accepting an invitation would. The login is shared
+      // between the demo profiles (same email), so it is created once and joins each demo business as a member.
+      const login = await loginFor(s.email, s.name);
+      await db.insert(schema.member).values({ id: crypto.randomUUID().replace(/-/g, ""), organizationId: businessId, userId: login.id, role: s.role });
+      await tx.update(schema.staff).set({ userId: login.id }).where(eq(schema.staff.id, row!.id));
     }
 
     // ---- Things that must be known before appointments are generated: time off, classes, standing visits ----

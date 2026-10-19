@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Ban, ChevronDown, ChevronLeft, ChevronRight, Pencil, Plus } from "lucide-react";
 import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
-import { schema, withTenant } from "@angelic/db";
+import { db, schema, withTenant } from "@angelic/db";
 import { can, instantToISODate, mondayOf } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { cn, shiftISODate } from "@/lib/utils";
@@ -10,6 +10,7 @@ import { dateLong } from "@/lib/format";
 import { describeHours, time12 } from "@/lib/hours";
 import { matchesPeople, monthDates, monthLabel, monthOf, orderStaff, parsePeopleFilter, peopleOptions, shiftMonth } from "@/lib/staff-hours";
 import { buildCoverage } from "@/server/coverage";
+import { listRoles } from "@/server/roles";
 import { listCategories, buildTree, flattenTree } from "@/server/categories";
 import { Card, Empty, LinkButton, PageHeader, Select } from "@/components/ui";
 import { AutoSubmitForm } from "@/components/auto-submit-form";
@@ -42,16 +43,24 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const period: "week" | "month" = sp.period === "month" ? "month" : "week";
   const thisMonth = monthOf(today);
   const month = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : thisMonth;
-  // Month only: "Only working" drops the people who are off that day from each cell, so a busy roster reads as who is actually in.
-  const hideOff = period === "month" && sp.off === "hide";
+  // Month only: "Only working" (the default) drops the people who are off that day from each cell, so the roster reads as who is in;
+  // "Everyone" (`?off=show`) lists them all with "Off".
+  const hideOff = period === "month" && sp.off !== "show";
   const horizon = shiftISODate(today, 90);
 
+  const [roles, members] = await Promise.all([
+    listRoles(business.id),
+    db.select({ userId: schema.member.userId, role: schema.member.role }).from(schema.member).where(eq(schema.member.organizationId, business.id)),
+  ]);
   const { people, peopleFilter, shown, overrides, locations, cats } = await withTenant(business.id, async (tx) => {
     // Everyone who is active: front desk and managers keep weekly hours and time off too, not only providers.
-    const people = orderStaff(await tx.select({ id: schema.staff.id, name: schema.staff.displayName, takesAppointments: schema.staff.takesAppointments, sortOrder: schema.staff.sortOrder, position: schema.staff.position }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)));
-    // The People filter: everyone (default), providers, front desk and other staff, or one position. It drives the lanes,
-    // the Edit hours menu and the time-off list; the coverage strip still judges every provider.
-    const peopleFilter = parsePeopleFilter(sp.people, people);
+    const rows = await tx.select({ id: schema.staff.id, name: schema.staff.displayName, takesAppointments: schema.staff.takesAppointments, sortOrder: schema.staff.sortOrder, userId: schema.staff.userId }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName));
+    // Each person's login role (null until they accept an invite). Memberships live outside the tenant tables, as in server/roles.ts.
+    const roleOf = new Map(members.map((m) => [m.userId, m.role]));
+    const people = orderStaff(rows.map((r) => ({ id: r.id, name: r.name, takesAppointments: r.takesAppointments, sortOrder: r.sortOrder, role: r.userId ? (roleOf.get(r.userId) ?? null) : null })));
+    // The People filter: everyone (default), one login role, or the staff with no login yet. It drives the lanes, the Edit hours
+    // menu and the time-off list; the coverage strip still judges every provider.
+    const peopleFilter = parsePeopleFilter(sp.people, people, roles);
     const shown = people.filter((p) => matchesPeople(p, peopleFilter));
     const ids = shown.map((p) => p.id);
     return {
@@ -81,7 +90,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
       period: period === "month" ? "month" : null,
       week: period === "week" && weekStart !== thisMonday ? weekStart : null,
       month: period === "month" && month !== thisMonth ? month : null,
-      off: hideOff ? "hide" : null,
+      off: period === "month" && !hideOff ? "show" : null,
       location: locationId,
       scope: categoryId ? `c:${categoryId}` : null,
       view: view === "coverage" ? "coverage" : null,
@@ -114,7 +123,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const mdw = (d: string) => new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
   const range = (g: Group) => (g.from === g.to ? dateLong(g.from) : `${mdw(g.from)} – ${mdw(g.to)}`);
   const nameOf = (id: string) => people.find((p) => p.id === id)?.name ?? "Someone";
-  const peopleChoices = peopleOptions(people);
+  const peopleChoices = peopleOptions(people, roles);
   const peopleLabel = peopleChoices.find((o) => o.value === peopleFilter)?.label ?? "Everyone";
 
   return (
@@ -160,7 +169,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
           {multi ? <LocationFilter locations={locations} current={locationId} query={qs({ location: null })} allLabel={null} /> : null}
           <AutoSubmitForm className="flex flex-wrap items-center gap-2">
             {period === "month" ? <input type="hidden" name="period" value="month" /> : null}
-            {hideOff ? <input type="hidden" name="off" value="hide" /> : null}
+            {period === "month" && !hideOff ? <input type="hidden" name="off" value="show" /> : null}
             {period === "month" && month !== thisMonth ? <input type="hidden" name="month" value={month} /> : null}
             {period === "week" && weekStart !== thisMonday ? <input type="hidden" name="week" value={weekStart} /> : null}
             {multi ? <input type="hidden" name="location" value={locationId ?? ""} /> : null}
@@ -187,8 +196,8 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
             </div>
           ) : (
             <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Who to list on each day">
-              {([[false, "Everyone"], [true, "Only working"]] as const).map(([hide, label]) => (
-                <Link key={label} href={`?${qs({ off: hide ? "hide" : null })}`} aria-current={hideOff === hide ? "true" : undefined} className={cn("rounded-md px-3 py-0.5", hideOff === hide ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{label}</Link>
+              {([[true, "Only working"], [false, "Everyone"]] as const).map(([hide, label]) => (
+                <Link key={label} href={`?${qs({ off: hide ? null : "show" })}`} aria-current={hideOff === hide ? "true" : undefined} className={cn("rounded-md px-3 py-0.5", hideOff === hide ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{label}</Link>
               ))}
             </div>
           )}
