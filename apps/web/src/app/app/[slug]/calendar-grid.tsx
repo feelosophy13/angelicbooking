@@ -100,7 +100,9 @@ function groupCards(items: CalItem[]): Card[] {
   });
 }
 
-type Drag = { key: string; originX: number; originY: number; dx: number; dy: number; moved: boolean };
+type Drag = { key: string; originX: number; originY: number; dx: number; dy: number; moved: boolean; /** Lifted by a long press on a touch screen. */ touch?: boolean };
+/** How long a finger rests on a card before it lifts (a shorter touch scrolls or taps). */
+const LONG_PRESS_MS = 350;
 /** Dragging a card's bottom edge: how far the end has moved, in grid minutes. */
 type Resize = { key: string; originY: number; dEnd: number };
 /** A drop that waits for "tell the client?" before it is saved; the card stays drawn where it was dropped. */
@@ -250,9 +252,13 @@ export function CalendarGrid(props: {
     const card = [...cardsByCol.values()].flat().find((c) => c.key === d.key);
     if (!card) return;
     if (!d.moved) {
-      openPanel(card);
+      // A long press that never moved: the finger lifts, the tap's click opens the panel (mouse: open it here).
+      if (!d.touch) openPanel(card);
       return;
     }
+    // The click that follows a touch drag must not open the panel.
+    suppressClick.current = true;
+    setTimeout(() => { suppressClick.current = false; }, 400);
     const deltaMin = snap(d.dy);
     const colShift = colWidth.current ? Math.round(d.dx / colWidth.current) : 0;
     const fromIdx = columns.findIndex((c) => c.key === card.first.columnKey);
@@ -364,26 +370,53 @@ export function CalendarGrid(props: {
       setDrag(next);
     };
     const onUp = () => finishDrag();
+    // Once a card is lifted by a long press, the finger moves the card, not the page (the listener must not be passive for that).
+    const onTouchMove = (e: TouchEvent) => { if (dragRef.current?.touch) e.preventDefault(); };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
     window.addEventListener("pointercancel", onUp, { once: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("touchmove", onTouchMove);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drag?.key]);
 
   const lastPointer = useRef<string>("mouse");
+  const suppressClick = useRef(false);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); pressTimer.current = null; };
+  useEffect(() => cancelPress, []);
 
   function onPointerDown(e: React.PointerEvent, card: Card) {
     if (e.button !== 0) return;
     lastPointer.current = e.pointerType;
-    // Touch scrolls the day; a tap opens the visit (onClick). Drag-to-move is a mouse/pen gesture.
-    if (e.pointerType === "touch") return;
+    const colEl = (e.currentTarget as HTMLElement).parentElement!;
+    const origin = { x: e.clientX, y: e.clientY };
+    if (e.pointerType === "touch") {
+      // A finger scrolls the day and a tap opens the visit; press and hold lifts the card so it can be moved (the browser's scroll
+      // or a slide cancels the press). A short buzz says it lifted, where the device supports it.
+      cancelPress();
+      const stop = () => { cancelPress(); window.removeEventListener("pointermove", onSlide); window.removeEventListener("pointerup", stop); window.removeEventListener("pointercancel", stop); };
+      const onSlide = (ev: PointerEvent) => { if (Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) > 8) stop(); };
+      window.addEventListener("pointermove", onSlide);
+      window.addEventListener("pointerup", stop);
+      window.addEventListener("pointercancel", stop);
+      pressTimer.current = setTimeout(() => {
+        stop();
+        colWidth.current = colEl.getBoundingClientRect().width;
+        const d: Drag = { key: card.key, originX: origin.x, originY: origin.y, dx: 0, dy: 0, moved: false, touch: true };
+        dragRef.current = d;
+        setDrag(d);
+        try { navigator.vibrate?.(15); } catch { /* not supported */ }
+      }, LONG_PRESS_MS);
+      return;
+    }
     e.preventDefault();
-    colWidth.current = (e.currentTarget as HTMLElement).parentElement!.getBoundingClientRect().width;
+    colWidth.current = colEl.getBoundingClientRect().width;
     const d: Drag = { key: card.key, originX: e.clientX, originY: e.clientY, dx: 0, dy: 0, moved: false };
     dragRef.current = d;
     setDrag(d);
@@ -569,12 +602,13 @@ export function CalendarGrid(props: {
                       onFocus={(e) => showTip(e.currentTarget, card.first.tip, 0)}
                       onBlur={hideTip}
                       onClick={() => {
+                        if (suppressClick.current) return;
                         if (!draggable || lastPointer.current === "touch") openPanel(card);
                       }}
                       onKeyDown={(e) => e.key === "Enter" && openPanel(card)}
                       data-card
                       aria-label={`${card.first.title}, ${card.first.subtitle}, ${fmt(card.startMin)} to ${fmt(card.endMin)}`}
-                      className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", (dragging || resizing) && "z-30 ring-2 ring-brand-500 shadow-lg")}
+                      className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm [-webkit-touch-callout:none]", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", (dragging || resizing) && "z-30 ring-2 ring-brand-500 shadow-lg", drag?.key === card.key && drag.touch && "z-30 scale-[1.03] ring-2 ring-brand-500 shadow-lg")}
                       style={{
                         top: top(card.startMin),
                         height,
@@ -665,7 +699,7 @@ export function CalendarGrid(props: {
       </div>
       {props.canMove || props.canMoveBlock || canCreate ? (
         <p className="hidden text-xs text-stone-500 md:block">
-          {[canCreate ? (props.canBlock ? "Click or draw on an empty slot to book or block it." : "Click an empty slot to book it.") : null, props.canMove || props.canMoveBlock ? "Drag an appointment to move it. Click to open it." : null].filter(Boolean).join(" ")}
+          {[canCreate ? (props.canBlock ? "Click or draw on an empty slot to book or block it." : "Click an empty slot to book it.") : null, props.canMove || props.canMoveBlock ? "Drag an appointment to move it (press and hold on a touch screen). Click to open it." : null].filter(Boolean).join(" ")}
         </p>
       ) : null}
       {hover && !drag?.moved && !sel && !resize && !confirm ? <CalendarTip tip={hover.tip} anchor={hover.anchor} fmt={fmt} /> : null}

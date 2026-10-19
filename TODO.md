@@ -178,6 +178,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       card's server-built summary, so nothing is fetched on click; Escape or × closes; it follows a refresh and closes when the card
       leaves the grid. Keyboard shortcuts keep working with it open. Not built: editing services, moving, cancelling or checkout in the
       panel (Open does those on the appointment page).
+- [x] Touch drag, 2026-10-18: on a touch screen (a tablet at the desk) press and hold a card for about a third of a second and it lifts
+      (ring, slight scale, a short buzz where supported); the finger then moves it, the page no longer scrolls, and letting go follows the
+      same path as a mouse drop ("Move and tell / Move quietly", Undo toast, error toast). A slide or the browser's own scroll within
+      the hold cancels the lift, and a plain tap still opens the detail sheet. Verified by driving pointer events with touch type in the
+      browser pane (the pane's taps arrive as mouse clicks, so not on a real finger). Resize by touch not built.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
