@@ -200,6 +200,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Linked multi-provider visits, 2026-10-18: a visit whose services are done by different providers is drawn as one card per column;
       each of those cards now carries a small link mark, and hovering or opening any of them rings its siblings across the columns, so
       the whole visit reads as one (worked out on the client from the items on screen; the detail panel already lists every line).
+- [x] Appointment search in ⌘K, 2026-10-18: a client's visits from the last 90 days onward (past ones marked "past", cancelled and
+      no-show said so), and upcoming visits found by service name ("lash lift" lists who has one coming); own-calendar roles get only
+      their own, roles with no calendar none. The Appointments page keeps the full filters and paging (`search/route.ts`).
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
