@@ -38,7 +38,7 @@ export function AgendaList({ days, items, staff, today }: { days: string[]; item
                 const greyed = block || r.status === "cancelled" || r.status === "no_show";
                 return (
                   <li key={r.groupKey} className={cn(rowClass, "flex items-center gap-3 px-3 py-2 text-sm")}>
-                    <span className="w-24 shrink-0 tabular-nums text-xs text-stone-500">{fmt(r.startMin)} – {fmt(r.endMin)}</span>
+                    <span className="w-36 shrink-0 tabular-nums text-xs text-stone-500">{fmt(r.startMin)} – {fmt(r.endMin)}</span>
                     <span className="h-8 w-1 shrink-0 rounded-full" style={{ background: r.color }} aria-hidden />
                     <span className="min-w-0 flex-1">
                       <RowLink href={r.href} className={cn("block truncate font-medium", greyed && "text-stone-500", r.status === "cancelled" || r.status === "no_show" ? "line-through" : "")}>{r.title}</RowLink>

@@ -197,6 +197,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       remembered in this browser (`calendar-display.tsx`). Categories have no colour of their own, so each takes one from a twelve-hue
       palette in menu order (`lib/calendar-palette.ts`); by category every card is tinted and a legend of the categories on screen sits
       above the grid. Month keeps provider colours. Gap: an owner cannot pick a category's colour (would need a colour on the category form).
+- [x] Linked multi-provider visits, 2026-10-18: a visit whose services are done by different providers is drawn as one card per column;
+      each of those cards now carries a small link mark, and hovering or opening any of them rings its siblings across the columns, so
+      the whole visit reads as one (worked out on the client from the items on screen; the detail panel already lists every line).
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
