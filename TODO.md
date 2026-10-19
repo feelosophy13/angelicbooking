@@ -528,6 +528,25 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       tag, rating range, first visit only. Marketing → Automations lists them with 30-day send counts; each workflow
       page has the step editor and a run log that explains every step. Still to do: a "send me a test" button, a
       projected-sends estimate before enabling, and dropping the unused `automations` table after a deploy.
+- [x] 2026-10-18: automation engine fixes from REVIEW-2026-10-18 Part 1b (items 1–9) and 1f. Marketing vs transactional is decided
+      per message step (`lib/workflows-logic.ts` messageConsent): aftercare / welcome texts within 72 h of the visit or sign-up need only
+      text consent and no STOP notice on every message (STOP is still honored at send); later steps and birthday / no-visit stay
+      marketing; quiet hours 9am–8pm now hold every text except the reminder and the booked / cancelled confirmations; the step editor
+      says under each text or email which consent it needs; transactional emails go through `transactionalEmail` (no unsubscribe link).
+      Stop-on-rebook counts any future booked / confirmed visit (pre-booked at the desk included), checked before every step, and every
+      booking path (desk without confirmation, series, API notify:false, import) runs `afterAppointmentBooked` (booked workflows + stop
+      the client's rebook runs); API notify:false, reminders:false still starts the booked workflows without a reminder step. API
+      reschedule / move / cancel / item delete / cancel-series resync runs with or without notify, and a visit-timed wait is re-derived
+      from the appointment's current time when the cron wakes it. Each run advances in its own transaction (`advanceOne`; the cron
+      leases due runs for 10 min): a throwing step marks that run `failed` (error in its log, reported) and never touches other runs or
+      tenants; the trigger entry points report and swallow errors so a workflow bug can't fail a booking. `firstVisitOnly` counts only
+      completed visits before this one. Run logs say "queued" at queue time and delivery appends sent / skipped / failed (`runOutcome`
+      drives the badge and the API's `outcome`); log times read in the business's zone; the run page shows the whole log. Dropped:
+      `renderWorkflowText`, the `void isNull` placeholder, the `pre_visit` conversion branch. Tests: `lib/__tests__/workflows-logic.test.ts`,
+      `server/__tests__/workflow-engine.test.ts`, `reminder-timing.test.ts`. Not verified live: Twilio / Resend sends (the log append
+      runs on the real send path, exercised in tests with no provider configured). Follow-ups: `server/import.ts` perRow uses a raw
+      savepoint inside one transaction, which postgres.js rethrows at commit (same trap the engine just left); review items 10–12 (client
+      time zones, DST, `cancelRuns` log races, placeholders) are still open.
 - [x] Landed 2026-10-11 (migration 0052): "Before your visit" prep notes on services and categories ride on the
       confirmation and reminder (email box + text suffix) for the services booked; the reminder is the
       "Appointment reminder" workflow template (wait N h before → reminder step with the standard wording), created

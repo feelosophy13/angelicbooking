@@ -5,7 +5,7 @@ import { schema, withTenant } from "@angelic/db";
 import { apiAudit, ApiErrors, readBody, route } from "@/lib/api";
 import { getAppointmentApi } from "@/server/api-v1";
 import { BookingError, setAppointmentStatus } from "@/server/booking";
-import { notifyAppointment } from "@/lib/notify";
+import { appointmentChangedSilently, notifyAppointment } from "@/lib/notify";
 
 // A reason is required, as at the desk and in the mobile app: a managed one (`reason_id`) or a written note (`reason`).
 const body = z
@@ -28,6 +28,8 @@ export const POST = route<{ id: string }>("appointments:cancel", async (ctx, req
     throw e;
   }
   await apiAudit(ctx, "api.appointment.cancel", "appointment", id, { reason: parsed.data.reason ?? null });
+  // Silent or not, the visit's reminder run is dropped and "Appointment cancelled" workflows start.
   if (parsed.data.notify) after(() => notifyAppointment(ctx.business, id, "cancellation").catch((e) => console.error("[api/v1] notify failed", (e as Error).message)));
+  else after(() => appointmentChangedSilently(ctx.business, id, "cancelled"));
   return NextResponse.json({ data: await getAppointmentApi(businessId, id) });
 });

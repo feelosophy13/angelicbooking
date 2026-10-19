@@ -2,7 +2,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant, type CampaignAudience, type WorkflowFilters, type WorkflowStep, type WorkflowTrigger } from "@angelic/db";
 import { zonedToInstant } from "@angelic/core";
-import { TRIGGERS, newStepId } from "@/lib/workflows-logic";
+import { TRIGGERS, newStepId, runOutcome } from "@/lib/workflows-logic";
 import { firstForeign } from "@/lib/api";
 import { smsAvailableFor } from "@/server/messaging";
 import type { TenantDb } from "@angelic/db";
@@ -195,7 +195,7 @@ export const getWorkflowApi = (b: string, id: string) =>
   withTenant(b, (tx) => tx.query.workflows.findFirst({ where: and(eq(schema.workflows.id, id), eq(schema.workflows.businessId, b)) }));
 
 export const serializeRun = (r: typeof schema.workflowRuns.$inferSelect) => ({
-  id: r.id, workflow_id: r.workflowId, client_id: r.clientId, appointment_id: r.appointmentId, status: r.status, step_index: r.stepIndex, next_at: iso(r.nextAt),
+  id: r.id, workflow_id: r.workflowId, client_id: r.clientId, appointment_id: r.appointmentId, status: r.status, outcome: runOutcome(r), step_index: r.stepIndex, next_at: iso(r.nextAt),
   started_at: iso(r.startedAt), finished_at: iso(r.finishedAt), log: r.log.map((l) => ({ at: l.at, step: l.step, event: l.event, detail: l.detail })),
 });
 export const listRunsApi = (b: string, workflowId: string, p: Pg) =>

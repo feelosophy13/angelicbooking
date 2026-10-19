@@ -4,11 +4,14 @@
  * the throwaway businesses have no messaging configured, so nothing is ever sent.
  */
 import "../../../../../packages/db/src/env"; // must come first: @angelic/db connects when imported, so DATABASE_URL has to be loaded already
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { call, mkKey, reachable, send, setupKit } from "./api-test-kit";
+
+// Even a silent booking (notify:false, reminders:false) hands its "Appointment booked" workflows to `after`, which needs a request scope.
+vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: () => undefined }));
 
 import { POST as postAppt } from "@/app/api/v1/appointments/route";
 import { GET as getAppt } from "@/app/api/v1/appointments/[id]/route";

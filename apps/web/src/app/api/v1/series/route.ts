@@ -3,7 +3,7 @@ import { schema, withTenant } from "@angelic/db";
 import { apiAudit, ApiErrors, firstForeign, readBody, route } from "@/lib/api";
 import { getSeriesApi, seriesCreate, NO_USER } from "@/server/api-v1-appointments";
 import { createSeries } from "@/server/series";
-import { notifyAppointment, scheduleReminderFor } from "@/lib/notify";
+import { afterAppointmentBooked, notifyAppointment } from "@/lib/notify";
 
 /**
  * POST /api/v1/series: book a standing appointment ("every N weeks, M visits"). Dates that are outside the provider's hours or already taken are
@@ -26,8 +26,8 @@ export const POST = route("appointments:book", async (ctx, req) => {
     after(async () => {
       try {
         if (d.notify) await notifyAppointment(ctx.business, r.created[0]!.appointmentId, "confirmation");
-        else await scheduleReminderFor(ctx.business, r.created[0]!.appointmentId);
-        for (const c of r.created.slice(1)) await scheduleReminderFor(ctx.business, c.appointmentId);
+        else await afterAppointmentBooked(ctx.business, r.created[0]!.appointmentId);
+        for (const c of r.created.slice(1)) await afterAppointmentBooked(ctx.business, c.appointmentId);
       } catch (e) {
         console.error("[api/v1] notify failed", (e as Error).message);
       }

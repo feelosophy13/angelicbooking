@@ -154,6 +154,12 @@ export function marketingEmail(ctx: BrandCtx, input: { subject: string; text: st
   return { subject: input.subject, html };
 }
 
+/** Transactional email from a workflow step (aftercare, a payment that failed, a no-show follow-up): same shape, no unsubscribe line. */
+export function transactionalEmail(ctx: BrandCtx, input: { subject: string; text: string; ctaLabel?: string | null; ctaUrl?: string | null }) {
+  const cta = input.ctaUrl ? `<p style="margin-top:16px"><a href="${input.ctaUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">${esc(input.ctaLabel ?? "Book now")}</a></p>` : "";
+  return { subject: input.subject, html: shell(ctx, input.subject, `${textToHtml(input.text)}${cta}`) };
+}
+
 /** Gift card bought online, sent to the recipient. */
 export function giftCardEmail(ctx: BrandCtx, input: { code: string; amount: string; from: string | null; message: string | null; bookingUrl: string }) {
   const body = `<p style="font-size:15px">${input.from ? `${esc(input.from)} sent you a gift card` : "You've received a gift card"} for <b>${esc(ctx.businessName)}</b>.</p>

@@ -1,27 +1,78 @@
 /**
- * Pure helpers for workflows (no database): which workflows a trigger fires, when a
- * wait step resumes, quiet-hours deferral, step validation and the one-line summaries
- * shown on the Automations page. Tested in __tests__/workflows-logic.test.ts.
+ * Pure helpers for workflows (no database): which workflows a trigger fires, which consent
+ * each message step needs, when a wait step resumes, quiet-hours deferral, step validation,
+ * a run's outcome and the one-line summaries shown on the Automations page. Tested in
+ * __tests__/workflows-logic.test.ts.
  */
-import type { WorkflowFilters, WorkflowStep, WorkflowTrigger } from "@angelic/db";
+import type { WorkflowFilters, WorkflowRunLogEntry, WorkflowStep, WorkflowTrigger } from "@angelic/db";
 
-export const TRIGGERS: { key: WorkflowTrigger; label: string; description: string; group: "visit" | "client" | "schedule"; marketing: boolean }[] = [
-  { key: "appointment_booked", label: "Appointment booked", description: "When a visit is booked online or at the desk (also fires for later visits in a series).", group: "visit", marketing: false },
-  { key: "appointment_completed", label: "Visit completed", description: "When a visit is checked out or marked completed.", group: "visit", marketing: true },
-  { key: "appointment_cancelled", label: "Appointment cancelled", description: "When a visit is cancelled by the client or the desk.", group: "visit", marketing: false },
-  { key: "appointment_no_show", label: "No-show", description: "When a visit is marked as a no-show.", group: "visit", marketing: false },
-  { key: "client_created", label: "New client", description: "When a client record is created (online booking, the desk or a shared form).", group: "client", marketing: true },
-  { key: "form_submitted", label: "Form submitted", description: "When a client completes an intake or consent form.", group: "client", marketing: false },
-  { key: "review_submitted", label: "Review received", description: "When a client submits a star rating.", group: "client", marketing: false },
-  { key: "membership_payment_failed", label: "Membership payment failed", description: "When a membership renewal charge fails.", group: "client", marketing: false },
-  { key: "birthday", label: "Birthday", description: "On the client's birthday, once a year (checked each morning).", group: "schedule", marketing: true },
-  { key: "no_visit", label: "No visit for a while", description: "When a client's last completed visit was this many days ago and nothing is booked (checked daily).", group: "schedule", marketing: true },
+export const TRIGGERS: { key: WorkflowTrigger; label: string; description: string; group: "visit" | "client" | "schedule" }[] = [
+  { key: "appointment_booked", label: "Appointment booked", description: "When a visit is booked online or at the desk (also fires for later visits in a series).", group: "visit" },
+  { key: "appointment_completed", label: "Visit completed", description: "When a visit is checked out or marked completed.", group: "visit" },
+  { key: "appointment_cancelled", label: "Appointment cancelled", description: "When a visit is cancelled by the client or the desk.", group: "visit" },
+  { key: "appointment_no_show", label: "No-show", description: "When a visit is marked as a no-show.", group: "visit" },
+  { key: "client_created", label: "New client", description: "When a client record is created (online booking, the desk or a shared form).", group: "client" },
+  { key: "form_submitted", label: "Form submitted", description: "When a client completes an intake or consent form.", group: "client" },
+  { key: "review_submitted", label: "Review received", description: "When a client submits a star rating.", group: "client" },
+  { key: "membership_payment_failed", label: "Membership payment failed", description: "When a membership renewal charge fails.", group: "client" },
+  { key: "birthday", label: "Birthday", description: "On the client's birthday, once a year (checked each morning).", group: "schedule" },
+  { key: "no_visit", label: "No visit for a while", description: "When a client's last completed visit was this many days ago and nothing is booked (checked daily).", group: "schedule" },
 ];
 
 export const triggerMeta = (key: WorkflowTrigger) => TRIGGERS.find((t) => t.key === key) ?? TRIGGERS[0]!;
 
-/** Messages from these triggers are marketing: quiet hours apply and every text carries the STOP notice. */
-export const isMarketingTrigger = (key: WorkflowTrigger) => triggerMeta(key).marketing;
+// ---------------------------------------------------------------------------
+// Consent: marketing or transactional, decided per message step
+// ---------------------------------------------------------------------------
+/** A text or email about a visit or sign-up that goes out within this many hours of it is part of that transaction, not marketing. */
+export const TRANSACTIONAL_WINDOW_HOURS = 72;
+
+/** Hours between the occasion (visit end, sign-up) and `index`, from the waits before it (an "after the visit" wait restarts the clock at the visit). */
+export function hoursBeforeStep(steps: WorkflowStep[], index: number): number {
+  let hours = 0;
+  for (const s of steps.slice(0, index)) {
+    if (s.type !== "wait") continue;
+    if (s.mode === "after_appointment") hours = Math.max(hours, s.hours);
+    else if (s.mode === "delay") hours += s.hours;
+  }
+  return hours;
+}
+
+export interface MessageConsent {
+  /** Needs marketing consent (written text consent / not unsubscribed), carries the STOP notice on every text and an unsubscribe link on every email. */
+  marketing: boolean;
+  /** A text at this step is held until 9am–8pm where the client is. */
+  quietHours: boolean;
+}
+
+/**
+ * Which consent a text or email step needs. Birthday and no-visit messages are always marketing. After a visit or a sign-up, a
+ * message within TRANSACTIONAL_WINDOW_HOURS is about that visit (aftercare, a welcome) and needs only appointment-text consent; later
+ * steps (a rebook nudge weeks on) are marketing. Every other trigger is about something the client did or that happened to their
+ * account, so it is transactional. Quiet hours apply to every text except the reminder and the booked / cancelled confirmations,
+ * which the client expects at once.
+ */
+export function messageConsent(trigger: WorkflowTrigger, steps: WorkflowStep[], index: number): MessageConsent {
+  const marketing =
+    trigger === "birthday" || trigger === "no_visit"
+      ? true
+      : trigger === "appointment_completed" || trigger === "client_created"
+        ? hoursBeforeStep(steps, index) > TRANSACTIONAL_WINDOW_HOURS
+        : false;
+  const quietHours = trigger !== "appointment_booked" && trigger !== "appointment_cancelled";
+  return { marketing, quietHours };
+}
+
+/** The one line under a text or email step in the editor: which consent it needs and when it can go. */
+export function consentLine(step: WorkflowStep, trigger: WorkflowTrigger, steps: WorkflowStep[], index: number): string | null {
+  if (step.type !== "sms" && step.type !== "email") return null;
+  const c = messageConsent(trigger, steps, index);
+  if (step.type === "sms") {
+    if (c.marketing) return "Marketing text: needs the client's written consent to marketing texts, carries “Reply STOP to opt out”, sent 9am–8pm.";
+    return c.quietHours ? "Appointment text: needs text consent only; sent 9am–8pm. A STOP reply still opts the client out." : "Appointment text: needs text consent only and goes out right away. A STOP reply still opts the client out.";
+  }
+  return c.marketing ? "Marketing email: skipped for clients who unsubscribed; carries an unsubscribe link and your postal address." : "Transactional email: needs email consent only, no unsubscribe link.";
+}
 
 /** Triggers that carry an appointment, so relative waits ("24 hours before") make sense. */
 export const APPOINTMENT_TRIGGERS: WorkflowTrigger[] = ["appointment_booked", "appointment_completed", "appointment_cancelled", "appointment_no_show"];
@@ -82,8 +133,8 @@ function localParts(at: Date, timeZone: string): { hour: number; minute: number;
 }
 
 /**
- * Marketing messages only go out between 9am and 8pm in the business's time zone.
- * Returns `at` when it is inside the window, else the next 9am.
+ * Quiet hours: texts (other than the reminder and the booked / cancelled confirmations) and marketing emails only go out between 9am
+ * and 8pm where the client is. Returns `at` when it is inside the window, else the next 9am.
  */
 export function deferToDaytime(at: Date, timeZone: string): Date {
   const { hour, minute } = localParts(at, timeZone);
@@ -163,9 +214,27 @@ export function summarizeSteps(steps: WorkflowStep[]): string {
   return parts.join(" → ").replace(/text → email/g, "text + email").replace(/email → text/g, "email + text");
 }
 
-/** Placeholder substitution; unknown placeholders are left in place so typos are visible. */
-export function renderWorkflowText(text: string, vars: Record<string, string | number | null | undefined>): string {
-  return text.replace(/\{(\w+)\}/g, (m, k: string) => (vars[k] == null ? m : String(vars[k])));
+// ---------------------------------------------------------------------------
+// Run outcome
+// ---------------------------------------------------------------------------
+export type RunOutcome = "active" | "queued" | "sent" | "skipped" | "failed" | "cancelled" | "done";
+
+/**
+ * What a run amounted to, for its badge: in progress, cancelled or failed as is; a finished run is "failed" when a message could not
+ * be sent, "sent" when one went out, "queued" while a message it handed to delivery has not been tried yet, "skipped" when every
+ * message was skipped (no consent, STOP, trial cap …), and "done" when it had no messages (tags, points, staff notes). Delivery
+ * appends what it did to the log (entries without a step), which is how a run stops reading "queued".
+ */
+export function runOutcome(run: { status: "active" | "done" | "cancelled" | "failed"; log: WorkflowRunLogEntry[] }): RunOutcome {
+  if (run.status !== "done") return run.status;
+  const events = new Set(run.log.map((l) => l.event));
+  if (events.has("failed")) return "failed";
+  if (events.has("sent")) return "sent";
+  const queued = run.log.filter((l) => l.event === "queued").length;
+  const tried = run.log.filter((l) => l.step == null && (l.event === "sent" || l.event === "skipped" || l.event === "failed")).length;
+  if (queued > tried) return "queued";
+  if (events.has("skipped")) return "skipped";
+  return "done";
 }
 
 /**

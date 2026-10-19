@@ -124,19 +124,30 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
     return inserted.map((r) => r.id);
   });
   if (ids.length) after(() => deliverMany(business.id, ids));
-  // Workflows (Automations) react to the same events. Imported lazily: that module
-  // uses this one for contexts and delivery.
+  // Workflows (Automations) react to the same events. The engine reports and swallows its own errors, so a workflow problem never
+  // turns into an error for a booking that exists.
+  if (template === "confirmation") await afterAppointmentBooked(business, appointmentId);
+  else if (template === "cancellation" || template === "rescheduled") await appointmentChangedSilently(business, appointmentId, template === "cancellation" ? "cancelled" : "rescheduled");
+}
+
+/**
+ * An appointment was made without a confirmation (later visits in a series, the desk's "no confirmation", API notify:false, an
+ * import): its "Appointment booked" workflows still start (the reminder ones only when `reminders`), and the client's "stop if they
+ * book again" runs stop. Imported lazily: the workflows module uses this one for contexts and delivery.
+ */
+export async function afterAppointmentBooked(business: typeof schema.businesses.$inferSelect, appointmentId: string, opts: { reminders?: boolean } = {}) {
   const wf = await import("@/server/workflows");
-  if (template === "confirmation") {
-    await wf.triggerAppointmentWorkflows(business, "appointment_booked", appointmentId);
-    const appt = await withTenant(business.id, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId), columns: { clientId: true } }));
-    if (appt?.clientId) await wf.noteClientBooked(business, appt.clientId);
-  } else if (template === "cancellation") {
-    await wf.resyncAppointmentRuns(business, appointmentId, "cancelled");
-    await wf.triggerAppointmentWorkflows(business, "appointment_cancelled", appointmentId);
-  } else if (template === "rescheduled") {
-    await wf.resyncAppointmentRuns(business, appointmentId, "rescheduled");
-  }
+  await wf.afterAppointmentBooked(business, appointmentId, opts);
+}
+
+/**
+ * An appointment moved or was cancelled without a message to the client (API notify:false): runs timed from it are re-timed or
+ * dropped, and "Appointment cancelled" workflows start, exactly as when the client is told.
+ */
+export async function appointmentChangedSilently(business: typeof schema.businesses.$inferSelect, appointmentId: string, change: "rescheduled" | "cancelled") {
+  const wf = await import("@/server/workflows");
+  await wf.resyncAppointmentRuns(business, appointmentId, change);
+  if (change === "cancelled") await wf.triggerAppointmentWorkflows(business, "appointment_cancelled", appointmentId);
 }
 
 /** Templates that are only meaningful while the visit is still on. */
@@ -163,12 +174,6 @@ async function sweepOrphanedReminders(tx: TenantDb) {
     .update(schema.notifications)
     .set({ status: "cancelled", error: "Appointment cancelled" })
     .where(and(eq(schema.notifications.status, "queued"), inArray(schema.notifications.template, VISIT_BOUND_TEMPLATES), inArray(schema.notifications.appointmentId, gone)));
-}
-
-/** Later visits in a series get no confirmation, but their "Appointment booked" workflows (reminder …) start. */
-export async function scheduleReminderFor(business: typeof schema.businesses.$inferSelect, appointmentId: string) {
-  const wf = await import("@/server/workflows");
-  await wf.triggerAppointmentWorkflows(business, "appointment_booked", appointmentId);
 }
 
 /** Queue a one-off message (e.g. staff invitation) and send it after the response. */
@@ -397,6 +402,9 @@ async function deliverClaimed(claimed: Claimed[]): Promise<Summary> {
           .update(schema.notifications)
           .set(patch)
           .where(and(eq(schema.notifications.id, o.id), eq(schema.notifications.status, "sending")));
+        // A message a workflow queued: the run's log says what became of it (the run read "queued" until now).
+        const row = rowById.get(o.id);
+        if (row?.workflowRunId && patch.status !== "queued") await noteRunOutcome(tx, row, patch.status, o.error);
       }
     });
     for (const o of list) if (o.suppress) await withTenant(businessId, (tx) => suppressSms(tx, businessId, o.suppress!, "carrier"));
@@ -407,6 +415,14 @@ async function deliverClaimed(claimed: Claimed[]): Promise<Summary> {
 }
 
 export type Summary = { processed: number; sent: number; failed: number; skipped: number };
+
+/** Append "Text sent to …" / "Email skipped: no consent …" to the workflow run that queued a message. Appended in SQL so the cron, which may hold the run, can't overwrite it. */
+async function noteRunOutcome(tx: TenantDb, row: Row, status: "sent" | "skipped" | "failed", error?: string) {
+  const what = row.channel === "sms" ? "Text" : "Email";
+  const detail = status === "sent" ? `${what} sent to ${row.recipient}` : `${what} ${status === "failed" ? "failed" : "skipped"}: ${error ?? "unknown reason"}`;
+  const entry = { at: new Date().toISOString(), step: null, event: status, detail };
+  await tx.update(schema.workflowRuns).set({ log: sql`${schema.workflowRuns.log} || ${JSON.stringify([entry])}::jsonb` }).where(eq(schema.workflowRuns.id, row.workflowRunId!));
+}
 
 /** Put a failed or skipped message back in the queue and try it right away (Settings → Messages → Send again). */
 export async function resendNotification(businessId: string, id: string): Promise<Summary> {

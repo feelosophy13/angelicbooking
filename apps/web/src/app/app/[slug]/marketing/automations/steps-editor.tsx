@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp, Bell, BellRing, ChevronDown, Clock, Coins, Mail, Me
 import type { WorkflowStep, WorkflowTrigger } from "@angelic/db";
 import { Input, Select, Textarea } from "@/components/ui";
 import { Field } from "@/components/form";
-import { APPOINTMENT_TRIGGERS, newStepId, placeholdersFor, STEP_LABELS } from "@/lib/workflows-logic";
+import { APPOINTMENT_TRIGGERS, consentLine, newStepId, placeholdersFor, STEP_LABELS } from "@/lib/workflows-logic";
 import { cn } from "@/lib/utils";
 
 type StepType = WorkflowStep["type"];
@@ -114,19 +114,21 @@ export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; tri
                       <>
                         <Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} placeholder="Your message. Your business name is added at the start." maxLength={1000} />
                         <div className="flex items-center justify-between gap-3"><Placeholders /><span className="text-[11px] text-stone-400">{s.body.length}/1000</span></div>
+                        <p className="text-xs text-stone-500">{consentLine(s, trigger, steps, i)}</p>
                       </>
                     ) : null}
                     {s.type === "email" ? (
                       <>
                         <Field label="Subject"><Input value={s.subject} onChange={(e) => update(i, { subject: e.target.value })} maxLength={150} /></Field>
-                        <Field label="Message" hint="Blank lines make paragraphs; your logo, colours and an unsubscribe link are added."><Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} /></Field>
+                        <Field label="Message" hint="Blank lines make paragraphs; your logo and colors are added."><Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} /></Field>
                         <Field label="Button label (optional)" className="max-w-xs"><Input value={s.ctaLabel ?? ""} onChange={(e) => update(i, { ctaLabel: e.target.value || null })} maxLength={40} /></Field>
                         <Placeholders />
+                        <p className="text-xs text-stone-500">{consentLine(s, trigger, steps, i)}</p>
                       </>
                     ) : null}
                     {s.type === "reminder" ? <p className="text-sm text-stone-600">The standard reminder: appointment details, manage link, outstanding forms and the “before your visit” notes of the services booked, by email and text to clients who allow each. Wording lives under Settings → Messages; prep notes on each service or category.</p> : null}
                     {s.type === "review_request" ? <p className="text-sm text-stone-600">Email when the client has one, otherwise a text. Wording lives under Settings → Messages; the Google link under Settings → Review requests.</p> : null}
-                    {s.type === "tag" ? <Input value={s.tag} onChange={(e) => update(i, { tag: e.target.value })} placeholder="Tag, e.g. Colour client" maxLength={40} className="max-w-xs" aria-label="Tag" /> : null}
+                    {s.type === "tag" ? <Input value={s.tag} onChange={(e) => update(i, { tag: e.target.value })} placeholder="Tag, e.g. Color client" maxLength={40} className="max-w-xs" aria-label="Tag" /> : null}
                     {s.type === "points" ? (
                       <div className="flex flex-wrap items-center gap-2 text-sm">
                         <Input type="number" min={1} max={100000} value={s.points} onChange={(e) => update(i, { points: Number(e.target.value) })} className="h-9 w-28" aria-label="Points" />

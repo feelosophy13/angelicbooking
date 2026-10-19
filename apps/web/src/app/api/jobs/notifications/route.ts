@@ -27,8 +27,8 @@ export async function POST(req: Request) {
   const started = Date.now();
   // Start scheduled workflows (birthday, lapsed clients) and resume waiting runs first, so this run
   // can deliver what they queue.
-  const a = await runScheduledTriggers().catch((e) => ({ businesses: 0, started: 0, error: (e as Error).message }));
-  const w = await processWorkflowRuns().catch((e) => ({ businesses: 0, resumed: 0, queued: 0, error: (e as Error).message }));
+  const a = await runScheduledTriggers().catch((e) => ({ businesses: 0, started: 0, failed: 0, error: (e as Error).message }));
+  const w = await processWorkflowRuns().catch((e) => ({ businesses: 0, resumed: 0, queued: 0, failed: 0, error: (e as Error).message }));
   const f = await queueFormsNudges().catch((e) => ({ businesses: 0, queued: 0, error: (e as Error).message }));
   // Once a day (after 8am local), tell whoever manages inventory what is low; queued here so it goes out in this run.
   const inv = await sendLowStockDigests().catch((e) => ({ checked: 0, sent: 0, error: (e as Error).message }));
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
   if (failed.length) await reportError(`jobs/notifications: ${failed.length} step(s) failed`, undefined, { failed });
   // Heartbeat for /api/health: the cron reached the app and the run finished (with or without failed steps).
   await db.insert(schema.jobMarkers).values({ name: HEARTBEAT, lastRunOn: now.toISOString().slice(0, 10) }).onConflictDoUpdate({ target: schema.jobMarkers.name, set: { lastRunOn: now.toISOString().slice(0, 10), updatedAt: new Date() } }).catch(() => undefined);
-  console.log(`[jobs/notifications] processed=${r.processed} sent=${r.sent} failed=${r.failed} skipped=${r.skipped} workflowsStarted=${a.started} workflowsResumed=${w.resumed} formsNudges=${f.queued} lowStockEmails=${inv.sent} verifications=${v.checked}/${v.changed} in ${ms}ms`);
+  console.log(`[jobs/notifications] processed=${r.processed} sent=${r.sent} failed=${r.failed} skipped=${r.skipped} workflowsStarted=${a.started} workflowsResumed=${w.resumed} workflowsFailed=${a.failed + w.failed} formsNudges=${f.queued} lowStockEmails=${inv.sent} verifications=${v.checked}/${v.changed} in ${ms}ms`);
   return NextResponse.json({ ...r, workflows: { ...a, ...w }, formsNudges: f, lowStock: inv, verifications: v, billing: bill, onboardingNudge: nudge, customDomains: domains, orphanDeposits: orphans, authorizedOrders: orders, failed, ms }, { status: failed.length ? 500 : 200 });
 }
 
