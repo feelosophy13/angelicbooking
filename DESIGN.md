@@ -168,6 +168,30 @@ in the stylist's colour, with a colour legend above the grid and no text, no but
 - **Testing roles in development.** The amber "Dev · View as" pill (bottom right, development only, never in production or on Render) shows the app as another role, and for
   a Provider as a particular stylist. It changes `requireBusiness`, so every menu, page and permission check behaves exactly as that role would get.
 
+## Calendar: getting around, quick create, the detail panel and dragging
+
+The calendar behaves like Google Calendar where that helps a desk, and these are the rules the pieces follow (`calendar-grid.tsx`,
+`calendar-nav.tsx`, `quick-create.tsx`, `appointment-panel.tsx`):
+
+- **Getting around.** The arrows, the button back to now and a "Pick a date" mini month (Monday-first, the view and filters kept) sit
+  together in the header. The keys are Google Calendar's (`lib/calendar-nav.ts`): t today, ← → (j k, p n) move, g pick a date, d w m
+  views, c new appointment, / search, ? the list, Escape closes. Shortcuts never fire while typing in a field, with a modifier held or
+  while a dialog is open. Add a key to `SHORTCUTS` and the help list follows.
+- **Starting something on the grid never leaves the page.** A click on empty grid, or a range drawn down a column (kept as a dashed
+  ghost), opens the quick-create popover beside it: the few fields a booking needs, Book, and "More options" for the full form. A
+  "Block time" tab shows only for those who may block. The popover is the only dialog on the grid that takes typing; it is
+  `aria-modal`, so the shortcuts pause while it is open.
+- **Clicking an appointment opens the detail panel**, down the right edge (a sheet from the bottom on a phone): the same server-built
+  summary as the hover card plus status actions and Open. Everything that changes the booking itself (services, moves to a chosen
+  time, cancel with a reason, checkout, photos) stays on the appointment page; the panel links there. Add facts to `buildTip`, not to
+  the panel.
+- **Dragging asks before it tells the client.** Dropping a visit whose client can be reached asks "Move and tell / Move quietly";
+  quietly still moves the reminders. Blocks and walk-ins move without asking. Every move and resize ends in a toast with Undo, which
+  reverses it the same way (told or quiet); errors are toasts too, never a banner above the grid. The bottom edge of a card resizes
+  (the end only). On a touch screen press and hold lifts a card; a slide or scroll cancels the lift.
+- **Client-side toasts** use `toast()` from `components/toaster.tsx`: one at a time, optional single action (Undo, Open). Server
+  actions keep using `setFlash`.
+
 ## Calendar hover card
 
 Hovering an appointment on the calendar (or tabbing to it) shows a card after a short pause: client and phone, status, every service on the visit with who
