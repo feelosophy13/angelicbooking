@@ -121,6 +121,16 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       ⌘K offers New appointment and Block time only with booking / blocking access (an own-calendar role also needs a linked staff member)
       and New client only with `clients.write`; service hits need `catalog.view`.
 
+- [x] Phase 1 tests, 2026-10-19: `server/__tests__/role-matrix.test.ts` seeds one business (two stylists, a client with phone and email,
+      three visits, two paid tickets with tips, two reviews, a product with cost and stock, a gift card, two time-clock rows) and renders the
+      real pages as each default role (the viewer is swapped by mocking `lib/tenant`; everything under it runs against Postgres): client list
+      and profile, appointment page, mobile agenda and detail, Reviews, Staff, Staff hours, Time clock, Sales, Products, Gift cards. It asserts
+      which fields appear for whom (phone and email, spend, other staff's days and hours, prices, stock, other people's tickets, review
+      authors) and that refused pages refuse. The permission tests in `packages/core` pin the defaults table row by row; `nav.test.ts`,
+      `security-guards.test.ts`, `visibility.test.ts` and `calendar-tip.test.ts` cover the sidebar, the API scope map, the helpers and the
+      hover card. Known flake, not from this work: `payroll-clawback.test.ts` compares dates across midnight and fails when run between
+      midnight local time and midnight in the business's zone.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts
