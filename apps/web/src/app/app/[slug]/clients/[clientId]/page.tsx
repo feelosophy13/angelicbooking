@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Plus } from "lucide-react";
+import { Plus, Receipt } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import { rowClass, RowLink } from "@/components/row";
 import { HistoryTimeline } from "./history-timeline";
@@ -159,6 +159,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/clients`}>Clients</BackLink></div>
       <PageHeader title={`${client.firstName} ${client.lastName}`.trim()} lead={client.photoUrl ? /* eslint-disable-next-line @next/next/no-img-element */ <img src={client.photoUrl} alt="" className="h-10 w-10 rounded-full object-cover" /> : undefined}>
+        {can(permissions, "checkout.take") ? <LinkButton href={`/app/${slug}/sales/new?clientId=${client.id}`} variant="secondary"><Receipt className="h-4 w-4" /> Sale</LinkButton> : null}
         {can(permissions, "appointments.write.any") ? <LinkButton href={`/app/${slug}/appointments/new?clientId=${client.id}`} variant="primary"><Plus className="h-4 w-4" /> Book appointment</LinkButton> : null}
       </PageHeader>
       {/* At a glance: the numbers the desk asks about before anything else. */}
