@@ -60,8 +60,8 @@ async function requireRefund(slug: string) {
 }
 
 /**
- * Anyone who takes payments, on a ticket they may see: a role that sees only its own calendar works only on tickets it is credited on or
- * rang up (the same rule as the Sales list), so a stylist can't open, edit or tip themselves on a colleague's ticket.
+ * Anyone who takes payments, on a ticket they may see: a role that sees only its own calendar works only on tickets it is credited on (or
+ * just opened and not yet filled; the same rule as the Sales list), so a stylist can't open, edit or tip themselves on a colleague's ticket.
  */
 async function ctxFor(slug: string, saleId: string) {
   const ctx = await requireAction(slug, "checkout.take");
