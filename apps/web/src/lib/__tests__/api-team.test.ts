@@ -6,6 +6,7 @@ import "../../../../../packages/db/src/env"; // first: @angelic/db connects when
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db, getSql, schema, withTenant } from "@angelic/db";
+import { DEFAULT_ROLE_PERMISSIONS } from "@angelic/core";
 import { call, reachable, send, setupKit } from "./api-test-kit";
 
 import { GET as getTeam } from "@/app/api/v1/team/route";
@@ -33,6 +34,9 @@ let readOnly = "";
 let staffWriteOnly = "";
 const id: Record<string, string> = {};
 let extraUser: string | null = null;
+// Role writes act as the key's creator: an owner for the main key, a manager for the escalation tests.
+let ownerUser = "";
+let managerUser = "";
 
 const json = async (r: Response) => ({ status: r.status, body: (await r.json()) as any });
 const noParams = {} as Record<string, never>;
@@ -41,6 +45,10 @@ beforeAll(async () => {
   if (!up) return;
   kit = await setupKit(["staff:write", "pay:write", "roles:write"]);
   key = kit.key;
+  ownerUser = `owner_${kit.A}`;
+  managerUser = `manager_${kit.A}`;
+  await db.insert(schema.user).values([{ id: ownerUser, name: "Owner", email: `${ownerUser}@example.com` }, { id: managerUser, name: "Manager", email: `${managerUser}@example.com` }]);
+  await db.insert(schema.member).values([{ id: `mo_${kit.A}`, organizationId: kit.A, userId: ownerUser, role: "owner" }, { id: `mm_${kit.A}`, organizationId: kit.A, userId: managerUser, role: "manager" }]);
   noScope = await kit.mkKey(kit.A, ["clients:write", "catalog:write"]);
   readOnly = await kit.mkKey(kit.A, ["staff:read", "pay:read", "roles:read"]);
   staffWriteOnly = await kit.mkKey(kit.A, ["staff:write"]);
@@ -60,7 +68,7 @@ beforeAll(async () => {
 // A key may make 120 requests a minute, and the suite makes more: each test gets its own.
 beforeEach(async () => {
   if (!up) return;
-  key = await kit.mkKey(kit.A, ["staff:write", "pay:write", "roles:write"]);
+  key = await kit.mkKey(kit.A, ["staff:write", "pay:write", "roles:write"], { createdBy: ownerUser });
   catalogKey = await kit.mkKey(kit.A, ["catalog:read"]);
 });
 
@@ -68,6 +76,7 @@ afterAll(async () => {
   if (!up) return;
   await kit.teardown();
   if (extraUser) await db.delete(schema.user).where(eq(schema.user.id, extraUser));
+  for (const u of [ownerUser, managerUser]) if (u) await db.delete(schema.user).where(eq(schema.user.id, u));
   await getSql().end();
 });
 
@@ -414,7 +423,7 @@ describe.skipIf(!up)("API team: roles", () => {
     expect(r.status).toBe(200);
     const keys = r.body.data.map((x: any) => x.key);
     expect(keys).toEqual(expect.arrayContaining(["owner", "manager", "provider", "front_desk", "custom_x"]));
-    expect(r.body.data.find((x: any) => x.key === "owner")).toMatchObject({ is_system: true, is_locked: true, member_count: 0 });
+    expect(r.body.data.find((x: any) => x.key === "owner")).toMatchObject({ is_system: true, is_locked: true, member_count: 1 });
     expect(JSON.stringify(r.body)).not.toContain(`Custom X`.concat("B"));
     const perms = await json(await call(getPerms, key));
     expect(perms.body.data.groups.length).toBeGreaterThan(3);
@@ -441,6 +450,51 @@ describe.skipIf(!up)("API team: roles", () => {
     expect((await call(deleteRole, key, { id: c.body.data.id })).status).toBe(200);
     expect(await withTenant(kit.A, (tx) => tx.select().from(schema.roles).where(eq(schema.roles.id, c.body.data.id)))).toHaveLength(0);
     expect((await call(deleteRole, key, { id: c.body.data.id })).status).toBe(404);
+  });
+
+  it("acts as the key's creator: a manager key cannot grant billing.manage or edit its own role", async () => {
+    await call(getRoles, key); // seeds the built-ins
+    const roles = await withTenant(kit.A, (tx) => tx.select().from(schema.roles).where(eq(schema.roles.businessId, kit.A)));
+    const manager = roles.find((r) => r.key === "manager")!;
+    await withTenant(kit.A, (tx) => tx.update(schema.roles).set({ permissions: [...DEFAULT_ROLE_PERMISSIONS.manager] }).where(eq(schema.roles.id, manager.id)));
+    const managerKey = await kit.mkKey(kit.A, ["roles:write"], { createdBy: managerUser });
+    const custom = (await json(await call(postRole, key, noParams, send("POST", { name: "Within reach", permissions: ["clients.read"] })))).body.data;
+    // Granting what the manager's own role lacks: refused on create and on patch, and the role is left as it was.
+    expect((await json(await call(postRole, managerKey, noParams, send("POST", { name: "Billing helper", permissions: ["clients.read", "billing.manage"] })))).status).toBe(403);
+    expect((await json(await call(patchRole, managerKey, { id: custom.id }, send("PATCH", { permissions: ["clients.read", "billing.manage"] })))).status).toBe(403);
+    expect((await withTenant(kit.A, (tx) => tx.query.roles.findFirst({ where: eq(schema.roles.id, custom.id) })))!.permissions).toEqual(["clients.read"]);
+    // Their own role: hands off, even for a permission they hold.
+    expect((await json(await call(patchRole, managerKey, { id: manager.id }, send("PATCH", { permissions: ["clients.read"] })))).status).toBe(403);
+    expect((await withTenant(kit.A, (tx) => tx.query.roles.findFirst({ where: eq(schema.roles.id, manager.id) })))!.permissions).toEqual([...DEFAULT_ROLE_PERMISSIONS.manager]);
+    // Within what they hold: fine, and the audit row names the person and the key.
+    expect((await json(await call(patchRole, managerKey, { id: custom.id }, send("PATCH", { permissions: ["clients.read", "clients.write"] })))).status).toBe(200);
+    const audit = await withTenant(kit.A, (tx) => tx.select().from(schema.auditLog).where(and(eq(schema.auditLog.action, "api.role.update"), eq(schema.auditLog.entityId, custom.id))));
+    expect(audit.at(-1)).toMatchObject({ actorUserId: managerUser });
+    expect(audit.at(-1)!.diff).toContain("viaKeyId");
+    // Deleting a role wider than their own: refused.
+    const [wide] = await withTenant(kit.A, (tx) => tx.insert(schema.roles).values({ businessId: kit.A, key: "wide_x", name: "Wide", permissions: ["billing.manage"], isSystem: false, sortOrder: 100 }).returning());
+    expect((await call(deleteRole, managerKey, { id: wide!.id })).status).toBe(403);
+    expect(await withTenant(kit.A, (tx) => tx.select().from(schema.roles).where(eq(schema.roles.id, wide!.id)))).toHaveLength(1);
+    // An owner's key may do all of it.
+    expect((await call(patchRole, key, { id: custom.id }, send("PATCH", { permissions: ["clients.read", "billing.manage"] }))).status).toBe(200);
+    expect((await call(deleteRole, key, { id: wide!.id })).status).toBe(200);
+    expect((await call(deleteRole, key, { id: custom.id })).status).toBe(200);
+  });
+
+  it("refuses role writes from a key with no creator, or whose creator has left", async () => {
+    const orphan = await kit.mkKey(kit.A, ["roles:write"]);
+    expect((await json(await call(postRole, orphan, noParams, send("POST", { name: "Nobody", permissions: ["clients.read"] })))).status).toBe(403);
+    const leaver = `leaver_${kit.A}`;
+    await db.insert(schema.user).values({ id: leaver, name: "Leaver", email: `${leaver}@example.com` });
+    await db.insert(schema.member).values({ id: `ml_${kit.A}`, organizationId: kit.A, userId: leaver, role: "owner" });
+    const leaverKey = await kit.mkKey(kit.A, ["roles:write"], { createdBy: leaver });
+    expect((await call(postRole, leaverKey, noParams, send("POST", { name: "Still here", permissions: ["clients.read"] }))).status).toBe(201);
+    await db.delete(schema.member).where(eq(schema.member.id, `ml_${kit.A}`));
+    expect((await json(await call(postRole, leaverKey, noParams, send("POST", { name: "Gone", permissions: ["clients.read"] })))).status).toBe(403);
+    expect((await call(patchRole, leaverKey, { id: id.roleA! }, send("PATCH", { name: "Gone" }))).status).toBe(403);
+    expect((await call(deleteRole, leaverKey, { id: id.roleA! })).status).toBe(403);
+    expect(await withTenant(kit.A, (tx) => tx.select().from(schema.roles).where(eq(schema.roles.name, "Gone")))).toHaveLength(0);
+    await db.delete(schema.user).where(eq(schema.user.id, leaver));
   });
 
   it("keeps the app's guards: owner locked, built-in roles stay, a role in use stays", async () => {

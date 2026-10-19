@@ -56,6 +56,13 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ## 2. Before real customers
 
+### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
+- [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
+      the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts
+      as the person who created it (`api_keys.created_by_user_id`) with their current role; a key with no recorded creator, or whose
+      creator left the business, gets 403 on every role write. Audit rows carry the creator as actor and the key id. The login system's
+      copy of a custom role is still only synced when someone saves it in the app (a key has no session to call it with).
+
 ### Full review 2026-10-16 (`REVIEW-2026-10-16.md` has every finding; the "Fix first" table is the order)
 - [x] Client-data permissions split, 2026-10-18 (migration 0114): `clients.read` ("View clients") now means only the client list, a
       client's contact details and visit history. Split out of it: `clients.export` (the CSV download, now in the activity log with the
