@@ -422,6 +422,60 @@ describe.skipIf(!up)("what each default role sees", () => {
     });
   });
 
+  describe("phase 2: the own axes and self-service", () => {
+    it("availability: an own-calendar role with it sees every column, colleagues' visits as nameless busy blocks", async () => {
+      as("provider", { permissions: only("appointments.read.own", "appointments.read.availability", "catalog.prices", "clients.notes") });
+      const mod = await import("@/app/api/mobile/agenda/route");
+      const a = await (await mod.GET(req(`/api/mobile/agenda?slug=matrix&date=${instantToISODate(new Date(Date.now() - 86_400_000), "America/New_York")}`)))!.json();
+      expect(a.staff.map((s: { id: string }) => s.id).sort()).toEqual([ids.jordan, ids.ava].sort());
+      const mine = a.items.find((i: { staffId: string }) => i.staffId === ids.jordan);
+      const hers = a.items.find((i: { staffId: string }) => i.staffId === ids.ava);
+      expect(mine).toMatchObject({ clientName: "Jo Lee", priceCents: 9000, notes: "Visit note here" });
+      expect(hers).toMatchObject({ serviceName: "Busy", clientName: null, clientId: null, priceCents: 0, notes: null, status: "busy" });
+      expect(hers).not.toHaveProperty("clientPhone");
+      expect(hers).not.toHaveProperty("clientTags");
+    });
+    it("my pay sheet: payroll.view.own alone shows the person's own row and no controls; payroll.manage shows everyone", async () => {
+      const payroll = () => import("@/app/app/[slug]/payroll/page");
+      as("provider", { permissions: only("appointments.read.own", "payroll.view.own") });
+      const own = await render(payroll);
+      expect(own).toContain("My pay");
+      expect(own).toContain("Jordan");
+      expect(own).not.toContain("Ava");
+      expect(own).not.toContain("Finalize");
+      expect(own).not.toContain("W-2 summary");
+      expect(own).not.toContain("Finalized periods");
+      as("manager");
+      const all = await render(payroll);
+      expect(all).toContain("Ava");
+      expect(all).toContain("Jordan");
+      expect(all).toContain("Finalize");
+      as("provider");
+      expect(await denied(payroll)).toBe(true);
+    });
+    it("self-service: staff.self.hours opens the person's own hours, not a colleague's; without it, nothing", async () => {
+      const hours = () => import("@/app/app/[slug]/staff/[staffId]/hours/page");
+      const services = () => import("@/app/app/[slug]/staff/[staffId]/services/page");
+      as("provider", { permissions: only("appointments.read.own", "staff.directory", "staff.self.hours") });
+      expect(await render(hours, { staffId: ids.jordan })).toContain("Save hours");
+      expect(await denied(hours, { staffId: ids.ava })).toBe(true);
+      expect(await denied(services, { staffId: ids.jordan })).toBe(true);
+      as("provider");
+      expect(await denied(hours, { staffId: ids.jordan })).toBe(true);
+      as("manager");
+      expect(await render(hours, { staffId: ids.ava })).toContain("Save hours");
+    });
+    it("reports: the per-staff table needs reports.staff", async () => {
+      const reports = () => import("@/app/app/[slug]/reports/page");
+      as("manager", { permissions: only("reports.view", "reports.staff") });
+      expect(await render(reports)).toContain("Open in Payroll".replace("Open in Payroll", "Staff"));
+      as("manager", { permissions: only("reports.view") });
+      const html = await render(reports);
+      expect(html).not.toContain("Service commission");
+      expect(html).not.toMatch(/\bStaff\b/);
+    });
+  });
+
   describe("owner", () => {
     it("sees everything, as before", async () => {
       as("owner");

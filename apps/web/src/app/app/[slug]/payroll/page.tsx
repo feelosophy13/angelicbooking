@@ -228,7 +228,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
               </ul>
             )}
           </Card>
-          <Card className="p-4">
+          {manage ? <Card className="p-4">
             <h2 className="mb-1 font-medium">Finalized periods</h2>
             {runs.length === 0 ? <p className="text-sm text-stone-500">None yet.</p> : (
               <ul className="divide-y divide-stone-100 text-sm">
@@ -237,7 +237,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                 ))}
               </ul>
             )}
-          </Card>
+          </Card> : null}
           <Card className="p-4 text-xs text-stone-500">
             <p>Commission is figured on service money (amount paid minus tips, net of discount), credited to the appointment date. Products and packages earn the product rate on the tax-inclusive amount; memberships earn nothing. Card tips carry the card-tip fee; cash tips never do. Tax withholding for W-2 staff is left at $0 unless set on the staff member. A refund comes off pay on the day it is made ("Refund ·" rows), so one made after a period was paid reduces the next period. <Link href={`/app/${slug}/staff`} className="underline">Set pay rules under Staff.</Link></p>
           </Card>

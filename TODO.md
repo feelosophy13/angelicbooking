@@ -163,6 +163,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       and the mobile agenda, with colleagues' appointments as nameless "Busy" blocks (no client, service, price or link; the hover card and
       detail panel show only the time); booking and blocking stay on the person's own column.
 
+- [x] Phase 2 tests, 2026-10-19: `role-matrix.test.ts` gains the phase 2 cases (an availability-only role's agenda shows colleagues as
+      nameless busy blocks; "My pay" shows one row and no finalize, W-2 or finalized-periods controls; `staff.self.hours` opens the person's own
+      hours and nobody else's; the Reports staff table needs `reports.staff`); the core table test pins every action's defaults, including
+      that `business.manage` and `payroll.view` are gone. The "Finalized periods" card is hidden on the own pay sheet.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts
