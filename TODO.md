@@ -187,6 +187,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       service's first segment starts where it is dropped and the end stays. A new start is a time change, so a reachable client is
       asked about like a move ("Change and tell / Change quietly") and the reminders follow; Undo puts the old start back the same way.
       `resizeService` takes `newStartAt` and/or `newEndAt`; `resizeAppointmentItem` takes `newStartISO`, `newEndISO`, `notify`.
+- [x] Show / hide providers, 2026-10-18: one chip per provider above the grid (`provider-chips.tsx`, the provider's colour, a tick when
+      shown); click to leave them out of the Day columns, the Week overview (where the chips are the legend) and the Month, click again
+      to bring them back, "Show all" while someone is hidden. Travels as `?hide=` so the server draws only what is shown (and the day
+      strip counts only that), kept by the other filters and remembered per business in this browser like the location pills.
+      Own-calendar roles never see the chips.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,

@@ -18,6 +18,7 @@ import { SetupChecklist, type SetupStep } from "./setup-checklist";
 import { TodayStrip } from "./today-strip";
 import { LocationPills } from "./location-pills";
 import { CalendarShortcuts, DateJump } from "./calendar-nav";
+import { ProviderChips } from "./provider-chips";
 import { money } from "@/lib/format";
 import { sql } from "drizzle-orm";
 import { can } from "@angelic/core";
@@ -39,7 +40,7 @@ export default async function CalendarPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ date?: string; view?: string; staff?: string; location?: string; forms?: string }>;
+  searchParams: Promise<{ date?: string; view?: string; staff?: string; location?: string; forms?: string; hide?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
@@ -64,8 +65,13 @@ export default async function CalendarPage({
   const agenda = await getRangeAgenda(business.id, tz, from, days);
   // Day view: who works at this location on that weekday; week/month: anyone who works there on some day.
   const filtered = filterAgendaByLocation(agenda, locationFilter, view === "day" ? weekdayOf(date) : null);
-  const agendaItems = noCalendar ? [] : ownOnly ? filtered.items.filter((i) => i.staffId === staffId) : filtered.items;
-  const staff = noCalendar ? [] : ownOnly ? filtered.staff.filter((s) => s.id === staffId) : filtered.staff;
+  // Everyone who could have a column here; the chips above the grid list them all and `?hide=` leaves some out of the grid, legend and counts.
+  const allStaff = noCalendar ? [] : ownOnly ? filtered.staff.filter((s) => s.id === staffId) : filtered.staff;
+  const hidden = ownOnly ? [] : (sp.hide ?? "").split(",").filter((id) => allStaff.some((s) => s.id === id));
+  const staff = allStaff.filter((s) => !hidden.includes(s.id));
+  const shownIds = new Set(staff.map((s) => s.id));
+  const agendaItems = noCalendar ? [] : filtered.items.filter((i) => shownIds.has(i.staffId));
+  const hideParam = hidden.length ? `&hide=${hidden.join(",")}` : "";
   // Which visits still have a required form outstanding (day view only: it's a per-appointment check).
   const missingForms = view === "day" ? await withTenant(business.id, (tx) => appointmentsMissingForms(tx, [...new Set(agendaItems.filter((i) => !i.classSessionId).map((i) => i.appointmentId))])) : new Set<string>();
   const formsFilter = sp.forms === "missing";
@@ -206,9 +212,9 @@ export default async function CalendarPage({
       { key: "2fa", label: "Turn on two-factor sign-in", href: `/account`, done: !!me?.twoFactorEnabled, hint: "An extra code at sign-in protects your clients and your money." },
     ];
   }
-  const nav = (d: string) => `?view=${view}&date=${d}${staffParam ? `&staff=${staffParam}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${formsFilter ? "&forms=missing" : ""}`;
+  const nav = (d: string) => `?view=${view}&date=${d}${staffParam ? `&staff=${staffParam}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${formsFilter ? "&forms=missing" : ""}${hideParam}`;
   // Switching views keeps the location (and the staff pick when going to the week).
-  const viewHref = (v: "day" | "week" | "month") => `?view=${v}&date=${date}${v === "week" && sp.staff ? `&staff=${sp.staff}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}`;
+  const viewHref = (v: "day" | "week" | "month") => `?view=${v}&date=${date}${v === "week" && sp.staff ? `&staff=${sp.staff}` : ""}${locationFilter ? `&location=${locationFilter}` : ""}${hideParam}`;
   const step = view === "week" ? 7 : view === "month" ? daysInMonth : 1;
   // The button back to now is named for the view (a week or a month is not "today"). Away from now it says where it goes
   // ("Back to today"), so it never reads as a label for the date on screen; at now it is a quiet "Today".
@@ -234,7 +240,7 @@ export default async function CalendarPage({
           {!noCalendar ? <CalendarShortcuts hrefs={{ today: nav(today), prev: nav(shiftISODate(date, -step)), next: nav(shiftISODate(date, step)), day: viewHref("day"), week: viewHref("week"), month: viewHref("month"), create: canBook ? `/app/${slug}/appointments/new?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}` : null }} /> : null}
         </div>
         {locations.length > 1 ? (
-          <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffParam ? `&staff=${staffParam}` : ""}`} />
+          <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffParam ? `&staff=${staffParam}` : ""}${hideParam}`} />
         ) : null}
         {canBlock ? (
           <LinkButton href={`/app/${slug}/appointments/block?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}`} variant="secondary" size="sm"><Ban className="h-4 w-4" /> <span className="hidden sm:inline">Block time</span></LinkButton>
@@ -257,6 +263,7 @@ export default async function CalendarPage({
             <input type="hidden" name="view" value="week" />
             <input type="hidden" name="date" value={date} />
             {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
+            {hidden.length ? <input type="hidden" name="hide" value={hidden.join(",")} /> : null}
             <select name="staff" defaultValue={staffParam ?? "all"} aria-label="Whose week" className="h-8 rounded-lg border border-stone-300 bg-white px-2 text-sm text-stone-900">
               <option value="all">Everyone (overview)</option>
               {staff.map((s) => (
@@ -265,13 +272,18 @@ export default async function CalendarPage({
             </select>
           </AutoSubmitForm>
           {overview ? (
-            <p className="flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="Colours">
-              {staff.map((s) => (
-                <span key={s.id} className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color ?? "#6366f1" }} />{s.displayName}</span>
-              ))}
+            // The legend doubles as the show / hide chips: click a provider to leave them out of the overview.
+            <>
+              <ProviderChips businessId={business.id} providers={allStaff.map((s) => ({ id: s.id, name: s.displayName, color: s.color ?? "#6366f1" }))} hidden={hidden} />
               <span className="text-stone-400">Hover an appointment for details, click to open it.</span>
-            </p>
+            </>
           ) : null}
+        </div>
+      ) : null}
+      {view !== "week" && !ownOnly && !noCalendar && allStaff.length > 1 ? (
+        // Day and Month: one chip per provider, click to hide their column (remembered in this browser).
+        <div className="mb-3">
+          <ProviderChips businessId={business.id} providers={allStaff.map((s) => ({ id: s.id, name: s.displayName, color: s.color ?? "#6366f1" }))} hidden={hidden} />
         </div>
       ) : null}
       {view === "day" ? (
