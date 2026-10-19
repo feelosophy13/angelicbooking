@@ -7,12 +7,15 @@ import { PageHeader, Tabs } from "@/components/ui";
 
 export default async function MarketingLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { permissions } = await requireAction(slug, "reports.view");
   const base = `/app/${slug}/marketing`;
   const h = await headers();
   const current = h.get("x-pathname") ?? "";
-  // Automations live in their own sidebar section; Marketing is campaigns and promo codes.
-  if (current.startsWith(`${base}/automations`)) return <>{children}</>;
+  // Automations live in their own sidebar section and are part of Business settings; Marketing (campaigns and promo codes) is "Send marketing".
+  if (current.startsWith(`${base}/automations`)) {
+    await requireAction(slug, "business.manage");
+    return <>{children}</>;
+  }
+  const { permissions } = await requireAction(slug, "marketing.send");
   const tab = current.startsWith(`${base}/promos`) ? `${base}/promos` : base;
   return (
     <>
@@ -20,9 +23,9 @@ export default async function MarketingLayout({ children, params }: { children: 
       {/* The other ways to bring clients back live elsewhere; this row makes Marketing the place to start. */}
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         {[
-          { href: `${base}/automations`, title: "Automations", blurb: "Reminders, win-backs and birthday notes that send themselves." },
           ...(can(permissions, "business.manage")
             ? [
+                { href: `${base}/automations`, title: "Automations", blurb: "Reminders, win-backs and birthday notes that send themselves." },
                 { href: `/app/${slug}/settings/loyalty`, title: "Loyalty & referrals", blurb: "Points on every visit and a bonus for bringing a friend." },
                 { href: `/app/${slug}/settings/reviews`, title: "Review requests", blurb: "Ask for a rating after each visit and link to Google." },
               ]

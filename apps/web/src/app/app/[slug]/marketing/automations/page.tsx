@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { listWorkflows, templateGroup, type WorkflowTemplate } from "@/server/workflows";
 import { smsAvailableFor } from "@/server/messaging";
@@ -21,16 +20,15 @@ const GROUPS: { key: WorkflowTemplate["group"]; title: string; blurb: string }[]
 
 export default async function AutomationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, permissions } = await requireAction(slug, "reports.view");
+  const { business } = await requireAction(slug, "business.manage");
   const [flows, sms] = await Promise.all([listWorkflows(business), smsAvailableFor(business.id)]);
-  const manage = can(permissions, "business.manage");
   const base = `/app/${slug}/marketing/automations`;
   return (
     <div className="space-y-8">
       <PageHeader title="Automations" />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="max-w-2xl text-sm text-stone-600">Each automation is a workflow: it starts on an event, checks a few conditions, then runs its steps in order (waits, texts, emails, tags, points, alerts). Every business starts with the set below; edit them or add your own. Consent, opt-outs, quiet hours and once-per-occasion limits are enforced automatically.</p>
-        {manage ? <LinkButton href={`${base}/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> New workflow</LinkButton> : null}
+        <LinkButton href={`${base}/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> New workflow</LinkButton>
       </div>
       {!sms ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Text steps are skipped until you have a verified text number; email steps still go out. <Link href={`/app/${slug}/settings/messaging`} className="underline">Get a text number</Link>.</p> : null}
       {GROUPS.map((g) => {
@@ -58,17 +56,15 @@ export default async function AutomationsPage({ params }: { params: Promise<{ sl
                   {w.description ? <p className="text-xs text-stone-500">{w.description}</p> : null}
                   <p className="mt-2 text-xs text-stone-700"><span className="font-medium">{triggerMeta(w.trigger).label}</span> → {summarizeSteps(w.steps) || "no steps"}</p>
                   <p className="mt-2 text-[11px] text-stone-400">{w.sent30} sent in the last 30 days{w.active ? ` · ${w.active} in progress` : ""}{w.templateKey ? "" : " · custom"}</p>
-                  {manage ? (
-                    <div className={`mt-3 flex items-center gap-2 border-t border-stone-100 pt-3 ${rowControl}`}>
-                      <form action={toggleWorkflow}>
-                        <input type="hidden" name="slug" value={slug} />
-                        <input type="hidden" name="workflowId" value={w.id} />
-                        <input type="hidden" name="enabled" value={w.enabled ? "false" : "true"} />
-                        <Button type="submit" size="sm" variant={w.enabled ? "ghost" : "primary"}>{w.enabled ? "Turn off" : "Turn on"}</Button>
-                      </form>
-                      <LinkButton href={`${base}/${w.id}`} size="sm">Edit steps</LinkButton>
-                    </div>
-                  ) : null}
+                  <div className={`mt-3 flex items-center gap-2 border-t border-stone-100 pt-3 ${rowControl}`}>
+                    <form action={toggleWorkflow}>
+                      <input type="hidden" name="slug" value={slug} />
+                      <input type="hidden" name="workflowId" value={w.id} />
+                      <input type="hidden" name="enabled" value={w.enabled ? "false" : "true"} />
+                      <Button type="submit" size="sm" variant={w.enabled ? "ghost" : "primary"}>{w.enabled ? "Turn off" : "Turn on"}</Button>
+                    </form>
+                    <LinkButton href={`${base}/${w.id}`} size="sm">Edit steps</LinkButton>
+                  </div>
                 </Card>
               ))}
             </div>

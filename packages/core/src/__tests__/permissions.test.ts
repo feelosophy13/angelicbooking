@@ -15,6 +15,12 @@ describe("permissions", () => {
     expect(canActOnAppointment("front_desk", "write", "u1", "u2")).toBe(true);
     expect(can("provider", "reports.view")).toBe(false);
   });
+  it("sending marketing is its own permission: managers have it, reports readers at the desk do not", () => {
+    expect(can("owner", "marketing.send")).toBe(true);
+    expect(can("manager", "marketing.send")).toBe(true);
+    expect(can("front_desk", "marketing.send")).toBe(false);
+    expect(can("provider", "marketing.send")).toBe(false);
+  });
   it("rejects unknown roles", () => {
     expect(can("admin", "clients.read")).toBe(false);
     expect(can(null, "clients.read")).toBe(false);

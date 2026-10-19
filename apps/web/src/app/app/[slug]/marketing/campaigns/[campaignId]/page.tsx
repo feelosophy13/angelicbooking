@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Campaign" };
 
 export default async function CampaignPage({ params }: { params: Promise<{ slug: string; campaignId: string }> }) {
   const { slug, campaignId } = await params;
-  const { business } = await requireAction(slug, "reports.view");
+  const { business } = await requireAction(slug, "marketing.send");
   const p = await previewCampaign(business, campaignId);
   if (!p) notFound();
   const { campaign } = p;

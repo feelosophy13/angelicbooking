@@ -85,6 +85,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       yet that they opened in the last hour, so a sale they just started isn't lost before the first line goes on.
 - [x] S8 Mobile appointment detail strips the client's contact details (everything but the name) without `clients.read`, and the client's
       private notes without `clients.notes`; `can.write` is false on a visit shared with a colleague.
+- [x] Nav and page mismatches (Part 2b), 2026-10-18 (migration 0116): new permission `marketing.send` ("Send marketing", in the role
+      editor's own Marketing group; Manager by default, Front desk and Provider not) gates the Marketing pages (campaigns, promo codes,
+      sending) and the Marketing sidebar and ⌘K entries instead of `reports.view`; the `campaigns:` API scopes need it too. Back-fill rule
+      for stored roles: reports.view → marketing.send. Automations (list, new, edit, toggle, the sidebar entry and the Marketing tile) are
+      `business.manage` throughout. Sidebar entries now match their pages: Waitlist needs `appointments.read.any`, Reviews `clients.read`,
+      Classes a calendar permission, Gift cards `giftcards.issue` or `reports.view`; the phone menu's Clients tab needs `clients.read`.
+      The Access tab disables the Owner option for non-owners and the Change role button (with the reason) whenever the action would
+      refuse; the rules live in `lib/role-rules.ts`, shared by the page and `setMemberRole`.
 
 ### Full review 2026-10-16 (`REVIEW-2026-10-16.md` has every finding; the "Fix first" table is the order)
 - [x] Client-data permissions split, 2026-10-18 (migration 0114): `clients.read` ("View clients") now means only the client list, a

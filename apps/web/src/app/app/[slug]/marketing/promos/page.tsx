@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Promo codes" };
 
 export default async function PromosPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "reports.view");
+  const { business } = await requireAction(slug, "marketing.send");
   const rows = await listPromoCodes(business.id);
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone });
   return (

@@ -127,7 +127,7 @@ const SCOPE_NEEDS: [prefix: string, action: string][] = [
   ["messages:read", "clients.messages"],
   ["messages:", "clients.write"],
   ["marketing:", "clients.write"],
-  ["campaigns:", "clients.write"],
+  ["campaigns:", "marketing.send"],
   ["appointments:read", "appointments.read.any"],
   ["appointments:", "appointments.write.any"],
   ["waitlist:", "appointments.write.any"],
