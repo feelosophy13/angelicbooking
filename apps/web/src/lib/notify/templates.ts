@@ -1,3 +1,4 @@
+import { appUrl } from "@/lib/stripe";
 import { formatTime } from "@/lib/utils";
 
 export interface ApptContext {
@@ -53,7 +54,7 @@ function shell(ctx: BrandCtx, title: string, bodyHtml: string) {
 ${bodyHtml.replace(/#6d28d9/g, brand)}
 <p style="font-size:12px;color:#78716c;margin-top:24px">${esc(ctx.businessName)}${ctx.address ? ` · ${esc(ctx.address)}` : ""}${ctx.businessPhone ? ` · ${esc(ctx.businessPhone)}` : ""}</p>
 </div></div>
-<p style="max-width:520px;margin:12px auto 0;font-size:11px;color:#a8a29e;text-align:center">Sent by Angelic Booking on behalf of ${esc(ctx.businessName)}.</p>
+<p style="max-width:520px;margin:12px auto 0;font-size:11px;color:#a8a29e;text-align:center"><img src="${appUrl("/brand/mark-192.png")}" alt="" width="16" height="16" style="vertical-align:-3px;margin-right:4px;border-radius:4px">Sent by Angelic Booking on behalf of ${esc(ctx.businessName)}.</p>
 </body></html>`;
 }
 

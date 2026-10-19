@@ -109,7 +109,7 @@ export default async function BookLayout({ children, params }: { children: React
             </div>
           </div>
         </div>
-        <p className="pt-4 text-center text-xs text-stone-400">Online booking by Angelic Booking · <a href={appUrl("/privacy")} className="hover:text-stone-600">Privacy</a></p>
+        <p className="flex items-center justify-center gap-1.5 pt-4 text-center text-xs text-stone-400">{/* eslint-disable-next-line @next/next/no-img-element */}<img src="/brand/mark-brown.svg" alt="" className="h-4 w-4 opacity-70" />Online booking by Angelic Booking · <a href={appUrl("/privacy")} className="hover:text-stone-600">Privacy</a></p>
       </footer>
     </div>
   );
