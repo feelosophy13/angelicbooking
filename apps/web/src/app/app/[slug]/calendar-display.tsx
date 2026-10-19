@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { SlidersHorizontal } from "lucide-react";
+import { Printer, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type ColorMode = "provider" | "category";
@@ -79,6 +79,9 @@ export function DisplayMenu({ categories }: { /** Whether the business has servi
           {categories ? seg("Colour by", [{ value: "provider", label: "Provider" }, { value: "category", label: "Service category" }], d.color, (v) => save({ ...d, color: v as ColorMode })) : null}
           {seg("Hour height", [{ value: "compact", label: "Compact" }, { value: "normal", label: "Normal" }, { value: "roomy", label: "Roomy" }], d.density, (v) => save({ ...d, density: v as Density }))}
           <p className="text-xs text-stone-500">Remembered in this browser.</p>
+          <button type="button" onClick={() => { setOpen(false); setTimeout(() => window.print(), 50); }} className="inline-flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white text-sm font-medium text-stone-800 hover:bg-stone-50">
+            <Printer className="h-4 w-4 text-stone-500" /> Print this view
+          </button>
         </div>
       ) : null}
     </div>

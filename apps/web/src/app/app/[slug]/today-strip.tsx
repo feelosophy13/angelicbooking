@@ -17,7 +17,7 @@ export function TodayStrip({ date, isToday, stats, tz, slug, formsHref, formsFil
     ...(stats.formsMissing || formsFilterOn ? [{ icon: ClipboardList, label: "Forms due", value: `${stats.formsMissing ?? 0} visit${stats.formsMissing === 1 ? "" : "s"}`, sub: formsFilterOn ? "showing only these · tap to clear" : "tap to show only these", href: formsHref }] : []),
   ];
   return (
-    <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
       {cells.map((c) => {
         const body = (
           <>

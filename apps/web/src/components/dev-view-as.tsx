@@ -8,7 +8,7 @@ export type ViewAsRole = { key: string; name: string; /** Sees only their own ca
 export function DevViewAs({ roles, staff, realRole, current }: { roles: ViewAsRole[]; staff: { id: string; name: string }[]; realRole: string; current: string | null }) {
   const active = !!current && current !== realRole;
   return (
-    <form action={setViewAs} className={cn("fixed bottom-3 right-3 z-50 flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs shadow-lg", active ? "border-amber-400 bg-amber-100 text-amber-900" : "border-stone-300 bg-white/95 text-stone-600")}>
+    <form action={setViewAs} className={cn("fixed bottom-3 right-3 z-50 flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs shadow-lg print:hidden", active ? "border-amber-400 bg-amber-100 text-amber-900" : "border-stone-300 bg-white/95 text-stone-600")}>
       <span className="font-semibold uppercase tracking-wide">Dev</span>
       <label className="flex items-center gap-1.5">
         View as

@@ -14,7 +14,7 @@ export function SetupChecklist({ steps, slug }: { steps: SetupStep[]; slug: stri
   if (done === steps.length) return null;
   const next = steps.find((s) => !s.done)!;
   return (
-    <details className="group mb-4 rounded-xl border border-brand-100 bg-brand-50/60">
+    <details className="group mb-4 rounded-xl border border-brand-100 bg-brand-50/60 print:hidden">
       <summary className="flex cursor-pointer select-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm marker:content-none [&::-webkit-details-marker]:hidden">
         <ChevronRight className="h-4 w-4 shrink-0 text-brand-400 transition-transform group-open:rotate-90" aria-hidden />
         <span className="font-medium text-brand-900">Setting up · {done} of {steps.length} done</span>

@@ -522,7 +522,7 @@ export function CalendarGrid(props: {
   return (
     <div className="space-y-2">
       {/* Phone: agenda list */}
-      <div className="space-y-4 md:hidden">
+      <div className="space-y-4 md:hidden print:hidden">
         {columns.map((c) => {
           const cards = (cardsByCol.get(c.key) ?? []).sort((a, b) => a.startMin - b.startMin);
           return (
@@ -561,8 +561,10 @@ export function CalendarGrid(props: {
         </p>
       ) : null}
       {/* Desktop: time grid */}
-      <div ref={scrollRef} className={cn("hidden max-h-[calc(100vh-13rem)] overflow-auto rounded-xl border border-stone-200 bg-white md:block", pending && "opacity-60")}>
-        <div className="grid min-w-[640px] select-none" style={{ gridTemplateColumns: `56px repeat(${columns.length}, minmax(${props.view === "week" ? 120 : 160}px, 1fr))` }}>
+      {/* Printing: the whole day on paper, no scroll box, cards outlined (browsers often drop background colours), a week sideways. */}
+      {props.view === "week" ? <style>{`@media print { @page { size: landscape; } }`}</style> : null}
+      <div ref={scrollRef} className={cn("hidden max-h-[calc(100vh-13rem)] overflow-auto rounded-xl border border-stone-200 bg-white md:block print:block print:max-h-none print:overflow-visible print:border-0", pending && "opacity-60")}>
+        <div className="grid min-w-[640px] select-none print:min-w-0" style={{ gridTemplateColumns: `56px repeat(${columns.length}, minmax(${props.view === "week" ? 120 : 160}px, 1fr))` }}>
           <div className="sticky top-0 z-20 border-b border-stone-200 bg-white" />
           {columns.map((c) => (
             <div key={c.key} className={cn("sticky top-0 z-20 flex items-center gap-2 border-b border-l border-stone-200 bg-white px-3 py-2 text-sm font-medium", c.isToday && "text-brand-700")}>
@@ -653,7 +655,7 @@ export function CalendarGrid(props: {
                       onKeyDown={(e) => e.key === "Enter" && openPanel(card)}
                       data-card
                       aria-label={`${card.first.title}, ${card.first.subtitle}, ${fmt(card.startMin)} to ${fmt(card.endMin)}`}
-                      className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm [-webkit-touch-callout:none]", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", (dragging || resizing) && "z-30 ring-2 ring-brand-500 shadow-lg", drag?.key === card.key && drag.touch && "z-30 scale-[1.03] ring-2 ring-brand-500 shadow-lg", linkedId === card.first.appointmentId && multiProvider.has(card.first.appointmentId) && !dragging && "ring-2 ring-stone-500")}
+                      className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm [-webkit-touch-callout:none] print:border print:border-l-4 print:border-stone-400 print:shadow-none", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", (dragging || resizing) && "z-30 ring-2 ring-brand-500 shadow-lg", drag?.key === card.key && drag.touch && "z-30 scale-[1.03] ring-2 ring-brand-500 shadow-lg", linkedId === card.first.appointmentId && multiProvider.has(card.first.appointmentId) && !dragging && "ring-2 ring-stone-500")}
                       style={{
                         top: top(startMin),
                         height,
@@ -752,7 +754,7 @@ export function CalendarGrid(props: {
         </div>
       </div>
       {props.canMove || props.canMoveBlock || canCreate ? (
-        <p className="hidden text-xs text-stone-500 md:block">
+        <p className="hidden text-xs text-stone-500 md:block print:hidden">
           {[canCreate ? (props.canBlock ? "Click or draw on an empty slot to book or block it." : "Click an empty slot to book it.") : null, props.canMove || props.canMoveBlock ? "Drag an appointment to move it (press and hold on a touch screen). Click to open it." : null].filter(Boolean).join(" ")}
         </p>
       ) : null}

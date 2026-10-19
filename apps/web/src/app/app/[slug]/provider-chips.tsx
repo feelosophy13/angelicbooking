@@ -47,7 +47,7 @@ export function ProviderChips({ businessId, providers, hidden }: { businessId: s
     router.push(withHide([]), { scroll: false });
   };
   return (
-    <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Providers shown">
+    <div className="flex flex-wrap items-center gap-1.5 print:hidden" role="group" aria-label="Providers shown">
       {providers.map((p) => {
         const off = hidden.includes(p.id);
         return (

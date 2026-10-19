@@ -199,7 +199,7 @@ export function PageHeader({ title, lead, children }: { title: string; /** Pictu
         {lead}
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
       </div>
-      {children ? <div className="flex max-w-full flex-wrap items-center gap-2">{children}</div> : null}
+      {children ? <div className="flex max-w-full flex-wrap items-center gap-2 print:hidden">{children}</div> : null}
     </div>
   );
 }

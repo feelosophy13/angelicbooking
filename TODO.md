@@ -203,6 +203,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Appointment search in ⌘K, 2026-10-18: a client's visits from the last 90 days onward (past ones marked "past", cancelled and
       no-show said so), and upcoming visits found by service name ("lash lift" lists who has one coming); own-calendar roles get only
       their own, roles with no calendar none. The Appointments page keeps the full filters and paging (`search/route.ts`).
+- [x] Print-friendly calendar, 2026-10-18: printing Day or Week gives the grid alone (header controls, chips, day strip, setup line,
+      hint, dev pill and toasts are `print:hidden`; the sidebar and nav already were), the whole day with no scroll box, cards outlined
+      in grey so they survive browsers that drop background colours, and Week asks for landscape (`@page`). "Print this view" sits in
+      the Display menu as well as ⌘P. Agenda prints as the plain list it is.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,

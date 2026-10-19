@@ -40,7 +40,7 @@ export function Toaster({ initial }: { initial: Flash | null }) {
   const kind = current.kind ?? "success";
   const Icon = kind === "success" ? CheckCircle2 : kind === "error" ? XCircle : Info;
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 sm:justify-end sm:pr-6">
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4 sm:justify-end sm:pr-6 print:hidden">
       <div
         role="status"
         className={cn(
