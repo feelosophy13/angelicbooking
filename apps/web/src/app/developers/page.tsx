@@ -91,6 +91,7 @@ export default function DevelopersPage() {
             ["401", "invalid_api_key", "Missing, wrong, revoked or expired key. All look the same on purpose."],
             ["402", "subscription_required", "The business's free trial has ended with no subscription. The key works again once a card is added under Settings → Billing."],
             ["403", "insufficient_scope", "The key lacks the scope this call needs."],
+            ["403", "forbidden", "The key has the scope, but the person who created it may not do this: role changes act as the key's creator, with their current role, and stop once they leave the business."],
             ["404", "not_found", "No such item in your business (including ids that belong to someone else)."],
             ["409", "conflict / booking_conflict", "Duplicate client, wrong state, or the time is taken."],
             ["413", "payload_too_large", "The request body is over 100 KB."],
