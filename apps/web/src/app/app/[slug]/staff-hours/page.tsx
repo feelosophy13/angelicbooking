@@ -8,7 +8,7 @@ import { requireAction } from "@/lib/tenant";
 import { cn, shiftISODate } from "@/lib/utils";
 import { dateLong } from "@/lib/format";
 import { describeHours, time12 } from "@/lib/hours";
-import { matchesPeople, orderStaff, parsePeopleFilter, peopleOptions } from "@/lib/staff-hours";
+import { matchesPeople, monthDates, monthLabel, monthOf, orderStaff, parsePeopleFilter, peopleOptions, shiftMonth } from "@/lib/staff-hours";
 import { buildCoverage } from "@/server/coverage";
 import { listCategories, buildTree, flattenTree } from "@/server/categories";
 import { Card, Empty, LinkButton, PageHeader, Select } from "@/components/ui";
@@ -16,15 +16,17 @@ import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { LocationFilter } from "@/components/location-filter";
 import { rowClass, rowControl, RowLink } from "@/components/row";
 import { CoverageGaps, CoverageGrid, type CoverageMode } from "./coverage-grid";
+import { MonthGrid } from "./month-grid";
 
 export const metadata: Metadata = { title: "Staff hours" };
 
-type SP = { week?: string; location?: string; scope?: string; view?: string; people?: string };
+type SP = { week?: string; location?: string; scope?: string; view?: string; people?: string; period?: string; month?: string };
 const nextDay = (d: string) => shiftISODate(d, 1);
 
 /**
  * Coverage at a glance: a week with time down the side, who is in on each day as lanes, opening
  * hours as the white area, and a strip that says whether the services in scope are covered.
+ * The Month view is the same schedule as a roster: a cell per day with each person's hours.
  * Editing happens on the location page and each person's Weekly hours / Time off.
  */
 export default async function StaffHoursPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
@@ -36,6 +38,10 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const today = instantToISODate(new Date(), business.timezone);
   const thisMonday = mondayOf(today);
   const weekStart = /^\d{4}-\d{2}-\d{2}$/.test(sp.week ?? "") ? mondayOf(sp.week!) : thisMonday;
+  // Week (default) or Month. The month view keeps its own anchor (`?month=YYYY-MM`) so the week comes back where it was.
+  const period: "week" | "month" = sp.period === "month" ? "month" : "week";
+  const thisMonth = monthOf(today);
+  const month = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : thisMonth;
   const horizon = shiftISODate(today, 90);
 
   const { people, peopleFilter, shown, overrides, locations, cats } = await withTenant(business.id, async (tx) => {
@@ -65,11 +71,20 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const scope = sp.scope ?? "";
   // Coverage is shown per service category (a service picker was too long to be useful).
   const categoryId = scope.startsWith("c:") && cats.some((c) => c.id === scope.slice(2)) ? scope.slice(2) : null;
-  const coverage = await buildCoverage(business, { weekStart, locationId, categoryId, laneStaffIds: shown.map((p) => p.id) });
+  const coverage = await buildCoverage(business, { ...(period === "month" ? { dates: monthDates(month) } : { weekStart }), locationId, categoryId, laneStaffIds: shown.map((p) => p.id) });
 
   // Query string for links, keeping the other choices.
   const qs = (over: Partial<Record<keyof SP, string | null>>) => {
-    const all: Record<keyof SP, string | null> = { week: weekStart === thisMonday ? null : weekStart, location: locationId, scope: categoryId ? `c:${categoryId}` : null, view: view === "coverage" ? "coverage" : null, people: peopleFilter || null, ...over };
+    const all: Record<keyof SP, string | null> = {
+      period: period === "month" ? "month" : null,
+      week: period === "week" && weekStart !== thisMonday ? weekStart : null,
+      month: period === "month" && month !== thisMonth ? month : null,
+      location: locationId,
+      scope: categoryId ? `c:${categoryId}` : null,
+      view: view === "coverage" ? "coverage" : null,
+      people: peopleFilter || null,
+      ...over,
+    };
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(all)) if (v) p.set(k, v);
     return p.toString();
@@ -78,6 +93,9 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const hhmm = (t: string) => t.slice(0, 5);
   const md = (d: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
   const weekLabel = `${md(weekStart)} – ${md(shiftISODate(weekStart, 6))}`;
+  // Switching period lands on the same stretch of time: the week's month, or the month's first week (this week when it is this month).
+  const periodHref = (to: "week" | "month") => (to === "month" ? qs({ period: "month", month: monthOf(weekStart) === thisMonth ? null : monthOf(weekStart), week: null }) : qs({ period: null, month: null, week: month === thisMonth ? null : mondayOf(`${month}-01`) }));
+  const weekHref = (date: string) => `?${qs({ period: null, month: null, week: mondayOf(date) === thisMonday ? null : mondayOf(date) })}`;
   const tree = flattenTree(buildTree(cats));
   const hoursHref = (staffId: string) => (manage ? `${base}/staff/${staffId}/hours` : null);
 
@@ -116,15 +134,31 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
 
       <Card className="mb-4 p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1">
-            <LinkButton href={`?${qs({ week: shiftISODate(weekStart, -7) })}`} size="sm"><ChevronLeft className="h-4 w-4" /><span className="sr-only">Previous week</span></LinkButton>
-            <LinkButton href={`?${qs({ week: null })}`} size="sm" variant={weekStart === thisMonday ? "ghost" : "secondary"}>This week</LinkButton>
-            <LinkButton href={`?${qs({ week: shiftISODate(weekStart, 7) })}`} size="sm"><ChevronRight className="h-4 w-4" /><span className="sr-only">Next week</span></LinkButton>
-            <span className="ml-2 text-sm font-medium text-stone-800">{weekLabel}</span>
+          <div className="flex h-8 rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Week or month">
+            {(["week", "month"] as const).map((key) => (
+              <Link key={key} href={`?${periodHref(key)}`} aria-current={period === key ? "true" : undefined} className={cn("inline-flex items-center rounded-md px-3", period === key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{key === "week" ? "Week" : "Month"}</Link>
+            ))}
           </div>
+          {period === "month" ? (
+            <div className="flex items-center gap-1">
+              <LinkButton href={`?${qs({ month: shiftMonth(month, -1) })}`} size="sm"><ChevronLeft className="h-4 w-4" /><span className="sr-only">Previous month</span></LinkButton>
+              <LinkButton href={`?${qs({ month: null })}`} size="sm" variant={month === thisMonth ? "ghost" : "secondary"}>This month</LinkButton>
+              <LinkButton href={`?${qs({ month: shiftMonth(month, 1) })}`} size="sm"><ChevronRight className="h-4 w-4" /><span className="sr-only">Next month</span></LinkButton>
+              <span className="ml-2 text-sm font-medium text-stone-800">{monthLabel(month)}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <LinkButton href={`?${qs({ week: shiftISODate(weekStart, -7) })}`} size="sm"><ChevronLeft className="h-4 w-4" /><span className="sr-only">Previous week</span></LinkButton>
+              <LinkButton href={`?${qs({ week: null })}`} size="sm" variant={weekStart === thisMonday ? "ghost" : "secondary"}>This week</LinkButton>
+              <LinkButton href={`?${qs({ week: shiftISODate(weekStart, 7) })}`} size="sm"><ChevronRight className="h-4 w-4" /><span className="sr-only">Next week</span></LinkButton>
+              <span className="ml-2 text-sm font-medium text-stone-800">{weekLabel}</span>
+            </div>
+          )}
           {multi ? <LocationFilter locations={locations} current={locationId} query={qs({ location: null })} allLabel={null} /> : null}
-          <AutoSubmitForm className="flex items-center gap-2">
-            {weekStart !== thisMonday ? <input type="hidden" name="week" value={weekStart} /> : null}
+          <AutoSubmitForm className="flex flex-wrap items-center gap-2">
+            {period === "month" ? <input type="hidden" name="period" value="month" /> : null}
+            {period === "month" && month !== thisMonth ? <input type="hidden" name="month" value={month} /> : null}
+            {period === "week" && weekStart !== thisMonday ? <input type="hidden" name="week" value={weekStart} /> : null}
             {multi ? <input type="hidden" name="location" value={locationId ?? ""} /> : null}
             {view === "coverage" ? <input type="hidden" name="view" value="coverage" /> : null}
             <Select name="scope" defaultValue={categoryId ? `c:${categoryId}` : ""} aria-label="Service category to check coverage for" className="h-9 w-auto max-w-[16rem]">
@@ -140,16 +174,18 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
 
       <Card className="mb-6">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-2 text-sm">
-          <h2 className="font-semibold text-stone-600">Who covers what{multi ? ` · ${shortLoc(locationId)}` : ""}</h2>
-          <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="What to show">
-            {([["people", "People"], ["coverage", "Coverage"]] as const).map(([key, label]) => (
-              <Link key={key} href={`?${qs({ view: key === "coverage" ? "coverage" : null })}`} aria-current={view === key ? "true" : undefined} className={cn("rounded-md px-3 py-0.5", view === key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{label}</Link>
-            ))}
-          </div>
+          <h2 className="font-semibold text-stone-600">{period === "month" ? "Who is in each day" : "Who covers what"}{multi ? ` · ${shortLoc(locationId)}` : ""}</h2>
+          {period === "week" ? (
+            <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="What to show">
+              {([["people", "People"], ["coverage", "Coverage"]] as const).map(([key, label]) => (
+                <Link key={key} href={`?${qs({ view: key === "coverage" ? "coverage" : null })}`} aria-current={view === key ? "true" : undefined} className={cn("rounded-md px-3 py-0.5", view === key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{label}</Link>
+              ))}
+            </div>
+          ) : null}
           <p className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
-            {view === "coverage" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-emerald-400 align-middle" />{coverage.scope.label === "All services" ? "every service covered" : `${coverage.scope.label} covered`}</span> : null}
-            {view === "coverage" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-amber-400 align-middle" />some services uncovered</span> : null}
-            <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-red-400 align-middle" />open, no provider in</span>
+            {period === "week" && view === "coverage" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-emerald-400 align-middle" />{coverage.scope.label === "All services" ? "every service covered" : `${coverage.scope.label} covered`}</span> : null}
+            {period === "week" && view === "coverage" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-amber-400 align-middle" />some services uncovered</span> : null}
+            {period === "week" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-red-400 align-middle" />open, no provider in</span> : null}
             <span><span className="hatched mr-1 inline-block h-2.5 w-2.5 rounded-sm border border-stone-200 align-middle" />closed</span>
           </p>
         </div>
@@ -157,16 +193,21 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
           <div className="p-4"><Empty title="No staff yet" body="Add staff and set their weekly hours." action={manage ? { href: `${base}/staff`, label: "Staff" } : undefined} /></div>
         ) : shown.length === 0 ? (
           <div className="p-4"><Empty title={`No one under “${peopleLabel}”`} body="Pick another group in the People filter." /></div>
+        ) : period === "month" ? (
+          <MonthGrid coverage={coverage} month={month} people={coverage.staff.filter((s) => shown.some((p) => p.id === s.id))} today={today} hoursHref={hoursHref} weekHref={weekHref} />
         ) : (
           <CoverageGrid coverage={coverage} today={today} hoursHref={hoursHref} mode={view} />
         )}
-        <div className="border-t border-stone-200">
-          <h3 className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-500">Needs attention this week</h3>
-          <CoverageGaps coverage={coverage} />
-        </div>
+        {/* Coverage gaps are judged per week; the month is a roster, so it has none. */}
+        {period === "week" ? (
+          <div className="border-t border-stone-200">
+            <h3 className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-stone-500">Needs attention this week</h3>
+            <CoverageGaps coverage={coverage} />
+          </div>
+        ) : null}
         <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
-          Rotations, time off and custom hours are already applied. Only providers count towards coverage; a service nobody is assigned to counts as something every provider can do.
-          {view === "coverage" ? " Switch to People to see who is in each hour." : manage ? " Click a person's block to change their hours." : ""}
+          Rotations, time off and custom hours are already applied.
+          {period === "month" ? ` Click a date to open that week.${manage ? " Click a name to change their hours." : ""}` : ` Only providers count towards coverage; a service nobody is assigned to counts as something every provider can do.${view === "coverage" ? " Switch to People to see who is in each hour." : manage ? " Click a person's block to change their hours." : ""}`}
         </p>
       </Card>
 

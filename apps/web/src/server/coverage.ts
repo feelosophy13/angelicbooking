@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { instantToLocalTime, weekdayOf, type WeeklyHours } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
@@ -35,6 +35,8 @@ export interface CoverageDay {
   weekday: number;
   open: CoverageBlock | null;
   lanes: CoverageLane[];
+  /** Who has a day off or custom hours entered for this date (so a month cell can say "Time off" or "Custom 10–2"). */
+  overrides: { staffId: string; kind: "off" | "custom" }[];
   strip: CoverageStrip[];
   /** Open stretches with no provider at all (front desk alone does not count). */
   uncovered: CoverageBlock[];
@@ -55,16 +57,30 @@ const toMin = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); re
 
 export async function buildCoverage(
   business: { id: string; timezone: string; name: string },
-  opts: { weekStart: string; locationId: string | null; serviceId?: string | null; categoryId?: string | null; /** Who gets a lane (the People filter); the strip still judges every provider. Omit for everyone. */ laneStaffIds?: string[] | null },
+  opts: {
+    /** The Monday of the week to build; or pass `dates` (a month) instead. */
+    weekStart?: string;
+    dates?: string[];
+    locationId: string | null;
+    serviceId?: string | null;
+    categoryId?: string | null;
+    /** Who gets a lane (the People filter); the strip still judges every provider. Omit for everyone. */
+    laneStaffIds?: string[] | null;
+  },
 ): Promise<Coverage> {
-  const dates = Array.from({ length: 7 }, (_, i) => shiftISODate(opts.weekStart, i));
-  const { staff, services, staffServices, locations, cats } = await withTenant(business.id, async (tx) => ({
-    staff: orderStaff(await tx.select({ id: schema.staff.id, name: schema.staff.displayName, color: schema.staff.color, takesAppointments: schema.staff.takesAppointments, sortOrder: schema.staff.sortOrder }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName))),
-    services: await tx.select({ id: schema.services.id, name: schema.services.name, categoryId: schema.services.categoryId }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
-    staffServices: await tx.select({ staffId: schema.staffServices.staffId, serviceId: schema.staffServices.serviceId }).from(schema.staffServices),
-    locations: await tx.select({ id: schema.locations.id, hours: schema.locations.hours, timezone: schema.locations.timezone }).from(schema.locations),
-    cats: await listCategories(business.id, "service"),
-  }));
+  const dates = opts.dates ?? Array.from({ length: 7 }, (_, i) => shiftISODate(opts.weekStart!, i));
+  const { staff, services, staffServices, locations, cats, overrides } = await withTenant(business.id, async (tx) => {
+    const staff = orderStaff(await tx.select({ id: schema.staff.id, name: schema.staff.displayName, color: schema.staff.color, takesAppointments: schema.staff.takesAppointments, sortOrder: schema.staff.sortOrder }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)));
+    return {
+      staff,
+      // Days off and custom hours in the range: workingBlocksFor folds them in, but the month view also says which they were.
+      overrides: staff.length && dates.length ? await tx.select({ staffId: schema.staffScheduleOverrides.staffId, date: schema.staffScheduleOverrides.date, isOff: schema.staffScheduleOverrides.isOff }).from(schema.staffScheduleOverrides).where(and(inArray(schema.staffScheduleOverrides.staffId, staff.map((s) => s.id)), inArray(schema.staffScheduleOverrides.date, dates))) : [],
+      services: await tx.select({ id: schema.services.id, name: schema.services.name, categoryId: schema.services.categoryId }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
+      staffServices: await tx.select({ staffId: schema.staffServices.staffId, serviceId: schema.staffServices.serviceId }).from(schema.staffServices),
+      locations: await tx.select({ id: schema.locations.id, hours: schema.locations.hours, timezone: schema.locations.timezone }).from(schema.locations),
+      cats: await listCategories(business.id, "service"),
+    };
+  });
   const location = opts.locationId ? locations.find((l) => l.id === opts.locationId) ?? null : null;
   const timeZone = tzFor(business, location);
 
@@ -140,7 +156,8 @@ export async function buildCoverage(
       }
       for (const s of strip) if (s.state === "none") uncovered.push({ start: s.start, end: s.end });
     }
-    return { date, weekday, open, lanes, strip, uncovered };
+    const dayOverrides = overrides.filter((o) => o.date === date).map((o) => ({ staffId: o.staffId, kind: o.isOff ? ("off" as const) : ("custom" as const) }));
+    return { date, weekday, open, lanes, overrides: dayOverrides, strip, uncovered };
   });
 
   // Grid extent: opening hours and every block, on whole hours; 8–6 when there is nothing.

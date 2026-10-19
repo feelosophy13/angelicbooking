@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchesPeople, orderStaff, parsePeopleFilter, peopleOptions } from "../staff-hours";
+import { hoursShort, matchesPeople, monthDates, monthLabel, monthLeadingBlanks, monthOf, orderStaff, parsePeopleFilter, peopleOptions, shiftMonth } from "../staff-hours";
 
 const s = (name: string, takesAppointments: boolean, sortOrder: number, position: string | null = null) => ({ id: name, name, takesAppointments, sortOrder, position });
 
@@ -42,5 +42,31 @@ describe("parsePeopleFilter / matchesPeople", () => {
     expect(names("other")).toEqual(["Dana", "Owner"]);
     expect(names("p:front desk")).toEqual(["Dana"]);
     expect(matchesPeople(s("X", true, 0, "FRONT  DESK"), "p:front desk")).toBe(true);
+  });
+});
+
+describe("month helpers", () => {
+  it("moves months across year ends and lists the right days", () => {
+    expect(shiftMonth("2026-10", 1)).toBe("2026-11");
+    expect(shiftMonth("2026-12", 1)).toBe("2027-01");
+    expect(shiftMonth("2026-01", -1)).toBe("2025-12");
+    expect(monthDates("2026-02")).toHaveLength(28);
+    expect(monthDates("2028-02")).toHaveLength(29);
+    expect(monthDates("2026-10")[0]).toBe("2026-10-01");
+    expect(monthDates("2026-10").at(-1)).toBe("2026-10-31");
+    expect(monthOf("2026-10-18")).toBe("2026-10");
+  });
+  it("starts the grid on Monday", () => {
+    expect(monthLeadingBlanks("2026-10")).toBe(3); // 1 Oct 2026 is a Thursday
+    expect(monthLeadingBlanks("2026-06")).toBe(0); // 1 Jun 2026 is a Monday
+    expect(monthLeadingBlanks("2026-11")).toBe(6); // 1 Nov 2026 is a Sunday
+    expect(monthLabel("2026-10")).toBe("October 2026");
+  });
+  it("writes hours the short way", () => {
+    expect(hoursShort([{ start: 540, end: 1020 }])).toBe("9–5");
+    expect(hoursShort([{ start: 570, end: 1050 }])).toBe("9:30–5:30");
+    expect(hoursShort([{ start: 720, end: 1200 }])).toBe("12–8");
+    expect(hoursShort([{ start: 0, end: 1440 }])).toBe("12–12");
+    expect(hoursShort([{ start: 540, end: 720 }, { start: 780, end: 1020 }])).toBe("9–12, 1–5");
   });
 });
