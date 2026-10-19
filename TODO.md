@@ -33,8 +33,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       payments). Prices are in the database now, not in environment variables.
 
 ### Twilio
-      Done 2026-10-19 (saved on local and production price books with an admin audit entry): base $29/month with 1 location and
-      1 active staff included, $29 per extra location, $9 per extra staff, text number $15/month, 100 texts included then 2¢,
+      Done 2026-10-19 (saved on local and production price books with an admin audit entry): base $15/month with 1 location and
+      1 active staff included (lowered from $29 the same day for a lower barrier of entry), $29 per extra location, $10 per extra
+      staff (Vagaro's per-calendar price), text number $15/month, 100 texts included then 2¢,
       30-day trial, 200 trial emails a day, 0% platform fee. One bundled plan on purpose: payroll, forms, automations and the inbox
       are included rather than sold as add-ons like Vagaro's; revisit per-feature pricing after ten paying salons.
 - [ ] (Angelic Beauty was deleted from prod on 2026-10-17 at the owner's request; they will re-add it.) Buy the first toll-free number for Angelic Beauty in production (Settings → Text messaging) and submit
