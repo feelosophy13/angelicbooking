@@ -606,9 +606,10 @@ async function main() {
           const number = Number(numRows[0]!.n);
           const closedAt = new Date(endAt.getTime() + 5 * 60_000);
           const [sale] = await tx.insert(schema.sales).values({ businessId, number, appointmentId: appt!.id, locationId: win.locationId, clientId: client.id, status: "paid", subtotalCents: subtotal, taxCents: tax, tipCents: tip, totalCents, paidCents: totalCents, closedAt, createdAt: closedAt, createdByUserId: user!.id }).returning({ id: schema.sales.id });
-          await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "service", staffId: p.id, serviceId: svc.id, appointmentItemId: item!.id, name: svc.name, quantity: 1, unitCents: svc.price, amountCents: svc.price, taxable: false, sortOrder: 0 });
-          if (retail) await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "product", staffId: p.id, name: retail.name, quantity: 1, unitCents: retail.price, amountCents: retail.price, taxable: true, sortOrder: 1 });
-          if (tip) await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "tip", staffId: p.id, name: "Tip", quantity: 1, unitCents: tip, amountCents: tip, taxable: false, sortOrder: 2 });
+          await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "service", staffId: p.id, serviceId: svc.id, appointmentItemId: item!.id, name: svc.name, quantity: 1, unitCents: svc.price, amountCents: svc.price, taxable: false, sortOrder: 0, createdAt: closedAt });
+          if (retail) await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, kind: "product", staffId: p.id, name: retail.name, quantity: 1, unitCents: retail.price, amountCents: retail.price, taxable: true, sortOrder: 1, createdAt: closedAt });
+          if (tip) await tx.insert(schema.saleLines).values({ businessId, saleId: sale!.id, // Lines carry the sale's own time: payroll treats a tip line created on a later day than the checkout as "Tip (added later)".
+          kind: "tip", staffId: p.id, name: "Tip", quantity: 1, unitCents: tip, amountCents: tip, taxable: false, sortOrder: 2, createdAt: closedAt });
           const card = chance(0.7);
           await tx.insert(schema.payments).values({ businessId, saleId: sale!.id, method: card ? "card" : "cash", status: "succeeded", amountCents: totalCents, tipCents: tip, cardBrand: card ? pick(["visa", "mastercard", "amex"]) : null, cardLast4: card ? String(between(1000, 9999)) : null, createdAt: closedAt, createdByUserId: user!.id });
           salesN++;

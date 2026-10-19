@@ -56,6 +56,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ## 2. Before real customers
 
+- [x] Demo seed, 2026-10-19: sale lines (service, product, tip) carry the sale's own close time. They used to default to the seed run
+      time, so payroll treated every one of the 368 demo tips as "Tip (added later)" on the seed day; now none are.
 - [x] Client page "Sale" button, 2026-10-18: a secondary button beside Book appointment (shown with `checkout.take`) opens Sales → New
       sale with the client already picked (`/sales/new?clientId=`), for retail, gift card or package purchases without a visit.
 ### Permissions plan 2026-10-18 (`PERMISSIONS-PLAN-2026-10-18.md`; phase 1 closes the exposures in section 2, phase 2 adds the own / everyone axes)
