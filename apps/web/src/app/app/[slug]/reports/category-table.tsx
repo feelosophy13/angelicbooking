@@ -45,7 +45,7 @@ export function CategoryTable({ rows, total, periodLabel }: { rows: CategoryLine
           ) : depth ? (
             <span className="text-stone-400">› </span>
           ) : (
-            <span className="mr-1 inline-block w-5" />
+            <span className="-ml-1 mr-1 inline-block w-5" aria-hidden />
           )}
           {r.name}
           {expandable && !open ? <span className="ml-1.5 text-xs font-normal text-stone-500">{r.children.length} sub-categories</span> : null}
@@ -83,7 +83,7 @@ export function CategoryTable({ rows, total, periodLabel }: { rows: CategoryLine
         </tbody>
         <tfoot className="border-t border-stone-200 text-sm font-semibold">
           <tr>
-            <td className="whitespace-nowrap py-2 pl-4 pr-3"><span className="mr-1 inline-block w-5" />All services</td>
+            <td className="whitespace-nowrap py-2 pl-4 pr-3"><span className="-ml-1 mr-1 inline-block w-5" aria-hidden />All services</td>
             <td className={num}>{total.count}</td>
             <td className={num}>{total.services}</td>
             <td className={num}>{total.prepaid}</td>

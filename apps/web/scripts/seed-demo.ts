@@ -843,16 +843,58 @@ async function main() {
       { c: 20, plan: "12-Week Lash Course", status: "ended", end: -20, credits: 0, cycles: 6, auto: false, started: 100 },
       { c: 21, plan: "Classic Lash Membership", status: "cancelled", end: -5, credits: 0, cycles: 3, auto: false, started: 120, cancelled: 14 },
     ];
+    const memberRows: { clientId: string; membershipId: string; planId: string; active: boolean }[] = [];
     for (const m of MEMBERS) {
-      await tx.insert(schema.clientMemberships).values({
+      const [cm] = await tx.insert(schema.clientMemberships).values({
         businessId, clientId: clientIds[m.c]!.id, planId: plan(m.plan), status: m.status ?? "active", startedAt: agoDays(m.started), currentPeriodEnd: inDays(m.end), creditsRemaining: m.credits, cyclesBilled: m.cycles, autoRenew: m.auto,
         frozenAt: m.frozen ? agoDays(m.frozen[0]) : null, frozenUntil: m.frozen ? inDays(-m.frozen[1]) : null, cancelledAt: m.cancelled ? agoDays(m.cancelled) : null, locationId: locationId,
-      });
+      }).returning({ id: schema.clientMemberships.id });
+      memberRows.push({ clientId: clientIds[m.c]!.id, membershipId: cm!.id, planId: plan(m.plan), active: (m.status ?? "active") === "active" || m.status === "paused" });
     }
     const pkg = (name: string) => pkgRows.find((r) => r.name.startsWith(name))!;
+    const holderRows: { clientId: string; clientPackageId: string; serviceId: string; perSessionCents: number }[] = [];
     for (const [c, name, remaining, expiresIn] of [[22, "Signature Glow", 2, 120], [23, "Radiant Glow", 6, 300], [24, "Radiant Glow", 1, 18], [25, "Signature Glow", 3, 170]] as [number, string, number, number][]) {
-      await tx.insert(schema.clientPackages).values({ businessId, clientId: clientIds[c]!.id, packageId: pkg(name).id, serviceId: pkg(name).serviceId, remaining, expiresAt: inDays(expiresIn), locationId });
+      const [cp] = await tx.insert(schema.clientPackages).values({ businessId, clientId: clientIds[c]!.id, packageId: pkg(name).id, serviceId: pkg(name).serviceId, remaining, expiresAt: inDays(expiresIn), locationId }).returning({ id: schema.clientPackages.id });
+      const def = (await tx.query.packages.findFirst({ where: eq(schema.packages.id, pkg(name).id), columns: { priceCents: true, sessions: true } }))!;
+      holderRows.push({ clientId: clientIds[c]!.id, clientPackageId: cp!.id, serviceId: pkg(name).serviceId, perSessionCents: Math.round(def.priceCents / def.sessions) });
     }
+
+    // --- Sessions used: up to two of each prepaid client's recent visits become the covered service paid with a package or membership
+    // session, the way redeemCredit records it (amount 0, creditCents = the session's value: the package's per-session price, or the
+    // service's list price for a membership), so Reports and payroll have prepaid money to show. The ticket's totals and payment drop by
+    // the service price; the tip stays. Only visits with a provider who performs the covered service are converted.
+    const planDefs = await tx.select({ id: schema.membershipPlans.id, includedServiceId: schema.membershipPlans.includedServiceId }).from(schema.membershipPlans);
+    const prepaid: { clientId: string; serviceId: string; valueCents: number; link: { clientPackageId: string } | { clientMembershipId: string }; label: string }[] = [
+      ...holderRows.map((h) => ({ clientId: h.clientId, serviceId: h.serviceId, valueCents: h.perSessionCents, link: { clientPackageId: h.clientPackageId }, label: "package" })),
+      ...memberRows.flatMap((m) => {
+        const inc = planDefs.find((p) => p.id === m.planId)?.includedServiceId;
+        return m.active && inc ? [{ clientId: m.clientId, serviceId: inc, valueCents: serviceIds.find((s) => s.id === inc)?.price ?? 0, link: { clientMembershipId: m.membershipId }, label: "membership" }] : [];
+      }),
+    ];
+    let redeemed = 0;
+    for (const pp of prepaid) {
+      const covered = serviceIds.find((s) => s.id === pp.serviceId);
+      if (!covered || pp.valueCents <= 0) continue;
+      const performers = new Set((await tx.select({ staffId: schema.staffServices.staffId }).from(schema.staffServices).where(eq(schema.staffServices.serviceId, pp.serviceId))).map((r) => r.staffId));
+      const recent = await tx
+        .select({ lineId: schema.saleLines.id, saleId: schema.sales.id, amount: schema.saleLines.amountCents, staffId: schema.saleLines.staffId, itemId: schema.saleLines.appointmentItemId, closedAt: schema.sales.closedAt })
+        .from(schema.saleLines)
+        .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
+        .where(and(eq(schema.sales.clientId, pp.clientId), eq(schema.sales.status, "paid"), eq(schema.saleLines.kind, "service"), sql`${schema.saleLines.creditCents} = 0`, sql`${schema.sales.closedAt} > now() - interval '50 days'`))
+        .orderBy(desc(schema.sales.closedAt))
+        .limit(6);
+      let done = 0;
+      for (const r of recent) {
+        if (done >= 2 || !r.staffId || !performers.has(r.staffId) || !r.itemId) continue;
+        await tx.update(schema.appointmentItems).set({ serviceId: covered.id, serviceName: covered.name, priceCents: covered.price }).where(eq(schema.appointmentItems.id, r.itemId));
+        await tx.update(schema.saleLines).set({ serviceId: covered.id, name: `${covered.name} (${pp.label} credit)`, unitCents: 0, amountCents: 0, creditCents: pp.valueCents, ...pp.link }).where(eq(schema.saleLines.id, r.lineId));
+        await tx.update(schema.sales).set({ subtotalCents: sql`${schema.sales.subtotalCents} - ${r.amount}`, totalCents: sql`${schema.sales.totalCents} - ${r.amount}`, paidCents: sql`${schema.sales.paidCents} - ${r.amount}` }).where(eq(schema.sales.id, r.saleId));
+        await tx.update(schema.payments).set({ amountCents: sql`greatest(${schema.payments.amountCents} - ${r.amount}, 0)` }).where(eq(schema.payments.saleId, r.saleId));
+        await tx.delete(schema.payments).where(and(eq(schema.payments.saleId, r.saleId), eq(schema.payments.amountCents, 0)));
+        done++; redeemed++;
+      }
+    }
+    console.log(`Prepaid sessions used on past visits: ${redeemed}`);
 
     // --- Forms completed by clients: intake for most, a signed consent for permanent makeup clients
     const intake = formRows.find((f) => f.kind === "intake")!;

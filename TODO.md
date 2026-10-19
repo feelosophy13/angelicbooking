@@ -103,6 +103,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       when the session is used (`offers.ts` redeemCredit), so earlier tickets keep what they were credited. Memberships still credit the
       list price. Tests: core `payroll.test.ts` (house share, fee share, onSheet), DB `payroll-rules.test.ts`.
 
+- [x] Reports category table, 2026-10-19: category names line up whether or not the row has an expand chevron (the spacer takes the
+      button's footprint). Demo seed: up to two recent visits of each package holder and active member become the covered service paid
+      with a session (amount 0, credit = the package's per-session price or the service's list price for a membership; the ticket's
+      totals and payment drop by the service price, the tip stays), so "From packages & memberships", Prepaid used and provider pay on
+      credits all have data (18 sessions in demo-salon, 17 in demo-twosites).
 - [x] Package sessions pay commission on the package's per-session price by default, 2026-10-19 (migration 0124 flips the column
       default and moves businesses still on the shipped-hours-earlier "list" default). The owner's choice: a provider earns on what the
       client actually paid for the session, not the service's list price. Settings → Payroll rules lists that option first.
