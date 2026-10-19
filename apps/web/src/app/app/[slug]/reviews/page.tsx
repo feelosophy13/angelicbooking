@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can, instantToISODate, zonedToInstant } from "@angelic/core";
-import { requireAction } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
+import { canSeeClientContact, canSeeReviews } from "@/lib/visibility";
 import { listReviews } from "@/server/reviews";
 import { listLocations } from "@/server/locations";
 import { shiftISODate } from "@/lib/utils";
@@ -23,13 +24,19 @@ const isDate = (v?: string) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
 export default async function ReviewsPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions } = await requireAction(slug, "clients.read");
+  // Every review, or only the reviews of visits they performed (R1). The author's name needs the client-contact permission.
+  const { business, permissions, staffId: myStaffId } = await requireAnyAction(slug, "reviews.view", "reviews.view.own");
+  const scope = canSeeReviews(permissions)!;
+  const ownOnly = scope === "own";
+  const showAuthor = canSeeClientContact(permissions);
+  const linkClient = can(permissions, "clients.read");
   const [locations, providers] = await Promise.all([
     listLocations(business.id),
     withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(eq(schema.staff.takesAppointments, true)).orderBy(asc(schema.staff.displayName))),
   ]);
   const locationId = locations.some((l) => l.id === sp.location) ? sp.location! : null;
-  const staffId = providers.some((p) => p.id === sp.staff) ? sp.staff! : null;
+  // An own-only viewer is pinned to their own lines; a login not linked to a staff member has none.
+  const staffId = ownOnly ? (myStaffId ?? "none") : providers.some((p) => p.id === sp.staff) ? sp.staff! : null;
   const from = isDate(sp.from) ? sp.from! : null;
   const to = isDate(sp.to) ? sp.to! : null;
   const rating = /^[1-5]$/.test(sp.rating ?? "") ? Number(sp.rating) : null;
@@ -58,7 +65,7 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
         <AutoSubmitForm className="flex flex-wrap items-end gap-3">
           {locationId ? <input type="hidden" name="location" value={locationId} /> : null}
           <LocationFilter locations={locations} current={locationId} query={otherQuery} />
-          {providers.length > 1 ? (
+          {providers.length > 1 && !ownOnly ? (
             <label className="text-sm">
               <span className="mb-1 block text-xs font-medium text-stone-500">Provider</span>
               <Select name="staff" defaultValue={staffId ?? ""} className="h-9 w-44">
@@ -84,7 +91,8 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
           {filtered ? <Link href="?" className="text-xs text-stone-500 underline">Clear filters</Link> : null}
         </AutoSubmitForm>
       </Card>
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {ownOnly ? <p className="mb-3 text-sm text-stone-600">Your reviews: what clients said after the visits you performed.</p> : null}
+      <div className={`mb-6 grid gap-3 sm:grid-cols-2 ${ownOnly ? "lg:grid-cols-3" : "lg:grid-cols-4"}`}>
         <Card className="p-4"><p className="text-xs uppercase tracking-wide text-stone-500">Average</p><p className="text-xl font-semibold">{r.count ? r.average.toFixed(1) : "—"} <span className="text-sm font-normal text-stone-500">/ 5</span></p></Card>
         <Card className="p-4"><p className="text-xs uppercase tracking-wide text-stone-500">Ratings</p><p className="text-xl font-semibold">{r.count}</p><p className="text-xs text-stone-500">of {r.requested} requested{r.requested ? ` · ${Math.round((r.count / r.requested) * 100)}% answered` : ""}</p></Card>
         <Card className="p-4">
@@ -97,14 +105,14 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
             </Link>
           ))}
         </Card>
-        <Card className="p-4">
+        {ownOnly ? null : <Card className="p-4">
           <p className="text-xs uppercase tracking-wide text-stone-500">By provider</p>
           {r.byStaff.length === 0 ? <p className="text-sm text-stone-500">—</p> : r.byStaff.map((s) => (
             <p key={s.staffId} className="text-sm">
               <Link href={`?${[locationId ? `location=${locationId}` : "", `staff=${s.staffId}`, from ? `from=${from}` : "", to ? `to=${to}` : ""].filter(Boolean).join("&")}`} className="hover:underline">{s.staffName}</Link>: <b>{s.avg.toFixed(1)}</b> <span className="text-stone-500">({s.n})</span>
             </p>
           ))}
-        </Card>
+        </Card>}
       </div>
       {r.rows.length === 0 ? (
         <Empty title={filtered ? (rating ? `No ${rating}-star ratings match these filters` : "No ratings match these filters") : "No ratings yet"} body={filtered ? "Try a wider date range or clear the filters." : "Clients are asked to rate each visit a couple of hours after checkout."} />
@@ -114,8 +122,8 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
             {r.rows.map(({ r: rv, firstName, lastName, staffName, locationName }) => (
               <li key={rv.id} className="px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span><Stars n={rv.rating} /> <span className="ml-2 font-medium">{firstName ? `${firstName} ${lastName ?? ""}`.trim() : "Client"}</span>{staffName ? <span className="text-stone-500"> · with {staffName}</span> : null}{locations.length > 1 && locationName ? <span className="text-stone-500"> · {locationName.replace(/^.*? - /, "")}</span> : null}</span>
-                  <span className="text-xs text-stone-500">{rv.submittedAt ? fmt.format(rv.submittedAt) : ""}{rv.clientId ? <> · <Link href={`/app/${slug}/clients/${rv.clientId}`} className="underline">client</Link></> : null}</span>
+                  <span><Stars n={rv.rating} /> <span className="ml-2 font-medium">{showAuthor && firstName ? `${firstName} ${lastName ?? ""}`.trim() : "Client"}</span>{staffName && !ownOnly ? <span className="text-stone-500"> · with {staffName}</span> : null}{locations.length > 1 && locationName ? <span className="text-stone-500"> · {locationName.replace(/^.*? - /, "")}</span> : null}</span>
+                  <span className="text-xs text-stone-500">{rv.submittedAt ? fmt.format(rv.submittedAt) : ""}{rv.clientId && linkClient ? <> · <Link href={`/app/${slug}/clients/${rv.clientId}`} className="underline">client</Link></> : null}</span>
                 </div>
                 {rv.comment ? <p className="mt-1 whitespace-pre-line text-stone-700">{rv.comment}</p> : null}
               </li>
