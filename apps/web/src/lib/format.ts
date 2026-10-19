@@ -67,6 +67,7 @@ export const STATUS_LABEL: Record<string, string> = {
   queued: "Queued",
   sent: "Sent",
   skipped: "Skipped",
+  done: "Done",
   active: "Active",
   paused: "Paused",
   draft: "Draft",

@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAction } from "@/lib/tenant";
 import { getWorkflow, noVisitReach, recentRuns, WORKFLOW_TEMPLATES } from "@/server/workflows";
-import { NO_VISIT_WINDOW_DAYS } from "@/lib/workflows-logic";
-import { triggerMeta } from "@/lib/workflows-logic";
+import { NO_VISIT_WINDOW_DAYS, runOutcome, triggerMeta } from "@/lib/workflows-logic";
 import { BackLink, Card, PageHeader } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
 import { StatusBadge } from "@/components/status-badge";
@@ -12,6 +11,9 @@ import { loadPickers } from "../pickers";
 import { deleteWorkflowAction, duplicateWorkflowAction } from "../actions";
 
 export const metadata: Metadata = { title: "Edit workflow" };
+
+/** The badge reads what the run amounted to (what was actually sent), not an appointment status. */
+const outcomeBadge = (o: ReturnType<typeof runOutcome>) => (o === "active" ? "queued" : o);
 
 export default async function EditWorkflowPage({ params }: { params: Promise<{ slug: string; workflowId: string }> }) {
   const { slug, workflowId } = await params;
@@ -46,11 +48,11 @@ export default async function EditWorkflowPage({ params }: { params: Promise<{ s
                 <li key={run.id} className="rounded-lg border border-stone-100 p-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium">{firstName ? `${firstName} ${lastName ?? ""}`.trim() : "Client"}</span>
-                    <StatusBadge status={run.status === "active" ? "queued" : run.status === "done" ? "sent" : "cancelled"} />
+                    <StatusBadge status={outcomeBadge(runOutcome(run))} />
                   </div>
                   <p className="text-[11px] text-stone-400">{fmt.format(run.startedAt)}{run.nextAt && run.status === "active" ? ` · next ${fmt.format(run.nextAt)}` : ""}</p>
                   <ul className="mt-1 space-y-0.5 text-[11px] text-stone-600">
-                    {run.log.slice(-6).map((l, i) => <li key={i}><span className="text-stone-400">{fmtIso(l.at)}</span> {l.step != null ? `step ${l.step + 1}: ` : ""}{l.detail}</li>)}
+                    {run.log.map((l, i) => <li key={i}><span className="text-stone-400">{fmtIso(l.at)}</span> {l.step != null ? `step ${l.step + 1}: ` : ""}{l.detail}</li>)}
                   </ul>
                 </li>
               ))}

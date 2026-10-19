@@ -91,7 +91,7 @@ export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: strin
 
       <Section n={1} title="Name">
         <div className="flex flex-wrap items-start gap-3">
-          <div className="min-w-0 flex-1"><Field label="Name" name="name" required className="[&>label]:sr-only"><Input name="name" defaultValue={workflow?.name ?? ""} required placeholder="Aftercare for colour clients" className="text-base font-medium" /></Field></div>
+          <div className="min-w-0 flex-1"><Field label="Name" name="name" required className="[&>label]:sr-only"><Input name="name" defaultValue={workflow?.name ?? ""} required placeholder="Aftercare for color clients" className="text-base font-medium" /></Field></div>
           <Checkbox name="enabled" defaultChecked={workflow?.enabled ?? false} label="On" className="h-10 cursor-pointer !items-center rounded-lg border border-stone-300 bg-white px-3 font-medium has-[:checked]:border-green-300 has-[:checked]:bg-green-50 has-[:checked]:text-green-800 [&>input]:accent-green-600 [&>input]:mt-0" />
         </div>
         <details className="mt-2 text-sm" open={!!workflow?.description}>
@@ -164,8 +164,8 @@ export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: strin
           <summary className="cursor-pointer select-none hover:text-stone-800">What is always applied</summary>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">
             <li>Each client goes through a workflow once per occasion.</li>
-            <li>Texts need text consent and carry “Reply STOP to opt out”; emails need email consent and carry an unsubscribe link.</li>
-            <li>Messages from the Visit completed, New client, Birthday and No-visit triggers wait until 9am–8pm in your time zone.</li>
+            <li>Texts need text consent and emails email consent. Each message step says under it whether it is about the visit or marketing: marketing texts also need written marketing consent and carry “Reply STOP to opt out”; marketing emails carry an unsubscribe link.</li>
+            <li>Texts wait until 9am–8pm where the client is, except the reminder and the booked and cancelled confirmations.</li>
             <li>Runs move with a rescheduled appointment and stop when it is cancelled.</li>
           </ul>
         </details>
