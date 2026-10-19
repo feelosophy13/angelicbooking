@@ -81,6 +81,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       business.manage (the owner opts in under Roles, and their stored description still reads "Everything except business settings and
       Stripe" until they edit it). Gap: the tax rate and receipt footer live on the Payments page, so they moved with it to
       `billing.manage`; move them to Locations or Business profile if a manager needs them.
+- [x] Filters without Apply, 2026-10-18: `AutoSubmitForm` now also runs search boxes (apply ~300 ms after typing stops or on
+      Enter, replacing the address instead of adding a back step per letter) and dates (apply once the date is whole). Appointments,
+      Gallery and Reviews lost their Apply buttons; Products, Stock and Inventory history search now follow as you type. DESIGN.md →
+      Toolbars and filters updated.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,

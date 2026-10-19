@@ -12,7 +12,8 @@ import { GALLERY_PERIODS, hasGalleryFilters, parseGalleryFilters, type GallerySe
 import { pairViews } from "@/lib/gallery-view";
 import { PairCard } from "@/components/photo-pair";
 import { LocationFilter } from "@/components/location-filter";
-import { Button, Card, Checkbox, Empty, Input, PageHeader, Select } from "@/components/ui";
+import { AutoSubmitForm } from "@/components/auto-submit-form";
+import { Card, Checkbox, Empty, Input, PageHeader, Select } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Gallery" };
 
@@ -49,7 +50,7 @@ export default async function GalleryPage({ params, searchParams }: { params: Pr
       <Card className="mb-4 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <LocationFilter locations={locations} current={f.locationId} query={qs({ location: null, page: null })} allLabel="All" />
-          <form method="get" className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <AutoSubmitForm className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             {f.locationId ? <input type="hidden" name="location" value={f.locationId} /> : null}
             {f.clientId ? <input type="hidden" name="client" value={f.clientId} /> : null}
             <ServicePicker name="service" groups={groups} value={f.categoryId ? `c:${f.categoryId}` : f.serviceId} noneLabel="Any service" compact />
@@ -71,9 +72,8 @@ export default async function GalleryPage({ params, searchParams }: { params: Pr
             <Input name="q" defaultValue={f.q ?? ""} placeholder="Client name" className="h-9 min-w-0 flex-1 basis-36" aria-label="Client name" />
             <Checkbox name="both" value="1" defaultChecked={f.bothOnly} label="Before and after" className="items-center" />
             <Checkbox name="share" value="1" defaultChecked={f.shareableOnly} label="OK to share" className="items-center" />
-            <Button type="submit" size="sm" variant="secondary">Apply</Button>
             {filtered ? <Link href={f.clientId ? `?client=${f.clientId}` : "?"} className="text-sm text-stone-600 underline">Clear</Link> : null}
-          </form>
+          </AutoSubmitForm>
         </div>
         {f.clientId ? (
           <p className="mt-2 text-sm text-stone-600">Showing photos of {clientName ?? "one client"}. <Link href={`?${qs({ client: null, page: null })}`} className="underline">Show everyone</Link></p>

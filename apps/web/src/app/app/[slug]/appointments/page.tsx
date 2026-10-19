@@ -9,10 +9,11 @@ import { listAppointments, type AppointmentsView } from "@/server/appointments";
 import { listLocations } from "@/server/locations";
 import { cn, shiftISODate } from "@/lib/utils";
 import { relative } from "@/lib/format";
-import { Button, Card, Empty, Input, LinkButton, PageHeader, Select } from "@/components/ui";
+import { Card, Empty, Input, LinkButton, PageHeader, Select } from "@/components/ui";
 import { LinkRow } from "@/components/table-row";
 import { StatusBadge } from "@/components/status-badge";
 import { LocationFilter } from "@/components/location-filter";
+import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { ServicePicker } from "@/components/service-picker";
 import { serviceGroups, serviceIdsInScope } from "@/server/service-groups";
 import { parseScope, scopeValue } from "@/lib/service-scope";
@@ -82,7 +83,7 @@ export default async function AppointmentsPage({ params, searchParams }: { param
             ))}
           </div>
           <LocationFilter locations={locations} current={locationId} query={params_({ location: null, page: null })} allLabel="All" />
-          <form method="get" className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <AutoSubmitForm className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <input type="hidden" name="view" value={view} />
             {locationId ? <input type="hidden" name="location" value={locationId} /> : null}
             <Select name="source" defaultValue={source ?? ""} aria-label="How it was booked" className="h-9 w-auto">
@@ -100,9 +101,8 @@ export default async function AppointmentsPage({ params, searchParams }: { param
             ) : null}
             <ServicePicker name="service" groups={groups} value={scopeVal} noneLabel="Any service" compact />
             <Input name="q" defaultValue={q ?? ""} placeholder="Client, phone or service" className="h-9 min-w-0 flex-1 basis-40" aria-label="Search" />
-            <Button type="submit" size="sm" variant="secondary">Apply</Button>
             {filtered ? <Link href={href({ source: null, status: null, staff: null, service: null, q: null, page: null })} className="text-sm text-stone-600 underline">Clear</Link> : null}
-          </form>
+          </AutoSubmitForm>
         </div>
       </Card>
 

@@ -106,8 +106,10 @@ wrong: fix the page.
   `LocationFilter` gets `allLabel={null}`, which removes the "All" choice, and the page falls back to the main site.
 - Filtering by service follows "Choosing a service" below; a *category* filter (a short list) is a plain select.
 - Filters remember each other when you change one (carry the other query params).
-- A filter made only of choices (selects, switches) applies the moment it changes: wrap it in `AutoSubmitForm`
-  and give it no Apply or Check button (Staff hours coverage). A filter with a text box keeps an explicit Apply.
+- Filters apply on their own: wrap the filter bar in `AutoSubmitForm` and give it no Apply or Check button. Selects,
+  switches and pickers apply the moment they change; a date applies once it is a whole date; a search box applies when
+  typing pauses (or on Enter) and replaces the address rather than adding a back step per letter. Show a "Clear" link
+  only while a filter is set.
 
 ## Choosing a service
 

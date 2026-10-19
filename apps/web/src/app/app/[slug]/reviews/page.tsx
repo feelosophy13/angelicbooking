@@ -7,8 +7,9 @@ import { requireAction } from "@/lib/tenant";
 import { listReviews } from "@/server/reviews";
 import { listLocations } from "@/server/locations";
 import { shiftISODate } from "@/lib/utils";
-import { Button, Card, Input, PageHeader, Empty, Select } from "@/components/ui";
+import { Card, Input, PageHeader, Empty, Select } from "@/components/ui";
 import { LocationFilter } from "@/components/location-filter";
+import { AutoSubmitForm } from "@/components/auto-submit-form";
 
 export const metadata: Metadata = { title: "Reviews" };
 
@@ -54,7 +55,7 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
         {can(permissions, "business.manage") ? <Link href={`/app/${slug}/settings/reviews`} className="text-sm text-brand-700 underline">Settings</Link> : null}
       </PageHeader>
       <Card className="mb-4 p-3">
-        <form method="get" className="flex flex-wrap items-end gap-3">
+        <AutoSubmitForm className="flex flex-wrap items-end gap-3">
           {locationId ? <input type="hidden" name="location" value={locationId} /> : null}
           <LocationFilter locations={locations} current={locationId} query={otherQuery} />
           {providers.length > 1 ? (
@@ -75,14 +76,13 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
           </label>
           <label className="text-sm"><span className="mb-1 block text-xs font-medium text-stone-500">From</span><Input type="date" name="from" defaultValue={from ?? ""} max={today} className="h-9 w-40" /></label>
           <label className="text-sm"><span className="mb-1 block text-xs font-medium text-stone-500">To</span><Input type="date" name="to" defaultValue={to ?? ""} max={today} className="h-9 w-40" /></label>
-          <Button type="submit" size="sm" variant="secondary">Apply</Button>
           <div className="flex items-center gap-1">
             {quick("Last 30 days", shiftISODate(today, -29), today)}
             {quick("Last 90 days", shiftISODate(today, -89), today)}
             {quick("This year", `${today.slice(0, 4)}-01-01`, today)}
           </div>
           {filtered ? <Link href="?" className="text-xs text-stone-500 underline">Clear filters</Link> : null}
-        </form>
+        </AutoSubmitForm>
       </Card>
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="p-4"><p className="text-xs uppercase tracking-wide text-stone-500">Average</p><p className="text-xl font-semibold">{r.count ? r.average.toFixed(1) : "—"} <span className="text-sm font-normal text-stone-500">/ 5</span></p></Card>
