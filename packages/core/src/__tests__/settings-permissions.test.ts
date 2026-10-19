@@ -5,8 +5,8 @@ import { ACTIONS, DEFAULT_ROLE_META, DEFAULT_ROLE_PERMISSIONS, PERMISSION_GROUPS
 describe("settings permissions", () => {
   const split = ["billing.manage", "integrations.manage", "audit.view"] as const satisfies readonly Action[];
 
-  it("exist and are listed under Setup in the role editor", () => {
-    const setup = PERMISSION_GROUPS.find((g) => g.title === "Setup")!;
+  it("exist and are listed under Settings in the role editor", () => {
+    const setup = PERMISSION_GROUPS.find((g) => g.title === "Settings")!;
     const listed = setup.items.map((i) => i.action);
     for (const a of split) {
       expect(ACTIONS).toContain(a);

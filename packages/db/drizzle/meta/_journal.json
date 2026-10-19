@@ -834,6 +834,13 @@
       "when": 1795200700000,
       "tag": "0118_week_start",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1795200800000,
+      "tag": "0119_view_permissions",
+      "breakpoints": true
     }
   ]
 }

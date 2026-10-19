@@ -27,14 +27,15 @@ describe("client data permissions", () => {
     }
   });
 
-  it("Front desk reads notes, texts and balances, but cannot download the list or browse photos", () => {
+  it("Front desk reads notes, texts, balances and photos, but cannot download the list", () => {
+    // PERMISSIONS-PLAN-2026-10-18.md section 3 gives the desk "See every visit photo" (O M F); until then the desk had none.
     const fd = DEFAULT_ROLE_PERMISSIONS.front_desk;
     expect(fd.has("clients.read")).toBe(true);
     expect(fd.has("clients.notes")).toBe(true);
     expect(fd.has("clients.messages")).toBe(true);
     expect(fd.has("clients.balances")).toBe(true);
     expect(fd.has("clients.export")).toBe(false);
-    expect(fd.has("clients.photos")).toBe(false);
+    expect(fd.has("clients.photos")).toBe(true);
   });
 
   it("Provider opens a client with notes and photos, nothing more", () => {

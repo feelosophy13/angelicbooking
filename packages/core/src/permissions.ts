@@ -1,25 +1,13 @@
 export const ROLES = ["owner", "manager", "provider", "front_desk"] as const;
 export type Role = (typeof ROLES)[number];
 
+/**
+ * Every permission in the app. Behaviour is decided by these keys, never by a role's name: a business makes up its own roles and the
+ * four built-in ones are only defaults. A new permission is one line here, one in PERMISSION_GROUPS (the Roles page renders from it),
+ * a default per built-in role below, and a migration that back-fills stored roles so nobody loses what they use today.
+ */
 export const ACTIONS = [
-  "business.manage", // everyday settings: profile, booking rules, locations, wording, store, loyalty, reviews, reasons, forms, imports, embed, domain
-  // Split out of "business.manage" 2026-10-18 (migration 0115 back-fills stored roles) so the owner can hand the settings to a manager
-  // without handing over the money and the keys.
-  "billing.manage", // Settings → Payments (the Stripe connection and payouts) and Settings → Billing (the platform subscription and card)
-  "integrations.manage", // Settings → API keys, and buying and verifying the text number
-  "audit.view", // Settings → Activity log
-  "members.manage",
-  "staff.manage",
-  "services.manage",
-  "clients.read", // the client list, a client's contact details and visit history
-  "clients.write",
-  // Client data that "View clients" used to imply. Split out 2026-10-18 (migration 0114 back-fills stored roles) so a role can open a
-  // client without also getting the whole list as a file, every text conversation, every photo, or balances.
-  "clients.export", // download the client list as a CSV
-  "clients.notes", // private notes, lash maps and signed forms
-  "clients.messages", // the SMS inbox and a client's text thread
-  "clients.photos", // the gallery and visit photos
-  "clients.balances", // store credit and loyalty balances
+  // Calendar
   "appointments.read.any",
   "appointments.read.own",
   "appointments.write.any",
@@ -30,24 +18,69 @@ export const ACTIONS = [
   "appointments.change.own",
   "appointments.cancel.own",
   "appointments.block.own",
+  // Split out of the calendar permissions 2026-10-18 (migration 0119): the waitlist page and working it.
+  "waitlist.view",
+  "waitlist.manage",
+  // Clients
+  "clients.read", // the client list and a client's profile: name, visits; contact details and spend are their own permissions
+  "clients.contact", // phone, email, address, birthday, wherever a client is shown (list, profile, appointment, hover card, roster, search, mobile)
+  "clients.spend", // lifetime spend, spend per visit and tips on the list and profile
+  "clients.write",
+  // Client data that "View clients" used to imply. Split out 2026-10-18 (migration 0114 back-fills stored roles) so a role can open a
+  // client without also getting the whole list as a file, every text conversation, every photo, or balances.
+  "clients.export", // download the client list as a CSV
+  "clients.notes", // private notes, lash maps and signed forms
+  "clients.messages", // the SMS inbox and a client's text thread
+  "clients.photos", // the gallery and visit photos
+  "clients.balances", // store credit and loyalty balances
+  // Reviews (split out of clients.read 2026-10-18, migration 0119)
+  "reviews.view", // every review, per-provider averages, ratings on client profiles, API reviews:read
+  "reviews.view.own", // the reviews of visits they performed
+  // Checkout and money
   "checkout.take",
+  "sales.view.own", // the tickets they are credited on, whatever their calendar permissions
+  "sales.view.all", // every ticket; refunding someone else's ticket needs this
   "checkout.discount", // discounts, price changes and voids on a ticket (Manager and Front desk by default)
+  "checkout.refund", // send money back: refunds, store credit, deposit refunds (on a ticket they may see)
+  "giftcards.view", // the Gift cards page: masked codes and balances
   "giftcards.issue", // create a gift card nobody paid for (a comp or a correction); selling one at checkout is checkout.take
   "reports.view",
+  "payroll.view",
+  // Staff
+  "staff.directory", // the staff list: names, photos, positions
+  "staff.schedules.view", // colleagues' hours, days worked and time off: Staff hours, the staff list's days, API staff:read
+  "staff.manage",
+  "time.view.all", // everyone's time clock entries and totals (own entries need no permission)
+  "time.edit", // add, correct or remove time clock entries
+  "members.manage",
+  // Catalog and inventory
+  "catalog.view", // the service and product menu: names, durations, options
+  "catalog.prices", // prices on the menu, the hover card, class seats
+  "catalog.costs", // product cost and margins, the product export
+  "services.manage",
+  "inventory.view", // stock levels, read-only inventory pages, the stock export
+  "inventory.log", // record the supplies used on a visit (Provider and Front desk by default)
+  "inventory.manage", // receive, count, adjust and order stock; suppliers (the catalog itself is services.manage)
+  // Marketing and forms
   // Split out of "reports.view" 2026-10-18 (migration 0116 back-fills stored roles): reading the money reports no longer lets someone text or
   // email every client. Campaigns, promo codes and the Marketing pages; automations themselves are business.manage.
   "marketing.send",
-  "checkout.refund", // send money back: refunds, store credit, deposit refunds
-  "payroll.view",
-  "inventory.log", // record the supplies used on a visit (Provider and Front desk by default)
-  "inventory.manage", // receive, count, adjust and order stock; suppliers (the catalog itself is services.manage)
+  "forms.manage", // design forms, and void, reassign or email a signed copy
+  // Settings
+  "business.manage", // everyday settings: profile, booking rules, locations, wording, store, loyalty, reviews, reasons, imports, embed, domain
+  // Split out of "business.manage" 2026-10-18 (migration 0115 back-fills stored roles) so the owner can hand the settings to a manager
+  // without handing over the money and the keys.
+  "billing.manage", // Settings → Payments (the Stripe connection and payouts) and Settings → Billing (the platform subscription and card)
+  "integrations.manage", // Settings → API keys, and buying and verifying the text number
+  "audit.view", // Settings → Activity log
 ] as const;
 export type Action = (typeof ACTIONS)[number];
 
-/** Human-readable grouping used by the role editor. */
-export const PERMISSION_GROUPS: { title: string; items: { action: Action; label: string; description: string }[] }[] = [
+/** How the Roles page lists permissions: a group per area of the app, each permission with a one-line label and what it opens. */
+export const PERMISSION_GROUPS: { title: string; description: string; items: { action: Action; label: string; description: string }[] }[] = [
   {
-    title: "Calendar & appointments",
+    title: "Calendar",
+    description: "Whose appointments they see and what they may do to them.",
     items: [
       { action: "appointments.read.own", label: "See their own calendar", description: "View appointments booked with them." },
       { action: "appointments.write.own", label: "Update their own appointments", description: "Check in, complete, mark no-show, add notes and photos, and check out their own clients." },
@@ -56,13 +89,18 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
       { action: "appointments.cancel.own", label: "Cancel their own appointments", description: "Cancel their own appointments, charge no-show or late fees, and end standing appointments." },
       { action: "appointments.block.own", label: "Block time on their own calendar", description: "Take time off the books (lunch, training, a late start) and move or remove their own blocks." },
       { action: "appointments.read.any", label: "See every calendar", description: "View all staff members' appointments." },
-      { action: "appointments.write.any", label: "Manage any appointment", description: "Book, move, cancel and change status for anyone." },
+      { action: "appointments.write.any", label: "Manage any appointment", description: "Book, move, cancel and change status for anyone, and run classes." },
+      { action: "waitlist.view", label: "See the waitlist", description: "Who is waiting for a spot, and for what." },
+      { action: "waitlist.manage", label: "Work the waitlist", description: "Book clients from the waitlist and close entries." },
     ],
   },
   {
     title: "Clients",
+    description: "The client list and what of each client's record they can see.",
     items: [
-      { action: "clients.read", label: "View clients", description: "See the client list, and a client's contact details and visit history." },
+      { action: "clients.read", label: "View clients", description: "The client list and a client's profile: name, visits and history. Contact details and spend are separate." },
+      { action: "clients.contact", label: "See phone, email, address and birthday", description: "Contact details wherever a client is shown: the list, profile, appointment, hover card, class roster and search." },
+      { action: "clients.spend", label: "See what clients spend", description: "Lifetime spend, spend per visit and tips on the client list and profile." },
       { action: "clients.write", label: "Add and edit clients", description: "Create clients and change their details." },
       { action: "clients.notes", label: "Read notes and forms", description: "Private notes (formulas, allergies), lash maps and the forms a client signed." },
       { action: "clients.photos", label: "See visit photos", description: "The Gallery and the before-and-after photos on a client's profile." },
@@ -72,36 +110,66 @@ export const PERMISSION_GROUPS: { title: string; items: { action: Action; label:
     ],
   },
   {
-    title: "Checkout & money",
+    title: "Reviews",
+    description: "What clients said after their visits.",
     items: [
-      { action: "checkout.take", label: "Take payments", description: "Open checkout, record payments, sell packages and gift cards. A role that sees only its own calendar sees only its own tickets." },
+      { action: "reviews.view", label: "See all reviews", description: "Every rating and comment, averages per provider, and ratings on client profiles." },
+      { action: "reviews.view.own", label: "See their own reviews", description: "Ratings and comments on the visits they performed. The client's name shows only with \"See phone, email, address and birthday\"." },
+    ],
+  },
+  {
+    title: "Checkout and money",
+    description: "Taking payments, seeing tickets, and the business's numbers.",
+    items: [
+      { action: "checkout.take", label: "Take payments", description: "Open checkout, record payments, sell packages and gift cards." },
+      { action: "sales.view.own", label: "See their own tickets", description: "The sales they are credited on, in the Sales list and on each ticket." },
+      { action: "sales.view.all", label: "See every ticket", description: "Every sale, with tips per stylist and how it was paid." },
       { action: "checkout.discount", label: "Discounts and price changes", description: "Discount a ticket, change a price, and void an unpaid ticket." },
-      { action: "giftcards.issue", label: "Issue free gift cards", description: "Create a gift card with no payment (a comp or a correction)." },
-      { action: "reports.view", label: "View sales reports", description: "Sales, tips and refunds across the business." },
-      { action: "checkout.refund", label: "Refund payments", description: "Refund a sale, give store credit, or refund a deposit." },
+      { action: "checkout.refund", label: "Refund payments", description: "Refund a sale, give store credit, or refund a deposit, on a ticket they can see." },
+      { action: "giftcards.view", label: "Look up gift cards", description: "The Gift cards page: balances and masked codes." },
+      { action: "giftcards.issue", label: "Issue free gift cards", description: "Create a gift card with no payment (a comp or a correction), and see full codes." },
+      { action: "reports.view", label: "View business reports", description: "Sales, tips, refunds and cancellations across the business." },
       { action: "payroll.view", label: "Run payroll", description: "See pay rules and generate pay sheets for everyone." },
     ],
   },
   {
-    title: "Marketing",
+    title: "Staff",
+    description: "The team: who they can see, whose hours, and who may change them.",
     items: [
-      { action: "marketing.send", label: "Send marketing", description: "Campaigns by text or email to groups of clients, and promo codes. Automations are part of Business settings." },
+      { action: "staff.directory", label: "See the staff list", description: "Names, photos and positions of the team." },
+      { action: "staff.schedules.view", label: "See colleagues' hours and time off", description: "Days worked on the staff list, the Staff hours page and the time-off list." },
+      { action: "staff.manage", label: "Manage staff", description: "Add staff, set hours and time off, assign services, for everyone." },
+      { action: "time.view.all", label: "See everyone's time clock", description: "Every person's clock-ins and hours. Everyone sees their own." },
+      { action: "time.edit", label: "Add, edit and delete hours", description: "Add hours by hand and correct or remove clock entries. These feed payroll." },
+      { action: "members.manage", label: "Manage logins and roles", description: "Invite people, assign roles, revoke access." },
     ],
   },
   {
-    title: "Inventory",
+    title: "Catalog and inventory",
+    description: "The menu, prices, costs and stock.",
     items: [
+      { action: "catalog.view", label: "See the service and product menu", description: "Services, products, packages and plans: names, durations and options." },
+      { action: "catalog.prices", label: "See prices", description: "Prices on the menu, on the calendar hover card, and the price of a class seat." },
+      { action: "catalog.costs", label: "See product cost and margins", description: "What each product costs you, on its page and in the product export." },
+      { action: "services.manage", label: "Manage the catalog", description: "Add and change services, products, categories, packages and plans." },
+      { action: "inventory.view", label: "See stock levels", description: "How many are in stock, and what the team has logged as used." },
       { action: "inventory.log", label: "Log supplies used", description: "Record the products used up on a visit (color, adhesive, masks) from the appointment or the Log usage page." },
       { action: "inventory.manage", label: "Manage inventory", description: "Receive and count stock, write off or transfer it, and handle suppliers, purchase orders and reorders." },
     ],
   },
   {
-    title: "Setup",
+    title: "Marketing and forms",
+    description: "Reaching clients, and the forms they sign.",
     items: [
-      { action: "services.manage", label: "Manage the catalog", description: "Services, products, categories, packages and plans." },
-      { action: "staff.manage", label: "Manage staff", description: "Add staff, set hours and time off, assign services." },
-      { action: "members.manage", label: "Manage logins and roles", description: "Invite people, assign roles, revoke access." },
-      { action: "business.manage", label: "Business settings", description: "Profile, booking rules, locations, text wording, forms, store, loyalty, reviews, refund and cancellation reasons, imports, embed and domain. Not payments, billing or API keys." },
+      { action: "marketing.send", label: "Send marketing", description: "Campaigns by text or email to groups of clients, and promo codes. Automations are part of Business settings." },
+      { action: "forms.manage", label: "Design forms and manage signed copies", description: "Create and edit intake forms and waivers; void, reassign or email a signed form." },
+    ],
+  },
+  {
+    title: "Settings",
+    description: "How the business is set up, and the money and keys behind it.",
+    items: [
+      { action: "business.manage", label: "Business settings", description: "Profile, booking rules, locations, text wording, store, loyalty, reviews, refund and cancellation reasons, imports, embed and domain. Not payments, billing or API keys." },
       { action: "billing.manage", label: "Payments and billing", description: "Connect or disconnect the Stripe account that receives card payments, and manage the subscription and the card on file." },
       { action: "integrations.manage", label: "API keys and text number", description: "Create and revoke API keys, and buy, verify or release the business's text number." },
       { action: "audit.view", label: "See the activity log", description: "Who changed what, and when, across the whole business." },
@@ -128,13 +196,29 @@ export const APPOINTMENT_CAPABILITIES = {
 export type AppointmentCapability = keyof typeof APPOINTMENT_CAPABILITIES;
 
 const ALL = new Set<Action>(ACTIONS);
+/** What the Manager default leaves out: the money and the keys, and the "own" variants of things it has for everyone. */
+const NOT_MANAGER = new Set<Action>(["billing.manage", "integrations.manage", "reviews.view.own", "sales.view.own"]);
 
 /** Default permissions for the built-in roles. Businesses can edit copies of these. */
 export const DEFAULT_ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {
   owner: ALL,
-  manager: new Set<Action>(ACTIONS.filter((a) => a !== "billing.manage" && a !== "integrations.manage")),
-  front_desk: new Set<Action>(["clients.read", "clients.write", "clients.notes", "clients.messages", "clients.balances", "appointments.read.any", "appointments.read.own", "appointments.write.any", "appointments.write.own", "checkout.take", "checkout.discount", "inventory.log"]),
-  provider: new Set<Action>(["clients.read", "clients.notes", "clients.photos", "appointments.read.own", "appointments.write.own", "checkout.take", "inventory.log"]),
+  manager: new Set<Action>(ACTIONS.filter((a) => !NOT_MANAGER.has(a))),
+  front_desk: new Set<Action>([
+    "appointments.read.any", "appointments.read.own", "appointments.write.any", "appointments.write.own", "waitlist.view", "waitlist.manage",
+    "clients.read", "clients.contact", "clients.spend", "clients.write", "clients.notes", "clients.messages", "clients.photos", "clients.balances",
+    "reviews.view",
+    "checkout.take", "sales.view.all", "checkout.discount", "giftcards.view",
+    "staff.directory", "staff.schedules.view", "time.view.all",
+    "catalog.view", "catalog.prices", "inventory.view", "inventory.log",
+  ]),
+  provider: new Set<Action>([
+    "appointments.read.own", "appointments.write.own",
+    "clients.read", "clients.notes", "clients.photos",
+    "reviews.view.own",
+    "checkout.take", "sales.view.own",
+    "staff.directory",
+    "catalog.view", "catalog.prices", "inventory.log",
+  ]),
 };
 
 export const DEFAULT_ROLE_META: Record<Role, { name: string; description: string }> = {

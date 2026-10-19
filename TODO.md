@@ -58,6 +58,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 - [x] Client page "Sale" button, 2026-10-18: a secondary button beside Book appointment (shown with `checkout.take`) opens Sales → New
       sale with the client already picked (`/sales/new?clientId=`), for retail, gift card or package purchases without a visit.
+### Permissions plan 2026-10-18 (`PERMISSIONS-PLAN-2026-10-18.md`; phase 1 closes the exposures in section 2, phase 2 adds the own / everyone axes)
+- [x] Phase 1 catalog, 2026-10-19 (migration 0119 back-fills every stored role so nobody loses what they use today): `clients.contact`,
+      `clients.spend`, `reviews.view` / `reviews.view.own`, `staff.directory`, `staff.schedules.view`, `catalog.view` / `catalog.prices` /
+      `catalog.costs`, `inventory.view`, `sales.view.own` / `sales.view.all`, `giftcards.view`, `time.view.all` / `time.edit`,
+      `waitlist.view` / `waitlist.manage`, `forms.manage`. Defaults per the plan's table (Front desk gains visit photos, as the table says);
+      the Roles page is regrouped into Calendar, Clients, Reviews, Checkout and money, Staff, Catalog and inventory, Marketing and forms,
+      Settings, each group with a one-line description; `lib/visibility.ts` holds the shared "who sees what" helpers.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts
