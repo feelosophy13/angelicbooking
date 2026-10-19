@@ -17,7 +17,10 @@ export async function GET(req: Request) {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("date") ?? "") ? url.searchParams.get("date")! : instantToISODate(new Date(), tz);
   const { staff, items } = await getRangeAgenda(c.business.id, tz, date, 1);
   const ownOnly = seesOwnOnly(c.permissions);
-  const mine = (staffId: string) => !ownOnly || (c.myStaffId !== null && staffId === c.myStaffId);
+  // "See when colleagues are busy": every column, but a colleague's appointment is only its time (A6).
+  const availability = ownOnly && can(c.permissions, "appointments.read.availability");
+  const mine = (staffId: string) => !ownOnly || availability || (c.myStaffId !== null && staffId === c.myStaffId);
+  const theirs = (staffId: string) => availability && staffId !== c.myStaffId;
   // What of a visit this login may see, as on the web calendar: the client's phone, the visit's notes and the price each follow a permission.
   const contact = canSeeClientContact(c.permissions);
   const notes = can(c.permissions, "clients.notes");
@@ -26,13 +29,16 @@ export async function GET(req: Request) {
     date,
     timezone: tz,
     staff: staff.filter((s) => mine(s.id)).map((s) => ({ id: s.id, name: s.displayName, color: s.color })),
-    items: items.filter((i) => mine(i.staffId)).map(({ clientPhone, notes: visitNotes, priceCents, depositCents, depositStatus, ...i }) => ({
+    items: items.filter((i) => mine(i.staffId) && !(theirs(i.staffId) && i.status === "cancelled")).map(({ clientPhone, notes: visitNotes, priceCents, depositCents, depositStatus, ...i }) => theirs(i.staffId) ? {
+      id: i.id, appointmentId: i.appointmentId, staffId: i.staffId, startAt: i.startAt.toISOString(), endAt: i.endAt.toISOString(), status: "busy", kind: i.kind === "block" ? "block" : "busy",
+      serviceName: i.kind === "block" ? "Blocked time" : "Busy", clientName: null, clientId: null, notes: null, priceCents: 0, locationId: i.locationId,
+    } : {
       ...i,
       startAt: i.startAt.toISOString(),
       endAt: i.endAt.toISOString(),
       ...(contact ? { clientPhone } : {}),
       ...(notes ? { notes: visitNotes } : { notes: null }),
       ...(prices ? { priceCents, depositCents, depositStatus } : { priceCents: 0 }),
-    })),
+    }),
   });
 }

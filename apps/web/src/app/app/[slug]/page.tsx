@@ -48,6 +48,10 @@ export default async function CalendarPage({
   const { business, permissions, user, staffId, plan } = await requireBusiness(slug);
   // A Provider's calendar is their own: their column and their appointments. A role with no calendar permission at all sees none.
   const ownOnly = seesOwnOnly(permissions);
+  // "See when colleagues are busy" (A6): every column is drawn, but a colleague's appointments are nameless busy blocks that open nothing.
+  const availabilityOnly = ownOnly && can(permissions, "appointments.read.availability");
+  const soloColumn = ownOnly && !availabilityOnly;
+  const theirs = (itemStaffId: string) => availabilityOnly && itemStaffId !== staffId;
   // New appointments: for anyone (front desk, manager), or on their own calendar if the role has that permission.
   const canBook = !!bookingAccess(permissions, staffId ?? null);
   const canBlock = !!blockingAccess(permissions, staffId ?? null);
@@ -70,23 +74,23 @@ export default async function CalendarPage({
   // Day view: who works at this location on that weekday; week/month: anyone who works there on some day.
   const filtered = filterAgendaByLocation(agenda, locationFilter, view === "day" ? weekdayOf(date) : null);
   // Everyone who could have a column here; the chips above the grid list them all and `?hide=` leaves some out of the grid, legend and counts.
-  const allStaff = noCalendar ? [] : ownOnly ? filtered.staff.filter((s) => s.id === staffId) : filtered.staff;
-  const hidden = ownOnly ? [] : (sp.hide ?? "").split(",").filter((id) => allStaff.some((s) => s.id === id));
+  const allStaff = noCalendar ? [] : soloColumn ? filtered.staff.filter((s) => s.id === staffId) : filtered.staff;
+  const hidden = soloColumn ? [] : (sp.hide ?? "").split(",").filter((id) => allStaff.some((s) => s.id === id));
   const staff = allStaff.filter((s) => !hidden.includes(s.id));
   const shownIds = new Set(staff.map((s) => s.id));
   const agendaItems = noCalendar ? [] : filtered.items.filter((i) => shownIds.has(i.staffId));
   const hideParam = hidden.length ? `&hide=${hidden.join(",")}` : "";
   // Which visits still have a required form outstanding (day view only: it's a per-appointment check).
-  const missingForms = view === "day" ? await withTenant(business.id, (tx) => appointmentsMissingForms(tx, [...new Set(agendaItems.filter((i) => !i.classSessionId).map((i) => i.appointmentId))])) : new Set<string>();
+  const missingForms = view === "day" ? await withTenant(business.id, (tx) => appointmentsMissingForms(tx, [...new Set(agendaItems.filter((i) => !i.classSessionId && !theirs(i.staffId)).map((i) => i.appointmentId))])) : new Set<string>();
   const formsFilter = sp.forms === "missing";
   const items = formsFilter ? agendaItems.filter((i) => missingForms.has(i.appointmentId)) : agendaItems;
   // Pictures clients attached when booking online, for the hover card ("2 photos from client").
-  const clientPhotos = items.length ? await withTenant(business.id, (tx) => clientPhotoCounts(tx, [...new Set(items.filter((i) => !i.classSessionId && i.kind !== "block").map((i) => i.appointmentId))])) : new Map<string, number>();
+  const clientPhotos = items.length ? await withTenant(business.id, (tx) => clientPhotoCounts(tx, [...new Set(items.filter((i) => !i.classSessionId && i.kind !== "block" && !theirs(i.staffId)).map((i) => i.appointmentId))])) : new Map<string, number>();
   // The week opens on the overview of everyone: each appointment is a text-free block in its stylist's colour, read by hover or click. Picking
   // a stylist (staff=<id>) shows that one person's week in full. Day view shows every column, month view everyone.
-  const staffFilter = view === "week" ? (ownOnly ? (staff[0]?.id ?? null) : (staff.find((s) => s.id === sp.staff)?.id ?? null)) : null;
+  const staffFilter = view === "week" ? (soloColumn ? (staff[0]?.id ?? null) : (staff.find((s) => s.id === sp.staff)?.id ?? null)) : null;
   const staffParam = view === "week" ? (staffFilter ?? "all") : null;
-  const overview = view === "week" && !staffFilter && !ownOnly && !noCalendar;
+  const overview = view === "week" && !staffFilter && !soloColumn && !noCalendar;
 
   const minuteOf = (d: Date) => {
     const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "numeric", hour12: false }).formatToParts(d);
@@ -158,9 +162,32 @@ export default async function CalendarPage({
     if (!tipCache.has(appointmentId)) tipCache.set(appointmentId, buildTip(tipRows.get(appointmentId)!, { money: (c) => money(c, business.currency), formsDue: missingForms.has(appointmentId), show: tipShow }));
     return tipCache.get(appointmentId)!;
   };
+  // A colleague's appointment, to someone who may only see when they are busy: the time and nothing else.
+  const busyTip = (i: (typeof items)[number]): CalTip => ({ kind: "block", heading: "Busy", sub: null, status: "Booked", tags: [], lines: [{ service: "Booked", staff: staffById.get(i.staffId)?.displayName ?? "", startMin: minuteOf(i.startAt), endMin: minuteOf(i.endAt) <= minuteOf(i.startAt) ? 24 * 60 : minuteOf(i.endAt), price: null }], total: null, facts: [], notes: null });
   const calItems: CalItem[] = items
     .filter((i) => !staffFilter || i.staffId === staffFilter)
-    .map((i) => ({
+    .filter((i) => !(theirs(i.staffId) && i.status === "cancelled"))
+    .map((i) => (theirs(i.staffId) ? {
+      id: i.id,
+      appointmentId: i.appointmentId,
+      staffId: i.staffId,
+      columnKey: view === "day" ? i.staffId : instantToISODate(i.startAt, tz),
+      startMin: minuteOf(i.startAt),
+      endMin: minuteOf(i.endAt) <= minuteOf(i.startAt) ? 24 * 60 : minuteOf(i.endAt),
+      title: i.kind === "block" ? "Blocked" : "Busy",
+      subtitle: i.kind === "block" ? "Blocked time" : "Booked",
+      status: "block",
+      color: staffById.get(i.staffId)?.color ?? "#6366f1",
+      categoryColor: UNCATEGORIZED_COLOR,
+      categoryName: i.kind === "block" ? "Blocked time" : "Busy",
+      href: "#",
+      groupKey: `${i.appointmentId}:${i.staffId}:${instantToISODate(i.startAt, tz)}`,
+      tip: busyTip(i),
+      notify: false,
+      clientFirst: null,
+      clientHref: null,
+      dateLabel: formatDateLong(instantToISODate(i.startAt, tz)),
+    } : {
       id: i.id,
       appointmentId: i.appointmentId,
       staffId: i.staffId,
@@ -197,8 +224,8 @@ export default async function CalendarPage({
       slug,
       serviceGroups: groups,
       services: Object.fromEntries(rows.map((r) => [r.id, { name: r.name, lengthMin: r.durationMin + r.gapMin + r.finishMin }])),
-      // Own-calendar roles see (and may book or block on) their own column only.
-      staff: staff.map((s) => ({ id: s.id, name: s.displayName })),
+      // Own-calendar roles see (and may book or block on) their own column only; with "see when colleagues are busy" the other columns are drawn but stay read-only.
+      staff: staff.filter((s) => !theirs(s.id)).map((s) => ({ id: s.id, name: s.displayName })),
       staffFor,
       canBook,
       canBlock,
@@ -211,7 +238,7 @@ export default async function CalendarPage({
 
   let setup: SetupStep[] = [];
   const setupHidden = (await cookies()).get(`setup-hidden-${business.id}`)?.value === "1";
-  if (can(permissions, "business.manage") && !setupHidden) {
+  if (can(permissions, "settings.business") && !setupHidden) {
     const counts = await withTenant(business.id, async (tx) => {
       const [svc] = await tx.select({ n: sql<number>`count(*)` }).from(schema.services);
       const [st] = await tx.select({ n: sql<number>`count(*)` }).from(schema.staff);
@@ -229,7 +256,7 @@ export default async function CalendarPage({
       ...(can(permissions, "billing.manage") ? [{ key: "stripe", label: "Connect Stripe", href: `/app/${slug}/settings/payments`, done: business.stripeChargesEnabled, hint: "Take cards and save cards on file." }] : []),
       ...(can(permissions, "integrations.manage") ? [{ key: "sms", label: "Get a text number", href: `/app/${slug}/settings/messaging`, done: counts.smsNumber, hint: "Reminders by SMS from your own number." }] : []),
       { key: "clients", label: "Import clients from Vagaro", href: `/app/${slug}/settings/import`, done: counts.clients > 3, hint: "CSV or Excel export." },
-      { key: "booking", label: "Share your booking link", href: `/app/${slug}/settings/booking`, done: counts.appointments > 0 && business.onlineBookingEnabled, hint: "Put it on Instagram and Google." },
+      ...(can(permissions, "settings.booking") ? [{ key: "booking", label: "Share your booking link", href: `/app/${slug}/settings/booking`, done: counts.appointments > 0 && business.onlineBookingEnabled, hint: "Put it on Instagram and Google." }] : []),
       ...(plan.state === "trial" && can(permissions, "billing.manage") ? [{ key: "plan", label: "Add a card", href: `/app/${slug}/settings/billing`, done: false, hint: `Your trial ends in ${plan.daysLeft} day${plan.daysLeft === 1 ? "" : "s"}; nothing is charged until then.` }] : []),
       { key: "2fa", label: "Turn on two-factor sign-in", href: `/account`, done: !!me?.twoFactorEnabled, hint: "An extra code at sign-in protects your clients and your money." },
     ];
@@ -281,7 +308,7 @@ export default async function CalendarPage({
       ) : ownOnly && !staffId ? (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Your login isn&apos;t linked to a staff member yet, so there is no calendar to show. Ask the owner to send you an invitation from Staff, or to link it under Staff → Access.</p>
       ) : null}
-      {view === "week" && !ownOnly && !noCalendar ? (
+      {view === "week" && !soloColumn && !noCalendar ? (
         // The week's own controls live here, not in the header, so the header is the same in every view and nothing in it moves.
         <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-stone-600">
           <AutoSubmitForm className="contents">
@@ -305,7 +332,7 @@ export default async function CalendarPage({
           ) : null}
         </div>
       ) : null}
-      {view !== "week" && !ownOnly && !noCalendar && allStaff.length > 1 ? (
+      {view !== "week" && !soloColumn && !noCalendar && allStaff.length > 1 ? (
         // Day and Month: one chip per provider, click to hide their column (remembered in this browser).
         <div className="mb-3">
           <ProviderChips businessId={business.id} providers={allStaff.map((s) => ({ id: s.id, name: s.displayName, color: s.color ?? "#6366f1" }))} hidden={hidden} />
