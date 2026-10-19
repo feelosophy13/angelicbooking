@@ -1,7 +1,8 @@
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { instantToISODate, mondayOf, rotationWeekIndex } from "@angelic/core";
-import { requireAction } from "@/lib/tenant";
+import { PermissionError, requireBusiness } from "@/lib/tenant";
+import { canEditOwnStaff } from "@/lib/visibility";
 import { shiftISODate } from "@/lib/utils";
 import { Card } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
@@ -12,7 +13,8 @@ const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", 
 
 export default async function StaffHoursPage({ params }: { params: Promise<{ slug: string; staffId: string }> }) {
   const { slug, staffId } = await params;
-  const { business } = await requireAction(slug, "staff.manage");
+  const { business, permissions, staffId: myStaffId } = await requireBusiness(slug);
+  if (!canEditOwnStaff(permissions, myStaffId ?? null, staffId, "hours")) throw new PermissionError(); // their own, or "Manage staff"
   const { schedule, person, locations } = await withTenant(business.id, async (tx) => ({
     schedule: await tx.select().from(schema.staffSchedules).where(eq(schema.staffSchedules.staffId, staffId)).orderBy(asc(schema.staffSchedules.weekIndex), asc(schema.staffSchedules.weekday), asc(schema.staffSchedules.startTime)),
     person: await tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true, rotationWeeks: true, rotationAnchor: true } }),

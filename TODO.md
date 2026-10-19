@@ -151,6 +151,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       class the person teaches (the New class page then offers only themselves as instructor); the API `classes:` scopes follow
       `classes.manage.any`.
 
+- [x] Phase 2 staff self-service (S6), 2026-10-19: with `staff.self.hours` a person opens their own staff page with the Weekly hours and
+      Time off tabs and may save them; with `staff.self.services` the Services tab; the staff list links a row only to a page the viewer may
+      open. `staff.manage` still opens everyone's page and every tab. Not built: `staff.self.profile` (the plan lists it under S6 but not in
+      the phase 2 list).
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

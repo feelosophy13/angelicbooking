@@ -1,7 +1,8 @@
 import { and, asc, eq, gte } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { instantToISODate } from "@angelic/core";
-import { requireAction } from "@/lib/tenant";
+import { PermissionError, requireBusiness } from "@/lib/tenant";
+import { canEditOwnStaff } from "@/lib/visibility";
 import { dateLong } from "@/lib/format";
 import { Card, Input, Empty } from "@/components/ui";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
@@ -36,7 +37,8 @@ function describeRange(g: Group): string {
 
 export default async function StaffTimeOffPage({ params }: { params: Promise<{ slug: string; staffId: string }> }) {
   const { slug, staffId } = await params;
-  const { business } = await requireAction(slug, "staff.manage");
+  const { business, permissions, staffId: myStaffId } = await requireBusiness(slug);
+  if (!canEditOwnStaff(permissions, myStaffId ?? null, staffId, "hours")) throw new PermissionError(); // their own, or "Manage staff"
   const today = instantToISODate(new Date(), business.timezone);
   const overrides = await withTenant(business.id, (tx) =>
     tx.select().from(schema.staffScheduleOverrides).where(and(eq(schema.staffScheduleOverrides.staffId, staffId), gte(schema.staffScheduleOverrides.date, today))).orderBy(asc(schema.staffScheduleOverrides.date)),

@@ -7,16 +7,21 @@ import { asc, desc, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
-import { canSeeStaffLogins, canSeeStaffSchedules } from "@/lib/visibility";
+import { canOpenStaffPage, canSeeStaffLogins, canSeeStaffSchedules } from "@/lib/visibility";
 import { staffLocationIndex } from "@/server/locations";
 import { listRoles } from "@/server/roles";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
 import { moveStaffAction } from "./actions";
 
+/** A link when there is somewhere to go, else a plain row. */
+function Row({ href, className, children }: { href: string | null; className: string; children: React.ReactNode }) {
+  return href ? <Link href={href} className={className}>{children}</Link> : <div className={className}>{children}</div>;
+}
+
 export default async function StaffPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   // The directory is its own permission (S1); colleagues' days worked need "See colleagues' hours and time off".
-  const { business, permissions } = await requireAction(slug, "staff.directory");
+  const { business, permissions, staffId: myStaffId } = await requireAction(slug, "staff.directory");
   const seesSchedules = canSeeStaffSchedules(permissions);
   const [rows, locations, members, locIndex] = await Promise.all([
     withTenant(business.id, (tx) => tx.select().from(schema.staff).orderBy(desc(schema.staff.active), asc(schema.staff.sortOrder), asc(schema.staff.displayName))),
@@ -67,7 +72,8 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
             const memberRole = s.userId ? roleByUser.get(s.userId) : null;
             return (
               <li key={s.id} className="flex items-center hover:bg-stone-50">
-                <Link href={`/app/${slug}/staff/${s.id}`} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3">
+                {/* A row opens the person's page only for whoever may open it: staff managers, or the person themselves with a self-service permission. */}
+                <Row href={canOpenStaffPage(permissions, myStaffId ?? null, s.id) ? `/app/${slug}/staff/${s.id}` : null} className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3">
                   {s.photoUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={s.photoUrl} alt="" className="h-9 w-9 shrink-0 rounded-full border border-stone-200 object-cover" />
@@ -80,8 +86,8 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
                       {[s.fullName && s.fullName.trim() !== s.displayName ? s.fullName : null, s.position, multiLocation && s.takesAppointments ? whereWorks(s.id, s.locationId) : multiLocation ? locationName(s.locationId) : null, seesLogins ? s.email ?? "no email" : null, seesLogins ? (memberRole ? `${roleName(memberRole)} (has login)` : "no login yet") : null, s.takesAppointments ? null : "no calendar column"].filter(Boolean).join(" · ")}
                     </p>
                   </div>
-                  <ChevronRight className="h-4 w-4 text-stone-300" />
-                </Link>
+                  {canOpenStaffPage(permissions, myStaffId ?? null, s.id) ? <ChevronRight className="h-4 w-4 text-stone-300" /> : null}
+                </Row>
                 {canReorder && s.active ? (
                   <form action={moveStaffAction} className="flex gap-0.5 pr-3">
                     <input type="hidden" name="slug" value={slug} />

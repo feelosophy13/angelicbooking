@@ -8,7 +8,8 @@ import { schema, withTenant } from "@angelic/db";
 import { instantToISODate, isAction, mondayOf, worksOwnCalendar } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
 import { auth } from "@/lib/auth";
-import { requireAction, roleActor } from "@/lib/tenant";
+import { PermissionError, requireAction, requireBusiness, roleActor } from "@/lib/tenant";
+import { canEditOwnStaff } from "@/lib/visibility";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
 import { queueOneOff } from "@/lib/notify";
@@ -160,10 +161,17 @@ export async function toggleStaffActive(formData: FormData) {
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const blockSchema = z.object({ start: z.string().regex(timeRe), end: z.string().regex(timeRe) });
 
+/** Changing a person's hours, time off or services: "Manage staff", or their own with the matching self-service permission (S6). */
+async function staffEditCtx(slug: string, staffId: string, kind: "hours" | "services") {
+  const ctx = await requireBusiness(slug);
+  if (!canEditOwnStaff(ctx.permissions, ctx.staffId ?? null, staffId, kind)) throw new PermissionError();
+  return ctx;
+}
+
 export async function saveSchedule(formData: FormData) {
   const slug = String(formData.get("slug"));
   const staffId = String(formData.get("staffId"));
-  const ctx = await requireAction(slug, "staff.manage");
+  const ctx = await staffEditCtx(slug, staffId, "hours");
   // Hours repeat every `rotationWeeks` weeks (1–4). Per week w and weekday: on_{w}_{wd}, loc_{w}_{wd}, and any
   // number of blocks start_{w}_{wd}_{i} / end_{w}_{wd}_{i} (lunch break, split shift).
   const rotationWeeks = Math.min(4, Math.max(1, Number(formData.get("rotationWeeks")) || 1));
@@ -211,7 +219,7 @@ export async function saveSchedule(formData: FormData) {
 export async function saveStaffServices(formData: FormData) {
   const slug = String(formData.get("slug"));
   const staffId = String(formData.get("staffId"));
-  const ctx = await requireAction(slug, "staff.manage");
+  const ctx = await staffEditCtx(slug, staffId, "services");
   const serviceIds = formData.getAll("serviceIds").map(String);
   try {
     const picks = serviceIds.map((serviceId) => ({ serviceId, price: parsePriceField(formData.get(`price_${serviceId}`)), duration: parseMinutesField(formData.get(`duration_${serviceId}`)) }));
@@ -265,7 +273,7 @@ function datesBetween(from: string, to: string): string[] {
 }
 
 export const addOverride = formAction(overrideSchema, async (o) => {
-  const ctx = await requireAction(o.slug, "staff.manage");
+  const ctx = await staffEditCtx(o.slug, o.staffId, "hours");
   const dates = datesBetween(o.date, o.to ?? o.date);
   const fields = { isOff: o.kind === "off", startTime: o.kind === "hours" ? o.start! : null, endTime: o.kind === "hours" ? o.end! : null, note: o.note };
   await withTenant(ctx.business.id, (tx) =>
@@ -298,7 +306,7 @@ export async function deleteOverride(formData: FormData) {
   const slug = String(formData.get("slug"));
   const staffId = String(formData.get("staffId"));
   const ids = formData.getAll("overrideId").map(String).filter(Boolean);
-  const ctx = await requireAction(slug, "staff.manage");
+  const ctx = await staffEditCtx(slug, staffId, "hours");
   if (ids.length) {
     await withTenant(ctx.business.id, (tx) =>
       tx.delete(schema.staffScheduleOverrides).where(and(eq(schema.staffScheduleOverrides.staffId, staffId), inArray(schema.staffScheduleOverrides.id, ids))),
@@ -405,7 +413,7 @@ export const savePay = formAction(
     note: f.optional(200),
   }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "payroll.view");
+    const ctx = await requireAction(d.slug, "payroll.manage");
     if (d.payType === "hourly" && !d.hourlyRate) throw new FormError("Enter an hourly rate", "hourlyRate");
     if (d.payType === "salary" && !d.salaryPerPeriod) throw new FormError("Enter the salary per period", "salaryPerPeriod");
     const today = instantToISODate(new Date(), ctx.business.timezone);

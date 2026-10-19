@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { requireAction } from "@/lib/tenant";
+import { PermissionError, requireBusiness } from "@/lib/tenant";
+import { canEditOwnStaff } from "@/lib/visibility";
 import { Card } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
 import { listCategories, pathTo } from "@/server/categories";
@@ -9,7 +10,8 @@ import { StaffServicesPicker, type PickerGroup } from "./picker";
 
 export default async function StaffServicesPage({ params }: { params: Promise<{ slug: string; staffId: string }> }) {
   const { slug, staffId } = await params;
-  const { business } = await requireAction(slug, "staff.manage");
+  const { business, permissions, staffId: myStaffId } = await requireBusiness(slug);
+  if (!canEditOwnStaff(permissions, myStaffId ?? null, staffId, "services")) throw new PermissionError(); // their own, or "Manage staff"
   const [{ services, rows }, categories] = await Promise.all([
     withTenant(business.id, async (tx) => ({
       services: await tx.select({ id: schema.services.id, name: schema.services.name, durationMin: schema.services.durationMin, priceCents: schema.services.priceCents, categoryId: schema.services.categoryId }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.sortOrder), asc(schema.services.name)),
