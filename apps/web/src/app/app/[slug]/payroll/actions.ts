@@ -4,10 +4,12 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
-import { requireAction } from "@/lib/tenant";
+import { requireAction, requireAnyAction } from "@/lib/tenant";
 import { finalizePayroll, getFinalizedRunIn } from "@/server/payroll";
+import { PayrollLockedError } from "@/server/payroll-lock";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
+import { auditSettings } from "@/lib/audit";
 
 export const addAdjustment = formAction(
   z.object({ slug: z.string(), start: f.isoDate(), end: f.isoDate(), staffId: f.id(), label: f.text(1, 80), amount: z.string().trim().regex(/^-?\$?\d{1,7}(\.\d{1,2})?$/, "Enter an amount like 142.90 (negative to subtract)"), countsAsPay: f.checkbox() }),
@@ -48,10 +50,38 @@ export async function deleteAdjustment(formData: FormData) {
 export async function finalize(formData: FormData) {
   const d = z.object({ slug: z.string(), start: f.isoDate(), end: f.isoDate(), overtime: z.string().optional() }).parse(Object.fromEntries(formData));
   const ctx = await requireAction(d.slug, "payroll.manage");
-  await finalizePayroll(ctx.business, { start: d.start, end: d.end }, d.overtime === "on", ctx.user.id);
+  try {
+    await finalizePayroll(ctx.business, { start: d.start, end: d.end }, d.overtime === "on", ctx.user.id);
+  } catch (e) {
+    // Two finalized periods sharing a day would pay those days twice; say which one is in the way.
+    if (e instanceof PayrollLockedError) return setFlash(e.message, "error");
+    throw e;
+  }
   await setFlash("Pay period finalized");
   revalidatePath(`/app/${d.slug}/payroll`);
 }
+
+/**
+ * The pay schedule (weekly / biweekly / semimonthly / monthly, an anchor day for the first two) and the shared week start. Saved from
+ * Payroll → Options or Settings → Payroll rules; anyone who runs payroll or edits booking-and-money rules may set it.
+ */
+export const savePaySchedule = formAction(
+  z.object({ slug: z.string(), frequency: z.enum(["weekly", "biweekly", "semimonthly", "monthly"]), anchor: z.string().trim().optional(), weekStart: z.coerce.number().int().refine((n) => [0, 1, 6].includes(n), "Pick a day"), back: z.string().startsWith("/app/").optional() }),
+  async (d) => {
+    const ctx = await requireAnyAction(d.slug, "payroll.manage", "settings.booking");
+    const anchored = d.frequency === "weekly" || d.frequency === "biweekly";
+    if (anchored && !/^\d{4}-\d{2}-\d{2}$/.test(d.anchor ?? "")) throw new FormError("Pick the first day of any pay period", "anchor");
+    const patch = { payFrequency: d.frequency, payAnchorDate: anchored ? d.anchor! : null, weekStart: d.weekStart };
+    await withTenant(ctx.business.id, (tx) => tx.update(schema.businesses).set(patch).where(eq(schema.businesses.id, ctx.business.id)));
+    await auditSettings(ctx.business, ctx.user.id, "payroll", patch);
+    revalidatePath(`/app/${d.slug}`, "layout");
+    if (d.back) {
+      await setFlash("Pay schedule saved");
+      redirect(d.back);
+    }
+    return "Pay schedule saved";
+  },
+);
 
 /** How overtime is counted when a run has it on: federal weekly, or California daily. A business-wide setting. */
 export async function setOvertimeRule(formData: FormData) {

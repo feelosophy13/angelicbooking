@@ -56,6 +56,16 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ## 2. Before real customers
 
+### Payroll review 2026-10-19 (`REVIEW-PAYROLL-2026-10-19.md`, §6 build order)
+- [x] Item 1, pay schedule, 2026-10-19 (migration 0121 `businesses.pay_frequency` / `pay_anchor_date`): weekly / every two weeks /
+      twice a month (1st–15th, 16th–end) / monthly, with an anchor day for the first two and the week start shared with the calendar
+      (`businesses.weekStart`, which the overtime workweek now follows instead of a fixed Monday). Set under Payroll → Options or
+      Settings → Payroll rules (`settings.booking` or `payroll.manage`). Payroll opens on the period containing today with Previous /
+      Next / This period; "Custom range" keeps the free dates for a one-off run. Finalize refuses a period overlapping a finalized one.
+      Salary is per scheduled period: a custom run pays it pro rata by days of each scheduled period it covers (`salaryShare`, said on
+      the page); with no schedule set the page assumes two weeks from the latest finalized period (else the week start) and salary stays
+      flat per run. Math in core `pay-schedule.ts` (tests `pay-schedule.test.ts`); DB test `payroll-schedule.test.ts`.
+
 - [x] Demo seed, 2026-10-19: sale lines (service, product, tip) carry the sale's own close time. They used to default to the seed run
       time, so payroll treated every one of the 368 demo tips as "Tip (added later)" on the seed day; now none are.
 - [x] Client page "Sale" button, 2026-10-18: a secondary button beside Book appointment (shown with `checkout.take`) opens Sales → New

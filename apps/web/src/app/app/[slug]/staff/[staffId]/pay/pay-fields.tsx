@@ -38,7 +38,7 @@ export function PayFields({ p }: { p: Pay }) {
         <Field label="Hourly rate ($)" name="hourlyRate" hint={type === "commission" ? "Optional guaranteed base on clocked hours." : "Paid on time-clock hours."} className={hide(type !== "salary")}>
           <MoneyInput name="hourlyRate" defaultValue={p.hourlyRateCents ? (p.hourlyRateCents / 100).toFixed(2) : ""} onChange={(e) => setHasBase(e.target.value.trim() !== "")} />
         </Field>
-        <Field label="Salary per pay period ($)" name="salaryPerPeriod" className={hide(type === "salary")}>
+        <Field label="Salary per pay period ($)" name="salaryPerPeriod" hint="Per scheduled pay period (Payroll → Options). A run over a custom range pays it pro rata by days." className={hide(type === "salary")}>
           <MoneyInput name="salaryPerPeriod" defaultValue={p.salaryPerPeriodCents ? (p.salaryPerPeriodCents / 100).toFixed(2) : ""} />
         </Field>
         <Field label="Overtime" name="overtimeOverride" className={hide(type === "hourly" || (type === "commission" && hasBase))}>

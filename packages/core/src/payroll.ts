@@ -1,4 +1,5 @@
 import { allocateProportionally } from "./pricing";
+import { proratedSalary } from "./pay-schedule";
 /**
  * Pure payroll math, reproducing the salon's existing pay sheets to the cent.
  *
@@ -6,7 +7,7 @@ import { allocateProportionally } from "./pricing";
  *   - service commission: mainCommissionBps on main-service revenue (amt paid − tips, net of discount)
  *   - product/package commission: productCommissionBps on misc sales (memberships earn 0)
  *   - hourly wage: hourlyRateCents × clocked hours (+ overtime when enabled)
- *   - salary: salaryPerPeriodCents flat per run
+ *   - salary: salaryPerPeriodCents per scheduled pay period (prorated by `salaryShare` when a run is not exactly one period)
  *   - tips (cash + card) − a fee on card tips, plus adjustments
  * `payType` decides the sheet: "commission" is a 1099 contractor (no withholding; an hourly
  * rate on top is a guaranteed base), "hourly" / "salary" are W-2 employees (withholding applies;
@@ -98,6 +99,11 @@ export interface PayrollInput {
   weekStart?: number;
   /** First day of the pay period: hours before it (the start of its first workweek) count toward overtime but aren't paid. */
   countFrom?: string;
+  /**
+   * How much of a "per pay period" salary this run covers (salaryShare in pay-schedule.ts): 1 for one scheduled period, 0.5 for the first
+   * half of one, 2 for two. Default 1, so a business without a schedule still pays the flat amount per run.
+   */
+  salaryShare?: number;
 }
 
 export interface WeekHours {
@@ -345,7 +351,7 @@ export function computePayroll(input: PayrollInput): PayrollResult {
           : hourlyPay(emp.hourlyRateCents, { regular: hrs.regularMinutes, overtime: hrs.overtimeMinutes, double: hrs.doubleMinutes }),
       );
     }
-    if (emp.payType === "salary") wageCents += emp.salaryPerPeriodCents;
+    if (emp.payType === "salary") wageCents += proratedSalary(emp.salaryPerPeriodCents, input.salaryShare ?? 1);
 
     const adjustments = input.adjustments.filter((a) => a.staffId === emp.staffId);
     const adjustmentsCents = adjustments.reduce((s, a) => s + a.amountCents, 0);

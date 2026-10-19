@@ -62,8 +62,12 @@ export const businesses = pgTable("businesses", {
   // Last day (business-local, YYYY-MM-DD) the low-stock email went out, so it goes once a day.
   inventoryDigestOn: text("inventory_digest_on"),
   slotIntervalMin: smallint("slot_interval_min").notNull().default(15),
-  // First day of the calendar week (0 = Sunday … 6 = Saturday); Week, Month and the mini date picker follow it.
+  // First day of the calendar week (0 = Sunday … 6 = Saturday); Week, Month and the mini date picker follow it. Payroll's overtime workweek too.
   weekStart: smallint("week_start").notNull().default(1),
+  // Pay schedule (Payroll → Options): how the calendar is cut into pay periods. Null = not set yet: the page then assumes every two weeks
+  // from the most recent finalized period (else the last week start), salary is a flat amount per run, and nothing is prorated.
+  payFrequency: text("pay_frequency").$type<"weekly" | "biweekly" | "semimonthly" | "monthly">(),
+  payAnchorDate: date("pay_anchor_date"), // the first day of any period, for weekly and biweekly; unused by the calendar frequencies
   phone: text("phone"),
   email: text("email"),
   // Stripe Connect (Phase 2)

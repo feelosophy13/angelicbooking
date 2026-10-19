@@ -848,6 +848,13 @@
       "when": 1795200900000,
       "tag": "0120_own_axes_and_settings_split",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1795201000000,
+      "tag": "0121_pay_schedule",
+      "breakpoints": true
     }
   ]
 }

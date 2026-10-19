@@ -1,8 +1,9 @@
-import { and, asc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
-import { CARD_FEE_METHODS, computePayroll, weekStartOf, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type PayrollEmployee, type PayrollLine, type PayrollResult, type TipPart } from "@angelic/core";
+import { CARD_FEE_METHODS, computePayroll, isScheduledPeriod, periodContaining, rangesOverlap, salaryShare, weekStartOf, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type PayrollEmployee, type PayrollLine, type PayrollResult, type PaySchedule, type TipPart } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
 import { ratesForPeriod, syncCurrentRates } from "@/server/pay-rates";
+import { PayrollLockedError } from "@/server/payroll-lock";
 
 export interface PayrollPeriod {
   start: string; // YYYY-MM-DD inclusive
@@ -231,8 +232,8 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
         tx
           .select({ staffId: schema.timeEntries.staffId, date: schema.timeEntries.date, minutes: schema.timeEntries.minutes, locationId: schema.timeEntries.locationId })
           .from(schema.timeEntries)
-          // From the start of the first workweek, so overtime counts the week's earlier days (they aren't paid twice: see countFrom).
-          .where(and(gte(schema.timeEntries.date, weekStartOf(period.start, 1)), lte(schema.timeEntries.date, period.end))),
+          // From the start of the first workweek (the business's week start), so overtime counts the week's earlier days (they aren't paid twice: see countFrom).
+          .where(and(gte(schema.timeEntries.date, weekStartOf(period.start, business.weekStart)), lte(schema.timeEntries.date, period.end))),
         tx
           .select()
           .from(schema.payrollAdjustments)
@@ -282,11 +283,40 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
   };
 }
 
+/**
+ * The business's pay schedule. One set under Payroll → Options is `configured`; without one the page assumes every two weeks from the
+ * most recent finalized period (else the week start on or before today), and salary stays a flat amount per run (nothing is prorated).
+ */
+export async function resolveSchedule(business: Business, today: string): Promise<{ schedule: PaySchedule; configured: boolean }> {
+  if (business.payFrequency) return { schedule: { frequency: business.payFrequency, anchor: business.payAnchorDate }, configured: true };
+  const [latest] = await withTenant(business.id, (tx) => tx.select({ start: schema.payrollRuns.periodStart }).from(schema.payrollRuns).orderBy(desc(schema.payrollRuns.periodStart)).limit(1));
+  return { schedule: { frequency: "biweekly", anchor: latest?.start ?? weekStartOf(today, business.weekStart) }, configured: false };
+}
+
+/** The scheduled period containing today: what the Payroll page and the export open on. */
+export async function currentPeriod(business: Business, today: string): Promise<PayrollPeriod> {
+  const { schedule } = await resolveSchedule(business, today);
+  return periodContaining(schedule, today);
+}
+
+/**
+ * Salary for a run: a salary is "per scheduled pay period", so a run that is not exactly one period (a custom range) pays it pro rata by
+ * the days of each scheduled period it covers. Without a configured schedule the share is 1 (flat per run, as before).
+ */
+export async function salaryShareFor(business: Business, period: PayrollPeriod, today: string): Promise<{ share: number; prorated: boolean; pieces: ReturnType<typeof salaryShare>["pieces"] }> {
+  const { schedule, configured } = await resolveSchedule(business, today);
+  if (!configured || isScheduledPeriod(schedule, period)) return { share: 1, prorated: false, pieces: [] };
+  const r = salaryShare(schedule, period);
+  return { share: r.share, prorated: true, pieces: r.pieces };
+}
+
+export type PayrollRun = PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[]; rateChanges: { staffId: string; name: string; effectiveFrom: string }[]; salaryShare: number };
+
 /** `locationId` limits sales (commission, tips) to one site; hours and adjustments are per person and stay whole. */
-export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean, locationId?: string | null, opts: { split?: boolean } = {}): Promise<PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[]; rateChanges: { staffId: string; name: string; effectiveFrom: string }[] }> {
-  const inputs = await getPayrollInputs(business, period, locationId, opts);
-  const result = computePayroll({ employees: inputs.employees, lines: inputs.lines, hours: inputs.hours, adjustments: inputs.adjustments, overtime, overtimeRule: business.overtimeRule, weekStart: 1, countFrom: period.start });
-  return { ...result, adjustmentRows: inputs.adjustmentRows, rateChanges: inputs.rateChanges };
+export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean, locationId?: string | null, opts: { split?: boolean } = {}): Promise<PayrollRun> {
+  const [inputs, salary] = await Promise.all([getPayrollInputs(business, period, locationId, opts), salaryShareFor(business, period, localDate(new Date(), business.timezone))]);
+  const result = computePayroll({ employees: inputs.employees, lines: inputs.lines, hours: inputs.hours, adjustments: inputs.adjustments, overtime, overtimeRule: business.overtimeRule, weekStart: business.weekStart, countFrom: period.start, salaryShare: salary.share });
+  return { ...result, adjustmentRows: inputs.adjustmentRows, rateChanges: inputs.rateChanges, salaryShare: salary.share };
 }
 
 export interface LocationPay {
@@ -313,7 +343,7 @@ export async function payrollByLocation(business: Business, period: PayrollPerio
       hours: inputs.hoursRaw.filter((h) => (h.locationId ?? null) === key).map((h) => ({ staffId: h.staffId, date: h.date, minutes: h.minutes })),
       adjustments: [],
       overtime: false,
-      weekStart: 1,
+      weekStart: business.weekStart,
       countFrom: period.start,
     });
     const sum = (k: keyof LocationPay) => result.employees.reduce((n, e) => n + e[k], 0);
@@ -347,7 +377,15 @@ export function driftFromSnapshot(snapshot: unknown, live: PayrollResult): { sta
   return out;
 }
 
+/** A finalized period that shares a day with `period` but is not `period` itself: two of those would pay the same days twice. */
+export async function overlappingFinalizedRun(tx: TenantDb, period: PayrollPeriod) {
+  const runs = await tx.select({ periodStart: schema.payrollRuns.periodStart, periodEnd: schema.payrollRuns.periodEnd }).from(schema.payrollRuns).where(and(lte(schema.payrollRuns.periodStart, period.end), gte(schema.payrollRuns.periodEnd, period.start)));
+  return runs.find((r) => !(r.periodStart === period.start && r.periodEnd === period.end) && rangesOverlap({ start: r.periodStart, end: r.periodEnd }, period)) ?? null;
+}
+
 export async function finalizePayroll(business: Business, period: PayrollPeriod, overtime: boolean, actorUserId: string) {
+  const clash = await withTenant(business.id, (tx) => overlappingFinalizedRun(tx, period));
+  if (clash) throw new PayrollLockedError(`This period overlaps ${clash.periodStart} to ${clash.periodEnd}, which is already finalized. Pick a period that starts after ${clash.periodEnd} (or ends before ${clash.periodStart}).`);
   const result = await runPayroll(business, period, overtime);
   const previous = await getFinalizedRun(business.id, period);
   await withTenant(business.id, async (tx) => {
@@ -375,7 +413,4 @@ export async function listPayrollRuns(businessId: string) {
   );
 }
 
-/** Default period: the most recent full two weeks ending on the last Saturday... kept simple: last 14 days ending yesterday. */
-export function defaultPeriod(today: string): PayrollPeriod {
-  return { start: shiftISODate(today, -14), end: shiftISODate(today, -1) };
-}
+

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { instantToISODate } from "@angelic/core";
 import { can } from "@angelic/core";
 import { requireAnyAction } from "@/lib/tenant";
-import { defaultPeriod, runPayroll } from "@/server/payroll";
+import { currentPeriod, runPayroll } from "@/server/payroll";
 import { buildPayrollWorkbook, buildW2Workbook } from "@/server/payroll-xlsx";
 import { formatDateLong } from "@/lib/utils";
 import { eq } from "drizzle-orm";
@@ -17,8 +17,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const url = new URL(req.url);
   const today = instantToISODate(new Date(), business.timezone);
   const isDate = (s: string | null) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
-  const start = isDate(url.searchParams.get("start")) ? url.searchParams.get("start")! : defaultPeriod(today).start;
-  const end = isDate(url.searchParams.get("end")) ? url.searchParams.get("end")! : defaultPeriod(today).end;
+  const cur = await currentPeriod(business, today);
+  const start = isDate(url.searchParams.get("start")) ? url.searchParams.get("start")! : cur.start;
+  const end = isDate(url.searchParams.get("end")) ? url.searchParams.get("end")! : cur.end;
   // Same default as the Payroll page: on unless the link says "0".
   const overtime = url.searchParams.getAll("overtime").at(-1) !== "0";
   const kind = url.searchParams.get("kind") === "w2" && manage ? "w2" : "full";

@@ -1,17 +1,21 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Download, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Plus } from "lucide-react";
 import { ConfirmSubmit } from "@/components/form";
 import { dateShort } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Payroll" };
-import { can, instantToISODate, rateLabel } from "@angelic/core";
+import { can, instantToISODate, isScheduledPeriod, nextPeriod, PAY_FREQUENCY_LABEL, periodContaining, previousPeriod, rateLabel } from "@angelic/core";
 import { requireAnyAction } from "@/lib/tenant";
-import { defaultPeriod, driftFromSnapshot, getFinalizedRun, listPayrollRuns, runPayroll } from "@/server/payroll";
+import { driftFromSnapshot, getFinalizedRun, listPayrollRuns, resolveSchedule, runPayroll, salaryShareFor } from "@/server/payroll";
 import { formatDateLong, formatMoney } from "@/lib/utils";
 import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice } from "@/components/ui";
-import { deleteAdjustment, finalize, setOvertimeRule } from "./actions";
+import { Disclosure } from "@/components/disclosure";
+import { AutoSubmitForm } from "@/components/auto-submit-form";
+import { ActionForm, SubmitButton } from "@/components/form";
+import { deleteAdjustment, finalize, savePaySchedule, setOvertimeRule } from "./actions";
 import { OvertimeOptions } from "./overtime-options";
+import { PayScheduleFields } from "./pay-schedule-fields";
 import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
 import { and, gte, ilike, lte } from "drizzle-orm";
@@ -25,14 +29,20 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   const manage = can(permissions, "payroll.manage");
   const today = instantToISODate(new Date(), business.timezone);
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
-  const def = defaultPeriod(today);
-  const start = isDate(sp.start) ? sp.start! : def.start;
-  const end = isDate(sp.end) ? sp.end! : def.end;
+  // The page opens on the scheduled period containing today; Previous / Next step through the schedule, and a custom range is a one-off.
+  const { schedule, configured: scheduleSet } = await resolveSchedule(business, today);
+  const cur = periodContaining(schedule, today);
+  const start = isDate(sp.start) ? sp.start! : cur.start;
+  const end = isDate(sp.end) ? sp.end! : cur.end;
   // Overtime is on unless the run turns it off (hourly staff are owed it by law; people set to "never" in their pay settings still get none).
   // The form sends "0" before the checkbox, so the last value is the box's state.
   const otParam = Array.isArray(sp.overtime) ? sp.overtime.at(-1) : sp.overtime;
   const overtime = otParam !== "0";
   const period = { start, end };
+  const scheduled = isScheduledPeriod(schedule, period);
+  const prev = previousPeriod(schedule, period);
+  const next = nextPeriod(schedule, period);
+  const salary = await salaryShareFor(business, period, today);
   const locations = await listLocations(business.id);
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
   const [full, finalized, runs] = await Promise.all([runPayroll(business, period, overtime, locationFilter), getFinalizedRun(business.id, period), listPayrollRuns(business.id)]);
@@ -44,6 +54,8 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   const active = result.employees.filter((e) => e.hasActivity);
   const unconfigured = result.employees.filter((e) => e.hasActivity && e.employee.payType === "commission" && e.employee.mainCommissionBps === 0 && e.mainRevenueCents > 0);
   const qs = `start=${start}&end=${end}&overtime=${overtime ? 1 : 0}${locationFilter ? `&location=${locationFilter}` : ""}`;
+  const hrefFor = (p: { start: string; end: string }) => `?start=${p.start}&end=${p.end}&overtime=${overtime ? 1 : 0}${locationFilter ? `&location=${locationFilter}` : ""}`;
+  const salaried = active.some((e) => e.employee.payType === "salary" && e.employee.salaryPerPeriodCents > 0);
   // Shifts the clock closed by itself (no clock-out for 14 hours) are paid at the cap until someone corrects them.
   const autoClosed = await withTenant(business.id, (tx) =>
     tx
@@ -59,26 +71,55 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
     <>
       <PageHeader title={manage ? "Payroll" : "My pay"}>
         {can(permissions, "reports.view") ? <Link href={`/app/${slug}/reports?from=${start}&to=${end}${locationFilter ? `&location=${locationFilter}` : ""}`} className="text-sm text-brand-700 underline">Sales report for this period</Link> : null}
-        <form className="flex flex-wrap items-center gap-2">
-          <Input type="date" name="start" defaultValue={start} className="w-40" aria-label="Period start" />
-          <span className="text-sm text-stone-500">to</span>
-          <Input type="date" name="end" defaultValue={end} className="w-40" aria-label="Period end" />
-          {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
-          <Button type="submit" variant="secondary" size="sm">Run</Button>
-          {manage ? <details className="relative">
-            <summary className="cursor-pointer select-none rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden">Options{overtime ? " · overtime on" : ""}</summary>
-            <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-stone-200 bg-white p-3 text-sm shadow-lg">
+        <nav className="flex items-center gap-1 text-sm" aria-label="Pay period">
+          <Link href={hrefFor(prev)} className="rounded-lg p-1.5 text-stone-600 hover:bg-stone-100" aria-label="Previous period"><ChevronLeft className="h-4 w-4" /></Link>
+          <span className="whitespace-nowrap px-1 font-medium tabular-nums">{dateShort(start)} – {dateShort(end)}</span>
+          <Link href={hrefFor(next)} className="rounded-lg p-1.5 text-stone-600 hover:bg-stone-100" aria-label="Next period"><ChevronRight className="h-4 w-4" /></Link>
+          {start === cur.start && end === cur.end ? null : <Link href={hrefFor(cur)} className="ml-1 whitespace-nowrap rounded-lg px-2 py-1 text-stone-600 hover:bg-stone-100">This period</Link>}
+        </nav>
+        {manage ? <details className="relative">
+          <summary className="cursor-pointer select-none rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden">Options{overtime ? " · overtime on" : ""}</summary>
+          <div className="absolute right-0 z-20 mt-1 w-80 space-y-4 rounded-lg border border-stone-200 bg-white p-3 text-sm shadow-lg">
+            <AutoSubmitForm>
+              <input type="hidden" name="start" value={start} />
+              <input type="hidden" name="end" value={end} />
+              {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
               <OvertimeOptions overtime={overtime} rule={business.overtimeRule} />
+            </AutoSubmitForm>
+            <div className="border-t border-stone-100 pt-3">
+              <p className="mb-2 text-xs font-medium text-stone-600">Pay schedule</p>
+              <ActionForm action={savePaySchedule}>
+                <input type="hidden" name="slug" value={slug} />
+                <input type="hidden" name="back" value={`/app/${slug}/payroll`} />
+                <PayScheduleFields frequency={business.payFrequency} anchor={business.payAnchorDate} weekStart={business.weekStart} />
+                <SubmitButton variant="secondary" size="sm" pendingText="Saving…">Save schedule</SubmitButton>
+              </ActionForm>
             </div>
-          </details> : null}
-        </form>
+          </div>
+        </details> : null}
         <form id="ot-rule" action={setOvertimeRule} className="hidden">
           <input type="hidden" name="slug" value={slug} />
           <input type="hidden" name="back" value={`/app/${slug}/payroll?${qs}`} />
         </form>
         <LocationFilter locations={locations} current={locationFilter} query={`start=${start}&end=${end}&overtime=${overtime ? 1 : 0}`} allLabel="All" />
       </PageHeader>
-      <p className="mb-4 text-sm text-stone-600">{formatDateLong(start)} – {formatDateLong(end)}{locationFilter ? ` · ${locations.find((l) => l.id === locationFilter)?.name} sales only (hours and adjustments are per person)` : ""}{finalized ? <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">finalized {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(finalized.createdAt)}</span> : null}</p>
+      <p className="mb-2 text-sm text-stone-600">{formatDateLong(start)} – {formatDateLong(end)}{scheduled ? ` · ${PAY_FREQUENCY_LABEL[schedule.frequency].toLowerCase()}${scheduleSet ? "" : " (assumed: set the pay schedule under Options)"}` : " · custom range"}{locationFilter ? ` · ${locations.find((l) => l.id === locationFilter)?.name} sales only (hours and adjustments are per person)` : ""}{finalized ? <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">finalized {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(finalized.createdAt)}</span> : null}</p>
+      <Disclosure variant="inset" title="Custom range" hint="a one-off run between any two dates" open={!scheduled} className="mb-4 bg-white">
+        <form className="flex flex-wrap items-center gap-2">
+          <Input type="date" name="start" defaultValue={start} className="w-40" aria-label="Period start" />
+          <span className="text-sm text-stone-500">to</span>
+          <Input type="date" name="end" defaultValue={end} className="w-40" aria-label="Period end" />
+          <input type="hidden" name="overtime" value={overtime ? 1 : 0} />
+          {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
+          <Button type="submit" variant="secondary" size="sm">Run</Button>
+          <span className="text-xs text-stone-500">Salary is per scheduled pay period, so a custom range pays it pro rata by days.</span>
+        </form>
+      </Disclosure>
+      {salary.prorated && salaried ? (
+        <p className="mb-4 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600">
+          Salary is per scheduled pay period ({PAY_FREQUENCY_LABEL[schedule.frequency].toLowerCase()}). This range covers {salary.pieces.map((x) => `${x.coveredDays} of ${x.periodDays} days of ${dateShort(x.period.start)} – ${dateShort(x.period.end)}`).join(" and ")}, so salaried staff are paid {Math.round(salary.share * 1000) / 10}% of a period&rsquo;s salary.
+        </p>
+      ) : null}
 
       {result.rateChanges.length ? (
         <p className="mb-4 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600">
