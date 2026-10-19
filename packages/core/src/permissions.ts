@@ -181,7 +181,7 @@ export const PERMISSION_GROUPS: { title: string; description: string; items: { a
     title: "Marketing and forms",
     description: "Reaching clients, and the forms they sign.",
     items: [
-      { action: "marketing.send", label: "Send marketing", description: "Campaigns by text or email to groups of clients, and promo codes. Automations are under "Booking, store and client-care rules"." },
+      { action: "marketing.send", label: "Send marketing", description: "Campaigns by text or email to groups of clients, and promo codes. Automations are under \"Booking, store and client-care rules\"." },
       { action: "forms.manage", label: "Design forms and manage signed copies", description: "Create and edit intake forms and waivers; void, reassign or email a signed form." },
     ],
   },
