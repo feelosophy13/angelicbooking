@@ -1,8 +1,13 @@
 /** Pure rules for before/after photos: tags, the pair a photo belongs to, and the Gallery's filters. */
 
 export const PHASES = ["before", "after"] as const;
+/** What staff add on the visit. */
 export type Phase = (typeof PHASES)[number];
+/** Pictures the client attached when booking online (inspiration, a reference, their current lashes) are their own group. */
+export const CLIENT_PHASE = "client";
+export type AnyPhase = Phase | typeof CLIENT_PHASE;
 export const isPhase = (v: unknown): v is Phase => v === "before" || v === "after";
+export const toPhase = (v: string): AnyPhase => (v === "after" ? "after" : v === CLIENT_PHASE ? CLIENT_PHASE : "before");
 
 export const MAX_TAGS = 12;
 export const MAX_TAG_LENGTH = 30;
@@ -70,7 +75,7 @@ export const hasGalleryFilters = (f: GalleryFilters) => !!(f.serviceId || f.cate
 
 export interface PhotoRow {
   id: string;
-  phase: Phase;
+  phase: AnyPhase;
   fileId: string;
   thumbFileId: string | null;
   takenAt: Date;
@@ -91,6 +96,8 @@ export interface PhotoPair {
   shareOk: boolean;
   before: PhotoRow[];
   after: PhotoRow[];
+  /** What the client sent with their booking, labelled "From the client" wherever the pair is shown. */
+  fromClient: PhotoRow[];
 }
 export interface PhotoQueryRow extends PhotoRow {
   appointmentId: string;
@@ -114,11 +121,11 @@ export function buildPairs(rows: PhotoQueryRow[], order?: string[]): PhotoPair[]
     let pair = byKey.get(key);
     if (!pair) {
       const name = `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim();
-      pair = { key, appointmentId: r.appointmentId, clientId: r.clientId, clientName: name || null, serviceId: r.serviceId, serviceName: r.serviceName, staffId: r.staffId, staffName: r.staffName, locationId: r.locationId, takenAt: r.takenAt, tags: r.tags, shareOk: r.shareOk, before: [], after: [] };
+      pair = { key, appointmentId: r.appointmentId, clientId: r.clientId, clientName: name || null, serviceId: r.serviceId, serviceName: r.serviceName, staffId: r.staffId, staffName: r.staffName, locationId: r.locationId, takenAt: r.takenAt, tags: r.tags, shareOk: r.shareOk, before: [], after: [], fromClient: [] };
       byKey.set(key, pair);
     }
     if (r.takenAt < pair.takenAt) pair.takenAt = r.takenAt;
-    (r.phase === "before" ? pair.before : pair.after).push({ id: r.id, phase: r.phase, fileId: r.fileId, thumbFileId: r.thumbFileId, takenAt: r.takenAt });
+    (r.phase === "before" ? pair.before : r.phase === "after" ? pair.after : pair.fromClient).push({ id: r.id, phase: r.phase, fileId: r.fileId, thumbFileId: r.thumbFileId, takenAt: r.takenAt });
   }
   return order ? order.map((k) => byKey.get(k)).filter((p): p is PhotoPair => !!p) : [...byKey.values()];
 }

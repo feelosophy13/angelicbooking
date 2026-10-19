@@ -5,6 +5,7 @@ import { normalizePhone, lateCancelFeeLabel, policyFeeCheck } from "@angelic/cor
 import { appUrl } from "@/lib/stripe";
 import { formatMoney } from "@/lib/utils";
 import { formsForAppointment } from "@/server/forms";
+import { clientPhotoCounts } from "@/server/visit-photos";
 import { isDemoSlug } from "@/lib/demo";
 import { EmailRateLimitError, emailConfigured, emailTurn, sendEmail, sendSms, smsConfigured, type SmsSender } from "./providers";
 import { platformSmsSender, TwilioError } from "@/lib/twilio";
@@ -65,6 +66,7 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
     cardOnFile: !!appt.cardSetupIntentId,
     formsUrl: (await formsForAppointment(tx, appt.id)).some((f) => !f.current) ? siteUrl(business, `/manage/${appt.manageToken}/forms`) : null,
     prepNotes,
+    clientPhotos: (await clientPhotoCounts(tx, [appt.id])).get(appt.id) ?? 0,
   };
   return { appt, client, ctx };
 }

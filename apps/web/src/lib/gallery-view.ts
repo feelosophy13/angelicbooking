@@ -16,5 +16,6 @@ export function pairViews(slug: string, pairs: PhotoPair[], timeZone: string): P
     shareOk: p.shareOk,
     before: p.before.map(({ id, fileId, thumbFileId }) => ({ id, fileId, thumbFileId })),
     after: p.after.map(({ id, fileId, thumbFileId }) => ({ id, fileId, thumbFileId })),
+    fromClient: p.fromClient.map(({ id, fileId, thumbFileId }) => ({ id, fileId, thumbFileId })),
   }));
 }

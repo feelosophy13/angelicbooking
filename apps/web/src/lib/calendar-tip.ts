@@ -1,4 +1,5 @@
 /** What the calendar's hover tooltip shows for one appointment, block or class. Built on the server, drawn by the grid. */
+import { clientPhotosFact } from "./booking-photos";
 
 export type CalTip = {
   kind: "visit" | "block" | "class";
@@ -35,6 +36,8 @@ export type TipItem = {
   classSessionId?: string | null;
   seats?: { booked: number; capacity: number } | null;
   allowOverlap?: boolean;
+  /** Pictures the client attached when booking online. */
+  clientPhotos?: number | null;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -81,6 +84,8 @@ export function buildTip(items: TipItem[], ctx: { money: (cents: number) => stri
   if (first.depositCents && first.depositCents > 0) facts.push(`Deposit ${ctx.money(first.depositCents)}${first.depositStatus === "paid" ? " paid" : first.depositStatus && first.depositStatus !== "none" ? ` ${first.depositStatus}` : ""}`);
   if (items.some((i) => i.allowOverlap)) facts.push("Double-booked on purpose");
   if (ctx.formsDue) facts.push("Forms due");
+  const photos = clientPhotosFact(first.clientPhotos);
+  if (photos) facts.push(photos);
   return {
     kind: "visit",
     heading: first.clientName ?? "Walk-in",

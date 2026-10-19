@@ -6,10 +6,11 @@ import { Field, Input, Notice, Textarea, Checkbox } from "@/components/ui";
 import { Disclosure } from "@/components/disclosure";
 import { SubmitButton } from "@/components/form";
 import { policyLine } from "@/lib/policy-text";
+import { PhotoPicker } from "./photo-picker";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean; smsMarketingOptIn?: boolean } | null;
 
-export function BookingForm(props: { extraServiceIds?: string[]; /** The price being confirmed, shown on the button. */ priceLabel?: string; slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null }) {
+export function BookingForm(props: { extraServiceIds?: string[]; /** The price being confirmed, shown on the button. */ priceLabel?: string; slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null; /** The business lets clients attach pictures (Settings → Online booking). */ photos?: boolean }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
   const d = props.defaults;
   return (
@@ -23,7 +24,7 @@ export function BookingForm(props: { extraServiceIds?: string[]; /** The price b
       <input type="hidden" name="startAt" value={props.startAt} />
       {props.extraServiceIds?.length ? <input type="hidden" name="extraServiceIds" value={props.extraServiceIds.join(",")} /> : null}
       {props.quotedPriceCents !== undefined ? <input type="hidden" name="quotedPriceCents" value={props.quotedPriceCents} /> : null}
-      <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} />
+      <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} photos={props.photos} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       <PublicBotCheck resetKey={state} />
       <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Booking…">Confirm booking{props.priceLabel ? ` · ${props.priceLabel}` : ""}</SubmitButton>
@@ -36,7 +37,7 @@ export function BookingForm(props: { extraServiceIds?: string[]; /** The price b
  * The details every booking asks for, shared by the free and the paid form so they cannot drift.
  * Codes are rare, so they sit behind one "Have a code?" line.
  */
-export function ContactFields({ defaults: d, referrals, promos }: { defaults?: BookingDefaults; referrals?: boolean; promos?: boolean }) {
+export function ContactFields({ defaults: d, referrals, promos, photos }: { defaults?: BookingDefaults; referrals?: boolean; promos?: boolean; photos?: boolean }) {
   const showReferral = !!referrals && !d;
   return (
     <>
@@ -50,6 +51,7 @@ export function ContactFields({ defaults: d, referrals, promos }: { defaults?: B
       {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
       {d?.smsMarketingOptIn ? null : <SmsMarketingConsent />}
       <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
+      {photos ? <PhotoPicker /> : null}
       {showReferral || promos ? (
         <Disclosure title="Have a code?" className="shadow-none">
           <div className="space-y-3">

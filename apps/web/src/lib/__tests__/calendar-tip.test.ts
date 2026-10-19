@@ -18,6 +18,11 @@ describe("buildTip", () => {
     expect(t.total).toBe("$185.00");
     expect(t.facts).toContain("Forms due");
   });
+  it("says how many photos the client attached when booking", () => {
+    expect(buildTip([item({ clientPhotos: 2 })], { money, formsDue: false }).facts).toContain("2 photos from client");
+    expect(buildTip([item({ clientPhotos: 1 })], { money, formsDue: false }).facts).toContain("1 photo from client");
+    expect(buildTip([item({ clientPhotos: 0 })], { money, formsDue: false }).facts.some((f) => /from client/.test(f))).toBe(false);
+  });
   it("merges a service's processing segment into one line", () => {
     const t = buildTip([item({ serviceName: "Lash Lift", startMin: 600, endMin: 630, priceCents: 9000 }), item({ serviceName: "Lash Lift (finish)", startMin: 660, endMin: 690, priceCents: 0 })], { money, formsDue: false });
     expect(t.lines).toHaveLength(1);

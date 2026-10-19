@@ -26,7 +26,7 @@ import { db, schema, withJobs, withTenant, type TenantDb, type WorkflowFilters, 
 import { instantToISODate, normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { appointmentContext, deliverMany } from "@/lib/notify";
-import { brandedEmail, marketingEmail, reviewRequestTemplate, templates as messageTemplates, textToHtml, transactionalEmail } from "@/lib/notify/templates";
+import { brandedEmail, marketingEmail, reviewRequestTemplate, templates as messageTemplates, textToHtml, transactionalEmail, clientPhotosLine } from "@/lib/notify/templates";
 const reminderTemplate = messageTemplates.reminder;
 import { smsBody, smsWithStopNotice } from "@/lib/notify/sms";
 import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing";
@@ -640,7 +640,9 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       const clientName = `${client.firstName} ${client.lastName}`.trim();
       const link = run.appointmentId ? appUrl(`/app/${business.slug}/appointments/${run.appointmentId}`) : appUrl(`/app/${business.slug}/clients/${client.id}`);
       const subject = `${w.name}: ${clientName}`;
-      const t = brandedEmail({ ...v.brand, businessName: business.name }, subject, `${textToHtml(renderText(step.body, v.vars))}<p style="margin-top:16px"><a href="${link}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">${run.appointmentId ? "Open appointment" : "Open client"}</a></p><p style="font-size:12px;color:#78716c">Sent by the “${w.name}” workflow (Automations).</p>`);
+      // A client who attached pictures while booking: the team hears about them here, whatever the step's own wording says.
+      const photos = run.appointmentId ? clientPhotosLine(v.apptCtx?.ctx.clientPhotos) : null;
+      const t = brandedEmail({ ...v.brand, businessName: business.name }, subject, `${textToHtml(renderText(step.body, v.vars))}${photos ? `<p style="margin-top:12px;padding:10px 12px;background:#f5f5f4;border-radius:8px;font-size:14px">${photos.charAt(0).toUpperCase() + photos.slice(1)} are on the appointment.</p>` : ""}<p style="margin-top:16px"><a href="${link}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">${run.appointmentId ? "Open appointment" : "Open client"}</a></p><p style="font-size:12px;color:#78716c">Sent by the “${w.name}” workflow (Automations).</p>`);
       const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: "workflow_staff", recipient: to, subject, body: t, scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });
       out.push(row!.id);
       note(i, "action", `Notified ${who} at ${to}`);

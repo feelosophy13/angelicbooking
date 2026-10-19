@@ -59,6 +59,13 @@ describe("buildPairs", () => {
     expect(pairs[0]!.after.map((p) => p.id)).toEqual(["2"]);
     expect(pairs[0]!.clientName).toBe("Jo Lee");
   });
+  it("keeps what the client attached when booking as its own group of the same pair", () => {
+    const pairs = buildPairs([row({ id: "1" }), row({ id: "2", phase: "client" }), row({ id: "3", phase: "client" })]);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]!.before.map((p) => p.id)).toEqual(["1"]);
+    expect(pairs[0]!.after).toEqual([]);
+    expect(pairs[0]!.fromClient.map((p) => p.id)).toEqual(["2", "3"]);
+  });
   it("returns only the requested pairs, in the requested order", () => {
     const rows = [row({ id: "1", appointmentId: "a1" }), row({ id: "2", appointmentId: "a2" })];
     expect(buildPairs(rows, ["a2:s1:t1", "a1:s1:t1", "zzz"]).map((p) => p.appointmentId)).toEqual(["a2", "a1"]);

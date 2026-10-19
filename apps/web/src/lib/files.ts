@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema, withJobs, withTenant } from "@angelic/db";
 import { appUrl } from "./stripe";
-import { optimizeUpload, ImageError } from "./images";
+import { optimizeUpload, prepareImage, ImageError } from "./images";
 import { deleteObject, keyFromPublicUrl, publicObjectUrl, putObject, r2Config, type Visibility } from "./object-storage";
 
 /** What a client may upload, before resizing. */
@@ -131,6 +131,41 @@ export async function storeVisitPhoto(businessId: string, file: File): Promise<{
     const full = await saveFile(businessId, "visit", await optimizeUpload("visit", input, file.type));
     try {
       const thumb = await saveFile(businessId, "visit", await optimizeUpload("thumb", input, file.type));
+      return { fileId: full.id, thumbFileId: thumb.id };
+    } catch (e) {
+      await deleteFileById(full.id);
+      throw e;
+    }
+  } catch (e) {
+    if (e instanceof ImageError) throw new FileError(e.message);
+    throw e;
+  }
+}
+
+const BOOKING_ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"]);
+/** One picture a client attaches while booking; five per booking at most (lib/booking-photos.ts). */
+export const MAX_BOOKING_PHOTO_BYTES = 10 * 1024 * 1024;
+export const BOOKING_PHOTO_HINT = "Use a JPEG, PNG, WebP or HEIC photo under 10 MB.";
+
+/**
+ * A photo a client attaches when booking online (inspiration, a reference style, their current lashes or brows). Stored like a visit photo
+ * (private kind "visit", working size plus a thumbnail) so the files route applies the appointment's own access rule. A HEIC the phone did
+ * not convert goes through the image pipeline too; when the image library cannot read it, the picture is refused rather than kept raw,
+ * and the caller tells the client which one was left out.
+ */
+export async function storeBookingPhoto(businessId: string, file: File): Promise<{ fileId: string; thumbFileId: string }> {
+  if (!file || file.size === 0) throw new FileError("That file is empty.");
+  const type = file.type || (/\.hei[cf]$/i.test(file.name) ? "image/heic" : "");
+  if (!BOOKING_ALLOWED.has(type)) throw new FileError(BOOKING_PHOTO_HINT);
+  if (file.size > MAX_BOOKING_PHOTO_BYTES) throw new FileError("Photos must be 10 MB or smaller.");
+  try {
+    const input = Buffer.from(await file.arrayBuffer());
+    // HEIC is normally stored as sent (forms); a booking photo is only ever kept resized, so it is decoded here or refused.
+    const heic = type === "image/heic" || type === "image/heif";
+    const prepare = (kind: "visit" | "thumb") => (heic ? prepareImage(kind, input, type) : optimizeUpload(kind, input, type));
+    const full = await saveFile(businessId, "visit", await prepare("visit"));
+    try {
+      const thumb = await saveFile(businessId, "visit", await prepare("thumb"));
       return { fileId: full.id, thumbFileId: thumb.id };
     } catch (e) {
       await deleteFileById(full.id);

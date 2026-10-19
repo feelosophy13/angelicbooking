@@ -24,7 +24,12 @@ export interface ApptContext {
   formsUrl?: string | null;
   /** "Before your visit" instructions for the booked services (service's own, else its category's), deduplicated. */
   prepNotes?: string[];
+  /** How many pictures the client attached when booking online (inspiration, their current lashes); 0 or missing when none. */
+  clientPhotos?: number;
 }
+
+/** "2 photos from the client" for the team's messages; null when the client attached none. */
+export const clientPhotosLine = (n: number | null | undefined) => (n && n > 0 ? `${n} photo${n === 1 ? "" : "s"} from the client` : null);
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
@@ -127,8 +132,10 @@ export function inviteEmail(input: { businessName: string; role: string; link: s
 /** Heads-up to the business when a client books or cancels online. */
 export function staffAlertEmail(ctx: ApptContext, kind: "booked" | "cancelled" | "rescheduled", clientName: string, appointmentUrl: string) {
   const verb = kind === "booked" ? "booked online" : kind === "cancelled" ? "cancelled online" : "rescheduled online";
-  const subject = `${clientName} ${verb}: ${ctx.services} · ${when(ctx)}`;
-  const html = shell(ctx, `${clientName} ${verb}`, `${details(ctx)}
+  const photos = clientPhotosLine(ctx.clientPhotos);
+  const subject = `${clientName} ${verb}: ${ctx.services} · ${when(ctx)}${photos ? " · photos attached" : ""}`;
+  const html = shell(ctx, `${clientName} ${verb}`, `${details(ctx)}${photos ? `
+<p style="margin-top:12px;padding:10px 12px;background:#f5f5f4;border-radius:8px;font-size:14px">${esc(photos.charAt(0).toUpperCase() + photos.slice(1))} are on the appointment.</p>` : ""}
 <p style="margin-top:16px"><a href="${appointmentUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Open appointment</a></p>
 <p style="font-size:12px;color:#78716c">You receive these because online booking alerts go to your business email. Change it under Settings → Business profile.</p>`);
   return { subject, html };

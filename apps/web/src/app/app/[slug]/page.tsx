@@ -8,6 +8,7 @@ import { filterAgendaByLocation, getRangeAgenda } from "@/server/agenda";
 import { workingBlocksFor } from "@/server/availability";
 import { tzFor } from "@/server/locations";
 import { appointmentsMissingForms } from "@/server/forms";
+import { clientPhotoCounts } from "@/server/visit-photos";
 import { requireBusiness } from "@/lib/tenant";
 import { formatDateLong, shiftISODate } from "@/lib/utils";
 import { LinkButton, PageHeader, Empty } from "@/components/ui";
@@ -78,6 +79,8 @@ export default async function CalendarPage({
   const missingForms = view === "day" ? await withTenant(business.id, (tx) => appointmentsMissingForms(tx, [...new Set(agendaItems.filter((i) => !i.classSessionId).map((i) => i.appointmentId))])) : new Set<string>();
   const formsFilter = sp.forms === "missing";
   const items = formsFilter ? agendaItems.filter((i) => missingForms.has(i.appointmentId)) : agendaItems;
+  // Pictures clients attached when booking online, for the hover card ("2 photos from client").
+  const clientPhotos = items.length ? await withTenant(business.id, (tx) => clientPhotoCounts(tx, [...new Set(items.filter((i) => !i.classSessionId && i.kind !== "block").map((i) => i.appointmentId))])) : new Map<string, number>();
   // The week opens on the overview of everyone: each appointment is a text-free block in its stylist's colour, read by hover or click. Picking
   // a stylist (staff=<id>) shows that one person's week in full. Day view shows every column, month view everyone.
   const staffFilter = view === "week" ? (ownOnly ? (staff[0]?.id ?? null) : (staff.find((s) => s.id === sp.staff)?.id ?? null)) : null;
@@ -143,7 +146,7 @@ export default async function CalendarPage({
       appointmentId: i.appointmentId, serviceName: i.serviceName, staffName: staffById.get(i.staffId)?.displayName ?? "", startMin: minuteOf(i.startAt),
       endMin: minuteOf(i.endAt) <= minuteOf(i.startAt) ? 24 * 60 : minuteOf(i.endAt), priceCents: i.priceCents, status: i.status, kind: i.kind, clientName: i.clientName,
       clientPhone: i.clientPhone, clientTags: i.clientTags, source: i.source, depositCents: i.depositCents, depositStatus: i.depositStatus, notes: i.notes,
-      classSessionId: i.classSessionId, seats: i.seats, allowOverlap: i.allowOverlap,
+      classSessionId: i.classSessionId, seats: i.seats, allowOverlap: i.allowOverlap, clientPhotos: clientPhotos.get(i.appointmentId) ?? 0,
     };
     tipRows.set(i.appointmentId, [...(tipRows.get(i.appointmentId) ?? []), row]);
   }

@@ -538,7 +538,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           {options.length ? <p className="mb-3 text-sm"><Link href={q({ time: sp.time, staff: slot.staffId, add: "1" })} className="underline" style={{ color: "var(--brand-dark)" }}>+ Add another service with {slot.staffName.split(" ")[0]}</Link></p> : null}
           {req.mode === "none" && depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
           {req.mode === "none" ? (
-            <BookingForm priceLabel={money(visitPrice)} extraServiceIds={extrasParam} slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={ownPrice} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+            <BookingForm priceLabel={money(visitPrice)} extraServiceIds={extrasParam} slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={ownPrice} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} photos={business.clientPhotosOnBooking} />
           ) : (
             <PaidBookingForm
               priceLabel={money(visitPrice)}
@@ -560,6 +560,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
               promos={hasPromos}
               embed={embed}
               locationId={locId}
+              photos={business.clientPhotosOnBooking}
             />
           )}
         </>

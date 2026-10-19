@@ -8,6 +8,7 @@ import { ContactFields, type BookingDefaults } from "./forms";
 import { useHydrated } from "@/lib/use-hydrated";
 import { policyLine } from "@/lib/policy-text";
 import { abandonOnlinePaymentAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
+import { PHOTOS_FIELD } from "@/lib/booking-photos";
 
 type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null };
 
@@ -42,10 +43,14 @@ export function PaidBookingForm(props: {
   promos?: boolean;
   locationId?: string | null;
   embed?: boolean;
+  /** The business lets clients attach pictures (Settings → Online booking). */
+  photos?: boolean;
 }) {
   const d = props.defaults;
   const hydrated = useHydrated();
   const [fields, setFields] = useState<Record<string, string> | null>(null);
+  // The pictures chosen in step 1 wait here while the card is entered, then go up with the booking.
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
   const [intent, setIntent] = useState<Intent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -61,12 +66,14 @@ export function PaidBookingForm(props: {
           const fd = new FormData(e.currentTarget);
           const raw: Record<string, string> = {};
           for (const [k, v] of fd.entries()) if (typeof v === "string") raw[k] = v;
+          const files = fd.getAll(PHOTOS_FIELD).filter((f): f is File => f instanceof File && f.size > 0);
           start(async () => {
             setError(null);
             const r = await startOnlinePaymentAction(raw);
             if ("error" in r) setError(r.error);
             else {
               setFields(raw);
+              setPhotoFiles(files);
               setIntent(r);
             }
           });
@@ -82,7 +89,7 @@ export function PaidBookingForm(props: {
         {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
         {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}
         <p className="text-xs font-medium uppercase tracking-wide text-stone-400">Step 1 of 2 · Your details</p>
-        <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} />
+        <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} photos={props.photos} />
         {error ? <Notice>{error}</Notice> : null}
         {props.priceLabel ? <p className="text-sm font-medium text-stone-800">Price of this visit: {props.priceLabel}</p> : null}
         <PublicBotCheck resetKey={error} />
@@ -100,18 +107,18 @@ export function PaidBookingForm(props: {
     <div className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-stone-400">Step 2 of 2 · {props.mode === "deposit" ? "Payment" : "Card"}</p>
       <p className="text-sm">
-        <span className="font-medium">{fields.firstName} {fields.lastName}</span> · {fields.phone || fields.email}{" "}
+        <span className="font-medium">{fields.firstName} {fields.lastName}</span> · {fields.phone || fields.email}{photoFiles.length ? ` · ${photoFiles.length} photo${photoFiles.length === 1 ? "" : "s"}` : ""}{" "}
         <button type="button" className="underline" onClick={() => { void abandonOnlinePaymentAction(props.slug, props.locationId ?? null, { kind: intent.kind, id: intent.intentId }); setIntent(null); }}>Edit</button>
       </p>
       {/* Cards only: Stripe's plain card field (the Payment Element also draws Link's bank and buy-now-pay-later offers). */}
       <Elements stripe={stripePromise}>
-        <ConfirmStep fields={fields} intent={intent} mode={props.mode} amountLabel={props.amountLabel} brand={props.brand} />
+        <ConfirmStep fields={fields} photos={photoFiles} intent={intent} mode={props.mode} amountLabel={props.amountLabel} brand={props.brand} />
       </Elements>
     </div>
   );
 }
 
-function ConfirmStep({ fields, intent, mode, amountLabel, brand }: { fields: Record<string, string>; intent: Intent; mode: "deposit" | "card"; amountLabel: string; brand: string }) {
+function ConfirmStep({ fields, photos, intent, mode, amountLabel, brand }: { fields: Record<string, string>; photos: File[]; intent: Intent; mode: "deposit" | "card"; amountLabel: string; brand: string }) {
   const stripe = useStripe();
   const elements = useElements();
   const [error, setError] = useState<string | null>(null);
@@ -139,7 +146,12 @@ function ConfirmStep({ fields, intent, mode, amountLabel, brand }: { fields: Rec
       setBusy(false);
       return;
     }
-    const out = await finishOnlineBookingAction(fields, { kind: intent.kind, id: intent.intentId });
+    let attached: FormData | null = null;
+    if (photos.length) {
+      attached = new FormData();
+      for (const f of photos) attached.append(PHOTOS_FIELD, f);
+    }
+    const out = await finishOnlineBookingAction(fields, { kind: intent.kind, id: intent.intentId }, attached);
     if (out?.error) {
       setError(out.error);
       setBusy(false);

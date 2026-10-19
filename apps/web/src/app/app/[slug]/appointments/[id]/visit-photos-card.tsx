@@ -5,6 +5,7 @@ import { Disclosure } from "@/components/disclosure";
 import { PhotoAdd } from "@/components/photo-add";
 import { pairKey, type PhotoPair, type PhotoRow } from "@/lib/visit-photos";
 import { addPhotos, removePhoto, savePairDetails } from "./photo-actions";
+import { ClientPhotos } from "./client-photos";
 
 export type PhotoGroup = { serviceId: string | null; staffId: string | null; serviceName: string; staffName: string };
 
@@ -37,7 +38,9 @@ function Strip({ slug, appointmentId, label, photos, fields }: { slug: string; a
 
 /** Before and after photos for each service on the visit. Added right here, from a phone or the front-desk computer. */
 export function VisitPhotosCard({ slug, appointmentId, groups, pairs, tagSuggestions }: { slug: string; appointmentId: string; groups: PhotoGroup[]; pairs: PhotoPair[]; tagSuggestions: string[] }) {
-  if (groups.length === 0) return null;
+  // What the client sent with their online booking, whichever service it was filed under.
+  const fromClient = pairs.flatMap((p) => p.fromClient).sort((a, b) => a.takenAt.getTime() - b.takenAt.getTime());
+  if (groups.length === 0 && fromClient.length === 0) return null;
   const byKey = new Map(pairs.map((p) => [p.key, p]));
   const listId = `photo-tags-${appointmentId}`;
   return (
@@ -45,6 +48,7 @@ export function VisitPhotosCard({ slug, appointmentId, groups, pairs, tagSuggest
       <h2 className="mb-1 font-medium">Photos</h2>
       <p className="mb-3 text-xs text-stone-500">Before and after, kept private to your team and found again in the Gallery.</p>
       <div className="space-y-5">
+        {fromClient.length ? <ClientPhotos slug={slug} appointmentId={appointmentId} photos={fromClient} /> : null}
         {groups.map((g) => {
           const key = pairKey({ appointmentId, serviceId: g.serviceId, staffId: g.staffId });
           const pair = byKey.get(key);

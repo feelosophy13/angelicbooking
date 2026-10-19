@@ -19,6 +19,8 @@ import { sameClientName } from "@/lib/client-match";
 import { policySnapshot } from "@/lib/policy-text";
 import { isSmsSuppressed, smsMarketingConsent } from "./consent";
 import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt, tzFor } from "./locations";
+import { addClientPhotos, clientPhotoCounts } from "./visit-photos";
+import type { DroppedPhoto } from "@/lib/booking-photos";
 
 export type PublicBusiness = typeof schema.businesses.$inferSelect;
 
@@ -273,7 +275,11 @@ export interface OnlineBookingInput {
   quotedPriceCents?: number;
   /** Further services for the same visit and provider, in order, each starting when the one before ends. */
   extraServiceIds?: string[] | null;
+  /** Pictures the client attached (inspiration, a reference, their current lashes); up to five, ignored when the business turned them off. */
+  photos?: File[] | null;
 }
+
+export type BookingPhotosResult = { stored: number; dropped: DroppedPhoto[] };
 
 /** The signed-in client for this business, if there is a request with a client session (never throws outside a request). */
 async function signedInClientId(businessId: string): Promise<string | null> {
@@ -491,9 +497,11 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
     throw e;
   }
   const token = await withTenant(business.id, async (tx) => (await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId) }))!.manageToken);
+  // The booking is made; the pictures come after it and can never undo it. Stored before the messages go out so they can mention them.
+  const photos: BookingPhotosResult = business.clientPhotosOnBooking && input.photos?.length ? await addClientPhotos({ businessId: business.id, appointmentId, files: input.photos }) : { stored: 0, dropped: [] };
   await notifyAppointment(business, appointmentId, "confirmation");
   await alertBusiness(business, appointmentId, "booked");
-  return { appointmentId, token };
+  return { appointmentId, token, photos };
 }
 
 /** A deposit was charged but the booking could not be made: give the money back before surfacing the error. */
@@ -532,7 +540,8 @@ export async function getManagedAppointment(slug: string, token: string) {
     const location = appt.locationId ? ((await tx.query.locations.findFirst({ where: eq(schema.locations.id, appt.locationId) })) ?? null) : null;
     const live = items.filter((i) => i.status !== "cancelled");
     const start = (live[0] ?? items[0])?.startAt ?? null;
-    return { business, appt, location, timeZone: tzFor(business, location), items, live, client, start, canChange: !!start && appt.status !== "cancelled" && appt.status !== "completed" && appt.status !== "no_show" && canClientCancel(start, new Date(), business) };
+    const clientPhotos = (await clientPhotoCounts(tx, [appt.id])).get(appt.id) ?? 0;
+    return { business, appt, location, timeZone: tzFor(business, location), items, live, client, start, clientPhotos, canChange: !!start && appt.status !== "cancelled" && appt.status !== "completed" && appt.status !== "no_show" && canClientCancel(start, new Date(), business) };
   });
 }
 

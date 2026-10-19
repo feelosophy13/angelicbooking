@@ -17,6 +17,8 @@ export type PairView = {
   shareOk: boolean;
   before: PairPhoto[];
   after: PairPhoto[];
+  /** What the client attached when booking online. */
+  fromClient: PairPhoto[];
 };
 
 const src = (id: string) => `/api/files/${id}`;
@@ -83,7 +85,7 @@ export function PairCard({ pair }: { pair: PairView }) {
         </div>
         <div className="space-y-0.5 p-2.5">
           <p className="truncate text-sm font-medium text-stone-900">{title}</p>
-          <p className="truncate text-xs text-stone-500">{[pair.clientName, pair.dateLabel].filter(Boolean).join(" · ")}</p>
+          <p className="truncate text-xs text-stone-500">{[pair.clientName, pair.dateLabel, pair.fromClient.length ? `${pair.fromClient.length} from the client` : null].filter(Boolean).join(" · ")}</p>
           {pair.tags.length ? <p className="line-clamp-1 text-xs text-brand-700">{pair.tags.map((t) => `#${t}`).join(" ")}</p> : null}
         </div>
       </button>
@@ -110,6 +112,11 @@ export function PairCard({ pair }: { pair: PairView }) {
               <Column label="Before" photos={pair.before} />
               <Column label="After" photos={pair.after} />
             </div>
+            {pair.fromClient.length ? (
+              <div className="mt-4 border-t border-stone-200 pt-4">
+                <Column label="From the client" photos={pair.fromClient} />
+              </div>
+            ) : null}
             <p className="mt-4 text-sm"><Link href={pair.appointmentHref} className="text-brand-700 underline">Open the appointment</Link></p>
           </div>
         ) : null}

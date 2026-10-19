@@ -1,8 +1,9 @@
 import { and, asc, desc, eq, gte, ilike, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
-import { deleteFileById, FileError, storeVisitPhoto } from "@/lib/files";
+import { deleteFileById, FileError, storeBookingPhoto, storeVisitPhoto } from "@/lib/files";
 import { listCategories, subtreeIds } from "./categories";
-import { buildPairs, parseTags, pairKey, type GalleryFilters, type PhotoPair, type PhotoQueryRow, type Phase } from "@/lib/visit-photos";
+import { buildPairs, parseTags, pairKey, toPhase, CLIENT_PHASE, type GalleryFilters, type PhotoPair, type PhotoQueryRow, type Phase } from "@/lib/visit-photos";
+import { MAX_BOOKING_PHOTOS, type DroppedPhoto } from "@/lib/booking-photos";
 
 const vp = schema.visitPhotos;
 export const GALLERY_PAGE_SIZE = 24;
@@ -44,6 +45,60 @@ export async function addVisitPhotos(input: { businessId: string; appointmentId:
   }
 }
 
+/**
+ * The pictures a client attached while booking online. Each is stored on its own, so one that cannot be read (an unreadable HEIC, a file
+ * that is not a picture) is reported back by name and the rest, and the booking itself, go through. They sit on the visit's first live
+ * service and provider (so the Gallery's filters find them) with phase "client", and are files of kind "visit": the files route lets exactly
+ * the people who may open the appointment fetch them. Never throws.
+ */
+export async function addClientPhotos(input: { businessId: string; appointmentId: string; files: File[] }): Promise<{ stored: number; dropped: DroppedPhoto[] }> {
+  const files = input.files.filter((f) => f && f.size > 0).slice(0, MAX_BOOKING_PHOTOS);
+  const dropped: DroppedPhoto[] = [];
+  if (!files.length) return { stored: 0, dropped };
+  let base: { clientId: string | null; serviceId: string | null; staffId: string | null } | null = null;
+  try {
+    base = await withTenant(input.businessId, async (tx) => {
+      const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, input.appointmentId), columns: { id: true, clientId: true } });
+      if (!appt) return null;
+      const [first] = await tx.select({ serviceId: schema.appointmentItems.serviceId, staffId: schema.appointmentItems.staffId }).from(schema.appointmentItems).where(and(eq(schema.appointmentItems.appointmentId, appt.id), sql`${schema.appointmentItems.status} <> 'cancelled'`)).orderBy(asc(schema.appointmentItems.startAt), asc(schema.appointmentItems.sortOrder)).limit(1);
+      return { clientId: appt.clientId, serviceId: first?.serviceId ?? null, staffId: first?.staffId ?? null };
+    });
+  } catch (e) {
+    console.error("[booking-photos] could not read the appointment", input.appointmentId, (e as Error).message);
+  }
+  if (!base) return { stored: 0, dropped: files.map((f) => ({ name: f.name, reason: "The booking could not be found." })) };
+  const stored: { name: string; fileId: string; thumbFileId: string }[] = [];
+  for (const f of files) {
+    try {
+      stored.push({ name: f.name, ...(await storeBookingPhoto(input.businessId, f)) });
+    } catch (e) {
+      // A picture that cannot be used is left out and named; anything else is a storage problem and is logged, not shown.
+      dropped.push({ name: f.name, reason: e instanceof FileError ? e.message : "This photo could not be saved." });
+      if (!(e instanceof FileError)) console.error("[booking-photos] store failed", input.appointmentId, (e as Error).message);
+    }
+  }
+  if (!stored.length) return { stored: 0, dropped };
+  try {
+    await withTenant(input.businessId, async (tx) => {
+      await tx.insert(vp).values(stored.map((s) => ({ businessId: input.businessId, appointmentId: input.appointmentId, clientId: base!.clientId, serviceId: base!.serviceId, staffId: base!.staffId, phase: CLIENT_PHASE, fileId: s.fileId, thumbFileId: s.thumbFileId, createdByUserId: null })));
+      // Self-service: the activity log records "client" as the actor, as the booking itself does.
+      await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: "client", action: "appointment.photo_add", entity: "appointment", entityId: input.appointmentId, diff: JSON.stringify({ phase: CLIENT_PHASE, count: stored.length }) });
+    });
+  } catch (e) {
+    console.error("[booking-photos] could not attach photos", input.appointmentId, (e as Error).message);
+    for (const s of stored) { await deleteFileById(s.fileId).catch(() => undefined); await deleteFileById(s.thumbFileId).catch(() => undefined); }
+    return { stored: 0, dropped: [...dropped, ...stored.map((s) => ({ name: s.name, reason: "This photo could not be saved." }))] };
+  }
+  return { stored: stored.length, dropped };
+}
+
+/** How many pictures the client attached to each of these appointments (for the calendar's hover card and the emails to the team). */
+export async function clientPhotoCounts(tx: Tx, appointmentIds: string[]): Promise<Map<string, number>> {
+  if (!appointmentIds.length) return new Map();
+  const rows = await tx.select({ appointmentId: vp.appointmentId, n: sql<number>`count(*)` }).from(vp).where(and(inArray(vp.appointmentId, appointmentIds), eq(vp.phase, CLIENT_PHASE))).groupBy(vp.appointmentId);
+  return new Map(rows.map((r) => [r.appointmentId, Number(r.n)]));
+}
+
 /** Tags and public-sharing consent are the same for every photo of a pair. */
 export async function setPairDetails(input: { businessId: string; appointmentId: string; serviceId: string | null; staffId: string | null; tags: string[]; shareOk: boolean; actorUserId: string }) {
   await withTenant(input.businessId, async (tx) => {
@@ -79,7 +134,7 @@ async function photoRows(tx: Tx, where: SQL | undefined): Promise<PhotoQueryRow[
     .leftJoin(schema.clients, eq(schema.clients.id, vp.clientId))
     .where(where)
     .orderBy(asc(vp.takenAt), asc(vp.createdAt));
-  return rows.map((r) => ({ ...r, phase: r.phase === "after" ? "after" : "before" }));
+  return rows.map((r) => ({ ...r, phase: toPhase(r.phase) }));
 }
 
 /** Every pair on one appointment, for its Photos card. */
@@ -110,7 +165,8 @@ export async function listGallery(businessId: string, f: GalleryFilters, pageSiz
   if (f.periodDays) conds.push(gte(vp.takenAt, new Date(Date.now() - f.periodDays * 86_400_000)));
   if (f.q) conds.push(ilike(sql`${schema.clients.firstName} || ' ' || ${schema.clients.lastName}`, `%${f.q.replace(/[%_\\]/g, "\\$&")}%`));
   const having: SQL[] = [];
-  if (f.bothOnly) having.push(sql`count(distinct ${vp.phase}) = 2`);
+  // "Before and after" means the team's two phases; what the client sent does not count as either.
+  if (f.bothOnly) having.push(sql`count(distinct ${vp.phase}) filter (where ${vp.phase} in ('before', 'after')) = 2`);
   if (f.shareableOnly) having.push(sql`bool_and(${vp.shareOk})`);
   return withTenant(businessId, async (tx) => {
     const groups = await tx

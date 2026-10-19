@@ -15,6 +15,8 @@ import { getSession } from "@/server/classes";
 import { paymentContextFor } from "@/server/locations";
 import { schema, withTenant } from "@angelic/db";
 import { and, eq } from "drizzle-orm";
+import { bookingPhotosFrom, droppedParam } from "@/lib/booking-photos";
+import type { BookingPhotosResult } from "@/server/public-booking";
 
 export type PublicState = { error?: string; ok?: boolean } | undefined;
 
@@ -31,7 +33,11 @@ const contact = z.object({
 });
 
 const bookingFields = contact.extend({ slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), quotedPriceCents: z.string().regex(/^\d+$/).optional().transform((v) => (v === undefined ? undefined : Number(v))), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null), locationId: z.string().optional().transform((v) => v || null), extraServiceIds: z.string().optional().transform((v) => (v ? v.split(",").filter(Boolean).slice(0, 4) : [])), embed: z.string().optional() });
-const confirmedPath = (d: { slug: string; embed?: string }, token: string) => `${d.embed ? "/embed" : "/book"}/${d.slug}/confirmed/${token}`;
+/** The confirmation page; pictures that could not be used travel along by name so the client sees which ones. */
+const confirmedPath = (d: { slug: string; embed?: string }, token: string, photos?: BookingPhotosResult) => {
+  const dropped = photos ? droppedParam(photos.dropped) : null;
+  return `${d.embed ? "/embed" : "/book"}/${d.slug}/confirmed/${token}${dropped ? `?dropped=${encodeURIComponent(dropped)}` : ""}`;
+};
 type BookingFields = z.infer<typeof bookingFields>;
 
 function parseBooking(raw: Record<string, unknown>): { d: BookingFields } | { error: string } {
@@ -73,14 +79,16 @@ export async function bookOnline(_prev: PublicState, formData: FormData): Promis
   }
   if (onlinePaymentRequirement(business, service, pay, visitPrice).mode !== "none") return { error: "This booking needs a card. Please reload the page and try again." };
   let token: string;
+  let photos: BookingPhotosResult | undefined;
   try {
-    const r = await createOnlineBooking(business, { ...d, startAt: new Date(d.startAt), ip: formIp(await headers()) });
+    const r = await createOnlineBooking(business, { ...d, startAt: new Date(d.startAt), ip: formIp(await headers()), photos: bookingPhotosFrom(formData) });
     token = r.token;
+    photos = r.photos;
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     throw e;
   }
-  redirect(confirmedPath(d, token));
+  redirect(confirmedPath(d, token, photos));
 }
 
 export type StartPaymentResult = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null } | { error: string };
@@ -147,8 +155,8 @@ export async function abandonOnlinePaymentAction(slug: string, locationId: strin
   await cancelOnlineIntent(business, await paymentContextFor(business, locationId || null), intent.kind, intent.id);
 }
 
-/** Step 2: the browser confirmed the intent. Verify with Stripe, then book. */
-export async function finishOnlineBookingAction(raw: Record<string, string>, intent: { kind: "deposit" | "card"; id: string }): Promise<{ error?: string }> {
+/** Step 2: the browser confirmed the intent. Verify with Stripe, then book. `photos` carries the pictures the client attached in step 1, if any. */
+export async function finishOnlineBookingAction(raw: Record<string, string>, intent: { kind: "deposit" | "card"; id: string }, photos?: FormData | null): Promise<{ error?: string }> {
   const p = parseBooking(raw);
   if ("error" in p) return { error: p.error };
   const d = p.d;
@@ -157,19 +165,21 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
   const existing = await appointmentForIntent(business.id, intent.id);
   if (existing) redirect(confirmedPath(d, existing.manageToken));
   let token: string;
+  let result: BookingPhotosResult | undefined;
   try {
     const startAt = new Date(d.startAt);
     const pay = await paymentContextFor(business, d.locationId);
     const verified = await verifyOnlineIntent(business, pay, intent.kind, intent.id, { businessId: business.id, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" });
-    const r = await createOnlineBooking(business, { ...d, startAt, ip: formIp(await headers()) }, new Date(), verified);
+    const r = await createOnlineBooking(business, { ...d, startAt, ip: formIp(await headers()), photos: bookingPhotosFrom(photos) }, new Date(), verified);
     token = r.token;
+    result = r.photos;
   } catch (e) {
     const twin = await appointmentForIntent(business.id, intent.id);
     if (twin) redirect(confirmedPath(d, twin.manageToken));
     if (e instanceof BookingError) return { error: intent.kind === "deposit" && /just taken|no longer/.test(e.message) ? `${e.message} Your deposit has been refunded.` : e.message };
     throw e;
   }
-  redirect(confirmedPath(d, token));
+  redirect(confirmedPath(d, token, result));
 }
 
 export async function cancelBooking(_prev: PublicState, formData: FormData): Promise<PublicState> {

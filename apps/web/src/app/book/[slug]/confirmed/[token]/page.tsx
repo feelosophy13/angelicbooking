@@ -6,11 +6,14 @@ import { getManagedAppointment } from "@/server/public-booking";
 import { formatMoney, formatTime } from "@/lib/utils";
 import { addressOf } from "@/server/locations";
 import { CalendarPlus, MapPin, Phone } from "lucide-react";
+import { parseDropped } from "@/lib/booking-photos";
 
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
-export default async function ConfirmedPage({ params }: { params: Promise<{ slug: string; token: string }> }) {
+export default async function ConfirmedPage({ params, searchParams }: { params: Promise<{ slug: string; token: string }>; searchParams: Promise<{ dropped?: string }> }) {
   const { slug, token } = await params;
+  // Pictures the client attached that could not be used, by name (the booking itself went through).
+  const dropped = parseDropped((await searchParams).dropped);
   // Inside an embed, links leave the iframe so the client lands on the full page.
   const embed = ((await headers()).get("x-pathname") ?? "").startsWith("/embed/");
   const top = embed ? { target: "_top" as const } : {};
@@ -40,6 +43,12 @@ export default async function ConfirmedPage({ params }: { params: Promise<{ slug
         {address ? <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-stone-400" aria-hidden /><span>{m.location?.name ? `${m.location.name}, ` : ""}{address}</span></p> : null}
         {phone ? <p className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-stone-400" aria-hidden /><a href={`tel:${phone}`} className="underline">{phone}</a></p> : null}
       </div>
+      {m.clientPhotos > 0 ? <p className="mx-auto mt-3 max-w-xs text-sm text-stone-600">Your {m.clientPhotos === 1 ? "photo is" : `${m.clientPhotos} photos are`} with the booking, for your provider to see.</p> : null}
+      {dropped.length ? (
+        <p className="mx-auto mt-3 max-w-xs rounded-lg border border-amber-200 bg-amber-50 p-3 text-left text-sm text-amber-900" role="status">
+          We couldn&apos;t use {dropped.length === 1 ? "one of your photos" : `${dropped.length} of your photos`} ({dropped.join(", ")}). Your booking is fine; bring {dropped.length === 1 ? "it" : "them"} along or text {dropped.length === 1 ? "it" : "them"} to us.
+        </p>
+      ) : null}
       {m.business.bookingPolicy ? <p className="mx-auto mt-3 max-w-xs text-xs text-stone-500">{m.business.bookingPolicy}</p> : null}
       <p className="mt-4 text-sm text-stone-500">{m.client?.email ? `A confirmation is on its way to ${maskEmail(m.client.email)}.` : m.client?.phone ? "A confirmation text is on its way." : "Keep this page: it is your confirmation."} You can change or cancel from the link below.</p>
       <div className="mt-4 flex flex-wrap justify-center gap-2 text-sm">
