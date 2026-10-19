@@ -38,6 +38,7 @@ export default async function EditWorkflowPage({ params }: { params: Promise<{ s
           {reach !== null ? (
             <p className="mb-3 rounded-lg bg-stone-50 p-2 text-xs text-stone-600">
               Reaches clients whose last visit was {w.filters.days ?? 60} to {(w.filters.days ?? 60) + NO_VISIT_WINDOW_DAYS} days ago, once each, so turning it on never messages everyone who ever lapsed. {w.enabled ? "At the next daily check" : "If turned on now"}: <b>{reach}</b> {reach === 1 ? "client" : "clients"}.
+              {(w.filters.days ?? 60) !== business.lapsedAfterDays ? ` Reports count a client as lapsed after ${business.lapsedAfterDays} days (Settings → Booking rules); this workflow uses its own ${w.filters.days ?? 60}.` : ""}
             </p>
           ) : null}
           <h2 className="mb-1 font-medium">Recent runs</h2>

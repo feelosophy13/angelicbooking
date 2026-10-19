@@ -1,12 +1,14 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { StatusBadge } from "@/components/status-badge";
-import { Download } from "lucide-react";
+import { ChevronRight, Download } from "lucide-react";
 
 export const metadata: Metadata = { title: "Sales" };
 import { can, instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
-import { salesReport } from "@/server/sales";
+import { clientCohorts, salesReport } from "@/server/sales";
+import { canSeeClientContact, canSeeClientSpend } from "@/lib/visibility";
+import { LinkRow } from "@/components/table-row";
 import { stockReport } from "@/server/inventory";
 import { productLabel } from "@/lib/inventory";
 import { withTenant } from "@angelic/db";
@@ -70,9 +72,12 @@ export default async function ReportsPage({
   ] as const);
   // Pay is not split by service, so it is left out while a service filter is on.
   const canPayroll = can(permissions, "payroll.manage") && !scoped;
-  const [{ sales, byStaff, byMethod, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, linesByLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation, refundsByStaff, refundStaffNames }, prev, categories, pay, payBefore, payByLoc, catPay, catPayBefore] = await Promise.all([
+  const [{ sales, byStaff, byMethod, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, linesByLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation, refundsByStaff, refundStaffNames }, prev, cohorts, cohortsBefore, categories, pay, payBefore, payByLoc, catPay, catPayBefore] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter, serviceIds),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter, serviceIds),
+    // Who came: new, returning and lapsed clients. Visits are not split by service, so the card is left out while a service filter is on.
+    scoped ? null : clientCohorts(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), { lapsedDays: business.lapsedAfterDays, locationId: locationFilter }),
+    scoped ? null : clientCohorts(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), { lapsedDays: business.lapsedAfterDays, locationId: locationFilter }),
     listCategories(business.id, "service"),
     // What the period cost in pay: the same calculation as Payroll, overtime off, so the numbers agree.
     canPayroll ? runPayroll(business, { start: from, end: to }, false, locationFilter, { split: true }) : null,
@@ -148,6 +153,10 @@ export default async function ReportsPage({
     return { pct, up: pct >= 0 };
   };
   const periodLabel = days === 1 ? "previous day" : `previous ${days} days`;
+  // Retention: returning clients as a share of everyone who visited in the equal-length range before, in whole percent (null = nobody to retain).
+  const retention = (c: NonNullable<typeof cohorts>) => (c.activeBefore > 0 ? Math.round((c.returning.count / c.activeBefore) * 100) : null);
+  const canContact = canSeeClientContact(permissions);
+  const canSpend = canSeeClientSpend(permissions);
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "short", timeStyle: "short", timeZone: tz });
   const fmtDay = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: tz });
 
@@ -190,6 +199,7 @@ export default async function ReportsPage({
             <div className="absolute right-0 z-20 mt-1 w-48 rounded-lg border border-stone-200 bg-white py-1 text-sm shadow-lg">
               {sales.length ? <a href={`/app/${slug}/reports/export?kind=sales&from=${from}&to=${to}${lq}`} className="block px-3 py-1.5 hover:bg-stone-50">Sales (CSV)</a> : null}
               {catRows.length ? <a href={`/app/${slug}/reports/export?kind=categories&from=${from}&to=${to}${lq}`} className="block px-3 py-1.5 hover:bg-stone-50">Revenue by category (CSV)</a> : null}
+              {cohorts ? <a href={`/app/${slug}/reports/export?kind=clients&from=${from}&to=${to}${lq}`} className="block px-3 py-1.5 hover:bg-stone-50">Clients (CSV)</a> : null}
               {appts.length ? <a href={`/app/${slug}/reports/export?kind=appointments&from=${from}&to=${to}${lq}`} className="block px-3 py-1.5 hover:bg-stone-50">Appointments (CSV)</a> : null}
             </div>
           </details>
@@ -198,7 +208,7 @@ export default async function ReportsPage({
       <p className="mb-4 text-sm text-stone-600">{from === to ? formatDateLong(from) : `${formatDateLong(from)} – ${formatDateLong(to)}`}{locationFilter ? ` · ${locName(locationFilter)}` : ""}<span className="ml-2 text-xs text-stone-500">Sales count on the day they were paid; refunds on the day they were made; staff revenue is after discounts.</span></p>
       {scoped ? (
         <p className="mb-4 rounded-lg bg-brand-50 px-3 py-2 text-sm text-stone-700">
-          Showing sales that include <strong>{scopeLabel(scope, groups) ?? "this service"}</strong>; every line on those sales is counted. Pay, store credit, refund reasons, referrals and stock are not split by service, so they are hidden.{" "}
+          Showing sales that include <strong>{scopeLabel(scope, groups) ?? "this service"}</strong>; every line on those sales is counted. Pay, store credit, refund reasons, referrals, client cohorts and stock are not split by service, so they are hidden.{" "}
           <Link href={`?from=${from}&to=${to}${locationFilter ? `&location=${locationFilter}` : ""}`} className="underline">Clear</Link>
         </p>
       ) : null}
@@ -238,7 +248,72 @@ export default async function ReportsPage({
         })}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {cohorts && cohortsBefore ? (
+        <Card className="mb-6">
+          <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Clients</h2>
+          <div className="grid grid-cols-2 gap-px bg-stone-100 md:grid-cols-4">
+            {(() => {
+              const ret = retention(cohorts);
+              const retBefore = retention(cohortsBefore);
+              const tiles: { label: string; value: string; sub: string | null; change: string; good: boolean | null }[] = [
+                ...([
+                  ["New", cohorts.fresh, cohortsBefore.fresh, true, "brought in"],
+                  ["Returning", cohorts.returning, cohortsBefore.returning, true, "brought in"],
+                  ["Churned", cohorts.churned, cohortsBefore.churned, false, "at risk"],
+                ] as const).map(([label, cur, before, goodUp, word]) => {
+                  const d = delta(cur.count, before.count);
+                  return { label, value: String(cur.count), sub: cur.count ? `${money(cur.revenueCents)} ${word}` : null, change: d === null ? `no change vs ${periodLabel}` : d.pct === null ? `new vs ${periodLabel}` : `${d.pct > 0 ? "+" : ""}${d.pct}% vs ${periodLabel}`, good: d === null ? null : d.up === goodUp };
+                }),
+                {
+                  label: "Retention",
+                  value: ret === null ? "—" : `${ret}%`,
+                  sub: cohorts.activeBefore ? `of ${cohorts.activeBefore} active in the ${periodLabel}` : `nobody visited in the ${periodLabel}`,
+                  change: ret === null || retBefore === null ? (retBefore === null ? `nothing to compare in the ${periodLabel}` : `${retBefore}% in the ${periodLabel}`) : ret === retBefore ? `no change vs ${periodLabel}` : `${ret > retBefore ? "+" : ""}${ret - retBefore} pts vs ${periodLabel}`,
+                  good: ret === null || retBefore === null || ret === retBefore ? null : ret > retBefore,
+                },
+              ];
+              return tiles.map((t) => (
+                <div key={t.label} className="bg-white px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-stone-500">{t.label}</p>
+                  <p className="text-xl font-semibold tabular-nums">{t.value}</p>
+                  {t.sub ? <p className="text-xs text-stone-500">{t.sub}</p> : null}
+                  <p className={`mt-1 text-xs ${t.good ? "text-emerald-700" : t.good === null ? "text-stone-400" : "text-stone-500"}`}>{t.change}</p>
+                </div>
+              ));
+            })()}
+          </div>
+          {cohorts.churned.top.length ? (
+            <div className="border-t border-stone-200">
+              <p className="px-4 pt-3 text-xs font-medium text-stone-600">Churned clients worth a call{cohorts.churned.count > cohorts.churned.top.length ? ` · top ${cohorts.churned.top.length} of ${cohorts.churned.count} by past spend` : ""}</p>
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Client</th><th className="px-4 py-2">Last visit</th><th className="px-4 py-2 text-right">Visits</th>{canSpend ? <th className="px-4 py-2 text-right">Spent, year before lapsing</th> : null}<th /></tr></thead>
+                <tbody className="divide-y divide-stone-100">
+                  {cohorts.churned.top.map((c) => (
+                    <LinkRow key={c.clientId} href={`/app/${slug}/clients/${c.clientId}`}>
+                      <td className="px-4 py-2">
+                        <Link href={`/app/${slug}/clients/${c.clientId}`} className="font-medium hover:underline">{`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || "Client"}</Link>
+                        {canContact ? <p className="truncate text-xs text-stone-500">{[c.phone, c.email].filter(Boolean).join(" · ") || "no contact info"}</p> : null}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2 text-stone-600">{fmtDay.format(c.lastVisit)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums">{c.visits}</td>
+                      {canSpend ? <td className="px-4 py-2 text-right tabular-nums">{money(c.spendCents)}</td> : null}
+                      <td className="px-2 py-2 text-right"><Link href={`/app/${slug}/clients/${c.clientId}`} aria-label="Open"><ChevronRight className="h-4 w-4 text-stone-300" /></Link></td>
+                    </LinkRow>
+                  ))}
+                </tbody>
+              </table></div>
+            </div>
+          ) : null}
+          <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
+            A visit is a completed appointment; revenue is closed sales less tips. New: first visit ever in this range. Returning: a visit in this range and one before it. Churned: {business.lapsedAfterDays} days passed since their last visit with nothing booked after this range, and that day fell in this range; the money is what they spent in the year before. Retention: returning clients as a share of everyone who visited in the {periodLabel}.
+            {locationFilter ? ` Visits and sales at ${locName(locationFilter)} only.` : ""}
+            {can(permissions, "settings.business") ? <> The {business.lapsedAfterDays} days are set under <Link href={`/app/${slug}/settings/booking`} className="text-brand-700 underline">Settings → Booking rules</Link>.</> : null}
+          </p>
+        </Card>
+      ) : null}
+
+      {/* min-w-0: a grid cell defaults to the width of its content, so a wide table would push the card past a phone's edge instead of scrolling inside it. */}
+      <div className="grid gap-6 lg:grid-cols-2 [&>*]:min-w-0">
         {locations.length > 1 ? (
           <Card className="lg:col-span-2">
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By location</h2>

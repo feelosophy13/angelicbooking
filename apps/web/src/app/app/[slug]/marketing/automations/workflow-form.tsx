@@ -74,7 +74,7 @@ function Picker({ name, label, groups, selected }: { name: string; label: string
 const flatGroups = (items: PickItem[]): PickItem[][] => items.map((x) => [x]);
 
 /** Shared create / edit form: name and switch, trigger, conditions (collapsed), steps timeline, options. */
-export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: string; workflow: Workflow | null; trigger: WorkflowTrigger; pickers: Pickers }) {
+export function WorkflowForm({ slug, workflow, trigger, pickers, lapsedDays = 60 }: { slug: string; workflow: Workflow | null; trigger: WorkflowTrigger; pickers: Pickers; /** The business's "consider a client lapsed after" setting: what a new no-visit workflow starts from. */ lapsedDays?: number }) {
   const f = workflow?.filters ?? {};
   const meta = TRIGGERS.find((t) => t.key === trigger)!;
   const apptTrigger = trigger.startsWith("appointment_");
@@ -111,7 +111,7 @@ export function WorkflowForm({ slug, workflow, trigger, pickers }: { slug: strin
         {trigger === "no_visit" ? (
           <div className="mt-3 flex items-center gap-2 text-sm">
             <span>after</span>
-            <Input name="days" type="number" min={7} max={730} defaultValue={f.days ?? 60} className="h-9 w-24" required aria-label="Days since the last visit" />
+            <Input name="days" type="number" min={7} max={730} defaultValue={f.days ?? lapsedDays} className="h-9 w-24" required aria-label="Days since the last visit" />
             <span>days without a visit and nothing booked</span>
           </div>
         ) : null}

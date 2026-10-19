@@ -77,6 +77,8 @@ export const businesses = pgTable("businesses", {
   // for it; the default, the owner's choice 2026-10-19) or the service's list price. Recorded on the sale line when the credit is used,
   // so past tickets don't move.
   packageRedemptionBase: text("package_redemption_base").$type<"list" | "package_share">().notNull().default("package_share"),
+  // Reports counts a client as lapsed (churned) once this many days pass after their last completed visit with nothing booked ahead.
+  lapsedAfterDays: integer("lapsed_after_days").notNull().default(90),
   phone: text("phone"),
   email: text("email"),
   // Stripe Connect (Phase 2)

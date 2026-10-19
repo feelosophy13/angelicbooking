@@ -46,7 +46,7 @@ export default async function NewWorkflowPage({ params, searchParams }: { params
     <>
       <div className="mb-2"><BackLink href={`${base}/new`}>Choose a different trigger</BackLink></div>
       <PageHeader title="New workflow" />
-      <Card className="max-w-4xl p-5"><WorkflowForm slug={slug} workflow={null} trigger={trigger} pickers={pickers} /></Card>
+      <Card className="max-w-4xl p-5"><WorkflowForm slug={slug} workflow={null} trigger={trigger} pickers={pickers} lapsedDays={business.lapsedAfterDays} /></Card>
     </>
   );
 }

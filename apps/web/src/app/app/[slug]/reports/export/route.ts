@@ -2,7 +2,8 @@ import { and, asc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { can, instantToISODate, zonedToInstant } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
-import { salesReport } from "@/server/sales";
+import { clientCohorts, salesReport } from "@/server/sales";
+import { canSeeClientContact, canSeeClientSpend } from "@/lib/visibility";
 import { serviceIdsInScope } from "@/server/service-groups";
 import { listCategories } from "@/server/categories";
 import { rollUpCategories } from "@/lib/category-rollup";
@@ -10,7 +11,7 @@ import { payByCategory } from "@/server/payroll";
 import { csvResponse } from "@/lib/csv";
 import { shiftISODate } from "@/lib/utils";
 
-/** CSV export of closed sales, appointments or revenue by category for a date range: ?kind=sales|appointments|categories&from&to */
+/** CSV export of closed sales, appointments, revenue by category or client cohorts for a date range: ?kind=sales|appointments|categories|clients&from&to */
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { business, permissions } = await requireAction(slug, "reports.view");
@@ -56,6 +57,33 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     const out = rows.flatMap((t) => [line(t.name, "", t), ...t.children.map((c) => line(t.name, c.name, c))]);
     const all = { count: rows.reduce((n, r) => n + r.count, 0), paid: rows.reduce((n, r) => n + r.paid, 0), credit: rows.reduce((n, r) => n + r.credit, 0), pay: withPay ? rows.reduce((n, r) => n + (r.pay ?? 0), 0) : null };
     return csvResponse(`revenue-by-category-${from}-${to}.csv`, header, [...out, line("All services", "", all)]);
+  }
+  if (url.searchParams.get("kind") === "clients") {
+    // The page's Clients card: the four figures against the previous equal-length range, then every churned client (the page shows the
+    // top ten). Visits are not split by service, so the service filter is ignored here as it is on the page.
+    const days = Math.max(1, Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000) + 1);
+    const prevStart = zonedToInstant(shiftISODate(from, -days), "00:00", tz);
+    const opts = { lapsedDays: business.lapsedAfterDays, locationId };
+    const [cur, before, all] = await Promise.all([clientCohorts(business.id, start, end, opts), clientCohorts(business.id, prevStart, start, opts), clientCohorts(business.id, start, end, { ...opts, limit: null })]);
+    const retention = (c: typeof cur) => (c.activeBefore > 0 ? `${Math.round((c.returning.count / c.activeBefore) * 100)}%` : "");
+    const withContact = canSeeClientContact(permissions);
+    const withSpend = canSeeClientSpend(permissions);
+    const base = `${url.origin}/app/${slug}/clients/`;
+    const day = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, dateStyle: "short" }).format(d);
+    const rows: (string | number | null)[][] = [
+      ["New clients", cur.fresh.count, before.fresh.count],
+      ["New client revenue", $(cur.fresh.revenueCents), $(before.fresh.revenueCents)],
+      ["Returning clients", cur.returning.count, before.returning.count],
+      ["Returning client revenue", $(cur.returning.revenueCents), $(before.returning.revenueCents)],
+      [`Churned clients (${cur.lapsedDays} days)`, cur.churned.count, before.churned.count],
+      ["Revenue at risk (year before lapsing)", $(cur.churned.revenueCents), $(before.churned.revenueCents)],
+      ["Active clients in the range before", cur.activeBefore, before.activeBefore],
+      ["Retention", retention(cur), retention(before)],
+      [],
+      ["Churned client", ...(withContact ? ["Phone", "Email"] : []), "Last visit", "Visits", ...(withSpend ? ["Spent, year before lapsing"] : []), "Client page"],
+      ...all.churned.top.map((c) => [`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim(), ...(withContact ? [c.phone, c.email] : []), day(c.lastVisit), c.visits, ...(withSpend ? [$(c.spendCents)] : []), `${base}${c.clientId}`]),
+    ];
+    return csvResponse(`clients-${from}-${to}.csv`, ["Metric", `${from} to ${to}`, "Previous range"], rows);
   }
   const { sales } = await salesReport(business.id, start, end, locationId, serviceIds);
   return csvResponse(`sales-${from}-${to}.csv`, ["Sale #", "Closed", "Location", "Client", "Status", "Subtotal", "Discount", "Tax", "Tips", "Total", "Refunded"], sales.map((s) => [s.number, fmt(s.closedAt), s.locationName, s.clientFirst ? `${s.clientFirst} ${s.clientLast ?? ""}`.trim() : "Walk-in", s.status, $(s.subtotalCents), $(s.discountCents), $(s.taxCents), $(s.tipCents), $(s.totalCents), $(s.refundedCents)]));
