@@ -31,7 +31,7 @@ describe("sidebar entries match their pages", () => {
     expect(labels(only("inventory.log"))).toContain("Log supplies");
     expect(labels(only("sales.view.own"))).toContain("Sales & checkout");
     expect(labels(only("forms.manage"))).toContain("Forms");
-    expect(labels(only("business.manage"))).not.toContain("Forms");
+    expect(labels(only("settings.business", "settings.booking"))).not.toContain("Forms");
     expect(labels(only("clients.read"))).toContain("Clients");
   });
   it("⌘K offers New appointment, Block time and New client only to those who may (A5)", () => {
@@ -43,13 +43,14 @@ describe("sidebar entries match their pages", () => {
     expect(titles(only("appointments.read.own", "appointments.book.own"), "s1")).toContain("New appointment");
     expect(titles(only("appointments.read.own", "appointments.book.own"), null)).not.toContain("New appointment");
   });
-  it("Marketing follows marketing.send and Automations business.manage, not reports.view", () => {
+  it("Marketing follows marketing.send and Automations settings.booking, not reports.view", () => {
     const reportsOnly = labels(only("reports.view"));
     expect(reportsOnly).not.toContain("Marketing");
     expect(reportsOnly).not.toContain("Automations");
     expect(labels(only("marketing.send"))).toContain("Marketing");
     expect(labels(only("marketing.send"))).not.toContain("Automations");
-    expect(labels(only("business.manage"))).toContain("Automations");
+    expect(labels(only("settings.booking"))).toContain("Automations");
+    expect(labels(only("settings.business"))).not.toContain("Automations");
     expect(labels(DEFAULT_ROLE_PERMISSIONS.manager)).toEqual(expect.arrayContaining(["Marketing", "Automations"]));
     // ⌘K: the Marketing entry already covers /marketing, so "Promo codes" is the extra that shows the gate.
     expect(searchPages("/app/x", only("reports.view")).map((p) => p.title)).not.toContain("Promo codes");

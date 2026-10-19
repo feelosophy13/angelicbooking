@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Loyalty activity" };
 /** What loyalty has done this month and who is referring: read-only. The rules live in settings. */
 export default async function LoyaltyActivityPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business: b } = await requireAction(slug, "business.manage");
+  const { business: b } = await requireAction(slug, "settings.business");
   const tz = b.timezone;
   const today = instantToISODate(new Date(), tz);
   const monthStart = `${today.slice(0, 8)}01`;

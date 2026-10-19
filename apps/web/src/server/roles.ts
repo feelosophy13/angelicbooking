@@ -63,7 +63,7 @@ function orgPermissionFor(perms: Iterable<string>): Record<string, string[]> {
     out.member = ["create", "update", "delete"];
     out.invitation = ["create", "cancel"];
   }
-  if (set.has("business.manage")) out.organization = ["update"];
+  if (set.has("settings.business")) out.organization = ["update"];
   return out;
 }
 

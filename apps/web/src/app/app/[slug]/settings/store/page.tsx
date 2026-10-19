@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Online store" };
 
 export default async function StoreSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, permissions } = await requireAction(slug, "business.manage");
+  const { business, permissions } = await requireAction(slug, "settings.business");
   const ready = isStripeConfigured() && business.stripeChargesEnabled;
   return (
     <>

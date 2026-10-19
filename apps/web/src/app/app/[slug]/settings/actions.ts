@@ -19,7 +19,7 @@ export const updateBusiness = formAction(
     email: f.email(),
   }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "business.manage");
+    const ctx = await requireAction(d.slug, "settings.business");
     await db.transaction(async (tx) => {
       await tx.update(schema.businesses).set({ name: d.name, timezone: d.timezone, slotIntervalMin: d.slotIntervalMin, weekStart: d.weekStart, phone: d.phone, email: d.email }).where(eq(schema.businesses.id, ctx.business.id));
       await tx.update(schema.organization).set({ name: d.name }).where(eq(schema.organization.id, ctx.business.id));

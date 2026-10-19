@@ -19,7 +19,7 @@ export const saveLoyaltySettings = formAction(
     referralFriendBonusPoints: f.int(0, 100000),
   }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "business.manage");
+    const ctx = await requireAction(d.slug, "settings.business");
     await db
       .update(schema.businesses)
       .set({ loyaltyEnabled: d.loyaltyEnabled, loyaltyPointsPerDollar: d.loyaltyPointsPerDollar, loyaltyPointsPerVisit: d.loyaltyPointsPerVisit, loyaltyPointValueCents: d.loyaltyPointValueCents, loyaltyMinRedeemPoints: d.loyaltyMinRedeemPoints, referralBonusPoints: d.referralBonusPoints, referralFriendBonusPoints: d.referralFriendBonusPoints })

@@ -14,10 +14,10 @@ type Perms = Parameters<typeof can>[0];
 
 /**
  * The permissions that open the Settings directory: each Settings page is gated by one of these, and the directory lists the entries the
- * viewer may open. "business.manage" is the everyday settings; the rest were split out of it (2026-10-18) so an owner can hand over the
+ * viewer may open. "settings.business" is the business's setup and "settings.booking" its booking, store and client-care rules; the rest were split out (2026-10-18) so an owner can hand over the
  * settings without the money (billing.manage: Stripe, subscription), the keys (integrations.manage: API keys, text number) or the log.
  */
-export const SETTINGS_ACTIONS: readonly Action[] = ["business.manage", "forms.manage", "billing.manage", "integrations.manage", "audit.view", "members.manage"];
+export const SETTINGS_ACTIONS: readonly Action[] = ["settings.business", "settings.booking", "forms.manage", "billing.manage", "integrations.manage", "audit.view", "members.manage"];
 export const canOpenSettings = (permissions: Perms) => SETTINGS_ACTIONS.some((a) => can(permissions, a));
 
 /** Settings → Payments for a viewer who may open it, else null (pages then say "ask the owner" instead of linking). */
@@ -46,9 +46,9 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     // Looking after clients day to day: their texts, what we sent them, their forms and their photos.
     { title: "Client care", items: [
       ...(ok("clients.messages") ? [it(`${base}/inbox`, "Inbox", "Inbox")] : []),
-      ...(ok("business.manage") ? [it(`${base}/messages`, "Message log", "MessageSquare")] : []),
+      ...(ok("settings.booking") ? [it(`${base}/messages`, "Message log", "MessageSquare")] : []),
       ...(ok("forms.manage") ? [it(`${base}/settings/forms`, "Forms", "FileText")] : []),
-      ...(ok("clients.photos") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
+      ...(ok("clients.photos") || ok("clients.photos.own") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
     ] },
     { title: "Catalog", items: [
       ...(ok("catalog.view") ? [it(`${base}/services`, "Services", "Scissors"), it(`${base}/products`, "Products", "ShoppingBag")] : []),
@@ -60,12 +60,12 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     { title: "Money", items: [
       ...(canOpenSales(permissions) ? [it(`${base}/sales`, "Sales & checkout", "Receipt")] : []),
       ...(ok("reports.view") ? [it(`${base}/reports`, "Reports", "BarChart3")] : []),
-      ...(ok("payroll.view") ? [it(`${base}/payroll`, "Payroll", "Wallet")] : []),
+      ...(ok("payroll.manage") ? [it(`${base}/payroll`, "Payroll", "Wallet")] : ok("payroll.view.own") ? [it(`${base}/payroll`, "My pay", "Wallet")] : []),
     ] },
     // Bringing clients back: campaigns and promo codes, automated messages, loyalty, and what clients say.
     { title: "Grow", items: [
       ...(ok("marketing.send") ? [it(`${base}/marketing`, "Marketing", "Megaphone", { exclude: [`${base}/marketing/automations`] })] : []),
-      ...(ok("business.manage") ? [it(`${base}/marketing/automations`, "Automations", "Workflow"), it(`${base}/loyalty`, "Loyalty & referrals", "Heart", { exclude: [`${base}/settings/loyalty`] })] : []),
+      ...(ok("settings.booking") ? [it(`${base}/marketing/automations`, "Automations", "Workflow"), it(`${base}/loyalty`, "Loyalty & referrals", "Heart", { exclude: [`${base}/settings/loyalty`] })] : []),
       ...(canSeeReviews(permissions) ? [it(`${base}/reviews`, "Reviews", "Star")] : []),
     ] },
     { title: "", items: [
@@ -75,7 +75,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
   ].filter((s) => s.items.length > 0);
 }
 
-export type SettingsEntry = { href: string; title: string; blurb: string; status?: string; /** What opens the page; "business.manage" when omitted. */ action?: Action };
+export type SettingsEntry = { href: string; title: string; blurb: string; status?: string; /** What opens the page; "settings.business" when omitted. */ action?: Action };
 export type SettingsGroup = { title: string; entries: SettingsEntry[] };
 
 export interface SettingsStatusSource {
@@ -107,11 +107,11 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
     {
       title: "Online booking",
       entries: [
-        { href: `${sb}/booking`, title: "Booking rules", blurb: "Notice, cancellation window, reminders, deposits and no-show fee.", status: s ? (s.onlineBookingEnabled ? "on" : "off") : undefined },
+        { href: `${sb}/booking`, title: "Booking rules", blurb: "Notice, cancellation window, reminders, deposits and no-show fee.", status: s ? (s.onlineBookingEnabled ? "on" : "off") : undefined, action: "settings.booking" },
         { href: `${sb}/forms`, title: "Forms", blurb: "Intake questionnaires and waivers.", action: "forms.manage" },
-        { href: `${sb}/reviews`, title: "Reviews", blurb: "Rating requests and your Google review link." },
-        { href: `${sb}/loyalty`, title: "Loyalty & referrals", blurb: "Points, redemption value and referral bonuses.", status: s ? (s.loyaltyEnabled ? "on" : "off") : undefined },
-        { href: `${sb}/store`, title: "Online store", blurb: "Gift cards and products on your booking page.", status: s ? (s.storeEnabled ? "on" : s.giftCardsOnline ? "gift cards" : "off") : undefined },
+        { href: `${sb}/reviews`, title: "Reviews", blurb: "Rating requests and your Google review link.", action: "settings.booking" },
+        { href: `${sb}/loyalty`, title: "Loyalty & referrals", blurb: "Points, redemption value and referral bonuses.", status: s ? (s.loyaltyEnabled ? "on" : "off") : undefined, action: "settings.booking" },
+        { href: `${sb}/store`, title: "Online store", blurb: "Gift cards and products on your booking page.", status: s ? (s.storeEnabled ? "on" : s.giftCardsOnline ? "gift cards" : "off") : undefined, action: "settings.booking" },
         { href: `${sb}/embed`, title: "Embed & buttons", blurb: "Put booking on your own website." },
         { href: `${sb}/domain`, title: "Custom domain", blurb: "Serve the booking page from your hostname.", status: s?.customDomain ?? undefined },
       ],
@@ -141,7 +141,7 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
       ],
     },
   ];
-  return groups.map((g) => ({ ...g, entries: g.entries.filter((e) => can(permissions, e.action ?? "business.manage")) })).filter((g) => g.entries.length > 0);
+  return groups.map((g) => ({ ...g, entries: g.entries.filter((e) => can(permissions, e.action ?? "settings.business")) })).filter((g) => g.entries.length > 0);
 }
 
 /**

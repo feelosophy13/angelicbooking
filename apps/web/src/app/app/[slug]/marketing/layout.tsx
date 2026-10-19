@@ -12,7 +12,7 @@ export default async function MarketingLayout({ children, params }: { children: 
   const current = h.get("x-pathname") ?? "";
   // Automations live in their own sidebar section and are part of Business settings; Marketing (campaigns and promo codes) is "Send marketing".
   if (current.startsWith(`${base}/automations`)) {
-    await requireAction(slug, "business.manage");
+    await requireAction(slug, "settings.business");
     return <>{children}</>;
   }
   const { permissions } = await requireAction(slug, "marketing.send");
@@ -23,7 +23,7 @@ export default async function MarketingLayout({ children, params }: { children: 
       {/* The other ways to bring clients back live elsewhere; this row makes Marketing the place to start. */}
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         {[
-          ...(can(permissions, "business.manage")
+          ...(can(permissions, "settings.business")
             ? [
                 { href: `${base}/automations`, title: "Automations", blurb: "Reminders, win-backs and birthday notes that send themselves." },
                 { href: `/app/${slug}/settings/loyalty`, title: "Loyalty & referrals", blurb: "Points on every visit and a bonus for bringing a friend." },

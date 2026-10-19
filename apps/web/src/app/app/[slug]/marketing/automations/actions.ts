@@ -70,7 +70,7 @@ const revalidate = (slug: string, id?: string) => {
 };
 
 export const saveWorkflowAction = formAction(fields, async (d, raw) => {
-  const ctx = await requireAction(d.slug, "business.manage");
+  const ctx = await requireAction(d.slug, "settings.business");
   const input = parseInput(d, raw);
   try {
     if (d.workflowId) {
@@ -90,7 +90,7 @@ export const saveWorkflowAction = formAction(fields, async (d, raw) => {
 
 export async function toggleWorkflow(formData: FormData) {
   const d = z.object({ slug: z.string(), workflowId: z.string().min(1), enabled: z.enum(["true", "false"]) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "business.manage");
+  const ctx = await requireAction(d.slug, "settings.business");
   await setWorkflowEnabled(ctx.business.id, d.workflowId, d.enabled === "true");
   await setFlash(d.enabled === "true" ? "Workflow on" : "Workflow off");
   revalidate(d.slug, d.workflowId);
@@ -98,7 +98,7 @@ export async function toggleWorkflow(formData: FormData) {
 
 export async function duplicateWorkflowAction(formData: FormData) {
   const d = z.object({ slug: z.string(), workflowId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "business.manage");
+  const ctx = await requireAction(d.slug, "settings.business");
   const id = await duplicateWorkflow(ctx.business.id, d.workflowId);
   await setFlash("Copied. Edit the copy, then turn it on.");
   revalidate(d.slug, id);
@@ -107,7 +107,7 @@ export async function duplicateWorkflowAction(formData: FormData) {
 
 export async function deleteWorkflowAction(formData: FormData) {
   const d = z.object({ slug: z.string(), workflowId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "business.manage");
+  const ctx = await requireAction(d.slug, "settings.business");
   try {
     await deleteWorkflow(ctx.business.id, d.workflowId);
   } catch (e) {

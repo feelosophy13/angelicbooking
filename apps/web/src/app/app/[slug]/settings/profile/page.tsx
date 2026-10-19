@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Business profile" };
 
 export default async function ProfilePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   return (
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>

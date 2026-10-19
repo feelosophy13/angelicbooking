@@ -17,7 +17,7 @@ const outcomeBadge = (o: ReturnType<typeof runOutcome>) => (o === "active" ? "qu
 
 export default async function EditWorkflowPage({ params }: { params: Promise<{ slug: string; workflowId: string }> }) {
   const { slug, workflowId } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const [w, pickers, runs] = await Promise.all([getWorkflow(business.id, workflowId), loadPickers(business.id), recentRuns(business.id, workflowId)]);
   if (!w) notFound();
   const reach = w.trigger === "no_visit" ? await noVisitReach(business, w) : null;

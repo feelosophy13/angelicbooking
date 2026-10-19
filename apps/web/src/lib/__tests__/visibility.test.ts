@@ -35,7 +35,7 @@ describe("staff directory", () => {
 describe("private files", () => {
   const me = { staffId: "me" };
   it("client photos follow clients.photos; signatures and form files follow clients.notes", () => {
-    expect(canViewPrivateFile("client", provider, me)).toBe(true); // Provider has photos by default
+    expect(canViewPrivateFile("client", provider, me)).toBe(true); // Provider has their own photos by default, and a profile photo is nobody's visit
     expect(canViewPrivateFile("client", frontDesk, me)).toBe(true); // and so does the desk since the 2026-10-18 plan
     expect(canViewPrivateFile("client", only("clients.read", "clients.notes"), me)).toBe(false);
     expect(canViewPrivateFile("signature", frontDesk, me)).toBe(true); // Front desk has notes by default

@@ -131,6 +131,17 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       hover card. Known flake, not from this work: `payroll-clawback.test.ts` compares dates across midnight and fails when run between
       midnight local time and midnight in the business's zone.
 
+- [x] Phase 2 catalog, 2026-10-19 (migration 0120): new permissions `clients.photos.own`, `reports.staff`, `payroll.manage` (replacing
+      `payroll.view`, a 1:1 rename), `payroll.view.own`, `checkout.tips.adjust`, `classes.manage.own` / `classes.manage.any`,
+      `staff.self.hours` / `staff.self.services`, `appointments.read.availability`, and `settings.business` / `settings.booking` replacing
+      `business.manage`, which is retired (every page, action, nav entry, API scope and test that named it now names one of the two: profile,
+      locations, wording and number, reasons, embed, domain and import are `settings.business`; booking rules, store, loyalty, review requests,
+      automations and the message log are `settings.booking`; `requireBillingAction` still checks `billing.manage` while a business is locked).
+      Back-fill: photos.own replaces photos for own-calendar roles, reports.staff ← reports.view, tips.adjust ← checkout.take with read.any,
+      classes.manage.any ← write.any, both settings keys ← business.manage; the self-service, own-pay and availability keys start off for
+      everyone. The four built-in roles' descriptions are rewritten for a salon owner (and refreshed in stored rows that still had the old text).
+      Not done: `reviews.reply` is not in the catalog yet (the reply feature is phase 3), so nothing is back-filled for it.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

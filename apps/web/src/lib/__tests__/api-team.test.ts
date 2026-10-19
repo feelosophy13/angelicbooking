@@ -539,7 +539,7 @@ describe.skipIf(!up)("API team: roles", () => {
     for (const b of bad) expect((await call(postRole, key, noParams, send("POST", b))).status, JSON.stringify(b)).toBe(422);
     expect((await call(patchRole, key, { id: id.roleA! }, send("PATCH", { permissions: [] }))).status).toBe(422);
     const before = await withTenant(kit.B, (tx) => tx.query.roles.findFirst({ where: eq(schema.roles.id, id.roleB!) }));
-    expect((await call(patchRole, key, { id: id.roleB! }, send("PATCH", { name: "Hacked", permissions: ["business.manage"] }))).status).toBe(404);
+    expect((await call(patchRole, key, { id: id.roleB! }, send("PATCH", { name: "Hacked", permissions: ["settings.business"] }))).status).toBe(404);
     expect((await call(deleteRole, key, { id: id.roleB! }))).toHaveProperty("status", 404);
     expect(await withTenant(kit.B, (tx) => tx.query.roles.findFirst({ where: eq(schema.roles.id, id.roleB!) }))).toEqual(before);
   });

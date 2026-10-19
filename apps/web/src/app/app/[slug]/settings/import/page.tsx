@@ -12,7 +12,7 @@ import { MappingForm, UploadForm } from "./forms";
 export default async function ImportPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ staged?: string; done?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const staged = sp.staged ? await readStaged(business.id, sp.staged) : null;
   const jobs = await withTenant(business.id, (tx) => tx.select().from(schema.importJobs).orderBy(desc(schema.importJobs.createdAt)).limit(10));
   let done: { kind: string; created: number; updated: number; skipped: number; errors: { row: number; message: string }[] } | null = null;

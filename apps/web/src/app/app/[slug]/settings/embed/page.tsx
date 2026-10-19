@@ -12,7 +12,7 @@ export const metadata: Metadata = { title: "Embed on your website" };
 
 export default async function EmbedSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const groups = await serviceGroups(business, { meta: "none" });
   const [staff, locations] = await withTenant(business.id, async (tx) => [
     await tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.displayName)),

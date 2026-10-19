@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Edit location" };
 
 export default async function EditLocationPage({ params }: { params: Promise<{ slug: string; locationId: string }> }) {
   const { slug, locationId } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const l = await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId) }));
   if (!l) notFound();
   // Who works here, from their weekly hours (each day carries a location) or their primary site.

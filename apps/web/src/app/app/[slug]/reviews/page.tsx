@@ -59,7 +59,7 @@ export default async function ReviewsPage({ params, searchParams }: { params: Pr
     <>
       <PageHeader title="Reviews">
         {can(permissions, "reports.view") && (from || to) ? <Link href={`/app/${slug}/reports?from=${from ?? to}&to=${to ?? from}${locationId ? `&location=${locationId}` : ""}`} className="text-sm text-brand-700 underline">Sales for these dates</Link> : null}
-        {can(permissions, "business.manage") ? <Link href={`/app/${slug}/settings/reviews`} className="text-sm text-brand-700 underline">Settings</Link> : null}
+        {can(permissions, "settings.business") ? <Link href={`/app/${slug}/settings/reviews`} className="text-sm text-brand-700 underline">Settings</Link> : null}
       </PageHeader>
       <Card className="mb-4 p-3">
         <AutoSubmitForm className="flex flex-wrap items-end gap-3">

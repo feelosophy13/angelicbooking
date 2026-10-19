@@ -12,7 +12,7 @@ import { setFlash } from "@/lib/flash";
 export const addAdjustment = formAction(
   z.object({ slug: z.string(), start: f.isoDate(), end: f.isoDate(), staffId: f.id(), label: f.text(1, 80), amount: z.string().trim().regex(/^-?\$?\d{1,7}(\.\d{1,2})?$/, "Enter an amount like 142.90 (negative to subtract)"), countsAsPay: f.checkbox() }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "payroll.view");
+    const ctx = await requireAction(d.slug, "payroll.manage");
     const cents = Math.round(Number(d.amount.replace("$", "")) * 100);
     if (cents === 0) throw new FormError("Amount can't be zero", "amount");
     await withTenant(ctx.business.id, async (tx) => {
@@ -28,7 +28,7 @@ export const addAdjustment = formAction(
 
 export async function deleteAdjustment(formData: FormData) {
   const d = z.object({ slug: z.string(), id: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "payroll.view");
+  const ctx = await requireAction(d.slug, "payroll.manage");
   const outcome = await withTenant(ctx.business.id, async (tx) => {
     const a = await tx.query.payrollAdjustments.findFirst({ where: eq(schema.payrollAdjustments.id, d.id) });
     if (!a) return "gone";
@@ -47,7 +47,7 @@ export async function deleteAdjustment(formData: FormData) {
 
 export async function finalize(formData: FormData) {
   const d = z.object({ slug: z.string(), start: f.isoDate(), end: f.isoDate(), overtime: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "payroll.view");
+  const ctx = await requireAction(d.slug, "payroll.manage");
   await finalizePayroll(ctx.business, { start: d.start, end: d.end }, d.overtime === "on", ctx.user.id);
   await setFlash("Pay period finalized");
   revalidatePath(`/app/${d.slug}/payroll`);
@@ -56,7 +56,7 @@ export async function finalize(formData: FormData) {
 /** How overtime is counted when a run has it on: federal weekly, or California daily. A business-wide setting. */
 export async function setOvertimeRule(formData: FormData) {
   const d = z.object({ slug: z.string(), rule: z.enum(["weekly", "daily"]), back: z.string().startsWith("/app/") }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "payroll.view");
+  const ctx = await requireAction(d.slug, "payroll.manage");
   await withTenant(ctx.business.id, async (tx) => {
     await tx.update(schema.businesses).set({ overtimeRule: d.rule }).where(eq(schema.businesses.id, ctx.business.id));
     await tx.insert(schema.auditLog).values({ businessId: ctx.business.id, actorUserId: ctx.user.id, action: "payroll.overtime_rule", entity: "business", entityId: ctx.business.id, diff: JSON.stringify({ from: ctx.business.overtimeRule, to: d.rule }) });

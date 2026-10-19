@@ -24,7 +24,7 @@ export default async function InboxLayout({ children, params }: { children: Reac
   // No verified number: the desk can read what came in but not answer; one line says why (and where to fix it, for the owner).
   const notice = write && !smsReady ? (
     <p className="mb-3 text-sm text-stone-500">
-      Texts can be read but not sent until a text number is verified.{can(permissions, "business.manage") ? <> <Link href={`/app/${slug}/settings/messaging`} className="underline">Settings → Text number</Link></> : null}
+      Texts can be read but not sent until a text number is verified.{can(permissions, "settings.business") ? <> <Link href={`/app/${slug}/settings/messaging`} className="underline">Settings → Text number</Link></> : null}
     </p>
   ) : null;
   return (

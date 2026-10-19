@@ -15,7 +15,7 @@ const LABEL: Record<string, string> = { forms_nudge: "Forms still due (morning o
 /** The wording of the texts the business sends. The messages themselves (and replies) are on the Messages page. */
 export default async function NotificationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   return (
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>

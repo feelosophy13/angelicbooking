@@ -22,7 +22,7 @@ export const saveProfile = formAction(
     hoursText: f.optional(600),
   }),
   async (d, raw) => {
-    const ctx = await requireAction(d.slug, "business.manage");
+    const ctx = await requireAction(d.slug, "settings.business");
     // Uploaded files win over typed URLs; old uploads are removed.
     let logoUrl = d.logoUrl;
     let coverUrl = d.coverUrl;

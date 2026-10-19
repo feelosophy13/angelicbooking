@@ -43,20 +43,21 @@ describe("API key scopes", () => {
     expect(scopesBeyond(["pay:write", "roles:write"], perms(), true)).toEqual([]);
   });
   it("stops a role granting what it can't do itself", () => {
-    expect(scopesBeyond(["pay:read", "roles:write", "settings:read", "catalog:read"], perms("business.manage", "services.manage"), false)).toEqual(["pay:read", "roles:write"]);
+    expect(scopesBeyond(["pay:read", "roles:write", "settings:read", "catalog:read"], perms("settings.business", "services.manage"), false)).toEqual(["pay:read", "roles:write"]);
     expect(scopesBeyond(["clients:read", "clients:consent"], perms("clients.read"), false)).toEqual(["clients:consent"]);
     expect(scopesBeyond(["appointments:read", "appointments:book"], perms("appointments.read.any", "appointments.write.any"), false)).toEqual([]);
   });
   it("viewing clients alone grants none of the split client-data scopes", () => {
     expect(scopesBeyond(["clients:read", "client-notes:read", "clients:balances", "messages:read", "forms:read"], perms("clients.read"), false)).toEqual(["client-notes:read", "clients:balances", "messages:read", "forms:read"]);
   });
-  it("settings scopes follow Business settings, not the keys permission that opens the API page", () => {
-    expect(scopesBeyond(["settings:read", "settings:write", "policies:write", "settings:delete"], perms("business.manage"), false)).toEqual([]);
+  it("settings scopes follow the settings permissions, not the keys permission that opens the API page", () => {
+    expect(scopesBeyond(["settings:read", "settings:write", "policies:write", "settings:delete"], perms("settings.business", "settings.booking"), false)).toEqual([]);
+    expect(scopesBeyond(["settings:read", "settings:write", "policies:write", "settings:delete"], perms("settings.business"), false)).toEqual(["policies:write"]);
     expect(scopesBeyond(["settings:read", "policies:write", "catalog:read"], perms("integrations.manage", "billing.manage", "services.manage"), false)).toEqual(["settings:read", "policies:write"]);
-    expect(scopesBeyond(["roles:read", "roles:write"], perms("business.manage", "integrations.manage"), false)).toEqual(["roles:read", "roles:write"]);
+    expect(scopesBeyond(["roles:read", "roles:write"], perms("settings.business", "integrations.manage"), false)).toEqual(["roles:read", "roles:write"]);
   });
   it("the phase 1 view permissions sit behind their scopes: staff, reviews, time, forms, sales and the waitlist", () => {
-    expect(scopesBeyond(["staff:read", "reviews:read", "time:read", "time:write", "time:delete", "forms:write", "forms:void", "forms:delete", "sales:read", "waitlist:write"], perms("clients.read", "clients.write", "appointments.write.any", "reports.view", "payroll.view", "staff.manage"), false)).toEqual(["staff:read", "reviews:read", "time:read", "time:write", "time:delete", "forms:write", "forms:void", "forms:delete", "sales:read", "waitlist:write"]);
+    expect(scopesBeyond(["staff:read", "reviews:read", "time:read", "time:write", "time:delete", "forms:write", "forms:void", "forms:delete", "sales:read", "waitlist:write"], perms("clients.read", "clients.write", "appointments.write.any", "reports.view", "payroll.manage", "staff.manage"), false)).toEqual(["staff:read", "reviews:read", "time:read", "time:write", "time:delete", "forms:write", "forms:void", "forms:delete", "sales:read", "waitlist:write"]);
     expect(scopesBeyond(["staff:read"], perms("staff.schedules.view"), false)).toEqual([]);
     expect(scopesBeyond(["reviews:read"], perms("reviews.view"), false)).toEqual([]);
     expect(scopesBeyond(["reviews:read"], perms("reviews.view.own"), false)).toEqual(["reviews:read"]); // a key has no "own"

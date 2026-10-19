@@ -38,11 +38,12 @@ describe("client data permissions", () => {
     expect(fd.has("clients.photos")).toBe(true);
   });
 
-  it("Provider opens a client with notes and photos, nothing more", () => {
+  it("Provider opens a client with notes and their own photos, nothing more", () => {
     const p = DEFAULT_ROLE_PERMISSIONS.provider;
     expect(p.has("clients.read")).toBe(true);
     expect(p.has("clients.notes")).toBe(true);
-    expect(p.has("clients.photos")).toBe(true);
+    expect(p.has("clients.photos")).toBe(false); // since the 2026-10-18 plan: their own visit photos only
+    expect(p.has("clients.photos.own")).toBe(true);
     expect(p.has("clients.export")).toBe(false);
     expect(p.has("clients.messages")).toBe(false);
     expect(p.has("clients.balances")).toBe(false);

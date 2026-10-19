@@ -15,7 +15,7 @@ import { formatMoney } from "@/lib/utils";
 
 export default async function BookingSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, permissions } = await requireAction(slug, "business.manage");
+  const { business, permissions } = await requireAction(slug, "settings.business");
   const url = business.customDomain ? `https://${business.customDomain}` : appUrl(`/book/${business.slug}`);
   const qr = await QRCode.toDataURL(url, { margin: 1, width: 220, color: { dark: "#1c1917" } });
   // One deep link per location: clients land on that site's services and providers.

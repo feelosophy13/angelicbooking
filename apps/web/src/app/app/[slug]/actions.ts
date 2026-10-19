@@ -168,7 +168,7 @@ export async function removeBlock(input: { slug: string; appointmentId: string }
 /** The owner has seen the setup checklist enough; keep it off the calendar on this device. */
 export async function hideSetupChecklist(formData: FormData) {
   const slug = String(formData.get("slug"));
-  const ctx = await requireAction(slug, "business.manage");
+  const ctx = await requireAction(slug, "settings.business");
   (await cookies()).set(`setup-hidden-${ctx.business.id}`, "1", { path: "/", maxAge: 365 * 86_400, sameSite: "lax" });
   revalidatePath(`/app/${slug}`);
 }

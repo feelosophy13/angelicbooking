@@ -12,7 +12,7 @@ import { addAdjustment } from "../../actions";
 export default async function NewAdjustmentPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ start?: string; end?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "payroll.view");
+  const { business } = await requireAction(slug, "payroll.manage");
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
   if (!isDate(sp.start) || !isDate(sp.end)) throw new Error("Pick a pay period on the Payroll page first.");
   const staff = await withTenant(business.id, (tx) => tx.select().from(schema.staff).orderBy(asc(schema.staff.displayName)));

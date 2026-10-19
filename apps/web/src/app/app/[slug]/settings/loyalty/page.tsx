@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Loyalty & referrals" };
 
 export default async function LoyaltySettingsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business: b } = await requireAction(slug, "business.manage");
+  const { business: b } = await requireAction(slug, "settings.business");
   const base = `/app/${slug}`;
   return (
     <>

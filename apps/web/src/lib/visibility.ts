@@ -37,6 +37,24 @@ export const canSeeReviews = (permissions: Subject): "all" | "own" | null => (ca
 /** The Sales page opens for whoever takes payments or may see tickets. */
 export const canOpenSales = (permissions: Subject) => salesScope(permissions) !== null;
 
+/** Running a class (schedule it, add clients, cancel it): every class with "Run every class", the ones they teach with "Run their own classes". */
+export const canManageClass = (permissions: Subject, myStaffId: string | null, instructorStaffId: string | null) =>
+  can(permissions, "classes.manage.any") || (can(permissions, "classes.manage.own") && !!myStaffId && instructorStaffId === myStaffId);
+/** Whether a role may run some class at all (the Schedule button, the New class page). */
+export const canManageSomeClass = (permissions: Subject, myStaffId: string | null) => can(permissions, "classes.manage.any") || (can(permissions, "classes.manage.own") && !!myStaffId);
+
+/**
+ * A staff member's own page: "Manage staff" opens everyone's; "Edit their own hours and time off" and "Edit their own services and prices"
+ * open the person's own Weekly hours / Time off and Services tabs (their login must be linked to that staff row).
+ */
+export const canEditOwnStaff = (permissions: Subject, myStaffId: string | null, staffId: string, kind: "hours" | "services") =>
+  can(permissions, "staff.manage") || (!!myStaffId && staffId === myStaffId && can(permissions, kind === "hours" ? "staff.self.hours" : "staff.self.services"));
+export const canOpenStaffPage = (permissions: Subject, myStaffId: string | null, staffId: string) =>
+  canEditOwnStaff(permissions, myStaffId, staffId, "hours") || canEditOwnStaff(permissions, myStaffId, staffId, "services");
+
+/** Visit photos: everyone's, only the lines they performed, or none. */
+export const photosScope = (permissions: Subject): "all" | "own" | null => (can(permissions, "clients.photos") ? "all" : can(permissions, "clients.photos.own") ? "own" : null);
+
 /** A class session is an appointment on its instructor's calendar: everyone with "see every calendar" sees it, an own-calendar role only their own classes. */
 export const canSeeClassSession = (permissions: Subject, myStaffId: string | null, instructorStaffId: string) =>
   typeof permissions !== "string" && !!permissions && appointmentAccess(permissions, "read", myStaffId, [instructorStaffId]) !== null;
@@ -52,7 +70,8 @@ export const canSeeStaffLogins = (permissions: Subject) => can(permissions, "sta
 export function canViewPrivateFile(kind: string, permissions: Subject, me: { staffId: string | null }, visit?: { staffIds: string[] } | null): boolean {
   switch (kind) {
     case "client":
-      return can(permissions, "clients.photos");
+      // A client's profile photo is not anyone's visit, so either photos permission opens it.
+      return can(permissions, "clients.photos") || can(permissions, "clients.photos.own");
     case "form":
     case "signature":
       return can(permissions, "clients.notes");

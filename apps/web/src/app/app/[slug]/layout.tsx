@@ -71,7 +71,7 @@ export default async function AppLayout({ children, params }: { children: React.
       </div>
     );
   }
-  const owner = can(permissions, "business.manage");
+  const owner = can(permissions, "settings.business");
   const awaitingVerification = owner && business.publishRequiresVerified && !(await ownerEmailVerified(business.id));
   return (
     <div className="flex min-h-screen">
@@ -82,7 +82,7 @@ export default async function AppLayout({ children, params }: { children: React.
           <p className="mt-2 truncate text-xs font-medium text-stone-500">{business.name} · {roleName}</p>
           {locations.length > 1 ? (
             <p className="mt-0.5 truncate text-[11px] text-stone-400" title={locations.map((l) => l.name).join(", ")}>
-              {can(permissions, "business.manage") ? <Link href={`${base}/settings/locations`} className="hover:text-stone-600">{locations.length} locations · {locations.map((l) => l.name.replace(`${business.name} - `, "")).join(", ")}</Link> : `${locations.length} locations · ${locations.map((l) => l.name.replace(`${business.name} - `, "")).join(", ")}`}
+              {can(permissions, "settings.business") ? <Link href={`${base}/settings/locations`} className="hover:text-stone-600">{locations.length} locations · {locations.map((l) => l.name.replace(`${business.name} - `, "")).join(", ")}</Link> : `${locations.length} locations · ${locations.map((l) => l.name.replace(`${business.name} - `, "")).join(", ")}`}
             </p>
           ) : null}
         </div>

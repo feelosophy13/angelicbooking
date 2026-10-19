@@ -36,7 +36,7 @@ async function discardStaged(businessId: string, id: string) {
 export async function uploadImport(_prev: UploadState, formData: FormData): Promise<UploadState> {
   const slug = String(formData.get("slug"));
   const kind = z.enum(IMPORT_KINDS).parse(formData.get("kind"));
-  const ctx = await requireAction(slug, "business.manage");
+  const ctx = await requireAction(slug, "settings.business");
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a CSV or Excel file." };
   if (file.size > 25 * 1024 * 1024) return { error: "File is too large (25 MB max)." };
@@ -60,7 +60,7 @@ export async function uploadImport(_prev: UploadState, formData: FormData): Prom
 export async function commitImport(_prev: UploadState, formData: FormData): Promise<UploadState> {
   const slug = String(formData.get("slug"));
   const id = String(formData.get("staged"));
-  const ctx = await requireAction(slug, "business.manage");
+  const ctx = await requireAction(slug, "settings.business");
   const staged = await readStaged(ctx.business.id, id);
   if (!staged) return { error: "This upload has expired. Please upload the file again." };
   const mapping: Record<string, string> = {};

@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Cancellation reasons" };
 /** The short list picked when an appointment is cancelled. */
 export default async function CancellationReasonsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const reasons = await listCancellationReasons(business.id, { includeRetired: true });
   return (
     <>

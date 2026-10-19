@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Custom domain" };
 
 export default async function DomainPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const host = (process.env.NEXT_PUBLIC_APP_URL ?? "").replace(/^https?:\/\//, "");
   const status = business.customDomainStatus as DomainStatus;
   const advice = business.customDomain && status !== "none" ? await instructions(business.customDomain) : null;

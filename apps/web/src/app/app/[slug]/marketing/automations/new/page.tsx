@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "New workflow" };
 export default async function NewWorkflowPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ trigger?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const trigger = TRIGGERS.find((t) => t.key === sp.trigger)?.key as WorkflowTrigger | undefined;
   const base = `/app/${slug}/marketing/automations`;
   if (!trigger) {

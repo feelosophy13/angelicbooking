@@ -11,7 +11,7 @@ const url = z.string().trim().max(500).refine((v) => !v || /^https?:\/\/\S+$/i.t
 export const saveReviewSettings = formAction(
   z.object({ slug: z.string(), googleReviewUrl: url }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "business.manage");
+    const ctx = await requireAction(d.slug, "settings.business");
     await db.update(schema.businesses).set({ googleReviewUrl: d.googleReviewUrl }).where(eq(schema.businesses.id, ctx.business.id));
     revalidatePath(`/app/${d.slug}/settings/reviews`);
     return "Review settings saved";

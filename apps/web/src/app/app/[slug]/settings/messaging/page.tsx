@@ -25,7 +25,7 @@ const STATUS_HELP: Record<string, string> = {
 export default async function MessagingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ bought?: string; submitted?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions } = await requireAction(slug, "business.manage");
+  const { business, permissions } = await requireAction(slug, "settings.business");
   // Reading the number and its status is a business setting; buying, verifying or releasing one is integrations.manage.
   const manage = can(permissions, "integrations.manage");
   const [numbers, locations] = await Promise.all([withTenant(business.id, listNumbers), listLocations(business.id)]);

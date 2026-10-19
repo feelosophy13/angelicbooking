@@ -28,7 +28,7 @@ export const saveBookingSettings = formAction(
     addressLine: f.optional(200),
   }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "business.manage");
+    const ctx = await requireAction(d.slug, "settings.business");
     const raw = Number(d.lateCancelFeeValue ?? "");
     if (d.lateCancelFeeType !== "none" && (!Number.isFinite(raw) || raw <= 0)) throw new FormError(d.lateCancelFeeType === "flat" ? "Enter the fee amount" : "Enter the percent", "lateCancelFeeValue");
     if (d.lateCancelFeeType === "percent" && raw > 100) throw new FormError("At most 100%", "lateCancelFeeValue");

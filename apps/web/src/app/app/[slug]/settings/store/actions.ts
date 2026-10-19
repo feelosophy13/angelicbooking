@@ -9,7 +9,7 @@ import { f, formAction } from "@/lib/form";
 export const saveStoreSettings = formAction(
   z.object({ slug: z.string(), storeEnabled: f.checkbox(), giftCardsOnline: f.checkbox(), shippingFlat: f.moneyOptional() }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "business.manage");
+    const ctx = await requireAction(d.slug, "settings.business");
     await db.update(schema.businesses).set({ storeEnabled: d.storeEnabled, giftCardsOnline: d.giftCardsOnline, shippingFlatCents: d.shippingFlat }).where(eq(schema.businesses.id, ctx.business.id));
     revalidatePath(`/app/${d.slug}/settings/store`);
     revalidatePath(`/book/${ctx.business.slug}`, "layout");

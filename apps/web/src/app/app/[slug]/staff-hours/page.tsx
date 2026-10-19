@@ -264,7 +264,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
               <li key={l.id} className={`${rowClass} px-4 py-3`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    {multi ? <p className="font-medium">{can(permissions, "business.manage") ? <RowLink href={`${base}/settings/locations/${l.id}`}>{shortLoc(l.id)}</RowLink> : shortLoc(l.id)}</p> : null}
+                    {multi ? <p className="font-medium">{can(permissions, "settings.business") ? <RowLink href={`${base}/settings/locations/${l.id}`}>{shortLoc(l.id)}</RowLink> : shortLoc(l.id)}</p> : null}
                     {l.hours ? (
                       <div className={`grid grid-cols-[2.5rem_auto] gap-x-2 text-xs leading-5 ${multi ? "mt-1 text-stone-600" : "text-stone-700"}`}>
                         {describeHours(l.hours).map((line) => {
@@ -276,7 +276,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
                       <p className="text-xs text-stone-500">No opening hours set</p>
                     )}
                   </div>
-                  {can(permissions, "business.manage") ? <Link href={`${base}/settings/locations/${l.id}`} className={`${rowControl} text-sm text-brand-700 hover:underline`}>Edit</Link> : null}
+                  {can(permissions, "settings.business") ? <Link href={`${base}/settings/locations/${l.id}`} className={`${rowControl} text-sm text-brand-700 hover:underline`}>Edit</Link> : null}
                 </div>
               </li>
             ))}

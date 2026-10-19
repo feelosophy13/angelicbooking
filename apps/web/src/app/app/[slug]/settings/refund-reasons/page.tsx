@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Refund reasons" };
 /** The short list picked on every refund so Reports can group refunds by cause. */
 export default async function RefundReasonsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const reasons = await listRefundReasons(business.id, { includeRetired: true });
   return (
     <>

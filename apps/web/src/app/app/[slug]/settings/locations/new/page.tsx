@@ -10,7 +10,7 @@ import { createLocation } from "../actions";
 
 export default async function NewLocationPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  await requireAction(slug, "business.manage");
+  await requireAction(slug, "settings.business");
   return (
     <FormPage title="New location" backHref={`/app/${slug}/settings/locations`} backLabel="Locations">
       <ActionForm action={createLocation} className="grid gap-3 sm:grid-cols-2">

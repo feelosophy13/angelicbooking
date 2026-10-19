@@ -15,7 +15,7 @@ import { describeHours } from "@/lib/hours";
 
 export default async function LocationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const [rows, idx, people] = await withTenant(business.id, (tx) => Promise.all([
     tx.select().from(schema.locations).orderBy(asc(schema.locations.createdAt)),
     staffLocationIndex(tx),

@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Message log" };
 /** Texts and emails sent to clients, every one with its delivery status. Replies from clients are in the Inbox; wording is in settings. */
 export default async function MessagesPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const rows = await withTenant(business.id, (tx) =>
     tx
       .select({ n: schema.notifications, workflowName: schema.workflows.name, workflowId: schema.workflows.id })

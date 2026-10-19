@@ -114,7 +114,7 @@ export function expandScopes(stored: readonly string[], version: number): ApiSco
  * behind it, so without this anyone who can manage the business could mint a key for payroll or roles their own role can't touch.
  */
 const SCOPE_NEEDS: [prefix: string, action: string][] = [
-  ["pay:", "payroll.view"],
+  ["pay:", "payroll.manage"],
   // The first matching prefix wins, so a scope's read form is listed before the catch-all for its resource.
   ["time:read", "time.view.all"],
   ["time:", "time.edit"],
@@ -135,7 +135,7 @@ const SCOPE_NEEDS: [prefix: string, action: string][] = [
   ["appointments:read", "appointments.read.any"],
   ["appointments:", "appointments.write.any"],
   ["waitlist:", "waitlist.manage"],
-  ["classes:", "appointments.write.any"],
+  ["classes:", "classes.manage.any"],
   ["sales:", "sales.view.all"],
   ["catalog:", "services.manage"],
   ["pricing:", "services.manage"],
@@ -143,8 +143,8 @@ const SCOPE_NEEDS: [prefix: string, action: string][] = [
   ["purchasing:", "inventory.manage"],
   ["supplies:", "inventory.log"],
   // Settings scopes follow the everyday settings permission; opening Settings → API at all (to mint a key) needs integrations.manage.
-  ["settings:", "business.manage"],
-  ["policies:", "business.manage"],
+  ["settings:", "settings.business"],
+  ["policies:", "settings.booking"],
 ];
 
 /** Scopes in `scopes` that a person with these role permissions may not grant. */

@@ -10,7 +10,7 @@ import { MAX_QUICK_REPLIES, normalizeQuickReplies } from "@/lib/notify/quick-rep
 import { setFlash } from "@/lib/flash";
 
 export const saveSmsTemplates = formAction(z.object({ slug: z.string() }), async (d, raw) => {
-  const ctx = await requireAction(d.slug, "business.manage");
+  const ctx = await requireAction(d.slug, "settings.business");
   const templates: Record<string, string> = {};
   for (const k of SMS_TEMPLATE_KEYS) {
     const v = String(raw.get(`t_${k}`) ?? "").trim().slice(0, 500);
@@ -23,7 +23,7 @@ export const saveSmsTemplates = formAction(z.object({ slug: z.string() }), async
 
 /** The Inbox's quick replies: rows posted as qr_title_N / qr_body_N; a row with no body is dropped. */
 export const saveQuickReplies = formAction(z.object({ slug: z.string() }), async (d, raw) => {
-  const ctx = await requireAction(d.slug, "business.manage");
+  const ctx = await requireAction(d.slug, "settings.business");
   const rows: { title: string; body: string }[] = [];
   for (let i = 0; i < MAX_QUICK_REPLIES; i++) {
     if (!raw.has(`qr_body_${i}`)) continue;

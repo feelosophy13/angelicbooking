@@ -20,7 +20,7 @@ const GROUPS: { key: WorkflowTemplate["group"]; title: string; blurb: string }[]
 
 export default async function AutomationsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "business.manage");
+  const { business } = await requireAction(slug, "settings.business");
   const [flows, sms] = await Promise.all([listWorkflows(business), smsAvailableFor(business.id)]);
   const base = `/app/${slug}/marketing/automations`;
   return (

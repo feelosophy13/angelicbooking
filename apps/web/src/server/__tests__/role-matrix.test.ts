@@ -60,7 +60,8 @@ vi.mock("@/lib/mobile-auth", () => ({
 const up = await reachable();
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
-type PageModule = { default: (p: { params: Promise<Record<string, string>>; searchParams: Promise<Record<string, string>> }) => Promise<unknown> };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type PageModule = { default: (p: any) => Promise<unknown> };
 async function render(load: () => Promise<PageModule>, params: Record<string, string> = {}, sp: Record<string, string> = {}) {
   const { default: Page } = await load();
   const el = await Page({ params: Promise.resolve({ slug: "matrix", ...params }), searchParams: Promise.resolve(sp) });
@@ -245,7 +246,8 @@ describe.skipIf(!up)("what each default role sees", () => {
       expect(await denied(pages.appointment, { id: ids.a2 })).toBe(true);
     });
     it("the mobile detail route strips the client the same way", async () => {
-      const { GET } = await import("@/app/api/mobile/appointments/[id]/route");
+      const mod = await import("@/app/api/mobile/appointments/[id]/route");
+      const GET = async (...a: Parameters<typeof mod.GET>): Promise<Response> => (await mod.GET(...a))!;
       as("provider");
       const mine = await (await GET(req(`/api/mobile/appointments/${ids.a1}?slug=matrix`), { params: Promise.resolve({ id: ids.a1 }) })).json();
       expect(mine.client).toEqual({ id: ids.client, firstName: "Jo", lastName: "Lee", notes: "allergic to latex" });
@@ -259,7 +261,8 @@ describe.skipIf(!up)("what each default role sees", () => {
   describe("calendar agenda (mobile)", () => {
     const day = () => instantToISODate(new Date(Date.now() - 86_400_000), "America/New_York");
     const agenda = async () => {
-      const { GET } = await import("@/app/api/mobile/agenda/route");
+      const mod = await import("@/app/api/mobile/agenda/route");
+      const GET = async (...a: Parameters<typeof mod.GET>): Promise<Response> => (await mod.GET(...a))!;
       return (await GET(req(`/api/mobile/agenda?slug=matrix&date=${day()}`))).json();
     };
     it("the desk gets every column with phone, notes and prices", async () => {
@@ -268,23 +271,23 @@ describe.skipIf(!up)("what each default role sees", () => {
       expect(a.items).toHaveLength(2);
       expect(a.items.every((i: { clientPhone?: string }) => i.clientPhone === PHONE)).toBe(true);
       expect(a.items.map((i: { priceCents: number }) => i.priceCents).sort()).toEqual([12000, 9000].sort());
-      expect(a.items[0].notes).toBe("Visit note here");
+      expect(a.items[0]!.notes).toBe("Visit note here");
     });
     it("a provider gets their own column, no phone, their notes and prices", async () => {
       as("provider");
       const a = await agenda();
       expect(a.items).toHaveLength(1);
-      expect(a.items[0].staffId).toBe(ids.jordan);
+      expect(a.items[0]!.staffId).toBe(ids.jordan);
       expect(a.items[0]).not.toHaveProperty("clientPhone");
-      expect(a.items[0].notes).toBe("Visit note here");
-      expect(a.items[0].priceCents).toBe(9000);
+      expect(a.items[0]!.notes).toBe("Visit note here");
+      expect(a.items[0]!.priceCents).toBe(9000);
     });
     it("a role with only its own calendar gets no price and no notes", async () => {
       as("provider", { permissions: only("appointments.read.own") });
       const a = await agenda();
       expect(a.items).toHaveLength(1);
-      expect(a.items[0].priceCents).toBe(0);
-      expect(a.items[0].notes).toBeNull();
+      expect(a.items[0]!.priceCents).toBe(0);
+      expect(a.items[0]!.notes).toBeNull();
       expect(a.items[0]).not.toHaveProperty("depositCents");
     });
   });
