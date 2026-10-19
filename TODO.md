@@ -103,6 +103,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       when the session is used (`offers.ts` redeemCredit), so earlier tickets keep what they were credited. Memberships still credit the
       list price. Tests: core `payroll.test.ts` (house share, fee share, onSheet), DB `payroll-rules.test.ts`.
 
+- [x] Payroll workbook, 2026-10-19: the W-2 tab's Hours worked dates show the weekday ("Mon, Oct 5, 2026"), and Procedures
+      performed has an Amt Paid column (the service amount without tips, the service-commission base) with its own total, like
+      the Products table.
 - [x] Demo seed, 2026-10-19: sale lines (service, product, tip) carry the sale's own close time. They used to default to the seed run
       time, so payroll treated every one of the 368 demo tips as "Tip (added later)" on the seed day; now none are.
 - [x] Client page "Sale" button, 2026-10-18: a secondary button beside Book appointment (shown with `checkout.take`) opens Sales → New

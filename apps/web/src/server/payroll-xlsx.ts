@@ -40,6 +40,8 @@ const SECTION_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor:
 const TOTAL_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFCEFC7" } };
 const CHECK_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD5E8D4" } };
 const DATE_FMT = "mmm d, yyyy";
+/** Hours-worked dates carry the weekday ("Mon, Oct 5, 2026"): a roster reads by day of the week. */
+const WEEKDAY_DATE_FMT = "ddd, mmm d, yyyy";
 const HOURS_FMT = "0.00";
 
 const $ = (c: number) => Math.round(c) / 100;
@@ -68,7 +70,7 @@ class Sheet {
     this.money = moneyFormat(currency);
   }
   /** Write one row. `moneyFrom` (1-based) marks where currency formatting starts; dates and hours get their own formats. */
-  row(values: CellValue[], opts: { fill?: ExcelJS.Fill; bold?: boolean; italic?: boolean; moneyFrom?: number; hoursCols?: number[]; textCols?: number[] } = {}) {
+  row(values: CellValue[], opts: { fill?: ExcelJS.Fill; bold?: boolean; italic?: boolean; moneyFrom?: number; hoursCols?: number[]; textCols?: number[]; weekdayDateCols?: number[] } = {}) {
     this.r++;
     const row = this.ws.getRow(this.r);
     values.forEach((v, i) => {
@@ -77,7 +79,7 @@ class Sheet {
       c.value = v as ExcelJS.CellValue;
       if (opts.fill) c.fill = opts.fill;
       if (opts.bold || opts.italic) c.font = { bold: !!opts.bold, italic: !!opts.italic };
-      if (v instanceof Date) c.numFmt = DATE_FMT;
+      if (v instanceof Date) c.numFmt = opts.weekdayDateCols?.includes(i + 1) ? WEEKDAY_DATE_FMT : DATE_FMT;
       else if (opts.hoursCols?.includes(i + 1)) c.numFmt = HOURS_FMT;
       else if ((typeof v === "number" || (typeof v === "object" && "formula" in v)) && i + 1 >= (opts.moneyFrom ?? 99) && !opts.textCols?.includes(i + 1)) c.numFmt = this.money;
     });
@@ -196,7 +198,7 @@ function simpleSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, o: WorkbookOpts)
     const subtotalRows: number[] = [];
     for (const [w, days] of [...weeks.entries()].sort(([a], [b]) => a.localeCompare(b))) {
       const first = s.r + 1;
-      for (const d of days) s.row(["", excelDate(d.date), hrs(d.minutes)], { hoursCols: [3] });
+      for (const d of days) s.row(["", excelDate(d.date), hrs(d.minutes)], { hoursCols: [3], weekdayDateCols: [2] });
       const minutes = days.reduce((n, d) => n + d.minutes, 0);
       const over = minutes > 40 * 60;
       subtotalRows.push(s.row(["", `Week of ${new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(excelDate(w))} — subtotal`, { formula: `SUM(C${first}:C${s.r})`, result: hrs(minutes) }], { italic: true, bold: over, fill: over ? TOTAL_FILL : undefined, hoursCols: [3] }));
@@ -212,12 +214,13 @@ function simpleSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, o: WorkbookOpts)
   let procHead = 0;
   let procLast = 0;
   if (e.mainRows.length) {
-    s.section("Procedures performed", 6);
-    procHead = s.row(["Appointment Date", "Checkout By", "Customer", "Service", "Card Tip", "Cash Tip"], { fill: COLHEAD_FILL, bold: true });
+    s.section("Procedures performed", 7);
+    // Amt Paid is the service amount without tips: the base the service commission (if any) is figured on.
+    procHead = s.row(["Appointment Date", "Checkout By", "Customer", "Service", "Amt Paid", "Card Tip", "Cash Tip"], { fill: COLHEAD_FILL, bold: true });
     const first = s.r + 1;
-    for (const l of e.mainRows) s.row([excelDate(l.date), l.checkoutBy ?? "", l.customer, l.name, $(l.cardTipCents), $(l.cashTipCents)], { moneyFrom: 5 });
+    for (const l of e.mainRows) s.row([excelDate(l.date), l.checkoutBy ?? "", l.customer, l.name, $(l.amtPaidCents - l.cashTipCents - l.cardTipCents), $(l.cardTipCents), $(l.cashTipCents)], { moneyFrom: 5 });
     procLast = s.r;
-    procRow = s.row(["", "", "", "Total", sum("E", first, s.r, e.mainRows.reduce((n, l) => n + l.cardTipCents, 0)), sum("F", first, s.r, e.mainRows.reduce((n, l) => n + l.cashTipCents, 0))], { fill: TOTAL_FILL, bold: true, moneyFrom: 5 });
+    procRow = s.row(["", "", "", "Total", sum("E", first, s.r, e.mainRows.reduce((n, l) => n + l.amtPaidCents - l.cashTipCents - l.cardTipCents, 0)), sum("F", first, s.r, e.mainRows.reduce((n, l) => n + l.cardTipCents, 0)), sum("G", first, s.r, e.mainRows.reduce((n, l) => n + l.cashTipCents, 0))], { fill: TOTAL_FILL, bold: true, moneyFrom: 5 });
     s.blank();
   }
   const products = e.miscRows.filter((l) => (l.kind === "product" || l.kind === "package") && worthListing(l));
@@ -243,7 +246,7 @@ function simpleSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, o: WorkbookOpts)
     for (const l of e.refundedRows) s.row([excelDate(l.date), l.checkoutBy ?? "", l.customer, l.name, $(l.amtPaidCents)], { moneyFrom: 5 });
     s.blank();
   }
-  if (procHead) s.filter(procHead, procLast, 6);
+  if (procHead) s.filter(procHead, procLast, 7);
 
   // Earnings: pay, then what they keep from the floor, adjustments, tax, Total Check.
   s.row(["Earnings", "Detail", "Amount"], { fill: COLHEAD_FILL, bold: true });
@@ -268,9 +271,9 @@ function simpleSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, o: WorkbookOpts)
   const payRow = s.row(["", "Pay", { formula: `SUM(C${payRows[0]}:C${payRows[payRows.length - 1]})`, result: $(e.wageCents) }], { fill: TOTAL_FILL, bold: true, moneyFrom: 3 });
   const extras: number[] = [];
   if (emp.mainCommissionBps > 0) extras.push(s.row([`Service commission (${(emp.mainCommissionBps / 100).toFixed(emp.mainCommissionBps % 100 ? 1 : 0)}%)`, `on ${$(e.mainRevenueCents).toFixed(2)} of services performed`, $(e.mainCommissionCents)], { moneyFrom: 3 }));
-  if (e.cashTipsCents || procRow) extras.push(s.row(["Cash Tips", "tips on services performed", procRow ? { formula: `F${procRow}`, result: $(e.cashTipsCents) } : $(e.cashTipsCents)], { moneyFrom: 3 }));
+  if (e.cashTipsCents || procRow) extras.push(s.row(["Cash Tips", "tips on services performed", procRow ? { formula: `G${procRow}`, result: $(e.cashTipsCents) } : $(e.cashTipsCents)], { moneyFrom: 3 }));
   if (e.cardTipsCents || procRow) {
-    const cardRow = s.row(["Card Tips", "tips on services performed", procRow ? { formula: `E${procRow}`, result: $(e.cardTipsCents) } : $(e.cardTipsCents)], { moneyFrom: 3 });
+    const cardRow = s.row(["Card Tips", "tips on services performed", procRow ? { formula: `F${procRow}`, result: $(e.cardTipsCents) } : $(e.cardTipsCents)], { moneyFrom: 3 });
     extras.push(cardRow);
     if (emp.ccTipFeeBps) extras.push(s.row([`Fees on CC Tip (${(emp.ccTipFeeBps / 100).toFixed(1)}%)`, "card fee on CC tips", dated ? -$(e.ccTipFeeCents) : { formula: `-ROUND(C${cardRow}*${emp.ccTipFeeBps / 10_000},2)`, result: -$(e.ccTipFeeCents) }], { moneyFrom: 3 }));
   }
