@@ -269,12 +269,12 @@ export default async function ReportsPage({
                 }),
                 (() => {
                   const d = delta(cohorts.lost, cohortsBefore.lost);
-                  return { label: "Lost", value: String(cohorts.lost), sub: cohorts.dueBack ? `of ${cohorts.dueBack} due back by the ${N}-day setting` : `nobody was due back`, change: change(d), good: d === null ? null : !d.up };
+                  return { label: `Didn't come back within ${N} days`, value: String(cohorts.lost), sub: cohorts.dueBack ? `of the ${cohorts.dueBack} clients whose ${N} days ran out this period` : `no client's ${N} days ran out this period`, change: change(d), good: d === null ? null : !d.up };
                 })(),
                 {
-                  label: "Retention",
+                  label: `Came back within ${N} days`,
                   value: ret === null ? "—" : `${ret}%`,
-                  sub: cohorts.dueBack ? `${cohorts.retained} of ${cohorts.dueBack} came back or booked` : "nobody was due back",
+                  sub: cohorts.dueBack ? `${cohorts.retained} of the ${cohorts.dueBack} whose ${N} days ran out this period came back or booked` : `no client's ${N} days ran out this period`,
                   change: ret === null || retBefore === null ? (retBefore === null ? `nothing to compare in the ${periodLabel}` : `${retBefore}% in the ${periodLabel}`) : ret === retBefore ? `no change vs ${periodLabel}` : `${ret > retBefore ? "+" : ""}${ret - retBefore} pts vs ${periodLabel}`,
                   good: ret === null || retBefore === null || ret === retBefore ? null : ret > retBefore,
                 },
@@ -291,7 +291,7 @@ export default async function ReportsPage({
           </div>
           <div className="border-t border-stone-200">
             <p className="flex flex-wrap items-baseline gap-x-2 px-4 pt-3 text-sm">
-              <span className="font-medium text-stone-700">Lapsed right now: {lapsed.count} {lapsed.count === 1 ? "client" : "clients"}</span>
+              <span className="font-medium text-stone-700">No visit in the last {cohorts.lapsedDays} days, as of today: {lapsed.count} {lapsed.count === 1 ? "client" : "clients"}</span>
               <span className="text-xs text-stone-500">{lapsed.count ? `${money(lapsed.revenueCents)} spent in the year before they lapsed${lapsed.count > lapsed.top.length ? ` · the ${lapsed.top.length} biggest spenders below` : ""}` : `nobody has gone ${cohorts.lapsedDays} days without a visit and nothing booked`}</span>
             </p>
             {lapsed.top.length ? (
@@ -319,9 +319,8 @@ export default async function ReportsPage({
               A visit is a completed appointment; revenue is closed sales less tips.
               {" "}New: clients whose first visit ever was in this period.
               {" "}Returning: clients who visited in this period and had visited before.
-              {" "}Lost: clients due back this period, by your {cohorts.lapsedDays}-day setting, who did not return within {cohorts.lapsedDays} days of their last visit and had nothing booked.
-              {" "}Retention: of the clients due back this period, the share who came back in time or had a visit booked.
-              {" "}Lapsed right now: clients whose last visit was {cohorts.lapsedDays} or more days ago with nothing booked, as of today, whatever the period.
+              {" "}The two {cohorts.lapsedDays}-day tiles look at the clients whose {cohorts.lapsedDays} days since their last visit ran out during this period (your &quot;lapsed after&quot; setting): &quot;Came back&quot; is the share of them who visited again within those {cohorts.lapsedDays} days or had a visit booked; &quot;Didn&apos;t come back&quot; is the rest.
+              {" "}The line below is as of today, whatever the period: clients whose last visit was {cohorts.lapsedDays} or more days ago with nothing booked, the people to call.
               {locationFilter ? ` Visits and sales at ${locName(locationFilter)} anchor these; coming back or booking counts at any location.` : ""}
             </p>
             <p>

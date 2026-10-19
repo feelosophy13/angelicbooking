@@ -139,6 +139,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       service filter is on; with a location filter, visits and sales at that site anchor the counts, coming back or booking counts
       anywhere. The lower grid's cards now contain their wide tables at phone width (`min-w-0`). `clientCohorts` and `lapsedClients`
       in `server/sales.ts`; DB test `reports-clients.test.ts`.
+- [x] Clients card wording, 2026-10-19: the owner found "Lost", "Retention" and "due back" unreadable. The tiles now say what they
+      count, with the business's own number in the label: "Didn't come back within 90 days" and "Came back within 90 days" (of the
+      clients whose 90 days since their last visit ran out in the period), and the line below reads "No visit in the last 90 days, as
+      of today". Caption and CSV headers say the same; no "Lost", "Retention" or "due back" anywhere on the page.
 - [ ] Reports Clients card: revenue is by sale date with the client on the ticket, so a walk-in ticket with no client, or a visit paid
       on a later day, moves money between cohorts and periods; a client whose only history is imported sales (no completed
       appointment) is never New or Returning; a client who came back late counts as Lost in the period their clock ran out and as
