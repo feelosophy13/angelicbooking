@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { TZDate } from "@date-fns/tz";
 import { cn, formatDateLong } from "@/lib/utils";
 import { moveAppointmentItem, quickStatus, resizeAppointmentItem } from "./actions";
-import { Check, Link2, LogIn } from "lucide-react";
+import { Check, LogIn } from "lucide-react";
 import type { CalTip } from "@/lib/calendar-tip";
 import { CalendarTip, type AnchorRect } from "./calendar-tooltip";
 import { QuickCreate, type QuickCreateAt, type QuickCreateData } from "./quick-create";
@@ -206,22 +206,14 @@ export function CalendarGrid(props: {
   const panelItem = panelKey ? items.find((i) => i.groupKey === panelKey) ?? null : null;
   useEffect(() => { if (panelKey && !panelItem) setPanelKey(null); }, [panelKey, panelItem]);
   const openPanel = (card: Card) => { hideTip(); setPanelKey(card.key); };
-  const linkedId = hover?.appointmentId ?? panelItem?.appointmentId ?? null;
   // The hover card: shown after a short pause over an appointment (mouse or keyboard focus), never while dragging or on touch.
-  const [hover, setHover] = useState<{ tip: CalTip; anchor: AnchorRect; appointmentId: string } | null>(null);
+  const [hover, setHover] = useState<{ tip: CalTip; anchor: AnchorRect } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTip = () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); hoverTimer.current = null; setHover(null); };
-  const showTip = (el: HTMLElement, card: Card, delay: number) => {
+  const showTip = (el: HTMLElement, tip: CalTip, delay: number) => {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => { const r = el.getBoundingClientRect(); setHover({ tip: card.first.tip, appointmentId: card.first.appointmentId, anchor: { left: r.left, right: r.right, top: r.top, bottom: r.bottom } }); }, delay);
+    hoverTimer.current = setTimeout(() => { const r = el.getBoundingClientRect(); setHover({ tip, anchor: { left: r.left, right: r.right, top: r.top, bottom: r.bottom } }); }, delay);
   };
-  // A visit with services by different providers is one appointment drawn as several cards (one per column). Those cards carry a link
-  // mark, and hovering or opening one of them lights up its siblings, so the desk sees the whole visit across the columns.
-  const multiProvider = useMemo(() => {
-    const staffByAppt = new Map<string, Set<string>>();
-    for (const i of items) staffByAppt.set(i.appointmentId, (staffByAppt.get(i.appointmentId) ?? new Set()).add(i.staffId));
-    return new Set([...staffByAppt].filter(([, set]) => set.size > 1).map(([id]) => id));
-  }, [items]);
   const [pending, startTransition] = useTransition();
   const colWidth = useRef(0);
   // Quick create: a click on empty grid, or a range drawn on it, opens a popover beside it (the drawn range stays as a ghost).
@@ -641,9 +633,9 @@ export function CalendarGrid(props: {
                       role="button"
                       tabIndex={0}
                       onPointerDown={(e) => { hideTip(); if (draggable) onPointerDown(e, card); }}
-                      onMouseEnter={(e) => { if (lastPointer.current !== "touch" && !dragRef.current) showTip(e.currentTarget, card, 350); }}
+                      onMouseEnter={(e) => { if (lastPointer.current !== "touch" && !dragRef.current) showTip(e.currentTarget, card.first.tip, 350); }}
                       onMouseLeave={hideTip}
-                      onFocus={(e) => showTip(e.currentTarget, card, 0)}
+                      onFocus={(e) => showTip(e.currentTarget, card.first.tip, 0)}
                       onBlur={hideTip}
                       onClick={() => {
                         if (suppressClick.current) return;
@@ -652,7 +644,7 @@ export function CalendarGrid(props: {
                       onKeyDown={(e) => e.key === "Enter" && openPanel(card)}
                       data-card
                       aria-label={`${card.first.title}, ${card.first.subtitle}, ${fmt(card.startMin)} to ${fmt(card.endMin)}`}
-                      className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm [-webkit-touch-callout:none]", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", (dragging || resizing) && "z-30 ring-2 ring-brand-500 shadow-lg", drag?.key === card.key && drag.touch && "z-30 scale-[1.03] ring-2 ring-brand-500 shadow-lg", linkedId === card.first.appointmentId && multiProvider.has(card.first.appointmentId) && !dragging && "ring-2 ring-stone-500")}
+                      className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm [-webkit-touch-callout:none]", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", (dragging || resizing) && "z-30 ring-2 ring-brand-500 shadow-lg", drag?.key === card.key && drag.touch && "z-30 scale-[1.03] ring-2 ring-brand-500 shadow-lg")}
                       style={{
                         top: top(startMin),
                         height,
@@ -689,11 +681,6 @@ export function CalendarGrid(props: {
                             </div>
                           ))
                         : null}
-                      {multiProvider.has(card.first.appointmentId) && !props.overview ? (
-                        <span className="pointer-events-none absolute bottom-1 right-1 rounded bg-white/80 p-0.5 text-stone-600" title="Part of a visit with another provider" aria-label="Part of a visit with another provider">
-                          <Link2 className="h-3 w-3" />
-                        </span>
-                      ) : null}
                       {card.gaps.map((g, i) => (
                         <div key={i} className="pointer-events-none absolute inset-x-0 bg-[repeating-linear-gradient(135deg,transparent_0_6px,rgba(255,255,255,0.55)_6px_12px)]" style={{ top: (g.from - card.startMin) * PX_PER_MIN, height: (g.to - g.from) * PX_PER_MIN }}>
                           {props.overview ? null : <span className="absolute inset-0 flex items-center justify-center text-[10px] uppercase tracking-wide opacity-60">processing</span>}
