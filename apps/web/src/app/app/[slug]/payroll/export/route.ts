@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { instantToISODate } from "@angelic/core";
-import { requireAction } from "@/lib/tenant";
+import { can } from "@angelic/core";
+import { requireAnyAction } from "@/lib/tenant";
 import { defaultPeriod, runPayroll } from "@/server/payroll";
 import { buildPayrollWorkbook, buildW2Workbook } from "@/server/payroll-xlsx";
 import { formatDateLong } from "@/lib/utils";
@@ -10,7 +11,9 @@ import { schema, withTenant } from "@angelic/db";
 
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, user } = await requireAction(slug, "payroll.view");
+  // Everyone's pay sheet with "Run payroll for everyone"; "See their own pay sheet" exports only the person's own row (never the W-2 summary).
+  const { business, user, permissions, staffId: myStaffId } = await requireAnyAction(slug, "payroll.manage", "payroll.view.own");
+  const manage = can(permissions, "payroll.manage");
   const url = new URL(req.url);
   const today = instantToISODate(new Date(), business.timezone);
   const isDate = (s: string | null) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -18,14 +21,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const end = isDate(url.searchParams.get("end")) ? url.searchParams.get("end")! : defaultPeriod(today).end;
   // Same default as the Payroll page: on unless the link says "0".
   const overtime = url.searchParams.getAll("overtime").at(-1) !== "0";
-  const kind = url.searchParams.get("kind") === "w2" ? "w2" : "full";
+  const kind = url.searchParams.get("kind") === "w2" && manage ? "w2" : "full";
   const locationId = url.searchParams.get("location") || null;
-  const result = await runPayroll(business, { start, end }, overtime, locationId);
+  const full = await runPayroll(business, { start, end }, overtime, locationId);
+  const result = manage ? full : { ...full, employees: full.employees.filter((e) => e.employee.staffId === myStaffId), adjustmentRows: full.adjustmentRows.filter((a) => a.staffId === myStaffId), rateChanges: full.rateChanges.filter((c) => c.staffId === myStaffId) };
   const locationName = locationId ? (await withTenant(business.id, (tx) => tx.query.locations.findFirst({ where: eq(schema.locations.id, locationId), columns: { name: true } })))?.name : null;
   const periodLabel = `${formatDateLong(start)} - ${formatDateLong(end)}${locationName ? ` - ${locationName}` : ""}`;
   const buf = kind === "w2" ? await buildW2Workbook(result, { salon: business.name, periodLabel }) : await buildPayrollWorkbook(result, { salon: business.name, periodLabel });
   // Pay sheets carry everyone's pay: note who downloaded which.
-  await auditEvent(business.id, user.id, "payroll.export", "payroll", `${start}_${end}`, { kind, overtime, locationId });
+  await auditEvent(business.id, user.id, "payroll.export", "payroll", `${start}_${end}`, { kind, overtime, locationId, own: !manage });
   const name = `${start.replace(/-/g, "")}_${end.replace(/-/g, "")}_${kind === "w2" ? "W2_Summary" : business.slug}.xlsx`;
   return new NextResponse(new Uint8Array(buf), {
     headers: {

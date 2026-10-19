@@ -142,6 +142,11 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       everyone. The four built-in roles' descriptions are rewritten for a salon owner (and refreshed in stored rows that still had the old text).
       Not done: `reviews.reply` is not in the catalog yet (the reply feature is phase 3), so nothing is back-filled for it.
 
+- [x] Phase 2 money (M3, M4, M5), 2026-10-19: Reports shows the per-staff table only with `reports.staff`; Payroll opens as "My pay" for
+      `payroll.view.own` alone (the page and the workbook export filtered to the person's own row, no W-2 summary, options, finalize or
+      adjustments); the tax-exempt switch needs `checkout.discount`; adding a tip to a paid ticket, or changing tips once a ticket is paid,
+      needs `checkout.tips.adjust` (the forms hide without it).
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

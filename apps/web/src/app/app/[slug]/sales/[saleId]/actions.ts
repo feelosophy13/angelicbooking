@@ -210,6 +210,9 @@ export async function applyDiscount(_prev: SaleActionState, formData: FormData):
 export async function applyTips(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.parse(Object.fromEntries(formData));
   const ctx = await ctxFor(d.slug, d.saleId);
+  // Setting tips while the ticket is open is part of checking out; changing them once it is paid is "Add or move tips after payment" (M5).
+  const current = await withTenant(ctx.business.id, (tx) => tx.query.sales.findFirst({ where: eq(dbSchema.sales.id, d.saleId), columns: { status: true } }));
+  if (current && current.status !== "open" && !can(ctx.permissions, "checkout.tips.adjust")) throw new PermissionError();
   const tips: { staffId: string | null; amountCents: number; method: "cash" | "card" | null }[] = [];
   for (const [k, v] of formData.entries()) {
     if (!k.startsWith("tip_")) continue;
@@ -562,9 +565,10 @@ export async function saveSaleNote(_prev: SaleActionState, formData: FormData): 
   return { ok: true };
 }
 
+/** Tax-exempt is a price change (M5): the discount permission. */
 export async function toggleTaxExempt(formData: FormData) {
   const d = base.extend({ exempt: z.enum(["1", "0"]) }).parse(Object.fromEntries(formData));
-  const ctx = await ctxFor(d.slug, d.saleId);
+  const ctx = await discountCtx(d.slug, d.saleId);
   await setTaxExempt({ businessId: ctx.business.id, saleId: d.saleId, exempt: d.exempt === "1", actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
   revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
 }
@@ -704,6 +708,8 @@ export async function addLateTip(_prev: SaleActionState, formData: FormData): Pr
   const d = base.extend({ staffId: z.string().min(1, "Choose who the tip is for."), amount: z.string(), paidIn: z.string().min(1) }).safeParse(Object.fromEntries(formData));
   if (!d.success) return { error: d.error.issues[0]?.message ?? "Check the tip details." };
   const ctx = await ctxFor(d.data.slug, d.data.saleId);
+  // A tip on a ticket that is already paid is "Add or move tips after payment" (M5).
+  if (!can(ctx.permissions, "checkout.tips.adjust")) throw new PermissionError();
   const cents = parseMoney(d.data.amount);
   if (cents === null || cents <= 0) return { error: "Enter a tip amount like 5 or 7.50." };
   try {

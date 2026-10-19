@@ -6,7 +6,7 @@ import { dateShort } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Payroll" };
 import { can, instantToISODate, rateLabel } from "@angelic/core";
-import { requireAction } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
 import { defaultPeriod, driftFromSnapshot, getFinalizedRun, listPayrollRuns, runPayroll } from "@/server/payroll";
 import { formatDateLong, formatMoney } from "@/lib/utils";
 import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice } from "@/components/ui";
@@ -20,7 +20,9 @@ import { schema, withTenant } from "@angelic/db";
 export default async function PayrollPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ start?: string; end?: string; overtime?: string | string[]; location?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions } = await requireAction(slug, "payroll.view");
+  // Everyone's pay with "Run payroll for everyone"; with "See their own pay sheet" alone, the page is this person's own row and nothing else.
+  const { business, permissions, staffId: myStaffId } = await requireAnyAction(slug, "payroll.manage", "payroll.view.own");
+  const manage = can(permissions, "payroll.manage");
   const today = instantToISODate(new Date(), business.timezone);
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
   const def = defaultPeriod(today);
@@ -33,7 +35,8 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   const period = { start, end };
   const locations = await listLocations(business.id);
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
-  const [result, finalized, runs] = await Promise.all([runPayroll(business, period, overtime, locationFilter), getFinalizedRun(business.id, period), listPayrollRuns(business.id)]);
+  const [full, finalized, runs] = await Promise.all([runPayroll(business, period, overtime, locationFilter), getFinalizedRun(business.id, period), listPayrollRuns(business.id)]);
+  const result = manage ? full : { ...full, employees: full.employees.filter((e) => e.employee.staffId === myStaffId), adjustmentRows: full.adjustmentRows.filter((a) => a.staffId === myStaffId), rateChanges: full.rateChanges.filter((c) => c.staffId === myStaffId) };
   const money = (c: number) => formatMoney(c, business.currency);
   // "6.00 OT, 1.00 double, incl. $40.00 OT on commission"
   const otText = (e: (typeof result.employees)[number]) =>
@@ -49,12 +52,12 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
       .where(and(gte(schema.timeEntries.date, start), lte(schema.timeEntries.date, end), ilike(schema.timeEntries.note, "%Auto clock-out%"))),
   );
   // A finalized period should not change; if it does (a tip added to an old ticket, an edit made before periods were locked), say who and by how much.
-  const drift = finalized && !locationFilter && finalized.overtime === overtime ? driftFromSnapshot(finalized.snapshot, result) : [];
+  const drift = manage && finalized && !locationFilter && finalized.overtime === overtime ? driftFromSnapshot(finalized.snapshot, result) : [];
   const totals = active.reduce((t, e) => ({ total: t.total + e.totalCents, tips: t.tips + e.cashTipsCents + e.cardTipsCents, rev: t.rev + e.serviceRevenueCents }), { total: 0, tips: 0, rev: 0 });
 
   return (
     <>
-      <PageHeader title="Payroll">
+      <PageHeader title={manage ? "Payroll" : "My pay"}>
         {can(permissions, "reports.view") ? <Link href={`/app/${slug}/reports?from=${start}&to=${end}${locationFilter ? `&location=${locationFilter}` : ""}`} className="text-sm text-brand-700 underline">Sales report for this period</Link> : null}
         <form className="flex flex-wrap items-center gap-2">
           <Input type="date" name="start" defaultValue={start} className="w-40" aria-label="Period start" />
@@ -62,12 +65,12 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <Input type="date" name="end" defaultValue={end} className="w-40" aria-label="Period end" />
           {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
           <Button type="submit" variant="secondary" size="sm">Run</Button>
-          <details className="relative">
+          {manage ? <details className="relative">
             <summary className="cursor-pointer select-none rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden">Options{overtime ? " · overtime on" : ""}</summary>
             <div className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-stone-200 bg-white p-3 text-sm shadow-lg">
               <OvertimeOptions overtime={overtime} rule={business.overtimeRule} />
             </div>
-          </details>
+          </details> : null}
         </form>
         <form id="ot-rule" action={setOvertimeRule} className="hidden">
           <input type="hidden" name="slug" value={slug} />
@@ -110,8 +113,8 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <h2 className="text-sm font-semibold text-stone-600">Summary</h2>
           {active.length ? <div className="flex gap-2">
             <LinkButton href={`/app/${slug}/payroll/export?${qs}`} size="sm"><Download className="h-4 w-4" /> Workbook (.xlsx)</LinkButton>
-            <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=w2`} size="sm"><Download className="h-4 w-4" /> W-2 summary</LinkButton>
-            {locationFilter ? null : <form action={finalize}>
+            {manage ? <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=w2`} size="sm"><Download className="h-4 w-4" /> W-2 summary</LinkButton> : null}
+            {locationFilter || !manage ? null : <form action={finalize}>
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="start" value={start} />
               <input type="hidden" name="end" value={end} />
@@ -211,7 +214,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <Card className="p-4">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="font-medium">Adjustments</h2>
-              <LinkButton href={`/app/${slug}/payroll/adjustments/new?start=${start}&end=${end}`} size="sm"><Plus className="h-4 w-4" /> Add</LinkButton>
+              {manage ? <LinkButton href={`/app/${slug}/payroll/adjustments/new?start=${start}&end=${end}`} size="sm"><Plus className="h-4 w-4" /> Add</LinkButton> : null}
             </div>
             <p className="mb-2 text-xs text-stone-500">One-off lines for this period: training pay, transfers, corrections.</p>
             {result.adjustmentRows.length === 0 ? <p className="text-sm text-stone-500">None for this period.</p> : (
@@ -219,7 +222,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                 {result.adjustmentRows.map((a) => (
                   <li key={a.id} className="flex items-center justify-between py-1.5">
                     <span>{result.employees.find((e) => e.employee.staffId === a.staffId)?.employee.name} · {a.label} · {money(a.amountCents)}</span>
-                    <form action={deleteAdjustment}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={a.id} /><ConfirmSubmit title="Remove this adjustment?" confirmLabel="Remove" variant="ghost" className="text-stone-500 hover:text-red-600">Remove</ConfirmSubmit></form>
+                    {manage ? <form action={deleteAdjustment}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={a.id} /><ConfirmSubmit title="Remove this adjustment?" confirmLabel="Remove" variant="ghost" className="text-stone-500 hover:text-red-600">Remove</ConfirmSubmit></form> : null}
                   </li>
                 ))}
               </ul>

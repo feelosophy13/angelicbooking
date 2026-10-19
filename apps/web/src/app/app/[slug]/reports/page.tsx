@@ -68,7 +68,7 @@ export default async function ReportsPage({
     await refundsByItem(tx, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz)),
   ] as const);
   // Pay is not split by service, so it is left out while a service filter is on.
-  const canPayroll = can(permissions, "payroll.view") && !scoped;
+  const canPayroll = can(permissions, "payroll.manage") && !scoped;
   const [{ sales, byStaff, byMethod, byService, byCategory, appts, byLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation }, prev, categories, pay, payBefore, payByLoc] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter, serviceIds),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter, serviceIds),
@@ -306,7 +306,7 @@ export default async function ReportsPage({
             ) : null}
           </Card>
         ) : null}
-        <Card className="lg:col-span-2">
+        {can(permissions, "reports.staff") ? <Card className="lg:col-span-2">
           <h2 className="flex items-center justify-between border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">
             Staff
             {canPayroll ? <Link href={`/app/${slug}/payroll?start=${from}&end=${to}${lq}`} className="text-xs font-normal text-brand-700 hover:underline">Open in Payroll</Link> : null}
@@ -382,7 +382,7 @@ export default async function ReportsPage({
               ) : null}
             </>
           )}
-        </Card>
+        </Card> : null}
         <Card className={scoped ? "hidden" : ""}>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Refunds by reason</h2>
           {byReason.length === 0 ? <div className="p-4"><Empty title="No refunds in this range" /></div> : (
@@ -395,7 +395,7 @@ export default async function ReportsPage({
               </tbody>
             </table></div>
           )}
-          {can(permissions, "business.manage") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/refund-reasons`} className="text-brand-700 underline">Settings → Refund reasons</Link>.</p> : null}
+          {can(permissions, "settings.business") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/refund-reasons`} className="text-brand-700 underline">Settings → Refund reasons</Link>.</p> : null}
         </Card>
         {byItem.length ? (
           <Card className={scoped ? "hidden" : ""}>
@@ -423,7 +423,7 @@ export default async function ReportsPage({
               </tbody>
             </table></div>
           )}
-          {can(permissions, "business.manage") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/cancellation-reasons`} className="text-brand-700 underline">Settings → Cancellation reasons</Link>. Cancellations made before reasons existed show as &quot;No reason given&quot;.</p> : null}
+          {can(permissions, "settings.business") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/cancellation-reasons`} className="text-brand-700 underline">Settings → Cancellation reasons</Link>. Cancellations made before reasons existed show as &quot;No reason given&quot;.</p> : null}
         </Card>
         {business.loyaltyEnabled && !scoped ? (
           <Card>

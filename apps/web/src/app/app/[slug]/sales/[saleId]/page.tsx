@@ -51,6 +51,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const data = await getSale(business.id, saleId);
   if (!data) notFound();
   const canDiscount = can(permissions, "checkout.discount");
+  const canAdjustTips = can(permissions, "checkout.tips.adjust"); // tips on a paid ticket (M5)
   const { sale, lines, payments, refunds, credits: creditLedger, client, staff, products } = data;
   const cur = business.currency;
   const money = (c: number) => formatMoney(c, cur);
@@ -226,7 +227,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               <Disclosure title="Discount" hint={promo ? `code ${promo.code} applied` : sale.discountCents > 0 ? `${money(sale.discountCents)} off` : undefined} open={!!promo || sale.discountCents > 0}>
                 <DiscountForm key={`${sale.discountCents}:${sale.discountNote ?? ""}:${sale.promoCodeId ?? ""}`} action={applyDiscount} promoAction={applyPromo} removePromoAction={removePromo} slug={slug} saleId={sale.id} canDiscount={canDiscount} current={typedDiscount} note={sale.promoCodeId ? null : sale.discountNote} promo={promo?.code ?? null} />
               </Disclosure>
-              {goods.length > 0 ? (
+              {goods.length > 0 && (open || canAdjustTips) ? (
                 <Card className="p-4">
                   <h2 className="mb-2 font-medium">Tips</h2>
                   <TipsForm key={JSON.stringify([currentTips, currentTipMethods])} action={applyTips} slug={slug} saleId={sale.id} staff={tipStaff} current={currentTips} currentMethods={currentTipMethods} baseCents={Math.max(0, sale.subtotalCents - sale.discountCents)} currency={cur} choices={tipStaff.length ? [] : staff.map((x) => ({ id: x.id, name: x.displayName }))} />
@@ -323,7 +324,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               {sale.closedAt ? <p className="text-sm text-stone-500">{fmt.format(sale.closedAt)}</p> : null}
             </Card>
           )}
-          {sale.status === "paid" && goods.length > 0 ? (
+          {sale.status === "paid" && goods.length > 0 && canAdjustTips ? (
             <Disclosure title="Add a tip" hint="after the sale was paid">
               <p className="mb-2 text-xs text-stone-500">Added to the sale and the stylist&apos;s pay.{savedCards.length === 0 ? " To charge it to a card, attach a client who has a card on file." : ""}</p>
               <LateTipForm action={addLateTip} slug={slug} saleId={sale.id} staff={tipStaff.length ? tipStaff : staff.map((x) => ({ id: x.id, name: x.displayName }))} cards={savedCards.map((c) => ({ id: c.id, brand: c.brand, last4: c.last4 }))} />
