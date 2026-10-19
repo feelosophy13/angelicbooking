@@ -128,8 +128,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       which fields appear for whom (phone and email, spend, other staff's days and hours, prices, stock, other people's tickets, review
       authors) and that refused pages refuse. The permission tests in `packages/core` pin the defaults table row by row; `nav.test.ts`,
       `security-guards.test.ts`, `visibility.test.ts` and `calendar-tip.test.ts` cover the sidebar, the API scope map, the helpers and the
-      hover card. Known flake, not from this work: `payroll-clawback.test.ts` compares dates across midnight and fails when run between
-      midnight local time and midnight in the business's zone.
+      hover card. (The `payroll-clawback.test.ts` flake seen here was the DST gap fixed 2026-10-19, see "Payroll overtime" below.)
 
 - [x] Phase 2 catalog, 2026-10-19 (migration 0120): new permissions `clients.photos.own`, `reports.staff`, `payroll.manage` (replacing
       `payroll.view`, a 1:1 rename), `payroll.view.own`, `checkout.tips.adjust`, `classes.manage.own` / `classes.manage.any`,
@@ -412,6 +411,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       added to an old ticket on a later day is paid in the period it was added ("Tip (added later)"), so a finalized period no longer
       drifts; sale lines now record when they were added (existing lines: when their sale closed). Tests: core `payroll.test.ts`,
       `payroll-clawback.test.ts`.
+- [x] `payroll-clawback.test.ts` made date-independent, 2026-10-19: the two "20 days later" tests stamped the refund and the tip at
+      `now + 20 × 24 h` but expected the calendar day `today + 20`; when that span crossed a DST change (any run from 2026-10-12 to
+      2026-11-01, between midnight and 1 am local) the instant fell on the day before. Back-dated rows are now stamped at noon in the
+      business's zone on the calendar day, and `TEST_NOW=<ISO instant>` runs the file as if on another date (checked on 2026-10-19 00:30,
+      2026-10-31 23:30, 2026-11-01, 2026-12-31, 2027-03-13 23:30). Same commit series: `packages/core/src/permissions.ts` had an
+      unescaped quote in the "Send marketing" description that stopped the whole web suite from compiling.
 - [ ] Still open from payroll: the 14-hour auto-close is unchanged; no "my earnings" view or 1099 YTD; California's meal/rest-break
       premiums and split-shift pay aren't computed; salary is flat per run. (Bonuses in the overtime rate and overtime on by default: done.)
 - [x] Scheduled automations, 2026-10-16 (migration 0099): "We miss you" (no visit) only reaches clients whose last visit was N to N+7 days

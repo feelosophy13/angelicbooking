@@ -2,12 +2,16 @@
  * Integration test: refunds are booked on the day they happen (a refund after a period was paid comes off the next one, and the paid
  * period re-runs the same), refunds to store credit claw back too, and finalized periods lock their hours, adjustments and pay rates.
  * Needs Postgres at DATABASE_URL (the app role, RLS forced); skipped otherwise. Nothing here calls a third party.
+ *
+ * Dates: "today" is the clock's date in the business's zone, and every row this file back- or forward-dates is stamped at noon local on a
+ * calendar day (`at()`), never `now ± n × 24 h` (that lands a day off when the span crosses a DST change and the run is within an hour of
+ * midnight). TEST_NOW=<ISO instant> runs the file as if on another date.
  */
 import "../../../../../packages/db/src/env";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
-import { instantToISODate } from "@angelic/core";
+import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { addServiceLine, openWalkInSale, recordManualPayment, refundPayment, refundToStoreCredit, getSale } from "@/server/sales";
 import { buildPayrollLines } from "@/server/payroll";
 import { assertPeriodOpen, PayrollLockedError } from "@/server/payroll-lock";
@@ -28,6 +32,8 @@ describe.skipIf(!up)("payroll: refunds by date, finalized periods locked", () =>
   let business: typeof schema.businesses.$inferSelect;
   let today: string;
   beforeAll(async () => {
+    // TEST_NOW=<ISO instant> pins the clock (Date only; timers stay real so the pool works) to check the file on another calendar date.
+    if (process.env.TEST_NOW) vi.useFakeTimers({ toFake: ["Date"], now: new Date(process.env.TEST_NOW) });
     kit = await setupKit([]);
     userId = `u_${kit.A}`;
     await db.insert(schema.user).values({ id: userId, name: "Tester", email: `${userId}@example.test`, emailVerified: true });
@@ -44,6 +50,7 @@ describe.skipIf(!up)("payroll: refunds by date, finalized periods locked", () =>
     today = instantToISODate(new Date(), business.timezone);
   });
   afterAll(async () => {
+    vi.useRealTimers();
     await kit?.teardown();
     if (userId) await db.delete(schema.user).where(eq(schema.user.id, userId));
   });
@@ -56,6 +63,8 @@ describe.skipIf(!up)("payroll: refunds by date, finalized periods locked", () =>
     const d = (await getSale(kit.A, saleId))!;
     return { saleId, number: d.sale.number, paymentId: d.payments[0]!.id };
   }
+  /** Noon in the business's zone on a calendar day: an instant that is unambiguously that day. */
+  const at = (date: string) => zonedToInstant(date, "12:00", business.timezone);
   const mine = async (start: string, end: string, saleNumber: number) => (await buildPayrollLines(business, { start, end })).filter((l) => l.saleNumber === saleNumber).map((l) => [l.date, l.amtPaidCents]);
 
   it("books a later refund on its own day: the paid period re-runs the same, the next one takes it back", async () => {
@@ -63,7 +72,7 @@ describe.skipIf(!up)("payroll: refunds by date, finalized periods locked", () =>
     await refundPayment({ businessId: kit.A, accountId: null, paymentId, amountCents: 4000, reason: "unhappy", actorUserId: userId, taxRateBps: 0 });
     // Pretend the refund happened 20 days after the visit.
     const later = shiftISODate(today, 20);
-    await withTenant(kit.A, (tx) => tx.update(schema.refunds).set({ createdAt: new Date(Date.now() + 20 * 86_400_000) }).where(eq(schema.refunds.paymentId, paymentId)));
+    await withTenant(kit.A, (tx) => tx.update(schema.refunds).set({ createdAt: at(later) }).where(eq(schema.refunds.paymentId, paymentId)));
     expect(await mine(today, today, number)).toEqual([[today, 10_000]]);
     expect(await mine(shiftISODate(today, 14), shiftISODate(today, 27), number)).toEqual([[later, -4000]]);
     expect((await buildPayrollLines(business, { start: later, end: later })).find((l) => l.saleNumber === number)!.name).toMatch(/^Refund · /);
@@ -72,6 +81,8 @@ describe.skipIf(!up)("payroll: refunds by date, finalized periods locked", () =>
   it("claws back a refund given as store credit", async () => {
     const { number, paymentId } = await paidSale();
     await refundToStoreCredit({ businessId: kit.A, paymentId, amountCents: 2500, reason: null, actorUserId: userId });
+    // The ledger row is stamped by Postgres (now()), which TEST_NOW cannot move: date it today like the sale.
+    await withTenant(kit.A, (tx) => tx.update(schema.storeCreditLedger).set({ createdAt: at(today) }).where(eq(schema.storeCreditLedger.paymentId, paymentId)));
     expect(await mine(today, today, number)).toEqual([[today, 10_000], [today, -2500]]);
   });
 
@@ -89,7 +100,7 @@ describe.skipIf(!up)("payroll: refunds by date, finalized periods locked", () =>
     const { saleId, number } = await paidSale();
     // A $15 cash tip added 20 days after the visit (as addTipAfterPayment would, dated then).
     const later = shiftISODate(today, 20);
-    await withTenant(kit.A, (tx) => tx.insert(schema.saleLines).values({ businessId: kit.A, saleId, kind: "tip", tipMethod: "cash", staffId, name: "Tip", quantity: 1, unitCents: 1500, amountCents: 1500, createdAt: new Date(Date.now() + 20 * 86_400_000) }));
+    await withTenant(kit.A, (tx) => tx.insert(schema.saleLines).values({ businessId: kit.A, saleId, kind: "tip", tipMethod: "cash", staffId, name: "Tip", quantity: 1, unitCents: 1500, amountCents: 1500, createdAt: at(later) }));
     expect(await mine(today, today, number)).toEqual([[today, 10_000]]);
     const next = (await buildPayrollLines(business, { start: shiftISODate(today, 14), end: shiftISODate(today, 27) })).filter((l) => l.saleNumber === number);
     expect(next.map((l) => [l.date, l.name, l.cashTipCents])).toEqual([[later, "Tip (added later)", 1500]]);
