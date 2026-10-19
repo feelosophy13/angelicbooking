@@ -191,6 +191,13 @@ The calendar behaves like Google Calendar where that helps a desk, and these are
   (the end only). On a touch screen press and hold lifts a card; a slide or scroll cancels the lift.
 - **Client-side toasts** use `toast()` from `components/toaster.tsx`: one at a time, optional single action (Undo, Open). Server
   actions keep using `setFlash`.
+- **Who and how it is drawn are the viewer's, kept in the browser; the week's first day is the business's.** The provider chips
+  (`provider-chips.tsx`, `?hide=`, remembered like the location pills) and the Display menu (`calendar-display.tsx`: colour by provider or
+  by service category, hour height) are per-browser preferences and never change data; `businesses.week_start` (Settings → Profile) is a
+  business setting and drives Week, Month and the mini month through `startOfWeek` / `weekdayLabels` in `lib/calendar-nav.ts`. Never
+  hard-code Monday. Category colours come from `lib/calendar-palette.ts` in menu order.
+- **Four views, one header.** Day, Week, Month and Agenda (the coming seven days as a list, `agenda-list.tsx`) share the header; a view's
+  own controls go in the row below it. Printing any view hides the controls (`print:hidden`) and shows the grid or list alone.
 
 ## Calendar hover card
 
