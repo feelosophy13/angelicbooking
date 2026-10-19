@@ -108,7 +108,7 @@ export async function buildPayrollLinesDetailed(business: Business, period: Payr
     const itemIds = [...new Set(lines.map((l) => l.appointmentItemId).filter((x): x is string => !!x))];
     const apptIds = [...new Set(sales.map((s) => s.appointmentId).filter((x): x is string => !!x))];
     const staffIds = [...new Set(lines.map((l) => l.staffId).filter((x): x is string => !!x))];
-    const [clients, users, items, moves, staffRows] = await Promise.all([
+    const [clients, users, items, moves, staffRows, apptProviders] = await Promise.all([
       clientIds.length ? tx.select({ id: schema.clients.id, first: schema.clients.firstName, last: schema.clients.lastName }).from(schema.clients).where(inArray(schema.clients.id, clientIds)) : [],
       userIds.length ? tx.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, userIds)) : [],
       itemIds.length ? tx.select({ id: schema.appointmentItems.id, startAt: schema.appointmentItems.startAt }).from(schema.appointmentItems).where(inArray(schema.appointmentItems.id, itemIds)) : [],
@@ -117,7 +117,13 @@ export async function buildPayrollLinesDetailed(business: Business, period: Payr
         ? tx.select({ apptId: schema.auditLog.entityId, at: schema.auditLog.at, diff: schema.auditLog.diff }).from(schema.auditLog).where(and(eq(schema.auditLog.action, "appointment.reschedule"), inArray(schema.auditLog.entityId, apptIds), gte(schema.auditLog.at, new Date(Math.min(...runs.map((r) => r.createdAt.getTime()))))))
         : [],
       staffIds.length ? tx.select({ id: schema.staff.id, name: schema.staff.displayName, active: schema.staff.active }).from(schema.staff).where(inArray(schema.staff.id, staffIds)) : [],
+      // The appointment's provider (its first service's stylist), for the share of a no-show or late fee.
+      apptIds.length && business.feeShareBps > 0 ? tx.select({ apptId: schema.appointmentItems.appointmentId, staffId: schema.appointmentItems.staffId, startAt: schema.appointmentItems.startAt }).from(schema.appointmentItems).where(inArray(schema.appointmentItems.appointmentId, apptIds)).orderBy(asc(schema.appointmentItems.startAt)) : [],
     ]);
+    const providerOf = new Map<string, string>();
+    for (const i of apptProviders) if (i.staffId && !providerOf.has(i.apptId)) providerOf.set(i.apptId, i.staffId);
+    // Who absorbs a discount: the provider is paid on what was paid (default), the house pays as if full price, split is half each.
+    const houseShare = business.discountAbsorb === "house" ? 1 : business.discountAbsorb === "split" ? 0.5 : 0;
     const clientName = new Map(clients.map((c) => [c.id, `${c.first} ${c.last}`.trim()]));
     const userName = new Map(users.map((u) => [u.id, u.name]));
     const itemStart = new Map(items.map((i) => [i.id, i.startAt]));
@@ -195,9 +201,18 @@ export async function buildPayrollLinesDetailed(business: Business, period: Payr
       for (const l of goods) {
         const start = l.appointmentItemId ? itemStart.get(l.appointmentItemId) : null;
         const visitDate = start ? localDate(start, tz) : null;
+        // A no-show or late-cancellation fee has no stylist on it; with a fee share set, the appointment's provider is credited their part.
+        const feeProvider = l.kind === "fee" && !l.staffId && sale.appointmentId ? (providerOf.get(sale.appointmentId) ?? null) : null;
+        if (l.kind === "fee" && feeProvider && business.feeShareBps > 0 && l.amountCents > 0) {
+          const share = Math.round((l.amountCents * business.feeShareBps) / 10_000);
+          const cash = Math.round(share * cashShare);
+          const booked = visitDate ? bookVisit(visitDate, settledAt) : { date: checkoutDate, late: false };
+          base.push({ staffId: feeProvider, kind: "fee", refunded: false, date: booked.date, customer, name: `${l.name} · ${business.feeShareBps / 100}% share`, checkoutBy, saleNumber: sale.number, cashCents: cash, cardCents: share - cash, cashTipCents: 0, cardTipCents: 0, discountCents: 0, amtPaidCents: share, locationId: sale.locationId });
+          continue;
+        }
         if (!l.staffId) {
           if (l.kind === "service" || l.kind === "product" || l.kind === "package") omit(l, "no staff credited", undefined, visitDate ?? checkoutDate);
-          else omit(l, "not commissionable", l.kind === "gift_card" ? "gift card" : l.kind, visitDate ?? checkoutDate);
+          else omit(l, "not commissionable", l.kind === "gift_card" ? "gift card" : l.kind === "fee" ? `no-show or late-cancellation fee${sale.appointmentId ? "" : ", no appointment"}${business.feeShareBps > 0 ? ", no provider on the appointment" : " (no fee share set)"}` : l.kind, visitDate ?? checkoutDate);
           continue;
         }
         // A visit moved out of a period that was finalized while it was still there was paid in that period's snapshot: not again here.
@@ -208,11 +223,16 @@ export async function buildPayrollLinesDetailed(business: Business, period: Payr
             continue;
           }
         }
-        const disc = goodsTotal > 0 ? Math.round((sale.discountCents * l.amountCents) / goodsTotal) : 0;
+        const ticketDisc = goodsTotal > 0 ? Math.round((sale.discountCents * l.amountCents) / goodsTotal) : 0;
+        // A member's "% off services" is baked into the unit price; it is a discount all the same, so it shows in the Disc column and
+        // follows the same "who absorbs it" rule.
+        const memberDisc = l.preMemberUnitCents != null && l.preMemberUnitCents > l.unitCents ? (l.preMemberUnitCents - l.unitCents) * l.quantity : 0;
+        const disc = ticketDisc + memberDisc;
+        const houseDiscount = Math.round(disc * houseShare);
         const tax = l.taxable && taxableTotal > 0 ? Math.round((sale.taxCents * l.amountCents) / taxableTotal) : 0;
         // A line covered by a package or membership credit carries its value in creditCents
         // (amountCents is 0 so the ticket adds up); the provider is still paid on it.
-        const net = l.amountCents - disc + tax + (l.creditCents ?? 0);
+        const net = l.amountCents - ticketDisc + tax + (l.creditCents ?? 0);
         let tip = 0;
         let cashTip = 0;
         let cardTip = 0;
@@ -244,8 +264,9 @@ export async function buildPayrollLinesDetailed(business: Business, period: Payr
           discountCents: disc,
           amtPaidCents: net + tip,
           locationId: sale.locationId,
+          ...(houseDiscount ? { houseDiscountCents: houseDiscount } : {}),
         };
-        if (kind === "fee") omit(l, "not commissionable", "no-show or late-cancellation fee", booked.date);
+        if (kind === "fee") omit(l, "not commissionable", "fee line with a stylist on it: fees are not commissionable", booked.date);
         if (closedInPeriod && !inPeriod(booked.date)) omit(l, "out of period", `closed ${checkoutDate}, paid as a ${booked.date} visit`, booked.date);
         if (staffById.get(l.staffId)?.active === false) omit(l, "inactive staff", "still paid; the person is off the roster", booked.date);
         base.push(row);

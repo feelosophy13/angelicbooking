@@ -68,6 +68,14 @@ export const businesses = pgTable("businesses", {
   // from the most recent finalized period (else the last week start), salary is a flat amount per run, and nothing is prorated.
   payFrequency: text("pay_frequency").$type<"weekly" | "biweekly" | "semimonthly" | "monthly">(),
   payAnchorDate: date("pay_anchor_date"), // the first day of any period, for weekly and biweekly; unused by the calendar frequencies
+  // Commission rules (Settings → Payroll rules). Who absorbs a discount on a ticket: the provider (commission on what was paid, the default
+  // and the owner's Vagaro habit), the house (commission as if full price was paid) or split half and half.
+  discountAbsorb: text("discount_absorb").$type<"provider" | "house" | "split">().notNull().default("provider"),
+  // Share of a no-show or late-cancellation fee credited to the appointment's provider, in basis points (5000 = half). 0 = the house keeps it.
+  feeShareBps: integer("fee_share_bps").notNull().default(0),
+  // What a provider is paid on when a package session covers a service: the service's list price (default) or the package's per-session
+  // price (what the client actually paid for it). Recorded on the sale line when the credit is used, so past tickets don't move.
+  packageRedemptionBase: text("package_redemption_base").$type<"list" | "package_share">().notNull().default("list"),
   phone: text("phone"),
   email: text("email"),
   // Stripe Connect (Phase 2)

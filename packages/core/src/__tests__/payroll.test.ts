@@ -285,3 +285,32 @@ describe("bonuses in the overtime rate", () => {
     expect(run(false).overtimeOnCommissionCents).toBe(0);
   });
 });
+
+describe("money correctness (review 2026-10-19 item 4)", () => {
+  const emp = (over: Partial<PayrollEmployee> = {}): PayrollEmployee => ({ staffId: "s", name: "X", position: "Lash Artist", payType: "commission", mainCommissionBps: 5000, productCommissionBps: 500, ccTipFeeBps: 300, hourlyRateCents: 0, salaryPerPeriodCents: 0, overtimeOverride: null, taxDeductionCents: null, taxDeductionBps: null, ...over });
+  const ln = (over: Partial<PayrollLine>): PayrollLine => ({ staffId: "s", kind: "service", refunded: false, date: "2026-07-14", customer: "C", name: "Full set", checkoutBy: null, saleNumber: 1, cashCents: 0, cardCents: 0, cashTipCents: 0, cardTipCents: 0, discountCents: 0, amtPaidCents: 0, ...over });
+  it("the house's share of a discount is added back to the commission base; Amt Paid stays what was paid", () => {
+    // $200 service, $40 off. Provider absorbs: 50% of $160 = $80. House absorbs: 50% of $200 = $100. Split: 50% of $180 = $90.
+    const provider = computePayroll({ employees: [emp()], lines: [ln({ amtPaidCents: 16_000, discountCents: 4_000 })], hours: [], adjustments: [], overtime: false }).employees[0]!;
+    const house = computePayroll({ employees: [emp()], lines: [ln({ amtPaidCents: 16_000, discountCents: 4_000, houseDiscountCents: 4_000 })], hours: [], adjustments: [], overtime: false }).employees[0]!;
+    const split = computePayroll({ employees: [emp()], lines: [ln({ amtPaidCents: 16_000, discountCents: 4_000, houseDiscountCents: 2_000 })], hours: [], adjustments: [], overtime: false }).employees[0]!;
+    expect([provider.mainCommissionCents, house.mainCommissionCents, split.mainCommissionCents]).toEqual([8_000, 10_000, 9_000]);
+    expect(house.mainRevenueCents).toBe(20_000);
+  });
+  it("a no-show fee share is paid in full on top of commission, for 1099 and W-2 alike", () => {
+    const lines = [ln({ amtPaidCents: 10_000 }), ln({ kind: "fee", name: "No-show fee · 50% share", amtPaidCents: 2_500 })];
+    const c = computePayroll({ employees: [emp()], lines, hours: [], adjustments: [], overtime: false }).employees[0]!;
+    expect(c.feeShareCents).toBe(2_500);
+    expect(c.totalCents).toBe(5_000 + 2_500);
+    const w2 = computePayroll({ employees: [emp({ payType: "hourly", hourlyRateCents: 2000, mainCommissionBps: 0 })], lines, hours: [{ staffId: "s", date: "2026-07-14", minutes: 60 }], adjustments: [], overtime: false }).employees[0]!;
+    expect(w2.totalCents).toBe(2_000 + 2_500);
+    // Not product commission, not service revenue.
+    expect(c.productCommissionCents).toBe(0);
+    expect(c.serviceRevenueCents).toBe(10_000);
+  });
+  it("onSheet keeps a $0 row for active hourly and salaried people and drops idle commission or inactive ones", async () => {
+    const { onSheet } = await import("../payroll");
+    const r = computePayroll({ employees: [emp({ staffId: "h", payType: "hourly", hourlyRateCents: 1800 }), emp({ staffId: "c" }), emp({ staffId: "gone", payType: "hourly", hourlyRateCents: 1800, inactive: true }), emp({ staffId: "owner", payType: "salary", salaryPerPeriodCents: 0 })], lines: [], hours: [], adjustments: [], overtime: false });
+    expect(r.employees.filter(onSheet).map((e) => e.employee.staffId)).toEqual(["h"]);
+  });
+});

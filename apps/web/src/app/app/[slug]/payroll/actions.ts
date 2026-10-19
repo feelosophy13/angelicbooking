@@ -117,3 +117,16 @@ export async function setOvertimeRule(formData: FormData) {
   revalidatePath(`/app/${d.slug}/payroll`);
   redirect(d.back);
 }
+
+/** Commission rules: who absorbs discounts, the provider's share of no-show and late fees, and the package redemption base. */
+export const savePayrollRules = formAction(
+  z.object({ slug: z.string(), discountAbsorb: z.enum(["provider", "house", "split"]), feeSharePct: z.coerce.number({ message: "Enter a percent" }).min(0, "At least 0").max(100, "At most 100"), packageRedemptionBase: z.enum(["list", "package_share"]) }),
+  async (d) => {
+    const ctx = await requireAnyAction(d.slug, "payroll.manage", "settings.booking");
+    const patch = { discountAbsorb: d.discountAbsorb, feeShareBps: Math.round(d.feeSharePct * 100), packageRedemptionBase: d.packageRedemptionBase };
+    await withTenant(ctx.business.id, (tx) => tx.update(schema.businesses).set(patch).where(eq(schema.businesses.id, ctx.business.id)));
+    await auditSettings(ctx.business, ctx.user.id, "payroll", patch);
+    revalidatePath(`/app/${d.slug}`, "layout");
+    return "Commission rules saved";
+  },
+);

@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { rateLabel, type EmployeePayroll, type OmittedLine, type PayrollLine, type PayrollResult } from "@angelic/core";
+import { onSheet, rateLabel, type EmployeePayroll, type OmittedLine, type PayrollLine, type PayrollResult } from "@angelic/core";
 
 /**
  * The salon's payroll workbook, in the owner's own layout (the `salon-payroll` sheets):
@@ -55,13 +55,6 @@ export function moneyFormat(currency = "usd"): string {
     symbol = new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).formatToParts(0).find((p) => p.type === "currency")?.value ?? "$";
   } catch {}
   return `"${symbol}"#,##0.00;[Red]-"${symbol}"#,##0.00`;
-}
-
-/** The `onSheet` rule: everyone with activity, plus every active hourly or salaried person even with nothing (a missed clock-in must be visible as a $0 row). */
-export function onSheet(e: EmployeePayroll): boolean {
-  const emp = e.employee;
-  const paidByTime = (emp.payType === "hourly" && emp.hourlyRateCents > 0) || (emp.payType === "salary" && emp.salaryPerPeriodCents > 0);
-  return e.hasActivity || (!emp.inactive && paidByTime);
 }
 
 type CellValue = string | number | Date | null | { formula: string; result: number };
@@ -164,6 +157,7 @@ function commissionSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, o: WorkbookO
   const mainBase = main.totalRow ? `(J${main.totalRow}-F${main.totalRow}-H${main.totalRow})` : null;
   line(`Main Services (${(emp.mainCommissionBps / 100).toFixed(emp.mainCommissionBps % 100 ? 1 : 0)}%)`, mainBase && !dated ? { formula: `ROUND(${mainBase}*${emp.mainCommissionBps / 10_000},2)`, result: $(e.mainCommissionCents) } : $(e.mainCommissionCents));
   if (e.wageCents) line(`Hourly base (${hrs(e.totalMinutes)} h × ${(emp.hourlyRateCents / 100).toFixed(2)}${e.overtimeApplied && e.overtimeMinutes ? `, ${hrs(e.overtimeMinutes)} h overtime` : ""})`, $(e.wageCents));
+  if (e.feeShareCents) line("No-show and late-cancellation fees (provider's share)", $(e.feeShareCents));
   if (e.productSalesCents || e.miscRows.length) line(`Misc – Product/Package Sale (${(emp.productCommissionBps / 100).toFixed(emp.productCommissionBps % 100 ? 1 : 0)}%) on ${$(e.productSalesCents).toFixed(2)}`, $(e.productCommissionCents));
   const tipRefs = (c: string) => [misc.totalRow, main.totalRow].filter(Boolean).map((r) => `${c}${r}`);
   line("Cash Tips", sumCells(tipRefs("F"), e.cashTipsCents));
@@ -227,7 +221,7 @@ function simpleSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, o: WorkbookOpts)
     s.blank();
   }
   const products = e.miscRows.filter((l) => (l.kind === "product" || l.kind === "package") && worthListing(l));
-  const other = e.miscRows.filter((l) => !(l.kind === "product" || l.kind === "package") && worthListing(l));
+  const other = e.miscRows.filter((l) => !(l.kind === "product" || l.kind === "package") && l.kind !== "fee" && worthListing(l));
   let prodRow = 0;
   if (products.length) {
     s.section("Products & Package Sales", 5);
@@ -281,6 +275,7 @@ function simpleSheet(ws: ExcelJS.Worksheet, e: EmployeePayroll, o: WorkbookOpts)
     if (emp.ccTipFeeBps) extras.push(s.row([`Fees on CC Tip (${(emp.ccTipFeeBps / 100).toFixed(1)}%)`, "card fee on CC tips", dated ? -$(e.ccTipFeeCents) : { formula: `-ROUND(C${cardRow}*${emp.ccTipFeeBps / 10_000},2)`, result: -$(e.ccTipFeeCents) }], { moneyFrom: 3 }));
   }
   if (prodRow || e.productSalesCents) extras.push(s.row([`Product/Package Sale (${(emp.productCommissionBps / 100).toFixed(emp.productCommissionBps % 100 ? 1 : 0)}%)`, `${(emp.productCommissionBps / 100).toFixed(emp.productCommissionBps % 100 ? 1 : 0)}% of product & package sales`, prodRow && !dated ? { formula: `ROUND(E${prodRow}*${emp.productCommissionBps / 10_000},2)`, result: $(e.productCommissionCents) } : $(e.productCommissionCents)], { moneyFrom: 3 }));
+  if (e.feeShareCents) extras.push(s.row(["No-show and late-cancellation fees", "provider's share", $(e.feeShareCents)], { moneyFrom: 3 }));
   for (const a of e.adjustments) extras.push(s.row([a.label, "adjustment", $(a.amountCents)], { moneyFrom: 3 }));
   const taxRow = s.row(["", emp.taxDeductionBps != null && emp.taxDeductionCents == null ? `Tax Deductions (${(emp.taxDeductionBps / 100).toFixed(1)}%)` : `Tax Deductions${e.taxCents ? "" : " (entered by accountant)"}`, -$(e.taxCents)], { bold: true, moneyFrom: 3 });
   const parts = [`C${payRow}`, ...extras.map((r) => `C${r}`), `C${taxRow}`];
@@ -306,7 +301,7 @@ export function summaryRow(e: EmployeePayroll) {
     rate: rateLabel(emp),
     hours: hrs(e.totalMinutes),
     otHours: hrs(e.overtimeMinutes + e.doubleMinutes),
-    commissionCents: e.mainCommissionCents + e.productCommissionCents,
+    commissionCents: e.mainCommissionCents + e.productCommissionCents + (e.feeShareCents ?? 0),
     wageCents: e.wageCents,
     cashTipCents: e.cashTipsCents,
     cardTipCents: e.cardTipsCents,

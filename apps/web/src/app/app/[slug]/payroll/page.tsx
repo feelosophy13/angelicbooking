@@ -5,7 +5,7 @@ import { ConfirmSubmit } from "@/components/form";
 import { dateShort } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Payroll" };
-import { can, instantToISODate, isScheduledPeriod, nextPeriod, PAY_FREQUENCY_LABEL, periodContaining, previousPeriod, rateLabel } from "@angelic/core";
+import { can, instantToISODate, isScheduledPeriod, nextPeriod, onSheet, PAY_FREQUENCY_LABEL, periodContaining, previousPeriod, rateLabel } from "@angelic/core";
 import { requireAnyAction } from "@/lib/tenant";
 import { driftFromSnapshot, forHomeLocation, forOwnRow, listPayrollRuns, payrollForPeriod, resolveSchedule, salaryShareFor } from "@/server/payroll";
 import { formatDateLong, formatMoney } from "@/lib/utils";
@@ -54,7 +54,10 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   // "6.00 OT, 1.00 double, incl. $40.00 OT on commission"
   const otText = (e: (typeof result.employees)[number]) =>
     [`${(e.overtimeMinutes / 60).toFixed(2)} OT`, e.doubleMinutes ? `${(e.doubleMinutes / 60).toFixed(2)} double` : null, e.overtimeOnCommissionCents ? `incl. ${money(e.overtimeOnCommissionCents)} OT on commission and bonuses` : null].filter(Boolean).join(", ");
-  const active = result.employees.filter((e) => e.hasActivity);
+  // Everyone with activity, plus a $0 row for each active hourly or salaried person with nothing clocked or sold (a missed clock-in shows).
+  const active = result.employees.filter(onSheet);
+  const unassigned = result.omitted.filter((o) => o.reason === "no staff credited");
+  const unassignedCents = unassigned.reduce((n, o) => n + o.amountCents, 0);
   const unconfigured = result.employees.filter((e) => e.hasActivity && e.employee.payType === "commission" && e.employee.mainCommissionBps === 0 && e.mainRevenueCents > 0);
   const qs = `start=${start}&end=${end}&overtime=${overtime ? 1 : 0}${locationFilter ? `&location=${locationFilter}` : ""}`;
   const hrefFor = (p: { start: string; end: string }) => `?start=${p.start}&end=${p.end}&overtime=${overtime ? 1 : 0}${locationFilter ? `&location=${locationFilter}` : ""}`;
@@ -148,6 +151,11 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           ) : <p className="text-sm text-stone-500">Running this period again today gives the same figures as the finalized snapshot.</p>}
         </Disclosure>
       ) : null}
+      {manage && unassigned.length ? (
+        <div className="mb-4"><Notice>
+          Unassigned: {unassigned.length === 1 ? "one line" : `${unassigned.length} lines`} worth {money(unassignedCents)} ({unassigned.filter((o) => o.kind === "tip").length} {unassigned.filter((o) => o.kind === "tip").length === 1 ? "tip" : "tips"}) {unassigned.length === 1 ? "has" : "have"} nobody credited, so nobody is paid for {unassigned.length === 1 ? "it" : "them"}: {unassigned.slice(0, 4).map((o) => `#${o.saleNumber} ${o.name} ${money(o.amountCents)}`).join("; ")}{unassigned.length > 4 ? "; …" : ""}. Open the ticket under <Link href={`/app/${slug}/sales?from=${start}&to=${end}`} className="underline">Sales</Link> and pick who did the work; the Quality Check tab of the workbook lists them all.
+        </Notice></div>
+      ) : null}
       {unconfigured.length ? (
         <div className="mb-4"><Notice>{unconfigured.map((e) => e.employee.name).join(", ")} earned service revenue but {unconfigured.length > 1 ? "have" : "has"} no commission rate. Set it under Staff → Pay.</Notice></div>
       ) : null}
@@ -182,7 +190,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
             <tbody className="divide-y divide-stone-100">
               {active.map((e) => {
                 const emp = e.employee;
-                const commission = e.mainCommissionCents + e.productCommissionCents;
+                const commission = e.mainCommissionCents + e.productCommissionCents + (e.feeShareCents ?? 0);
                 const wage = e.wageCents + (emp.payType === "commission" ? 0 : e.adjustmentsCents);
                 return (
                   <tr key={emp.staffId}>
@@ -222,6 +230,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                     <dt className="text-stone-500">Main Services ({(emp.mainCommissionBps / 100).toFixed(0)}%)</dt><dd className="text-right sm:col-span-2">{money(e.mainCommissionCents)}</dd>
                     {e.wageCents ? <><dt className="text-stone-500">Hourly base ({(e.totalMinutes / 60).toFixed(2)} h × ${(emp.hourlyRateCents / 100).toFixed(2)}{e.overtimeApplied ? `, ${otText(e)}` : ""})</dt><dd className="text-right sm:col-span-2">{money(e.wageCents)}</dd></> : null}
                     <dt className="text-stone-500">Product/Package Sale ({(emp.productCommissionBps / 100).toFixed(0)}%) on {money(e.productSalesCents)}</dt><dd className="text-right sm:col-span-2">{money(e.productCommissionCents)}</dd>
+                    {e.feeShareCents ? <><dt className="text-stone-500">No-show and late fees ({business.feeShareBps / 100}% share)</dt><dd className="text-right sm:col-span-2">{money(e.feeShareCents)}</dd></> : null}
                     <dt className="text-stone-500">Cash tips</dt><dd className="text-right sm:col-span-2">{money(e.cashTipsCents)}</dd>
                     <dt className="text-stone-500">Card tips</dt><dd className="text-right sm:col-span-2">{money(e.cardTipsCents)}</dd>
                     <dt className="text-stone-500">Fees on CC tip ({(emp.ccTipFeeBps / 100).toFixed(1)}%)</dt><dd className="text-right text-red-700 sm:col-span-2">{e.ccTipFeeCents ? `−${money(e.ccTipFeeCents)}` : money(0)}</dd>
@@ -230,11 +239,12 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                   </dl>
                 ) : (
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3">
-                    {emp.payType === "hourly" ? <><dt className="text-stone-500">Hours{e.overtimeApplied ? ` (${otText(e)})` : ""}</dt><dd className="text-right sm:col-span-2">{(e.totalMinutes / 60).toFixed(2)}</dd></> : null}
+                    {emp.payType === "hourly" ? <><dt className="text-stone-500">Hours{e.overtimeApplied ? ` (${otText(e)})` : ""}</dt><dd className="text-right sm:col-span-2">{(e.totalMinutes / 60).toFixed(2)}{e.totalMinutes === 0 ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">no punches</span> : null}</dd></> : null}
                     <dt className="text-stone-500">{emp.payType === "hourly" ? "Pay" : "Salary"}</dt><dd className="text-right sm:col-span-2">{money(e.wageCents)}</dd>
                     {emp.mainCommissionBps > 0 ? <><dt className="text-stone-500">Service commission ({(emp.mainCommissionBps / 100).toFixed(emp.mainCommissionBps % 100 ? 1 : 0)}%) on {money(e.mainRevenueCents)}</dt><dd className="text-right sm:col-span-2">{money(e.mainCommissionCents)}</dd></> : null}
                     {e.cashTipsCents + e.cardTipsCents ? <><dt className="text-stone-500">Tips (cash {money(e.cashTipsCents)} / card {money(e.cardTipsCents)}, fee −{money(e.ccTipFeeCents)})</dt><dd className="text-right sm:col-span-2">{money(e.cashTipsCents + e.cardTipsCents - e.ccTipFeeCents)}</dd></> : null}
                     {e.productSalesCents ? <><dt className="text-stone-500">Product/Package ({(emp.productCommissionBps / 100).toFixed(0)}%)</dt><dd className="text-right sm:col-span-2">{money(e.productCommissionCents)}</dd></> : null}
+                    {e.feeShareCents ? <><dt className="text-stone-500">No-show and late fees ({business.feeShareBps / 100}% share)</dt><dd className="text-right sm:col-span-2">{money(e.feeShareCents)}</dd></> : null}
                     {e.adjustments.map((a, i) => <><dt key={`l${i}`} className="text-stone-500">{a.label}</dt><dd key={`v${i}`} className="text-right sm:col-span-2">{money(a.amountCents)}</dd></>)}
                     <dt className="text-stone-500">Tax deductions</dt><dd className="text-right sm:col-span-2">{e.taxCents ? `−${money(e.taxCents)}` : "$0.00 (accountant enters)"}</dd>
                     <dt className="font-semibold">Total check</dt><dd className="text-right font-semibold sm:col-span-2">{money(e.totalCents)}</dd>
@@ -316,7 +326,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
             )}
           </Card> : null}
           <Card className="p-4 text-xs text-stone-500">
-            <p>Commission is figured on service money (amount paid minus tips, net of discount), credited to the appointment date. Products and packages earn the product rate on the tax-inclusive amount; memberships earn nothing. Card tips carry the card-tip fee; cash tips never do. Tax withholding for W-2 staff is left at $0 unless set on the staff member. A refund comes off pay on the day it is made ("Refund ·" rows), so one made after a period was paid reduces the next period. <Link href={`/app/${slug}/staff`} className="underline">Set pay rules under Staff.</Link></p>
+            <p>Commission is figured on service money (amount paid minus tips{business.discountAbsorb === "provider" ? ", net of discount" : business.discountAbsorb === "house" ? "; the house absorbs discounts, so full price counts" : "; discounts are split half and half with the house"}), credited to the appointment date.{business.feeShareBps ? ` The provider gets ${business.feeShareBps / 100}% of no-show and late fees.` : ""} Products and packages earn the product rate on the tax-inclusive amount; memberships earn nothing. Card tips carry the card-tip fee; cash tips never do. Tax withholding for W-2 staff is left at $0 unless set on the staff member. A refund comes off pay on the day it is made ("Refund ·" rows), so one made after a period was paid reduces the next period. <Link href={`/app/${slug}/staff`} className="underline">Set pay rules under Staff.</Link></p>
           </Card>
         </div>
       </div>

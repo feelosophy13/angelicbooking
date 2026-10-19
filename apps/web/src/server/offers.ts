@@ -167,13 +167,17 @@ export async function redeemCredit(input: { businessId: string; saleId: string; 
     if (!sale || sale.status !== "open") throw new SaleError("Sale is not open.");
     const [line] = await tx.select().from(schema.saleLines).where(and(eq(schema.saleLines.id, input.lineId), eq(schema.saleLines.saleId, sale.id))).for("update");
     if (!line || line.kind !== "service" || line.amountCents === 0) throw new SaleError("Pick a service line that hasn't been covered yet.");
+    let packageShareCents: number | null = null;
     if (input.source === "package") {
       const cp = await tx.query.clientPackages.findFirst({ where: and(eq(schema.clientPackages.id, input.sourceId), eq(schema.clientPackages.clientId, sale.clientId ?? "")) });
       if (!cp || cp.remaining <= 0) throw new SaleError("No sessions left on that package.");
       if (cp.expiresAt && cp.expiresAt < new Date()) throw new SaleError("That package has expired.");
       if (cp.serviceId && line.serviceId && cp.serviceId !== line.serviceId) throw new SaleError("That package is for a different service.");
-      const pkg = await tx.query.packages.findFirst({ where: eq(schema.packages.id, cp.packageId), columns: { validLocationIds: true } });
+      const pkg = await tx.query.packages.findFirst({ where: eq(schema.packages.id, cp.packageId), columns: { validLocationIds: true, priceCents: true, sessions: true } });
       if (!validAtLocation(pkg?.validLocationIds, sale.locationId)) throw new SaleError("That package isn't valid at this location.");
+      // "Package redemption commission base": the provider is paid on the list price, or on what the client paid per session of the package.
+      const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { packageRedemptionBase: true } });
+      if (biz?.packageRedemptionBase === "package_share" && pkg && pkg.sessions > 0) packageShareCents = Math.round(pkg.priceCents / pkg.sessions);
       // Taken only if one is still there (two desks using the last session at once: one of them gets the error).
       const [took] = await tx.update(schema.clientPackages).set({ remaining: sql`${schema.clientPackages.remaining} - 1` }).where(and(eq(schema.clientPackages.id, cp.id), sql`${schema.clientPackages.remaining} > 0`)).returning({ id: schema.clientPackages.id });
       if (!took) throw new SaleError("No sessions left on that package.");
@@ -191,7 +195,7 @@ export async function redeemCredit(input: { businessId: string; saleId: string; 
     const delta = line.amountCents;
     await tx
       .update(schema.saleLines)
-      .set({ amountCents: 0, unitCents: 0, name: `${line.name} (${input.source} credit)`, creditCents: line.preMemberUnitCents ?? delta, memberDiscountBps: 0, preMemberUnitCents: null, ...(input.source === "package" ? { clientPackageId: input.sourceId } : { clientMembershipId: input.sourceId }) })
+      .set({ amountCents: 0, unitCents: 0, name: `${line.name} (${input.source} credit)`, creditCents: packageShareCents ?? line.preMemberUnitCents ?? delta, memberDiscountBps: 0, preMemberUnitCents: null, ...(input.source === "package" ? { clientPackageId: input.sourceId } : { clientMembershipId: input.sourceId }) })
       .where(eq(schema.saleLines.id, line.id));
     await tx.update(schema.sales).set({ subtotalCents: sql`${schema.sales.subtotalCents} - ${delta}`, totalCents: sql`${schema.sales.totalCents} - ${delta}` }).where(eq(schema.sales.id, sale.id));
     await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: `credit.${input.source}`, entity: "sale", entityId: sale.id, diff: JSON.stringify({ lineId: line.id, delta }) });

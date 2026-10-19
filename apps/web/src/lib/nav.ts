@@ -122,7 +122,7 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
         { href: `${sb}/payments`, title: "Card payments", blurb: "Your Stripe account for cards, deposits and saved cards.", status: s ? (s.stripeChargesEnabled ? "connected" : "not connected") : undefined, action: "billing.manage" },
         { href: `${sb}/refund-reasons`, title: "Refund reasons", blurb: "The list staff pick from when refunding; Reports group refunds by it." },
         { href: `${sb}/cancellation-reasons`, title: "Cancellation reasons", blurb: "The list staff pick from when cancelling an appointment; Reports group cancellations by it." },
-        { href: `${sb}/payroll`, title: "Payroll rules", blurb: "Pay schedule and period dates; the overtime workweek.", action: "settings.booking" },
+        { href: `${sb}/payroll`, title: "Payroll rules", blurb: "Pay schedule; who absorbs discounts, fee sharing and the package commission base.", action: "settings.booking" },
         { href: `${sb}/billing`, title: "Your plan", blurb: "Subscription, card on file and this month's usage.", action: "billing.manage" },
       ],
     },

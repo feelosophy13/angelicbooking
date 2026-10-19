@@ -74,6 +74,11 @@ export interface PayrollLine {
   amtPaidCents: number;
   /** The sale's location, so pay can be reported by site. */
   locationId?: string | null;
+  /**
+   * The part of this line's discount the house absorbs ("Who absorbs discounts": house or split): added back to the commission base,
+   * so the provider is paid as if the client had paid full price. Amt Paid stays what the client paid.
+   */
+  houseDiscountCents?: number;
 }
 
 export interface HoursEntry {
@@ -141,6 +146,8 @@ export interface EmployeePayroll {
   mainCommissionCents: number;
   productSalesCents: number; // commissionable misc (products + packages)
   productCommissionCents: number;
+  /** The provider's share of no-show and late-cancellation fees ("Share no-show and late fees"): paid in full, no rate applied. */
+  feeShareCents: number;
   cashTipsCents: number;
   cardTipsCents: number;
   ccTipFeeCents: number;
@@ -344,7 +351,8 @@ export function computePayroll(input: PayrollInput): PayrollResult {
     const mainRows = live.filter((l) => !isMiscKind(l.kind));
     const miscRows = live.filter((l) => isMiscKind(l.kind));
 
-    const serviceMoney = (l: PayrollLine) => l.amtPaidCents - l.cashTipCents - l.cardTipCents;
+    const serviceMoney = (l: PayrollLine) => l.amtPaidCents - l.cashTipCents - l.cardTipCents + (l.houseDiscountCents ?? 0);
+    const feeShareCents = miscRows.filter((l) => l.kind === "fee").reduce((s, l) => s + l.amtPaidCents, 0);
     const mainRevenueCents = mainRows.reduce((s, l) => s + serviceMoney(l), 0);
     const commissionable = miscRows.filter((l) => l.kind !== "membership" && l.kind !== "fee" && !looksLikeMembership(l.name));
     const productSalesCents = commissionable.reduce((s, l) => s + l.amtPaidCents - l.cashTipCents - l.cardTipCents, 0);
@@ -388,9 +396,9 @@ export function computePayroll(input: PayrollInput): PayrollResult {
     let taxCents = 0;
     let totalCents: number;
     if (emp.payType === "commission") {
-      totalCents = mainCommissionCents + productCommissionCents + wageCents + cashTipsCents + cardTipsCents - ccTipFeeCents + adjustmentsCents;
+      totalCents = mainCommissionCents + productCommissionCents + feeShareCents + wageCents + cashTipsCents + cardTipsCents - ccTipFeeCents + adjustmentsCents;
     } else {
-      const pay = wageCents + mainCommissionCents + cashTipsCents + cardTipsCents - ccTipFeeCents + productCommissionCents + adjustmentsCents;
+      const pay = wageCents + mainCommissionCents + cashTipsCents + cardTipsCents - ccTipFeeCents + productCommissionCents + feeShareCents + adjustmentsCents;
       if (emp.taxDeductionCents != null) taxCents = emp.taxDeductionCents;
       else if (emp.taxDeductionBps != null) taxCents = bps(wageCents + mainCommissionCents, emp.taxDeductionBps);
       totalCents = pay - taxCents;
@@ -398,7 +406,7 @@ export function computePayroll(input: PayrollInput): PayrollResult {
 
     const revenueOk = generatesRevenue(emp.position);
     const serviceRevenueCents = revenueOk ? mainRevenueCents : 0;
-    const costCents = emp.payType === "commission" ? mainCommissionCents + productCommissionCents + wageCents : wageCents + mainCommissionCents + adjustmentsCents + productCommissionCents;
+    const costCents = (emp.payType === "commission" ? mainCommissionCents + productCommissionCents + wageCents : wageCents + mainCommissionCents + adjustmentsCents + productCommissionCents) + feeShareCents;
     const serviceProfitCents = revenueOk ? serviceRevenueCents - costCents : 0;
 
     const hasActivity = mine.length > 0 || hrs.totalMinutes > 0 || adjustments.length > 0 || (emp.payType === "salary" && wageCents > 0);
@@ -421,6 +429,7 @@ export function computePayroll(input: PayrollInput): PayrollResult {
       mainCommissionCents,
       productSalesCents,
       productCommissionCents,
+      feeShareCents,
       cashTipsCents,
       cardTipsCents,
       ccTipFeeCents,
@@ -435,6 +444,16 @@ export function computePayroll(input: PayrollInput): PayrollResult {
   });
 
   return { employees, unmatchedStaffIds: [...unmatched] };
+}
+
+/**
+ * Who gets a row on the Payroll page and in the workbook: everyone with activity, plus every active hourly or salaried person even with
+ * nothing clocked or sold, as a $0 row, so a missed clock-in is visible to whoever cuts the checks.
+ */
+export function onSheet(e: EmployeePayroll): boolean {
+  const emp = e.employee;
+  const paidByTime = (emp.payType === "hourly" && emp.hourlyRateCents > 0) || (emp.payType === "salary" && emp.salaryPerPeriodCents > 0);
+  return e.hasActivity || (!emp.inactive && paidByTime);
 }
 
 /** Summary-row "Rate" text, as on the salon's Summary tab ("40%", "$18.00/hr + 15%", "$1,800.00/period"). */

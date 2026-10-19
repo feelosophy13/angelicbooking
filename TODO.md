@@ -91,6 +91,17 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       the people based there, filename `<start>_<end>_<Location>.xlsx`), a Summary CSV (`?kind=csv`), and the accountant's W-2 file as one
       Summary tab per location with no revenue / profit columns. Active hourly and salaried people with no punches and no sales get a $0 row
       (item 4). Dev check: `apps/web/scripts/payroll-workbook.mts <slug> <start> <end> <outDir>` writes the three files the route would send.
+- [x] Item 4, money correctness, 2026-10-19 (migration 0123 `businesses.discount_absorb` / `fee_share_bps` / `package_redemption_base`,
+      all defaulting to today's behaviour): whole-ticket refunds take back the goods only, the tip stays unless the tip line itself is
+      refunded (test in `payroll-clawback.test.ts`); an "Unassigned" card on the Payroll page (and Quality Check rows) for service lines and
+      tips with nobody credited; a $0 row on the page and in the workbook for every active hourly or salaried person with no punches and no
+      sales (`onSheet` in core; "no punches" chip). Settings → Payroll rules → Commission rules: "Who absorbs discounts" provider (default) /
+      house / split, applied in the commission base (`houseDiscountCents` on the line, added back to service money; Amt Paid stays what was
+      paid) with the member-rate discount now shown in the Disc column and treated the same way; "Share of no-show and late fees to the
+      provider" (%, default 0) crediting the appointment's provider with a row of kind fee paid in full on top of commission
+      (`feeShareCents`); "Package sessions pay commission on" list price (default) / package price per session, recorded in `creditCents`
+      when the session is used (`offers.ts` redeemCredit), so earlier tickets keep what they were credited. Memberships still credit the
+      list price. Tests: core `payroll.test.ts` (house share, fee share, onSheet), DB `payroll-rules.test.ts`.
 
 - [x] Demo seed, 2026-10-19: sale lines (service, product, tip) carry the sale's own close time. They used to default to the seed run
       time, so payroll treated every one of the 368 demo tips as "Tip (added later)" on the seed day; now none are.

@@ -862,6 +862,13 @@
       "when": 1795201100000,
       "tag": "0122_payroll_paid_on",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1795201200000,
+      "tag": "0123_commission_rules",
+      "breakpoints": true
     }
   ]
 }
