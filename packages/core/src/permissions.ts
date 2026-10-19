@@ -74,7 +74,7 @@ export const ACTIONS = [
   "inventory.manage", // receive, count, adjust and order stock; suppliers (the catalog itself is services.manage)
   // Marketing and forms
   // Split out of "reports.view" 2026-10-18 (migration 0116 back-fills stored roles): reading the money reports no longer lets someone text or
-  // email every client. Campaigns, promo codes and the Marketing pages; automations themselves are business.manage.
+  // email every client. Campaigns, promo codes and the Marketing pages; automations themselves are settings.booking.
   "marketing.send",
   "forms.manage", // design forms, and void, reassign or email a signed copy
   // Settings. "business.manage" was split 2026-10-18 (migration 0115: billing, integrations, audit) and retired 2026-10-19 (migration 0120:
@@ -181,7 +181,7 @@ export const PERMISSION_GROUPS: { title: string; description: string; items: { a
     title: "Marketing and forms",
     description: "Reaching clients, and the forms they sign.",
     items: [
-      { action: "marketing.send", label: "Send marketing", description: "Campaigns by text or email to groups of clients, and promo codes. Automations are part of Business settings." },
+      { action: "marketing.send", label: "Send marketing", description: "Campaigns by text or email to groups of clients, and promo codes. Automations are under "Booking, store and client-care rules"." },
       { action: "forms.manage", label: "Design forms and manage signed copies", description: "Create and edit intake forms and waivers; void, reassign or email a signed form." },
     ],
   },
