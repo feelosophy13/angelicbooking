@@ -54,10 +54,18 @@ const SOURCE_LABEL: Record<string, string> = { online: "Booked online", staff: "
 const baseName = (n: string) => n.replace(/ \(finish\)$/, "");
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 
+/**
+ * What of a visit the viewer may see on the card (A1 in PERMISSIONS-PLAN-2026-10-18.md): the client's phone needs "See phone, email, address
+ * and birthday", the visit's notes "Read notes and forms", prices and the deposit "See prices". Everything is shown when nothing is passed
+ * (the Owner, and tests).
+ */
+export type TipShow = { contact?: boolean; notes?: boolean; prices?: boolean };
+
 /** `items` are every row of one appointment in the visible range, in start order. */
-export function buildTip(items: TipItem[], ctx: { money: (cents: number) => string; formsDue: boolean }): CalTip {
+export function buildTip(items: TipItem[], ctx: { money: (cents: number) => string; formsDue: boolean; show?: TipShow }): CalTip {
   const first = items[0]!;
-  const notes = first.notes?.trim() ? clip(first.notes.trim(), 180) : null;
+  const show = { contact: true, notes: true, prices: true, ...ctx.show };
+  const notes = show.notes && first.notes?.trim() ? clip(first.notes.trim(), 180) : null;
   if (first.kind === "block") {
     const reason = first.serviceName.replace(/^Blocked( · )?/, "").trim();
     return { kind: "block", heading: reason || "Blocked time", sub: null, status: "Blocked time", tags: [], lines: [{ service: "Blocked time", staff: first.staffName, startMin: first.startMin, endMin: first.endMin, price: null }], total: null, facts: [], notes: null };
@@ -77,11 +85,11 @@ export function buildTip(items: TipItem[], ctx: { money: (cents: number) => stri
       prev.cents += i.priceCents;
     } else merged.push({ service: name, staff: i.staffName, startMin: i.startMin, endMin: i.endMin, cents: i.priceCents });
   }
-  const lines: CalTip["lines"] = merged.map((l) => ({ service: l.service, staff: l.staff, startMin: l.startMin, endMin: l.endMin, price: l.cents ? ctx.money(l.cents) : null }));
-  const totalCents = items.reduce((s, i) => s + i.priceCents, 0);
+  const lines: CalTip["lines"] = merged.map((l) => ({ service: l.service, staff: l.staff, startMin: l.startMin, endMin: l.endMin, price: show.prices && l.cents ? ctx.money(l.cents) : null }));
+  const totalCents = show.prices ? items.reduce((s, i) => s + i.priceCents, 0) : 0;
   const facts: string[] = [];
   if (first.source && SOURCE_LABEL[first.source]) facts.push(SOURCE_LABEL[first.source]!);
-  if (first.depositCents && first.depositCents > 0) facts.push(`Deposit ${ctx.money(first.depositCents)}${first.depositStatus === "paid" ? " paid" : first.depositStatus && first.depositStatus !== "none" ? ` ${first.depositStatus}` : ""}`);
+  if (show.prices && first.depositCents && first.depositCents > 0) facts.push(`Deposit ${ctx.money(first.depositCents)}${first.depositStatus === "paid" ? " paid" : first.depositStatus && first.depositStatus !== "none" ? ` ${first.depositStatus}` : ""}`);
   if (items.some((i) => i.allowOverlap)) facts.push("Double-booked on purpose");
   if (ctx.formsDue) facts.push("Forms due");
   const photos = clientPhotosFact(first.clientPhotos);
@@ -89,7 +97,7 @@ export function buildTip(items: TipItem[], ctx: { money: (cents: number) => stri
   return {
     kind: "visit",
     heading: first.clientName ?? "Walk-in",
-    sub: first.clientPhone ?? null,
+    sub: show.contact ? (first.clientPhone ?? null) : null,
     status: STATUS_LABEL[first.status] ?? first.status.replace("_", " "),
     tags: (first.clientTags ?? []).slice(0, 4),
     lines,

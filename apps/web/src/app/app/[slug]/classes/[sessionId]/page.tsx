@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { can, instantToISODate } from "@angelic/core";
 import { requireAnyAction } from "@/lib/tenant";
-import { canSeeClassSession, canSeeClientContact } from "@/lib/visibility";
+import { canSeeClassSession, canSeeClientContact, canSeePrices } from "@/lib/visibility";
 import { getSession } from "@/server/classes";
 import { StatusBadge } from "@/components/status-badge";
 import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/form";
@@ -73,7 +73,7 @@ export default async function ClassSessionPage({ params }: { params: Promise<{ s
           <Card className="p-4 text-sm">
             <p className="font-medium">{formatDateLong(date)}</p>
             <p>{formatTime(s.session.startAt, tz)} – {formatTime(s.session.endAt, tz)} with {s.staff?.displayName ?? "—"}</p>
-            <p className="text-stone-600">{formatMoney(s.session.priceCents, business.currency)} per seat · {s.session.capacity} seats</p>
+            <p className="text-stone-600">{canSeePrices(permissions) ? `${formatMoney(s.session.priceCents, business.currency)} per seat · ` : ""}{s.session.capacity} seats</p>
             {s.session.notes ? <p className="mt-2 rounded-md bg-stone-50 p-2 text-xs text-stone-700">{s.session.notes}</p> : null}
           </Card>
           {write && open ? (

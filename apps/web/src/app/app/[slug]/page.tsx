@@ -32,6 +32,7 @@ import { asc, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { buildTip, type CalTip, type TipItem } from "@/lib/calendar-tip";
 import { blockingAccess, bookingAccess, seesNoCalendar, seesOwnOnly } from "@/lib/appointment-access";
+import { canSeeClientContact, canSeePrices } from "@/lib/visibility";
 import { serviceGroups } from "@/server/service-groups";
 import type { QuickCreateData } from "./quick-create";
 
@@ -151,8 +152,10 @@ export default async function CalendarPage({
     tipRows.set(i.appointmentId, [...(tipRows.get(i.appointmentId) ?? []), row]);
   }
   const tipCache = new Map<string, CalTip>();
+  // The card shows the client's phone, the visit's notes and prices only to a viewer with those permissions (A1).
+  const tipShow = { contact: canSeeClientContact(permissions), notes: can(permissions, "clients.notes"), prices: canSeePrices(permissions) };
   const tipFor = (appointmentId: string) => {
-    if (!tipCache.has(appointmentId)) tipCache.set(appointmentId, buildTip(tipRows.get(appointmentId)!, { money: (c) => money(c, business.currency), formsDue: missingForms.has(appointmentId) }));
+    if (!tipCache.has(appointmentId)) tipCache.set(appointmentId, buildTip(tipRows.get(appointmentId)!, { money: (c) => money(c, business.currency), formsDue: missingForms.has(appointmentId), show: tipShow }));
     return tipCache.get(appointmentId)!;
   };
   const calItems: CalItem[] = items

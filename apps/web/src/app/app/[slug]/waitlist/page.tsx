@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = { title: "Waitlist" };
 import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
+import { canSeeClientContact } from "@/lib/visibility";
 import { listWaitlist } from "@/server/public-booking";
 import { dateLong as formatDateLong } from "@/lib/format";
 import { Button, Card, LinkButton, PageHeader, Empty } from "@/components/ui";
@@ -11,9 +12,11 @@ import { updateWaitlist } from "./actions";
 
 export default async function WaitlistPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, permissions } = await requireAction(slug, "appointments.read.any");
+  // The waitlist has its own permissions (A4): seeing it, and working it (booking from it, closing entries).
+  const { business, permissions } = await requireAction(slug, "waitlist.view");
   const rows = await listWaitlist(business.id, business.timezone);
-  const write = can(permissions, "appointments.write.any");
+  const write = can(permissions, "waitlist.manage");
+  const contact = canSeeClientContact(permissions);
   return (
     <>
       <PageHeader title="Waitlist" />
@@ -23,7 +26,7 @@ export default async function WaitlistPage({ params }: { params: Promise<{ slug:
             {rows.map((w) => (
               <li key={w.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium">{w.clientFirst} {w.clientLast} <span className="font-normal text-stone-500">{w.clientPhone}</span></p>
+                  <p className="font-medium">{w.clientFirst} {w.clientLast} {contact ? <span className="font-normal text-stone-500">{w.clientPhone}</span> : null}</p>
                   <p className="text-xs text-stone-500">{formatDateLong(w.date)} · {w.serviceName ?? "any service"}{w.staffName ? ` · ${w.staffName}` : ""}{w.locationName ? ` · ${w.locationName}` : ""}{w.notes ? ` · ${w.notes}` : ""}</p>
                 </div>
                 {write ? (

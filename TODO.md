@@ -93,6 +93,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `checkout.refund` on a ticket the viewer may see; refunding a deposit needs `checkout.refund` on an appointment the viewer may work
       on. The Gift cards page opens with `giftcards.view` (so the desk can look up a balance); issuing and full codes stay `giftcards.issue`.
 
+- [x] Phase 1 calendar, waitlist and classes (A1, A3, A4), 2026-10-19: the calendar hover card (and the detail panel, which draws the same
+      card) shows the client's phone only with `clients.contact`, the visit's notes only with `clients.notes`, and prices, totals and the
+      deposit only with `catalog.prices` (`buildTip` takes a `show` argument; the home page passes the viewer's permissions); a class page
+      shows the seat price only with `catalog.prices`; the Waitlist page needs `waitlist.view` (phone with `clients.contact`) and booking
+      from it or closing entries needs `waitlist.manage`.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

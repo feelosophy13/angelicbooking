@@ -6,7 +6,7 @@ import { setWaitlistStatus } from "@/server/public-booking";
 
 export async function updateWaitlist(formData: FormData) {
   const d = z.object({ slug: z.string(), id: z.string().min(1), status: z.enum(["booked", "closed"]) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "appointments.write.any");
+  const ctx = await requireAction(d.slug, "waitlist.manage");
   await setWaitlistStatus(ctx.business.id, d.id, d.status);
   revalidatePath(`/app/${d.slug}/waitlist`);
 }

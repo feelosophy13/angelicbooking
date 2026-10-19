@@ -34,6 +34,19 @@ describe("buildTip", () => {
     expect(t.notes!.length).toBeLessThanOrEqual(180);
     expect(t.notes!.endsWith("…")).toBe(true);
   });
+  it("hides the phone, the notes and the money from a viewer without those permissions", () => {
+    const two = [item(), item({ serviceName: "Brow Tint", staffName: "Sofia", startMin: 720, endMin: 750, priceCents: 3500 })];
+    const t = buildTip(two, { money, formsDue: false, show: { contact: false, notes: false, prices: false } });
+    expect(t.heading).toBe("Jo Lee");
+    expect(t.sub).toBeNull();
+    expect(t.notes).toBeNull();
+    expect(t.lines.map((l) => l.price)).toEqual([null, null]);
+    expect(t.total).toBeNull();
+    expect(t.facts).toEqual(["Booked online"]); // the deposit is money too
+    // Each switch on its own.
+    expect(buildTip(two, { money, formsDue: false, show: { prices: false } })).toMatchObject({ sub: "+17035551001", notes: "Sensitive eyes", total: null });
+    expect(buildTip(two, { money, formsDue: false, show: { contact: false } })).toMatchObject({ sub: null, total: "$185.00" });
+  });
   it("shows a block by its reason and a class by its seats", () => {
     expect(buildTip([item({ kind: "block", serviceName: "Blocked · Lunch", clientName: null })], { money, formsDue: false })).toMatchObject({ kind: "block", heading: "Lunch", status: "Blocked time" });
     expect(buildTip([item({ classSessionId: "c1", serviceName: "Lash Foundations", status: "class", seats: { booked: 3, capacity: 6 } })], { money, formsDue: false })).toMatchObject({ kind: "class", heading: "Lash Foundations", sub: "3 of 6 seats taken" });
