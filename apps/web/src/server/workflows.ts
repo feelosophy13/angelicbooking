@@ -10,16 +10,23 @@
  *   for "stop if the client books" flows, when the client books again.
  * - Sends go through the notifications table like everything else, tagged with the
  *   run so Settings → Messages and the run log can explain every message.
- * - Guardrails that are never configurable: consent per channel, STOP notice on
- *   marketing texts, quiet hours (9am–8pm local) for marketing triggers, one run per
- *   occasion, review requests only once per visit.
+ * - Guardrails that are never configurable: consent per channel, marketing or
+ *   transactional decided per message step (lib/workflows-logic messageConsent), STOP
+ *   notice on marketing texts, quiet hours (9am–8pm local) on every text but the reminder
+ *   and the booked / cancelled confirmations, one run per occasion, review requests only
+ *   once per visit.
+ * - The engine never fails the action that fired it: the entry points report and swallow
+ *   their errors, and each run advances in a transaction of its own (advanceOne) so one
+ *   bad step marks that run failed and leaves the rest of the batch, and every other
+ *   tenant, alone. (A savepoint inside the shared transaction would not do: postgres.js
+ *   keeps the first failed query of a transaction and throws it at commit.)
  */
-import { and, asc, desc, eq, gte, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { db, schema, withJobs, withTenant, type TenantDb, type WorkflowFilters, type WorkflowRunContext, type WorkflowRunLogEntry, type WorkflowStep, type WorkflowTrigger } from "@angelic/db";
 import { instantToISODate, normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { appointmentContext, deliverMany } from "@/lib/notify";
-import { brandedEmail, marketingEmail, reviewRequestTemplate, templates as messageTemplates, textToHtml } from "@/lib/notify/templates";
+import { brandedEmail, marketingEmail, reviewRequestTemplate, templates as messageTemplates, textToHtml, transactionalEmail } from "@/lib/notify/templates";
 const reminderTemplate = messageTemplates.reminder;
 import { smsBody, smsWithStopNotice } from "@/lib/notify/sms";
 import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing";
@@ -27,7 +34,8 @@ import { pathTo } from "@/server/categories";
 import { ensureReferralCode, referralsEnabled } from "./loyalty";
 import { locationTimeZones, NO_POSTAL_ADDRESS, postalAddress } from "./locations";
 import { siteUrl } from "@/lib/site-url";
-import { APPOINTMENT_TRIGGERS, birthdayKeys, deferToDaytime, isMarketingTrigger, matchesFilters, newStepId, noVisitWindow, validateSteps, waitResumesAt, type TriggerFacts } from "@/lib/workflows-logic";
+import { reportError } from "@/lib/report-error";
+import { APPOINTMENT_TRIGGERS, birthdayKeys, deferToDaytime, matchesFilters, messageConsent, newStepId, noVisitWindow, validateSteps, waitResumesAt, type TriggerFacts } from "@/lib/workflows-logic";
 
 type Business = typeof schema.businesses.$inferSelect;
 export type Workflow = typeof schema.workflows.$inferSelect;
@@ -79,7 +87,7 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   ]) },
   { key: "aftercare", group: "after", trigger: "appointment_completed", enabled: false, name: "Aftercare tips", description: "Care instructions the day after specific services or categories (set the filter).", steps: S([
     { type: "wait", mode: "after_appointment", hours: 20 },
-    { type: "sms", body: "{business}: thanks for coming in! To keep your {service} looking its best, avoid washing for 48 hours and use a sulphate-free shampoo. Questions? Just reply." },
+    { type: "sms", body: "{business}: thanks for coming in! To keep your {service} looking its best, avoid washing for 48 hours and use a sulfate-free shampoo. Questions? Just reply." },
   ]) },
   { key: "welcome", group: "touch", trigger: "client_created", enabled: false, name: "Welcome new clients", description: "A welcome the day a client first appears, with what to expect.", steps: S([
     { type: "wait", mode: "delay", hours: 1 },
@@ -131,8 +139,7 @@ export async function ensureTemplates(business: Business): Promise<void> {
         if (wantSms) msgs.push({ id: newStepId(), type: "sms", body: old.body });
         const tplEmail = t.steps.find((x): x is Extract<StepDef, { type: "email" }> => x.type === "email");
         if (wantEmail) msgs.push({ id: newStepId(), type: "email", subject: old.subject ?? tplEmail?.subject ?? t.name, body: old.body });
-        if (t.key === "pre_visit") steps = [{ id: newStepId(), type: "wait", mode: "before_appointment", hours: old.hoursBefore }, ...msgs];
-        else if (t.key === "rebook") steps = [{ id: newStepId(), type: "wait", mode: "delay", hours: old.days * 24 }, ...msgs];
+        if (t.key === "rebook") steps = [{ id: newStepId(), type: "wait", mode: "delay", hours: old.days * 24 }, ...msgs];
         else if (t.key === "win_back") { steps = msgs; filters = { days: old.days }; }
         else steps = msgs;
       }
@@ -246,6 +253,18 @@ export interface TriggerInput {
   context?: WorkflowRunContext;
   /** Start only these workflows (a reschedule restarts just the ones timed from the visit). */
   onlyWorkflowIds?: string[];
+  /** Skip workflows with a reminder step (an API booking made with reminders:false). */
+  withoutReminders?: boolean;
+}
+
+/** Automations never fail the action that fired them: an engine error is reported and swallowed, and the caller gets `fallback`. */
+async function guarded<T>(what: string, fallback: T, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    await reportError(`workflows: ${what} failed`, e);
+    return fallback;
+  }
 }
 
 /** Facts about an appointment for filters and vars (services, categories with ancestors, location, provider, first visit). */
@@ -260,8 +279,14 @@ export async function appointmentFacts(tx: TenantDb, appointmentId: string): Pro
   const cats = await tx.select().from(schema.serviceCategories);
   const categoryIds = [...new Set(services.flatMap((s) => (s.categoryId ? [s.categoryId, ...pathTo(cats, s.categoryId).map((c) => c.id)] : [])))];
   const client = appt.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, appt.clientId) }) : null;
+  // First visit = no completed visit before this one. A visit pre-booked for next month doesn't make today's the second.
+  const start = (await appointmentTimes(tx, appointmentId))?.startAt ?? new Date();
   const [prior] = appt.clientId
-    ? await tx.select({ n: sql<number>`count(*)` }).from(schema.appointments).where(and(eq(schema.appointments.clientId, appt.clientId), ne(schema.appointments.id, appt.id), eq(schema.appointments.kind, "visit"), inArray(schema.appointments.status, ["completed", "checked_in", "confirmed", "booked"])))
+    ? await tx
+        .select({ n: sql<number>`count(*)` })
+        .from(schema.appointments)
+        .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id))
+        .where(and(eq(schema.appointments.clientId, appt.clientId), ne(schema.appointments.id, appt.id), eq(schema.appointments.kind, "visit"), eq(schema.appointments.status, "completed"), lt(schema.appointmentItems.startAt, start)))
     : [{ n: 0 }];
   return { clientId: appt.clientId, locationId: appt.locationId, staffId: use[0]?.staffId ?? null, serviceIds, categoryIds, clientTags: client?.tags ?? [], firstVisit: Number(prior?.n ?? 0) === 0, source: appt.source };
 }
@@ -272,41 +297,58 @@ export async function appointmentFacts(tx: TenantDb, appointmentId: string): Pro
  * caller's response via the returned promise, or on the next cron run regardless.
  */
 export async function triggerWorkflows(business: Business, trigger: WorkflowTrigger, input: TriggerInput): Promise<number> {
-  // A business that has never opened Automations still gets the defaults (e.g. rating requests), and one that
-  // has gets any template added since (it is a no-op once they all exist).
-  await ensureTemplates(business);
-  const ids = await withTenant(business.id, async (tx) => {
-    const flows = await tx.select().from(schema.workflows).where(and(eq(schema.workflows.trigger, trigger), eq(schema.workflows.enabled, true)));
-    if (!flows.length) return [];
-    const facts = input.facts ?? {};
-    const notifIds: string[] = [];
+  return guarded(`${trigger} trigger`, 0, async () => {
+    // A business that has never opened Automations still gets the defaults (e.g. rating requests), and one that
+    // has gets any template added since (it is a no-op once they all exist).
+    await ensureTemplates(business);
     const now = new Date();
-    for (const w of flows) {
-      if (input.onlyWorkflowIds && !input.onlyWorkflowIds.includes(w.id)) continue;
-      if (!matchesFilters(w.filters, facts)) continue;
-      const [run] = await tx
-        .insert(schema.workflowRuns)
-        .values({ businessId: business.id, workflowId: w.id, clientId: input.clientId, appointmentId: input.appointmentId ?? null, dedupeKey: input.dedupeKey, context: { ...input.context, locationId: facts.locationId ?? input.context?.locationId ?? null, staffId: facts.staffId ?? input.context?.staffId ?? null, serviceIds: facts.serviceIds, categoryIds: facts.categoryIds }, log: [{ at: now.toISOString(), step: null, event: "started", detail: input.context?.reason ?? triggerLabel(trigger) }] })
-        .onConflictDoNothing()
-        .returning();
-      if (!run) continue;
-      await advanceRun(tx, business, w, run, now, notifIds);
-    }
-    return notifIds;
+    // The runs start in one transaction (once per occasion), then each advances in its own (advanceOne).
+    const started = await withTenant(business.id, async (tx) => {
+      const flows = await tx.select().from(schema.workflows).where(and(eq(schema.workflows.trigger, trigger), eq(schema.workflows.enabled, true)));
+      const facts = input.facts ?? {};
+      const out: { w: Workflow; runId: string }[] = [];
+      for (const w of flows) {
+        if (input.onlyWorkflowIds && !input.onlyWorkflowIds.includes(w.id)) continue;
+        if (input.withoutReminders && w.steps.some((st) => st.type === "reminder")) continue;
+        if (!matchesFilters(w.filters, facts)) continue;
+        const [run] = await tx
+          .insert(schema.workflowRuns)
+          .values({ businessId: business.id, workflowId: w.id, clientId: input.clientId, appointmentId: input.appointmentId ?? null, dedupeKey: input.dedupeKey, nextAt: now, context: { ...input.context, locationId: facts.locationId ?? input.context?.locationId ?? null, staffId: facts.staffId ?? input.context?.staffId ?? null, serviceIds: facts.serviceIds, categoryIds: facts.categoryIds }, log: [{ at: now.toISOString(), step: null, event: "started", detail: input.context?.reason ?? triggerLabel(trigger) }] })
+          .onConflictDoNothing()
+          .returning({ id: schema.workflowRuns.id });
+        if (run) out.push({ w, runId: run.id });
+      }
+      return out;
+    });
+    const ids: string[] = [];
+    for (const { w, runId } of started) await advanceOne(business, w, runId, now, { fresh: true }, ids);
+    if (ids.length) void deliverMany(business.id, ids).catch((e) => console.error("[workflows] delivery failed", (e as Error).message));
+    return ids.length;
   });
-  if (ids.length) void deliverMany(business.id, ids).catch((e) => console.error("[workflows] delivery failed", (e as Error).message));
-  return ids.length;
 }
 
 const triggerLabel = (t: WorkflowTrigger) => ({ appointment_booked: "Appointment booked", appointment_completed: "Visit completed", appointment_cancelled: "Appointment cancelled", appointment_no_show: "No-show", client_created: "New client", form_submitted: "Form submitted", review_submitted: "Review received", membership_payment_failed: "Membership payment failed", birthday: "Birthday", no_visit: "No recent visit" })[t];
 
 /** Appointment-driven triggers in one call (used by the booking, status and checkout paths). */
-export async function triggerAppointmentWorkflows(business: Business, trigger: Extract<WorkflowTrigger, `appointment_${string}`>, appointmentId: string) {
-  const [facts, times] = await withTenant(business.id, async (tx) => [await appointmentFacts(tx, appointmentId), await appointmentTimes(tx, appointmentId)] as const);
-  if (!facts || !facts.clientId) return 0;
-  // "Booked" flows are per time slot: moving the appointment starts them again for the new time.
-  const dedupeKey = trigger === "appointment_booked" && times ? `${appointmentId}:${times.startAt.getTime()}` : appointmentId;
-  return triggerWorkflows(business, trigger, { clientId: facts.clientId, appointmentId, dedupeKey, facts, context: { appointmentId, reason: triggerLabel(trigger) } });
+export async function triggerAppointmentWorkflows(business: Business, trigger: Extract<WorkflowTrigger, `appointment_${string}`>, appointmentId: string, opts: { withoutReminders?: boolean } = {}) {
+  return guarded(`${trigger} trigger`, 0, async () => {
+    const [facts, times] = await withTenant(business.id, async (tx) => [await appointmentFacts(tx, appointmentId), await appointmentTimes(tx, appointmentId)] as const);
+    if (!facts || !facts.clientId) return 0;
+    // "Booked" flows are per time slot: moving the appointment starts them again for the new time.
+    const dedupeKey = trigger === "appointment_booked" && times ? `${appointmentId}:${times.startAt.getTime()}` : appointmentId;
+    return triggerWorkflows(business, trigger, { clientId: facts.clientId, appointmentId, dedupeKey, facts, context: { appointmentId, reason: triggerLabel(trigger) }, withoutReminders: opts.withoutReminders });
+  });
+}
+
+/**
+ * Everything automations do when an appointment is made, whichever path made it (online, the desk with or without a confirmation, a
+ * later visit in a series, the API, an import): its "Appointment booked" workflows start (the ones with a reminder step only when
+ * `reminders`), and the client's "stop if they book again" runs stop.
+ */
+export async function afterAppointmentBooked(business: Business, appointmentId: string, opts: { reminders?: boolean } = {}) {
+  await triggerAppointmentWorkflows(business, "appointment_booked", appointmentId, { withoutReminders: opts.reminders === false });
+  const appt = await guarded("reading the booked appointment", null, () => withTenant(business.id, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId), columns: { clientId: true } })));
+  if (appt?.clientId) await noteClientBooked(business, appt.clientId, { exceptAppointmentId: appointmentId });
 }
 
 /** Cancel runs: everything active for a workflow, an appointment, or a client. */
@@ -315,12 +357,19 @@ async function cancelRuns(tx: TenantDb, by: { workflowId?: string; appointmentId
   if (by.workflowId) conds.push(eq(schema.workflowRuns.workflowId, by.workflowId));
   if (by.appointmentId) conds.push(eq(schema.workflowRuns.appointmentId, by.appointmentId));
   if (by.clientId) conds.push(eq(schema.workflowRuns.clientId, by.clientId));
-  const runs = await tx.select().from(schema.workflowRuns).where(and(...conds));
-  for (const r of runs) {
-    await tx.update(schema.workflowRuns).set({ status: "cancelled", finishedAt: new Date(), nextAt: null, log: [...r.log, { at: new Date().toISOString(), step: r.stepIndex, event: "cancelled", detail: reason }] }).where(eq(schema.workflowRuns.id, r.id));
-    // Anything queued but not yet sent by this run goes with it.
-    await tx.update(schema.notifications).set({ status: "cancelled", error: reason }).where(and(eq(schema.notifications.workflowRunId, r.id), eq(schema.notifications.status, "queued")));
-  }
+  const runs = await tx.select({ id: schema.workflowRuns.id }).from(schema.workflowRuns).where(and(...conds));
+  for (const r of runs) await cancelRun(tx, r.id, reason);
+}
+
+/** Cancel one run. The log line is appended in SQL so a cron holding the row doesn't lose it (or we its). */
+async function cancelRun(tx: TenantDb, runId: string, reason: string) {
+  const entry: WorkflowRunLogEntry = { at: new Date().toISOString(), step: null, event: "cancelled", detail: reason };
+  await tx
+    .update(schema.workflowRuns)
+    .set({ status: "cancelled", finishedAt: new Date(), nextAt: null, log: sql`${schema.workflowRuns.log} || ${JSON.stringify([entry])}::jsonb` })
+    .where(and(eq(schema.workflowRuns.id, runId), eq(schema.workflowRuns.status, "active")));
+  // Anything queued but not yet sent by this run goes with it.
+  await tx.update(schema.notifications).set({ status: "cancelled", error: reason }).where(and(eq(schema.notifications.workflowRunId, runId), eq(schema.notifications.status, "queued")));
 }
 
 /**
@@ -328,6 +377,10 @@ async function cancelRuns(tx: TenantDb, by: { workflowId?: string; appointmentId
  * Called from the same places that move / drop the standard reminder.
  */
 export async function resyncAppointmentRuns(business: Business, appointmentId: string, change: "rescheduled" | "cancelled") {
+  await guarded(`resync after ${change}`, undefined, () => resync(business, appointmentId, change));
+}
+
+async function resync(business: Business, appointmentId: string, change: "rescheduled" | "cancelled") {
   let timed: string[] = [];
   await withTenant(business.id, async (tx) => {
     if (change === "cancelled") {
@@ -353,15 +406,18 @@ export async function resyncAppointmentRuns(business: Business, appointmentId: s
   await triggerWorkflows(business, "appointment_booked", { clientId: facts.clientId, appointmentId, dedupeKey: `${appointmentId}:${times.startAt.getTime()}:moved:${Date.now()}`, facts, context: { appointmentId, reason: "Appointment moved" }, onlyWorkflowIds: timed });
 }
 
-/** Stop "until they book again" runs for a client who just booked. */
-export async function noteClientBooked(business: Business, clientId: string) {
-  await withTenant(business.id, async (tx) => {
-    const runs = await tx.select({ id: schema.workflowRuns.id, workflowId: schema.workflowRuns.workflowId }).from(schema.workflowRuns).where(and(eq(schema.workflowRuns.clientId, clientId), eq(schema.workflowRuns.status, "active")));
-    for (const r of runs) {
-      const w = await tx.query.workflows.findFirst({ where: eq(schema.workflows.id, r.workflowId), columns: { exitOnBooking: true } });
-      if (w?.exitOnBooking) await cancelRuns(tx, { clientId, workflowId: r.workflowId }, "Client booked again");
-    }
-  });
+/** Stop "until they book again" runs for a client who just booked (other than runs about the new visit itself). */
+export async function noteClientBooked(business: Business, clientId: string, opts: { exceptAppointmentId?: string } = {}) {
+  await guarded("noting a booking", undefined, () =>
+    withTenant(business.id, async (tx) => {
+      const runs = await tx.select({ id: schema.workflowRuns.id, workflowId: schema.workflowRuns.workflowId, appointmentId: schema.workflowRuns.appointmentId }).from(schema.workflowRuns).where(and(eq(schema.workflowRuns.clientId, clientId), eq(schema.workflowRuns.status, "active")));
+      for (const r of runs) {
+        if (opts.exceptAppointmentId && r.appointmentId === opts.exceptAppointmentId) continue;
+        const w = await tx.query.workflows.findFirst({ where: eq(schema.workflows.id, r.workflowId), columns: { exitOnBooking: true } });
+        if (w?.exitOnBooking) await cancelRun(tx, r.id, "Client booked again");
+      }
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -409,19 +465,28 @@ async function varsFor(tx: TenantDb, business: Business, w: Workflow, run: Workf
   return { vars, ctaUrl, ctaLabel, brand, apptCtx };
 }
 
+/** Dates in run logs read like the rest of the app: the business's clock, not ISO. */
+const whenIn = (business: Business) => {
+  const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
+  return (at: Date) => fmt.format(at);
+};
+
 /**
  * Execute steps from the run's current index until a wait stops it or it finishes.
  * Appends to the run log and queues notifications (ids collected in `out`).
+ * A run resumed by the cron starts at its wait step: a delay has simply passed, while a "before / after the visit" wait is re-derived
+ * from the appointment's current time, so a visit moved without a notification (API notify:false) still gets its messages at the
+ * right moment.
  */
 async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: WorkflowRun, now: Date, out: string[]) {
   const log: WorkflowRunLogEntry[] = [...run.log];
+  const when = whenIn(business);
   const note = (step: number | null, event: WorkflowRunLogEntry["event"], detail: string) => log.push({ at: new Date().toISOString(), step, event, detail });
   const finish = async (status: "done" | "cancelled", stepIndex: number, nextAt: Date | null = null) => {
     await tx.update(schema.workflowRuns).set({ status, stepIndex, nextAt, finishedAt: new Date(), log }).where(eq(schema.workflowRuns.id, run.id));
   };
   const client = run.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, run.clientId) }) : null;
   if (!client) { note(null, "cancelled", "Client no longer exists"); await finish("cancelled", run.stepIndex); return; }
-  const marketing = isMarketingTrigger(w.trigger);
   let i = run.stepIndex;
   let vars: Awaited<ReturnType<typeof varsFor>> | null = null;
   const getVars = async () => (vars ??= await varsFor(tx, business, w, run, client));
@@ -430,27 +495,39 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
   let skipNextMessage = false;
   for (; i < w.steps.length; i++) {
     const step = w.steps[i]!;
-    // Guards before every step.
+    // Guards before every step, waits included.
     if (run.appointmentId && w.trigger === "appointment_booked") {
       const t = await appointmentTimes(tx, run.appointmentId);
       if (!t || t.status === "cancelled" || t.status === "no_show") { note(i, "cancelled", "Appointment cancelled"); await finish("cancelled", i); return; }
     }
-    if (w.exitOnBooking && step.type !== "wait") {
-      const [up] = await tx.select({ n: sql<number>`count(*)` }).from(schema.appointments).innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id)).where(and(eq(schema.appointments.clientId, client.id), inArray(schema.appointments.status, ["booked", "confirmed"]), gte(schema.appointmentItems.startAt, now), gte(schema.appointments.createdAt, run.startedAt)));
-      if (Number(up?.n ?? 0) > 0) { note(i, "cancelled", "Client booked again"); await finish("cancelled", i); return; }
+    // "Stop if the client books again": anything on the calendar counts, whether it was booked before or after this run started
+    // (pre-booking the next visit at checkout is the normal flow), other than the visit this run is about.
+    if (w.exitOnBooking) {
+      const conds = [eq(schema.appointments.clientId, client.id), inArray(schema.appointments.status, ["booked", "confirmed"]), ne(schema.appointmentItems.status, "cancelled"), gte(schema.appointmentItems.startAt, now)];
+      if (run.appointmentId) conds.push(ne(schema.appointments.id, run.appointmentId));
+      const [up] = await tx.select({ n: sql<number>`count(*)` }).from(schema.appointments).innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id)).where(and(...conds));
+      if (Number(up?.n ?? 0) > 0) { note(i, "cancelled", "Client has a visit booked"); await finish("cancelled", i); return; }
     }
     if (step.type === "wait") {
+      // Resuming = the cron woke this run from this very wait (it logged "waiting" here); a fresh run reaching the step is not.
+      const resuming = i === run.stepIndex && run.log.some((l) => l.event === "waiting" && l.step === i);
+      // A plain delay that the cron woke us for has passed; a wait timed from the visit is re-derived from where the visit is now.
+      if (resuming && step.mode === "delay") continue;
       const times = run.appointmentId ? await appointmentTimes(tx, run.appointmentId) : null;
       const at = waitResumesAt(step, now, times);
       if (!at) { note(i, "skipped", "No appointment to time this wait from"); continue; }
-      const resuming = i === run.stepIndex && !!run.nextAt && run.nextAt <= now;
       if (step.mode === "before_appointment" && at <= now && !resuming) {
         skipNextMessage = true;
         note(i, "skipped", "Booked inside this window: the confirmation covers it");
         continue;
       }
+      if (step.mode === "before_appointment" && resuming && times && times.startAt <= now) {
+        skipNextMessage = true;
+        note(i, "skipped", "The appointment was moved earlier and has already started");
+        continue;
+      }
       if (at > now) {
-        note(i, "waiting", `Resumes ${at.toISOString()}`);
+        note(i, "waiting", resuming ? `Appointment moved: resumes ${when(at)}` : `Resumes ${when(at)}`);
         await tx.update(schema.workflowRuns).set({ stepIndex: i, nextAt: at, log }).where(eq(schema.workflowRuns.id, run.id));
         return;
       }
@@ -459,10 +536,14 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
     if (step.type === "sms" || step.type === "email") {
       if (skipNextMessage) { skipNextMessage = false; note(i, "skipped", "Not sent: booked inside the reminder window"); continue; }
       const v = await getVars();
+      // Marketing or transactional is decided per step (messageConsent): a rebook nudge weeks after a visit is marketing, the
+      // aftercare text the next day is part of the visit.
+      const consent = messageConsent(w.trigger, w.steps, i);
+      const marketing = consent.marketing;
       // Quiet hours where the client is: the visit's location, else their usual one.
       const zone = (await locationTimeZones(tx, business))(run.context.locationId ?? client?.homeLocationId);
-      const scheduledAt = marketing ? deferToDaytime(now, zone) : now;
-      const deferred = scheduledAt > now ? ` (held until ${scheduledAt.toISOString()}, quiet hours)` : "";
+      const scheduledAt = (step.type === "sms" ? consent.quietHours : marketing) ? deferToDaytime(now, zone) : now;
+      const deferred = scheduledAt > now ? ` (held until ${when(scheduledAt)}, quiet hours)` : "";
       if (step.type === "sms") {
         const phone = normalizePhone(client.phone);
         if (!client.smsOptIn || !phone) { note(i, "skipped", "No text consent or number"); continue; }
@@ -472,17 +553,19 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
         const body = await smsWithStopNotice(tx, client, text.startsWith(`${v.brand.businessName}:`) ? text : `${v.brand.businessName}: ${text}`, marketing);
         const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: `workflow_${w.templateKey ?? "custom"}`, recipient: phone, body, scheduledAt, workflowRunId: run.id, marketing }).returning({ id: schema.notifications.id });
         out.push(row!.id);
-        note(i, "sent", `Text queued to ${phone}${deferred}`);
+        note(i, "queued", `Text queued to ${phone}${deferred}`);
       } else {
         if (!client.emailOptIn || !client.email) { note(i, "skipped", "No email consent or address"); continue; }
         if (marketing && !client.emailMarketingOptIn) { note(i, "skipped", "Unsubscribed from marketing emails"); continue; }
-        // A marketing email must show a postal address (CAN-SPAM).
+        // A marketing email must show a postal address (CAN-SPAM) and carry an unsubscribe link; a transactional one carries neither,
+        // so an aftercare or payment-failed email can't switch off the client's marketing by mistake.
         const address = v.brand.address || (marketing ? await postalAddress(tx, business) : null);
         if (marketing && !address) { note(i, "skipped", NO_POSTAL_ADDRESS); continue; }
-        const t = marketingEmail({ ...v.brand, address }, { subject: renderText(step.subject, v.vars), text: renderText(step.body, v.vars), ctaLabel: step.ctaLabel ?? v.ctaLabel, ctaUrl: v.ctaUrl, unsubscribeUrl: unsubscribeUrl(business, client.id) });
+        const content = { subject: renderText(step.subject, v.vars), text: renderText(step.body, v.vars), ctaLabel: step.ctaLabel ?? v.ctaLabel, ctaUrl: v.ctaUrl };
+        const t = marketing ? marketingEmail({ ...v.brand, address }, { ...content, unsubscribeUrl: unsubscribeUrl(business, client.id) }) : transactionalEmail(v.brand, content);
         const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: `workflow_${w.templateKey ?? "custom"}`, recipient: client.email, subject: t.subject, body: t.html, scheduledAt, workflowRunId: run.id, marketing }).returning({ id: schema.notifications.id });
         out.push(row!.id);
-        note(i, "sent", `Email queued to ${client.email}${deferred}`);
+        note(i, "queued", `Email queued to ${client.email}${deferred}`);
       }
       continue;
     }
@@ -502,7 +585,7 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
         const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", v.apptCtx.ctx)), scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });
         out.push(row!.id); any = true;
       }
-      note(i, any ? "sent" : "skipped", any ? `Reminder queued (${[client.emailOptIn && client.email ? "email" : null, client.smsOptIn && phone ? "text" : null].filter(Boolean).join(" + ")})` : "No channel the client has consented to");
+      note(i, any ? "queued" : "skipped", any ? `Reminder queued (${[client.emailOptIn && client.email ? "email" : null, client.smsOptIn && phone ? "text" : null].filter(Boolean).join(" + ")})` : "No channel the client has consented to");
       continue;
     }
     if (step.type === "review_request") {
@@ -519,11 +602,12 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       if (client.emailOptIn && client.email) {
         const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: "review_request", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });
         out.push(row!.id);
-        note(i, "sent", `Rating request emailed to ${client.email}`);
+        note(i, "queued", `Rating request emailed to ${client.email}`);
       } else if (client.smsOptIn && phone) {
-        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: "review_request", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "review_request", v.apptCtx.ctx, { review_url: url })), scheduledAt: deferToDaytime(now, (await locationTimeZones(tx, business))(run.context.locationId ?? client.homeLocationId)), workflowRunId: run.id }).returning({ id: schema.notifications.id });
+        const scheduledAt = deferToDaytime(now, (await locationTimeZones(tx, business))(run.context.locationId ?? client.homeLocationId));
+        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: "review_request", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "review_request", v.apptCtx.ctx, { review_url: url })), scheduledAt, workflowRunId: run.id }).returning({ id: schema.notifications.id });
         out.push(row!.id);
-        note(i, "sent", `Rating request texted to ${phone} (held for daytime if it's late)`);
+        note(i, "queued", `Rating request texted to ${phone}${scheduledAt > now ? ` (held until ${when(scheduledAt)}, quiet hours)` : ""}`);
       } else note(i, "skipped", "No channel the client has consented to");
       continue;
     }
@@ -567,31 +651,80 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
   await finish("done", i);
 }
 
-/** Cron: resume every run whose wait is over, across tenants. */
-export async function processWorkflowRuns(now = new Date()): Promise<{ businesses: number; resumed: number; queued: number }> {
-  const due = await withJobs((tx) => tx.selectDistinct({ businessId: schema.workflowRuns.businessId }).from(schema.workflowRuns).where(and(eq(schema.workflowRuns.status, "active"), lte(schema.workflowRuns.nextAt, now))).limit(500));
+/** How long the cron's claim on a due run lasts: if the process dies mid-run, the next cron after this picks the run up again. */
+const RUN_LEASE_MS = 10 * 60_000;
+
+/**
+ * Advance one run in a transaction of its own, so a step that throws rolls back only that run (which is then marked failed, with the
+ * error as its last log line, and reported) and the rest of the batch goes on. `fresh` is a run a trigger just started, `lease` the
+ * nextAt the cron stamped on a due run when it claimed it; either way the run is left alone when something else moved it meanwhile.
+ * Messages it queued go into `out`.
+ */
+async function advanceOne(business: Business, w: Workflow, runId: string, now: Date, claim: { fresh: true } | { lease: Date }, out: string[]): Promise<"advanced" | "skipped" | "failed"> {
+  try {
+    const queued = await withTenant(business.id, async (tx) => {
+      const [run] = await tx.select().from(schema.workflowRuns).where(and(eq(schema.workflowRuns.id, runId), eq(schema.workflowRuns.status, "active"))).for("update");
+      if (!run) return null;
+      if ("fresh" in claim ? run.log.length > 1 : run.nextAt?.getTime() !== claim.lease.getTime()) return null;
+      const ids: string[] = [];
+      await advanceRun(tx, business, w, run, now, ids);
+      return ids;
+    });
+    if (!queued) return "skipped";
+    out.push(...queued);
+    return "advanced";
+  } catch (e) {
+    const entry: WorkflowRunLogEntry = { at: new Date().toISOString(), step: null, event: "failed", detail: `Step failed: ${((e as Error).message ?? String(e)).slice(0, 300)}` };
+    await withTenant(business.id, (tx) =>
+      tx
+        .update(schema.workflowRuns)
+        .set({ status: "failed", nextAt: null, finishedAt: new Date(), log: sql`${schema.workflowRuns.log} || ${JSON.stringify([entry])}::jsonb` })
+        .where(and(eq(schema.workflowRuns.id, runId), eq(schema.workflowRuns.status, "active"))),
+    ).catch((e2) => console.error("[workflows] could not mark run failed", runId, (e2 as Error).message));
+    await reportError(`workflows: run of “${w.name}” failed`, e, { businessId: business.id, workflowId: w.id, runId });
+    return "failed";
+  }
+}
+
+/** Cron: resume every run whose wait is over, across tenants. One tenant's bad run never holds up another's. */
+export async function processWorkflowRuns(now = new Date(), opts: { /** Only these businesses (tests). */ businessIds?: string[] } = {}): Promise<{ businesses: number; resumed: number; queued: number; failed: number }> {
+  const due = await withJobs((tx) =>
+    tx
+      .selectDistinct({ businessId: schema.workflowRuns.businessId })
+      .from(schema.workflowRuns)
+      .where(and(eq(schema.workflowRuns.status, "active"), lte(schema.workflowRuns.nextAt, now), opts.businessIds ? inArray(schema.workflowRuns.businessId, opts.businessIds) : undefined))
+      .limit(500),
+  );
   let resumed = 0;
   let queued = 0;
+  let failed = 0;
   for (const { businessId } of due) {
-    const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
-    if (!business) continue;
-    const ids = await withTenant(businessId, async (tx) => {
+    try {
+      const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
+      if (!business) continue;
+      // Claim a batch by stamping a lease on nextAt (skipping runs another cron holds), then advance each in its own transaction.
+      const lease = new Date(now.getTime() + RUN_LEASE_MS);
+      const claimed = await withTenant(businessId, async (tx) => {
+        const candidates = tx.select({ id: schema.workflowRuns.id }).from(schema.workflowRuns).where(and(eq(schema.workflowRuns.status, "active"), lte(schema.workflowRuns.nextAt, now))).orderBy(asc(schema.workflowRuns.nextAt)).limit(200).for("update", { skipLocked: true });
+        return tx.update(schema.workflowRuns).set({ nextAt: lease }).where(inArray(schema.workflowRuns.id, candidates)).returning({ id: schema.workflowRuns.id, workflowId: schema.workflowRuns.workflowId });
+      });
       const out: string[] = [];
-      const candidates = tx.select({ id: schema.workflowRuns.id }).from(schema.workflowRuns).where(and(eq(schema.workflowRuns.status, "active"), lte(schema.workflowRuns.nextAt, now))).orderBy(asc(schema.workflowRuns.nextAt)).limit(200).for("update", { skipLocked: true });
-      const runs = await tx.select().from(schema.workflowRuns).where(inArray(schema.workflowRuns.id, candidates));
-      for (const run of runs) {
-        const w = await tx.query.workflows.findFirst({ where: eq(schema.workflows.id, run.workflowId) });
-        if (!w || !w.enabled) { await cancelRuns(tx, { workflowId: run.workflowId }, "Workflow turned off"); continue; }
-        // Mark the wait as passed before executing the rest of the steps.
-        const resumedRun = { ...run, stepIndex: w.steps[run.stepIndex]?.type === "wait" ? run.stepIndex + 1 : run.stepIndex };
-        await advanceRun(tx, business, w, resumedRun, now, out);
-        resumed++;
+      const flows = new Map<string, Workflow | null>();
+      for (const run of claimed) {
+        if (!flows.has(run.workflowId)) flows.set(run.workflowId, (await withTenant(businessId, (tx) => tx.query.workflows.findFirst({ where: eq(schema.workflows.id, run.workflowId) }))) ?? null);
+        const w = flows.get(run.workflowId);
+        if (!w || !w.enabled) { await withTenant(businessId, (tx) => cancelRun(tx, run.id, "Workflow turned off")); continue; }
+        const r = await advanceOne(business, w, run.id, now, { lease }, out);
+        if (r === "advanced") resumed++;
+        else if (r === "failed") failed++;
       }
-      return out;
-    });
-    queued += ids.length;
+      queued += out.length;
+    } catch (e) {
+      failed++;
+      await reportError("workflows: resuming a business's runs failed", e, { businessId });
+    }
   }
-  return { businesses: due.length, resumed, queued };
+  return { businesses: due.length, resumed, queued, failed };
 }
 
 // ---------------------------------------------------------------------------
@@ -604,52 +737,72 @@ const SCHEDULED_BATCH = 200;
  * Birthday and "no visit" workflows. Each enabled one is scanned once a day after 9am local (not every 5 minutes): one query finds who is
  * due and hasn't had this workflow for this occasion yet, then their runs start in one transaction and their messages go out together.
  * Suspended businesses are skipped. A no-visit workflow only reaches clients who crossed its threshold in the last week (noVisitWindow).
+ * A workflow whose scan throws is reported and tried again next run; the other workflows and businesses carry on.
  */
-export async function runScheduledTriggers(now = new Date()): Promise<{ businesses: number; started: number }> {
+export async function runScheduledTriggers(now = new Date()): Promise<{ businesses: number; started: number; failed: number }> {
   const enabled = await withJobs((tx) => tx.selectDistinct({ businessId: schema.workflows.businessId }).from(schema.workflows).where(and(eq(schema.workflows.enabled, true), inArray(schema.workflows.trigger, ["birthday", "no_visit"]))));
   let started = 0;
+  let failed = 0;
   for (const { businessId } of enabled) {
-    const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
-    if (!business || business.suspendedAt) continue;
-    const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: business.timezone, hour: "numeric", hour12: false }).format(now)) % 24;
-    if (hour < 9 || hour >= 20) continue;
-    const today = instantToISODate(now, business.timezone);
-    const flows = await withTenant(businessId, (tx) =>
-      tx.select().from(schema.workflows).where(and(eq(schema.workflows.enabled, true), inArray(schema.workflows.trigger, ["birthday", "no_visit"]), or(isNull(schema.workflows.lastScanOn), ne(schema.workflows.lastScanOn, today)))),
-    );
-    for (const w of flows) {
-      const due = await withTenant(businessId, async (tx) => {
-        if (w.trigger === "birthday") {
-          const rows = await tx.execute<{ client_id: string; tags: string[] }>(sql`
-            select c.id as client_id, c.tags from clients c
-            where c.birthday is not null and to_char(c.birthday, 'MM-DD') in ${birthdayKeys(today)}
-              and not exists (select 1 from workflow_runs wr where wr.workflow_id = ${w.id} and wr.dedupe_key = c.id || ':' || ${today.slice(0, 4)})`);
-          return rows.map((r) => ({ clientId: r.client_id, appointmentId: null, dedupeKey: `${r.client_id}:${today.slice(0, 4)}`, tags: r.tags, reason: "Birthday" }));
+    try {
+      const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
+      if (!business || business.suspendedAt) continue;
+      const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: business.timezone, hour: "numeric", hour12: false }).format(now)) % 24;
+      if (hour < 9 || hour >= 20) continue;
+      const today = instantToISODate(now, business.timezone);
+      const flows = await withTenant(businessId, (tx) =>
+        tx.select().from(schema.workflows).where(and(eq(schema.workflows.enabled, true), inArray(schema.workflows.trigger, ["birthday", "no_visit"]), or(isNull(schema.workflows.lastScanOn), ne(schema.workflows.lastScanOn, today)))),
+      );
+      for (const w of flows) {
+        try {
+          const r = await scanScheduledWorkflow(business, w, now, today);
+          started += r.started;
+          failed += r.failed;
+        } catch (e) {
+          failed++;
+          await reportError(`workflows: daily scan of “${w.name}” failed`, e, { businessId, workflowId: w.id });
         }
-        const days = w.filters.days ?? 60;
-        const win = noVisitWindow(now, days);
-        const rows = await tx.execute<{ client_id: string; appointment_id: string; tags: string[] }>(sql`
-          select v.client_id, v.appointment_id, c.tags
-          from (
-            select distinct on (a.client_id) a.client_id, a.id as appointment_id, i.start_at as last_visit
-            from appointments a join appointment_items i on i.appointment_id = a.id and i.sort_order = 0
-            where a.status = 'completed' and a.client_id is not null
-            order by a.client_id, i.start_at desc
-          ) v join clients c on c.id = v.client_id
-          where v.last_visit > ${win.from.toISOString()}::timestamptz and v.last_visit <= ${win.to.toISOString()}::timestamptz
-            and not exists (select 1 from appointments a2 join appointment_items i2 on i2.appointment_id = a2.id
-                            where a2.client_id = v.client_id and a2.status in ('booked','confirmed') and i2.start_at > now())
-            and not exists (select 1 from workflow_runs wr where wr.workflow_id = ${w.id} and wr.dedupe_key = v.client_id || ':' || v.appointment_id)`);
-        return rows.map((r) => ({ clientId: r.client_id, appointmentId: null, dedupeKey: `${r.client_id}:${r.appointment_id}`, tags: r.tags, reason: `No visit for ${days} days` }));
-      });
-      // The window is small (one day of birthdays, one week of lapses), so filters are applied before the batch cap: clients a filter
-      // leaves out never hold up the day.
-      const matching = due.filter((d) => matchesFilters(w.filters, { clientTags: d.tags }));
-      started += await startScheduledRuns(business, w, matching.slice(0, SCHEDULED_BATCH));
-      if (matching.length <= SCHEDULED_BATCH) await withTenant(businessId, (tx) => tx.update(schema.workflows).set({ lastScanOn: today }).where(eq(schema.workflows.id, w.id)));
+      }
+    } catch (e) {
+      failed++;
+      await reportError("workflows: daily scan for a business failed", e, { businessId });
     }
   }
-  return { businesses: enabled.length, started };
+  return { businesses: enabled.length, started, failed };
+}
+
+/** One birthday / no-visit workflow's daily scan: who is due today, their runs started (capped per job), the day marked done. */
+async function scanScheduledWorkflow(business: Business, w: Workflow, now: Date, today: string): Promise<{ started: number; failed: number }> {
+  const due = await withTenant(business.id, async (tx) => {
+    if (w.trigger === "birthday") {
+      const rows = await tx.execute<{ client_id: string; tags: string[] }>(sql`
+        select c.id as client_id, c.tags from clients c
+        where c.birthday is not null and to_char(c.birthday, 'MM-DD') in ${birthdayKeys(today)}
+          and not exists (select 1 from workflow_runs wr where wr.workflow_id = ${w.id} and wr.dedupe_key = c.id || ':' || ${today.slice(0, 4)})`);
+      return rows.map((r) => ({ clientId: r.client_id, appointmentId: null, dedupeKey: `${r.client_id}:${today.slice(0, 4)}`, tags: r.tags, reason: "Birthday" }));
+    }
+    const days = w.filters.days ?? 60;
+    const win = noVisitWindow(now, days);
+    const rows = await tx.execute<{ client_id: string; appointment_id: string; tags: string[] }>(sql`
+      select v.client_id, v.appointment_id, c.tags
+      from (
+        select distinct on (a.client_id) a.client_id, a.id as appointment_id, i.start_at as last_visit
+        from appointments a join appointment_items i on i.appointment_id = a.id and i.sort_order = 0
+        where a.status = 'completed' and a.client_id is not null
+        order by a.client_id, i.start_at desc
+      ) v join clients c on c.id = v.client_id
+      where v.last_visit > ${win.from.toISOString()}::timestamptz and v.last_visit <= ${win.to.toISOString()}::timestamptz
+        and not exists (select 1 from appointments a2 join appointment_items i2 on i2.appointment_id = a2.id
+                        where a2.client_id = v.client_id and a2.status in ('booked','confirmed') and i2.start_at > now())
+        and not exists (select 1 from workflow_runs wr where wr.workflow_id = ${w.id} and wr.dedupe_key = v.client_id || ':' || v.appointment_id)`);
+    return rows.map((r) => ({ clientId: r.client_id, appointmentId: null, dedupeKey: `${r.client_id}:${r.appointment_id}`, tags: r.tags, reason: `No visit for ${days} days` }));
+  });
+  // The window is small (one day of birthdays, one week of lapses), so filters are applied before the batch cap: clients a filter
+  // leaves out never hold up the day.
+  const matching = due.filter((d) => matchesFilters(w.filters, { clientTags: d.tags }));
+  const r = await startScheduledRuns(business, w, matching.slice(0, SCHEDULED_BATCH));
+  if (matching.length <= SCHEDULED_BATCH) await withTenant(business.id, (tx) => tx.update(schema.workflows).set({ lastScanOn: today }).where(eq(schema.workflows.id, w.id)));
+  return r;
 }
 
 /** For the workflow page: how many clients a no-visit workflow would message at its next daily scan (in the window, not yet messaged). */
@@ -671,25 +824,30 @@ export async function noVisitReach(business: Business, w: Workflow, now = new Da
   return Number(row?.n ?? 0);
 }
 
-/** Start one workflow's runs for many clients in one transaction (skipping any already started) and send what they queue together. */
-async function startScheduledRuns(business: Business, w: Workflow, due: { clientId: string; appointmentId: string | null; dedupeKey: string; tags: string[]; reason: string }[]): Promise<number> {
-  if (!due.length) return 0;
+/** Start one workflow's runs for many clients (skipping any already started), advance each in its own transaction and send what they queue together. */
+async function startScheduledRuns(business: Business, w: Workflow, due: { clientId: string; appointmentId: string | null; dedupeKey: string; tags: string[]; reason: string }[]): Promise<{ started: number; failed: number }> {
+  if (!due.length) return { started: 0, failed: 0 };
   const now = new Date();
-  const ids = await withTenant(business.id, async (tx) => {
+  const runIds = await withTenant(business.id, async (tx) => {
     const out: string[] = [];
     for (const d of due) {
       const [run] = await tx
         .insert(schema.workflowRuns)
-        .values({ businessId: business.id, workflowId: w.id, clientId: d.clientId, appointmentId: d.appointmentId, dedupeKey: d.dedupeKey, context: { reason: d.reason }, log: [{ at: now.toISOString(), step: null, event: "started", detail: d.reason }] })
+        .values({ businessId: business.id, workflowId: w.id, clientId: d.clientId, appointmentId: d.appointmentId, dedupeKey: d.dedupeKey, nextAt: now, context: { reason: d.reason }, log: [{ at: now.toISOString(), step: null, event: "started", detail: d.reason }] })
         .onConflictDoNothing()
-        .returning();
-      if (run) await advanceRun(tx, business, w, run, now, out);
+        .returning({ id: schema.workflowRuns.id });
+      if (run) out.push(run.id);
     }
     return out;
   });
+  let started = 0;
+  let failed = 0;
+  const ids: string[] = [];
+  for (const runId of runIds) {
+    const r = await advanceOne(business, w, runId, now, { fresh: true }, ids);
+    if (r === "advanced") started++;
+    else if (r === "failed") failed++;
+  }
   if (ids.length) await deliverMany(business.id, ids).catch((e) => console.error("[workflows] delivery failed", (e as Error).message));
-  return ids.length;
+  return { started, failed };
 }
-
-// keep helpers referenced for future steps
-void isNull;

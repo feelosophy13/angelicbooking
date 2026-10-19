@@ -1342,7 +1342,8 @@ export const workflows = pgTable(
   (t) => [index("workflows_business_trigger_idx").on(t.businessId, t.trigger), uniqueIndex("workflows_business_template_uq").on(t.businessId, t.templateKey)],
 );
 
-export type WorkflowRunStatus = "active" | "done" | "cancelled";
+// "failed": a step threw (the error is the last log line); the cron leaves it alone and carries on with the other runs.
+export type WorkflowRunStatus = "active" | "done" | "cancelled" | "failed";
 export interface WorkflowRunContext {
   appointmentId?: string | null;
   locationId?: string | null;
@@ -1358,7 +1359,9 @@ export interface WorkflowRunContext {
 export interface WorkflowRunLogEntry {
   at: string; // ISO
   step: number | null;
-  event: "started" | "waiting" | "sent" | "skipped" | "action" | "cancelled" | "done";
+  // "queued" when a step hands a message to delivery; "sent" / "skipped" / "failed" are what delivery then did with it (appended by
+  // lib/notify when the message is tried), so the log says what actually went out.
+  event: "started" | "waiting" | "queued" | "sent" | "skipped" | "failed" | "action" | "cancelled" | "done";
   detail: string;
 }
 

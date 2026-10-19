@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { deferToDaytime, matchesFilters, summarizeSteps, validateSteps, waitResumesAt, birthdayKeys, noVisitWindow } from "../workflows-logic";
+import type { WorkflowStep } from "@angelic/db";
+import { birthdayKeys, consentLine, deferToDaytime, hoursBeforeStep, matchesFilters, messageConsent, noVisitWindow, runOutcome, summarizeSteps, validateSteps, waitResumesAt } from "../workflows-logic";
 
 describe("matchesFilters", () => {
   it("can be limited to bookings the client made online", () => {
@@ -74,5 +75,65 @@ describe("scheduled workflow dates", () => {
     expect(birthdayKeys("2028-02-28")).toEqual(["02-28"]);
     expect(birthdayKeys("2028-02-29")).toEqual(["02-29"]);
     expect(birthdayKeys("2027-07-04")).toEqual(["07-04"]);
+  });
+});
+
+describe("messageConsent", () => {
+  const wait = (hours: number, mode: "delay" | "before_appointment" | "after_appointment" = "delay"): WorkflowStep => ({ id: `w${hours}`, type: "wait", mode, hours });
+  const sms: WorkflowStep = { id: "s", type: "sms", body: "hi" };
+  const email: WorkflowStep = { id: "e", type: "email", subject: "s", body: "b" };
+  it("adds up the waits before a step, restarting the clock at an after-the-visit wait", () => {
+    expect(hoursBeforeStep([wait(20, "after_appointment"), sms], 1)).toBe(20);
+    expect(hoursBeforeStep([wait(2), wait(3), sms, wait(100), email], 2)).toBe(5);
+    expect(hoursBeforeStep([wait(2), wait(3), sms, wait(100), email], 4)).toBe(105);
+    expect(hoursBeforeStep([wait(5), wait(48, "after_appointment"), sms], 2)).toBe(48);
+    expect(hoursBeforeStep([sms], 0)).toBe(0);
+  });
+  it("treats aftercare and welcome messages within 72 hours as part of the visit, later ones as marketing", () => {
+    expect(messageConsent("appointment_completed", [wait(20, "after_appointment"), sms], 1)).toEqual({ marketing: false, quietHours: true });
+    expect(messageConsent("appointment_completed", [wait(72), sms], 1).marketing).toBe(false);
+    expect(messageConsent("appointment_completed", [wait(28 * 24), email], 1).marketing).toBe(true);
+    expect(messageConsent("client_created", [wait(1), email], 1).marketing).toBe(false);
+    expect(messageConsent("client_created", [wait(1), email, wait(7 * 24), email], 3).marketing).toBe(true);
+  });
+  it("keeps birthday and no-visit messages marketing and everything else transactional", () => {
+    expect(messageConsent("birthday", [email], 0).marketing).toBe(true);
+    expect(messageConsent("no_visit", [email], 0).marketing).toBe(true);
+    expect(messageConsent("appointment_no_show", [wait(1), sms], 1).marketing).toBe(false);
+    expect(messageConsent("membership_payment_failed", [email], 0).marketing).toBe(false);
+    expect(messageConsent("review_submitted", [sms], 0).marketing).toBe(false);
+  });
+  it("holds every text for daytime except the booked and cancelled confirmations", () => {
+    expect(messageConsent("appointment_booked", [sms], 0).quietHours).toBe(false);
+    expect(messageConsent("appointment_cancelled", [sms], 0).quietHours).toBe(false);
+    expect(messageConsent("appointment_no_show", [wait(1), sms], 1).quietHours).toBe(true);
+    expect(messageConsent("form_submitted", [sms], 0).quietHours).toBe(true);
+    expect(messageConsent("no_visit", [sms], 0).quietHours).toBe(true);
+  });
+  it("tells the editor which consent each message step needs", () => {
+    expect(consentLine(sms, "appointment_completed", [wait(20, "after_appointment"), sms], 1)).toMatch(/^Appointment text: needs text consent only; sent 9am/);
+    expect(consentLine(sms, "appointment_booked", [sms], 0)).toMatch(/goes out right away/);
+    expect(consentLine(sms, "no_visit", [sms], 0)).toMatch(/^Marketing text: needs the client's written consent/);
+    expect(consentLine(email, "appointment_completed", [wait(28 * 24), email], 1)).toMatch(/^Marketing email/);
+    expect(consentLine(email, "membership_payment_failed", [email], 0)).toMatch(/^Transactional email/);
+    expect(consentLine(wait(1), "birthday", [wait(1)], 0)).toBeNull();
+  });
+});
+
+describe("runOutcome", () => {
+  type Event = Parameters<typeof runOutcome>[0]["log"][number]["event"];
+  // A step's own line carries its index; what delivery appends later has none.
+  const step = (event: Event) => ({ at: "2026-10-18T12:00:00Z", step: 0, event, detail: event });
+  const delivery = (event: Event) => ({ at: "2026-10-18T12:05:00Z", step: null, event, detail: event });
+  it("reads what was actually sent, not that something was queued", () => {
+    expect(runOutcome({ status: "active", log: [step("started"), step("waiting")] })).toBe("active");
+    expect(runOutcome({ status: "cancelled", log: [step("started"), step("cancelled")] })).toBe("cancelled");
+    expect(runOutcome({ status: "failed", log: [step("started"), step("failed")] })).toBe("failed");
+    expect(runOutcome({ status: "done", log: [step("started"), step("queued"), step("done")] })).toBe("queued");
+    expect(runOutcome({ status: "done", log: [step("started"), step("queued"), step("done"), delivery("sent")] })).toBe("sent");
+    expect(runOutcome({ status: "done", log: [step("started"), step("queued"), step("done"), delivery("skipped")] })).toBe("skipped");
+    expect(runOutcome({ status: "done", log: [step("started"), step("skipped"), step("done")] })).toBe("skipped");
+    expect(runOutcome({ status: "done", log: [step("started"), step("queued"), step("queued"), step("done"), delivery("sent"), delivery("failed")] })).toBe("failed");
+    expect(runOutcome({ status: "done", log: [step("started"), step("action"), step("done")] })).toBe("done");
   });
 });
