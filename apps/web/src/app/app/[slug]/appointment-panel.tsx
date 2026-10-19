@@ -9,6 +9,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { toast } from "@/components/toaster";
 import type { CalItem } from "./calendar-grid";
 import { quickStatus, removeBlock } from "./actions";
+import { startCheckout } from "./appointments/[id]/actions";
+import { Receipt } from "lucide-react";
 
 /**
  * Google Calendar's "click an event, read it beside the grid": a panel down the right edge (a sheet from the bottom on a phone) with
@@ -16,7 +18,7 @@ import { quickStatus, removeBlock } from "./actions";
  * leaving the calendar. "Open" goes to the full appointment page for everything else (services, moves, cancel, checkout, photos).
  * The content is the same server-built summary the hover card uses, so nothing is fetched on click.
  */
-export function AppointmentPanel({ item, slug, fmt, canEdit, canRemoveBlock, onClose }: { item: CalItem; slug: string; fmt: (min: number) => string; canEdit: boolean; canRemoveBlock: boolean; onClose: () => void }) {
+export function AppointmentPanel({ item, slug, fmt, canEdit, canRemoveBlock, canCheckout, onClose }: { item: CalItem; slug: string; fmt: (min: number) => string; canEdit: boolean; canRemoveBlock: boolean; /** May ring the visit up (checkout.take and the right to update it). */ canCheckout?: boolean; onClose: () => void }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const tip = item.tip;
@@ -96,6 +98,16 @@ export function AppointmentPanel({ item, slug, fmt, canEdit, canRemoveBlock, onC
             <a.icon className="h-4 w-4 text-stone-500" /> {a.label}
           </button>
         ))}
+        {canCheckout && !isBlock && !isClass && item.status !== "cancelled" && item.status !== "no_show" ? (
+          // The same action as the appointment page's Check out: opens (or returns to) the visit's ticket. Forms still due come back as a message.
+          <form action={startCheckout}>
+            <input type="hidden" name="slug" value={slug} />
+            <input type="hidden" name="appointmentId" value={item.appointmentId} />
+            <button type="submit" disabled={pending} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3 text-sm font-medium text-stone-800 hover:bg-stone-50 disabled:opacity-50">
+              <Receipt className="h-4 w-4 text-stone-500" /> Check out
+            </button>
+          </form>
+        ) : null}
         {isBlock && canRemoveBlock && live ? (
           <button type="button" disabled={pending} onClick={remove} className="ml-auto inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">
             <Trash2 className="h-4 w-4" /> Remove block

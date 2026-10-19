@@ -182,6 +182,8 @@ export function CalendarGrid(props: {
   canBlock?: boolean;
   /** The quick-create popover's data; null when this person can neither book nor block. */
   quick?: QuickCreateData | null;
+  /** Check out from the detail panel. */
+  canCheckout?: boolean;
   todayISO: string;
   /** Grid range in hours; the page widens it to fit early/late hours and bookings. */
   startHour?: number;
@@ -766,6 +768,7 @@ export function CalendarGrid(props: {
           fmt={fmt}
           canEdit={props.canEdit}
           canRemoveBlock={props.canMoveBlock}
+          canCheckout={props.canCheckout}
           onClose={() => setPanelKey(null)}
         />
       ) : null}

@@ -357,6 +357,7 @@ export default async function CalendarPage({
           canBook={canBook}
           canBlock={canBlock}
           quick={quick}
+          canCheckout={can(permissions, "checkout.take") && (can(permissions, "appointments.write.any") || (ownOnly && can(permissions, "appointments.write.own")))}
           startHour={startHour}
           endHour={endHour}
         />

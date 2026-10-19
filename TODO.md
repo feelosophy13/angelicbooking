@@ -207,6 +207,9 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       hint, dev pill and toasts are `print:hidden`; the sidebar and nav already were), the whole day with no scroll box, cards outlined
       in grey so they survive browsers that drop background colours, and Week asks for landscape (`@page`). "Print this view" sits in
       the Display menu as well as ⌘P. Agenda prints as the plain list it is.
+- [x] Check out from the detail panel, 2026-10-18: for those with `checkout.take` (and the right to update the visit) the panel has a
+      Check out button that runs the appointment page's own `startCheckout` (opens or returns to the visit's ticket; forms still due
+      come back as the usual message), so a visit can be rung up from the calendar without opening its page.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
