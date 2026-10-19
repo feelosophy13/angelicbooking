@@ -81,6 +81,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       business.manage (the owner opts in under Roles, and their stored description still reads "Everything except business settings and
       Stripe" until they edit it). Gap: the tax rate and receipt footer live on the Payments page, so they moved with it to
       `billing.manage`; move them to Locations or Business profile if a manager needs them.
+- [x] Staff hours shows the whole team, 2026-10-18 (REVIEW-2026-10-18 Part 3): the people lanes, the Edit hours menu, the team-wide Add
+      time off picker and the time-off list include every active staff member, not only providers; lanes run providers first in booking
+      order, then front desk and other staff. The coverage strip, "no provider in" and Needs attention still count providers only
+      (`lib/staff-hours.ts` `orderStaff`, `server/coverage.ts` lanes carry `provider`).
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,

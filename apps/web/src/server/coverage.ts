@@ -1,7 +1,8 @@
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { instantToLocalTime, weekdayOf, type WeeklyHours } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
+import { orderStaff } from "@/lib/staff-hours";
 import { workingBlocksFor } from "./availability";
 import { listCategories, pathTo } from "./categories";
 import { tzFor } from "./locations";
@@ -11,10 +12,13 @@ import { tzFor } from "./locations";
  * which services someone on duty can perform during opening hours. Rotations, time off and
  * custom hours are already folded in by workingBlocksFor; this turns the result into minutes
  * of the local day so a grid can draw it with time down the side.
+ *
+ * Every active staff member gets a lane (front desk and managers keep hours too); only providers
+ * (takesAppointments) count towards whether a service is covered.
  */
 
 export interface CoverageBlock { start: number; end: number } // minutes from midnight, local to the location
-export interface CoverageLane { staffId: string; name: string; color: string; blocks: CoverageBlock[] }
+export interface CoverageLane { staffId: string; name: string; color: string; /** Takes appointments, so counts towards coverage. */ provider: boolean; blocks: CoverageBlock[] }
 export type StripState = "closed" | "none" | "partial" | "full";
 export interface CoverageStrip {
   start: number;
@@ -32,7 +36,7 @@ export interface CoverageDay {
   open: CoverageBlock | null;
   lanes: CoverageLane[];
   strip: CoverageStrip[];
-  /** Open stretches with no provider at all. */
+  /** Open stretches with no provider at all (front desk alone does not count). */
   uncovered: CoverageBlock[];
 }
 export interface Coverage {
@@ -40,7 +44,7 @@ export interface Coverage {
   /** Vertical extent of the grid in minutes, on whole hours. */
   startMin: number;
   endMin: number;
-  staff: { id: string; name: string; color: string }[];
+  staff: { id: string; name: string; color: string; takesAppointments: boolean }[];
   /** What the strip and gaps are judged against. */
   scope: { label: string; serviceCount: number };
   timeZone: string;
@@ -55,7 +59,7 @@ export async function buildCoverage(
 ): Promise<Coverage> {
   const dates = Array.from({ length: 7 }, (_, i) => shiftISODate(opts.weekStart, i));
   const { staff, services, staffServices, locations, cats } = await withTenant(business.id, async (tx) => ({
-    staff: await tx.select({ id: schema.staff.id, name: schema.staff.displayName, color: schema.staff.color }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)),
+    staff: orderStaff(await tx.select({ id: schema.staff.id, name: schema.staff.displayName, color: schema.staff.color, takesAppointments: schema.staff.takesAppointments, sortOrder: schema.staff.sortOrder }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName))),
     services: await tx.select({ id: schema.services.id, name: schema.services.name, categoryId: schema.services.categoryId }).from(schema.services).where(eq(schema.services.active, true)).orderBy(asc(schema.services.name)),
     staffServices: await tx.select({ staffId: schema.staffServices.staffId, serviceId: schema.staffServices.serviceId }).from(schema.staffServices),
     locations: await tx.select({ id: schema.locations.id, hours: schema.locations.hours, timezone: schema.locations.timezone }).from(schema.locations),
@@ -112,16 +116,17 @@ export async function buildCoverage(
         const end = endLocal === "00:00" ? 24 * 60 : toMin(endLocal);
         return { start, end: Math.max(end, start) };
       }).filter((b) => b.end > b.start);
-      if (mine.length) lanes.push({ staffId: s.id, name: s.name, color: s.color, blocks: mine });
+      if (mine.length) lanes.push({ staffId: s.id, name: s.name, color: s.color, provider: s.takesAppointments, blocks: mine });
     }
-    // Coverage strip: per slot inside opening hours, which scoped services someone on duty can do.
+    // Coverage strip: per slot inside opening hours, which scoped services a provider on duty can do.
+    const providers = lanes.filter((l) => l.provider);
     const strip: CoverageStrip[] = [];
     const uncovered: CoverageBlock[] = [];
     if (open && scoped.length) {
       let cur: CoverageStrip | null = null;
       for (let t = open.start; t < open.end; t += SLOT) {
         const slotEnd = Math.min(t + SLOT, open.end);
-        const onDuty = lanes.filter((l) => l.blocks.some((b) => b.start < slotEnd && b.end > t)).map((l) => l.staffId);
+        const onDuty = providers.filter((l) => l.blocks.some((b) => b.start < slotEnd && b.end > t)).map((l) => l.staffId);
         const missing = scoped.filter((svc) => !onDuty.some((id) => performs(id, svc.id)));
         const state: StripState = onDuty.length === 0 ? "none" : missing.length === 0 ? "full" : "partial";
         const names = missing.map((m) => m.name);
@@ -142,5 +147,5 @@ export async function buildCoverage(
   if (!Number.isFinite(lo)) { lo = 8 * 60; hi = 18 * 60; }
   const startMin = Math.floor(lo / 60) * 60;
   const endMin = Math.min(24 * 60, Math.ceil(hi / 60) * 60);
-  return { days, startMin, endMin, staff, scope: { label, serviceCount: scoped.length }, timeZone };
+  return { days, startMin, endMin, staff: staff.map(({ id, name, color, takesAppointments }) => ({ id, name, color, takesAppointments })), scope: { label, serviceCount: scoped.length }, timeZone };
 }

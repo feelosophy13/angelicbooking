@@ -8,6 +8,7 @@ import { requireAction } from "@/lib/tenant";
 import { cn, shiftISODate } from "@/lib/utils";
 import { dateLong } from "@/lib/format";
 import { describeHours, time12 } from "@/lib/hours";
+import { orderStaff } from "@/lib/staff-hours";
 import { buildCoverage } from "@/server/coverage";
 import { listCategories, buildTree, flattenTree } from "@/server/categories";
 import { Card, Empty, LinkButton, PageHeader, Select } from "@/components/ui";
@@ -38,7 +39,8 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const horizon = shiftISODate(today, 90);
 
   const { people, overrides, locations, cats } = await withTenant(business.id, async (tx) => {
-    const people = await tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName));
+    // Everyone who is active: front desk and managers keep weekly hours and time off too, not only providers.
+    const people = orderStaff(await tx.select({ id: schema.staff.id, name: schema.staff.displayName, takesAppointments: schema.staff.takesAppointments, sortOrder: schema.staff.sortOrder }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName)));
     const ids = people.map((p) => p.id);
     return {
       people,
@@ -136,12 +138,12 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
           <p className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
             {view === "coverage" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-emerald-400 align-middle" />{coverage.scope.label === "All services" ? "every service covered" : `${coverage.scope.label} covered`}</span> : null}
             {view === "coverage" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-amber-400 align-middle" />some services uncovered</span> : null}
-            <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-red-400 align-middle" />open, nobody in</span>
+            <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-red-400 align-middle" />open, no provider in</span>
             <span><span className="hatched mr-1 inline-block h-2.5 w-2.5 rounded-sm border border-stone-200 align-middle" />closed</span>
           </p>
         </div>
         {people.length === 0 ? (
-          <div className="p-4"><Empty title="No providers yet" body="Add staff and set their weekly hours." action={manage ? { href: `${base}/staff`, label: "Staff" } : undefined} /></div>
+          <div className="p-4"><Empty title="No staff yet" body="Add staff and set their weekly hours." action={manage ? { href: `${base}/staff`, label: "Staff" } : undefined} /></div>
         ) : (
           <CoverageGrid coverage={coverage} today={today} hoursHref={hoursHref} mode={view} />
         )}
@@ -150,8 +152,8 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
           <CoverageGaps coverage={coverage} />
         </div>
         <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
-          Rotations, time off and custom hours are already applied. A service nobody is assigned to counts as something everyone can do.
-          {view === "coverage" ? " Switch to People to see who is in each hour." : manage ? " Click a provider's block to change their hours." : ""}
+          Rotations, time off and custom hours are already applied. Only providers count towards coverage; a service nobody is assigned to counts as something every provider can do.
+          {view === "coverage" ? " Switch to People to see who is in each hour." : manage ? " Click a person's block to change their hours." : ""}
         </p>
       </Card>
 
@@ -162,7 +164,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
             {manage ? <LinkButton href={`${base}/staff-hours/time-off`} size="sm"><Plus className="h-4 w-4" /> Add time off</LinkButton> : null}
           </div>
           {groups.length === 0 ? (
-            <div className="p-4"><Empty title="Nothing scheduled" body="Days off and custom hours added under a provider's Time off show here." /></div>
+            <div className="p-4"><Empty title="Nothing scheduled" body="Days off and custom hours added under a person's Time off show here." /></div>
           ) : (
             <ul className="divide-y divide-stone-100 text-sm">
               {groups.map((g) => {

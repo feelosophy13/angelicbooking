@@ -15,7 +15,7 @@ export type CoverageMode = "coverage" | "people";
 
 /**
  * Time down the side, the week across the top. Each day column shows opening hours as the white
- * area (closed time is hatched, as on the calendar), every provider on duty as a coloured lane, and a strip on the left edge that says whether
+ * area (closed time is hatched, as on the calendar), everyone on duty as a colored lane, and a strip on the left edge that says whether
  * the services in scope are covered (green), partly covered (amber) or nobody is in (red).
  * In "coverage" mode the people are left out and each stretch of the day is tinted by that state, with the
  * uncovered categories written on it: the simple answer to "is every category covered when we are open?".
@@ -72,16 +72,16 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref, mode }: { day: C
           key={i}
           className={cn("absolute left-0 w-1.5", STRIP[s.state])}
           style={{ top: y(s.start), height: Math.max(2, y(s.end) - y(s.start)) }}
-          title={`${fmt(s.start)}–${fmt(s.end)}: ${s.state === "none" ? "nobody in" : s.state === "full" ? "all covered" : `not covered: ${describeMissing(s)}`}`}
+          title={`${fmt(s.start)}–${fmt(s.end)}: ${s.state === "none" ? "no provider in" : s.state === "full" ? "all covered" : `not covered: ${describeMissing(s)}`}`}
         />
       )) : null}
       {/* Coverage view: tint each stretch and say what is missing */}
       {mode === "coverage"
         ? day.strip.filter((s) => s.state !== "closed").map((s, i) => {
             const px = y(s.end) - y(s.start);
-            const label = s.state === "none" ? "Nobody in" : s.state === "partial" ? `No one for ${describeMissing(s)}` : px >= 40 ? "All covered" : "";
+            const label = s.state === "none" ? "No provider in" : s.state === "partial" ? `No one for ${describeMissing(s)}` : px >= 40 ? "All covered" : "";
             return (
-              <div key={`b${i}`} className={cn("absolute inset-x-2 flex items-center overflow-hidden rounded-md px-1.5 text-[11px] leading-tight ring-1 ring-white/70", BAND[s.state])} style={{ top: y(s.start) + 1, height: Math.max(3, px - 2) }} title={`${fmt(s.start)}–${fmt(s.end)}: ${s.state === "none" ? "nobody in" : s.state === "full" ? "all covered" : `not covered: ${describeMissing(s)}`}`}>
+              <div key={`b${i}`} className={cn("absolute inset-x-2 flex items-center overflow-hidden rounded-md px-1.5 text-[11px] leading-tight ring-1 ring-white/70", BAND[s.state])} style={{ top: y(s.start) + 1, height: Math.max(3, px - 2) }} title={`${fmt(s.start)}–${fmt(s.end)}: ${s.state === "none" ? "no provider in" : s.state === "full" ? "all covered" : `not covered: ${describeMissing(s)}`}`}>
                 {px >= 22 ? (
                   <span className={cn("block", s.state === "full" && "font-medium opacity-80")} style={{ display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: Math.min(6, Math.max(2, Math.floor((px - 10) / 14))), overflow: "hidden" }}>
                     {label}
@@ -92,7 +92,7 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref, mode }: { day: C
             );
           })
         : null}
-      {/* Provider lanes */}
+      {/* People lanes: providers first, then front desk and other staff */}
       {mode === "people" && day.lanes.map((l, i) =>
         l.blocks.map((b, j) => {
           const href = hoursHref(l.staffId);
@@ -113,7 +113,7 @@ function DayColumn({ day, y, hours, height, isToday, hoursHref, mode }: { day: C
           );
         }),
       )}
-      {mode === "people" && day.open && day.lanes.length === 0 ? <p className="absolute inset-x-0 px-2 text-center text-[11px] text-red-600" style={{ top: y(day.open.start) + 6 }}>Open, nobody in</p> : null}
+      {mode === "people" && day.open && !day.lanes.some((l) => l.provider) ? <p className="absolute inset-x-0 px-2 text-center text-[11px] text-red-600" style={{ top: y(day.open.start) + 6 }}>{day.lanes.length ? "Open, no provider in" : "Open, nobody in"}</p> : null}
     </div>
   );
 }
@@ -126,10 +126,10 @@ export function CoverageGaps({ coverage }: { coverage: Coverage }) {
       date: d.date,
       lines: d.strip
         .filter((s) => s.state !== "full" && s.state !== "closed")
-        .map((s) => ({ tone: s.state === "none" ? ("red" as const) : ("amber" as const), text: s.state === "none" ? `${fmt(s.start)}–${fmt(s.end)}: open with nobody in` : `${fmt(s.start)}–${fmt(s.end)}: no one for ${describeMissing(s)}` })),
+        .map((s) => ({ tone: s.state === "none" ? ("red" as const) : ("amber" as const), text: s.state === "none" ? `${fmt(s.start)}–${fmt(s.end)}: open with no provider in` : `${fmt(s.start)}–${fmt(s.end)}: no one for ${describeMissing(s)}` })),
     }))
     .filter((d) => d.lines.length);
-  if (!days.length) return <p className="px-4 py-3 text-sm text-emerald-700">Every opening hour this week has someone in who can do {coverage.scope.label === "All services" ? "every service" : coverage.scope.label.toLowerCase()}.</p>;
+  if (!days.length) return <p className="px-4 py-3 text-sm text-emerald-700">Every opening hour this week has a provider in who can do {coverage.scope.label === "All services" ? "every service" : coverage.scope.label.toLowerCase()}.</p>;
   return (
     <div className="divide-y divide-stone-100">
       {days.map((d) => (
