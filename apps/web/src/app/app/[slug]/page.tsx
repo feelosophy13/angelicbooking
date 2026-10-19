@@ -151,6 +151,8 @@ export default async function CalendarPage({
       // Moving a visit asks whether to tell the client, when there is a client who can be reached.
       notify: i.kind !== "block" && !i.classSessionId && !!i.clientReachable,
       clientFirst: i.clientName?.split(" ")[0] ?? null,
+      clientHref: i.clientId && can(permissions, "clients.read") ? `/app/${slug}/clients/${i.clientId}` : null,
+      dateLabel: formatDateLong(instantToISODate(i.startAt, tz)),
     }));
 
   // Quick create (click or draw on an empty slot): the menu, who does what, and what this person may start. Day and week only.

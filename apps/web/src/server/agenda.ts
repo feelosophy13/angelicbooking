@@ -14,6 +14,7 @@ export type AgendaItem = {
   status: string;
   priceCents: number;
   clientName: string | null;
+  clientId?: string | null;
   notes: string | null;
   /** Set when this row is a class session (one card for the whole group). */
   classSessionId?: string | null;
@@ -52,6 +53,7 @@ export async function getRangeAgenda(businessId: string, timeZone: string, fromD
           endAt: schema.appointmentItems.endAt,
           status: schema.appointmentItems.status,
           priceCents: schema.appointmentItems.priceCents,
+          clientId: schema.appointments.clientId,
           firstName: schema.clients.firstName,
           lastName: schema.clients.lastName,
           clientPhone: schema.clients.phone,

@@ -8,6 +8,7 @@ import { Check, LogIn } from "lucide-react";
 import type { CalTip } from "@/lib/calendar-tip";
 import { CalendarTip, type AnchorRect } from "./calendar-tooltip";
 import { QuickCreate, type QuickCreateAt, type QuickCreateData } from "./quick-create";
+import { AppointmentPanel } from "./appointment-panel";
 import { toast } from "@/components/toaster";
 
 export type CalColumn = {
@@ -39,6 +40,10 @@ export type CalItem = {
   /** Moving it asks whether to tell the client (there is one, and they can be reached). */
   notify?: boolean;
   clientFirst?: string | null;
+  /** The client's page, for those who may see clients. */
+  clientHref?: string | null;
+  /** "Tuesday, October 20, 2026", for the detail panel. */
+  dateLabel?: string;
 };
 
 const DEFAULT_START_H = 7;
@@ -183,6 +188,11 @@ export function CalendarGrid(props: {
   const [resize, setResize] = useState<Resize | null>(null);
   const resizeRef = useRef<Resize | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  // The detail panel: the card that was clicked. It follows a refresh (status changes show) and closes when the card leaves the grid.
+  const [panelKey, setPanelKey] = useState<string | null>(null);
+  const panelItem = panelKey ? items.find((i) => i.groupKey === panelKey) ?? null : null;
+  useEffect(() => { if (panelKey && !panelItem) setPanelKey(null); }, [panelKey, panelItem]);
+  const openPanel = (card: Card) => { hideTip(); setPanelKey(card.key); };
   // The hover card: shown after a short pause over an appointment (mouse or keyboard focus), never while dragging or on touch.
   const [hover, setHover] = useState<{ tip: CalTip; anchor: AnchorRect } | null>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -240,7 +250,7 @@ export function CalendarGrid(props: {
     const card = [...cardsByCol.values()].flat().find((c) => c.key === d.key);
     if (!card) return;
     if (!d.moved) {
-      router.push(card.first.href);
+      openPanel(card);
       return;
     }
     const deltaMin = snap(d.dy);
@@ -457,7 +467,7 @@ export function CalendarGrid(props: {
                 <ul className="divide-y divide-stone-100 overflow-hidden rounded-xl border border-stone-200 bg-white">
                   {cards.map((card) => (
                     <li key={card.key}>
-                      <button onClick={() => router.push(card.first.href)} className="flex w-full items-center gap-3 px-3 py-2 text-left">
+                      <button onClick={() => openPanel(card)} className="flex w-full items-center gap-3 px-3 py-2 text-left">
                         <span className="w-16 shrink-0 text-xs text-stone-500">{fmt(card.startMin)}</span>
                         <span className="h-8 w-1 rounded-full" style={{ background: card.first.color }} />
                         <span className="min-w-0 flex-1">
@@ -559,9 +569,9 @@ export function CalendarGrid(props: {
                       onFocus={(e) => showTip(e.currentTarget, card.first.tip, 0)}
                       onBlur={hideTip}
                       onClick={() => {
-                        if (!draggable || lastPointer.current === "touch") router.push(card.first.href);
+                        if (!draggable || lastPointer.current === "touch") openPanel(card);
                       }}
-                      onKeyDown={(e) => e.key === "Enter" && router.push(card.first.href)}
+                      onKeyDown={(e) => e.key === "Enter" && openPanel(card)}
                       data-card
                       aria-label={`${card.first.title}, ${card.first.subtitle}, ${fmt(card.startMin)} to ${fmt(card.endMin)}`}
                       className={cn("group @container absolute overflow-hidden rounded-md border-l-4 text-xs shadow-sm", STATUS[card.first.status], draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer", (dragging || resizing) && "z-30 ring-2 ring-brand-500 shadow-lg")}
@@ -659,6 +669,16 @@ export function CalendarGrid(props: {
         </p>
       ) : null}
       {hover && !drag?.moved && !sel && !resize && !confirm ? <CalendarTip tip={hover.tip} anchor={hover.anchor} fmt={fmt} /> : null}
+      {panelItem ? (
+        <AppointmentPanel
+          item={panelItem}
+          slug={props.slug}
+          fmt={fmt}
+          canEdit={props.canEdit}
+          canRemoveBlock={props.canMoveBlock}
+          onClose={() => setPanelKey(null)}
+        />
+      ) : null}
       {confirm ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/40 p-4" onClick={() => setConfirm(null)}>
           <div role="dialog" aria-modal="true" aria-labelledby="move-confirm-title" className="w-[min(92vw,26rem)] rounded-xl border border-stone-200 bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>

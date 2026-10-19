@@ -170,6 +170,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       or the block, ends where it is dropped, snapped to the booking grid (`resizeService`, action `resizeAppointmentItem`; must stay
       inside the provider's hours and off their classes; no message to the client since the start is unchanged; audit
       `appointment.resize`). Not built: resizing the start edge, resizing on touch.
+- [x] Detail panel on click, 2026-10-18: clicking an appointment (a card, or a row of the phone agenda) opens a panel down the right
+      edge (a sheet from the bottom on a phone, `appointment-panel.tsx`) instead of leaving the calendar: client and phone (tap to call),
+      View client (with `clients.read`), every service with who and when, total, how booked / deposit / forms due, notes, status badge;
+      actions Confirm → Check in → Start → Complete (`quickStatus`, now with `in_progress` and a plain error instead of a crash when the
+      status isn't theirs to change), Open (the full page), and Remove block for blocked time (`removeBlock`). The content is the hover
+      card's server-built summary, so nothing is fetched on click; Escape or × closes; it follows a refresh and closes when the card
+      leaves the grid. Keyboard shortcuts keep working with it open. Not built: editing services, moving, cancelling or checkout in the
+      panel (Open does those on the appointment page).
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,

@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { z } from "zod";
 import { schema } from "@angelic/db";
 import { can, zonedToInstant } from "@angelic/core";
-import { requireAction, requireBusiness } from "@/lib/tenant";
+import { PermissionError, requireAction, requireBusiness } from "@/lib/tenant";
 import { modeForKind, requireAppointmentAccess, requireBlockAccess, requireBookingAccess } from "@/server/appointment-access";
 import { blockTime, bookAppointment, BookingError, OverlapError, rescheduleAppointment, rescheduleService, resizeService, setAppointmentStatus } from "@/server/booking";
 import { tzFor } from "@/server/locations";
@@ -108,13 +108,38 @@ export async function resizeAppointmentItem(input: { slug: string; itemId: strin
   return { ok: true };
 }
 
-/** Hover quick action on the calendar: check in / complete without opening the appointment. */
-export async function quickStatus(input: { slug: string; appointmentId: string; status: "checked_in" | "completed" | "confirmed" }): Promise<MoveResult> {
-  const parsed = z.object({ slug: z.string(), appointmentId: z.string().min(1), status: z.enum(["checked_in", "completed", "confirmed"]) }).safeParse(input);
+/** Quick status change from the calendar (a card's hover buttons, the detail panel): confirm, check in, start or complete without opening the appointment. */
+export async function quickStatus(input: { slug: string; appointmentId: string; status: "checked_in" | "in_progress" | "completed" | "confirmed" }): Promise<MoveResult> {
+  const parsed = z.object({ slug: z.string(), appointmentId: z.string().min(1), status: z.enum(["checked_in", "in_progress", "completed", "confirmed"]) }).safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid" };
-  const ctx = await requireAppointmentAccess(parsed.data.slug, parsed.data.appointmentId, "write");
-  await setAppointmentStatus(ctx.business.id, parsed.data.appointmentId, parsed.data.status, ctx.user.id);
-  if (parsed.data.status === "completed") await triggerAppointmentWorkflows(ctx.business, "appointment_completed", parsed.data.appointmentId);
+  try {
+    const ctx = await requireAppointmentAccess(parsed.data.slug, parsed.data.appointmentId, "write");
+    await setAppointmentStatus(ctx.business.id, parsed.data.appointmentId, parsed.data.status, ctx.user.id);
+    if (parsed.data.status === "completed") await triggerAppointmentWorkflows(ctx.business, "appointment_completed", parsed.data.appointmentId);
+  } catch (e) {
+    if (e instanceof BookingError) return { ok: false, error: e.message };
+    if (e instanceof PermissionError) return { ok: false, error: "You can't change the status of this appointment." };
+    throw e;
+  }
+  revalidatePath(`/app/${parsed.data.slug}`);
+  return { ok: true };
+}
+
+/** Remove a block of time from the calendar's detail panel (a visit is cancelled from its own page, with a reason). */
+export async function removeBlock(input: { slug: string; appointmentId: string }): Promise<MoveResult> {
+  const parsed = z.object({ slug: z.string(), appointmentId: z.string().min(1) }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid" };
+  try {
+    const bizId = (await requireBusiness(parsed.data.slug)).business.id;
+    const kind = await withTenant(bizId, async (tx) => (await tx.query.appointments.findFirst({ where: eq(dbSchema.appointments.id, parsed.data.appointmentId), columns: { kind: true } }))?.kind);
+    if (kind !== "block") return { ok: false, error: "Only blocked time can be removed here." };
+    const ctx = await requireAppointmentAccess(parsed.data.slug, parsed.data.appointmentId, "block");
+    await setAppointmentStatus(ctx.business.id, parsed.data.appointmentId, "cancelled", ctx.user.id);
+  } catch (e) {
+    if (e instanceof BookingError) return { ok: false, error: e.message };
+    if (e instanceof PermissionError) return { ok: false, error: "You can't remove this block." };
+    throw e;
+  }
   revalidatePath(`/app/${parsed.data.slug}`);
   return { ok: true };
 }
