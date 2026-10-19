@@ -196,8 +196,11 @@ export const APPOINTMENT_CAPABILITIES = {
 export type AppointmentCapability = keyof typeof APPOINTMENT_CAPABILITIES;
 
 const ALL = new Set<Action>(ACTIONS);
-/** What the Manager default leaves out: the money and the keys, and the "own" variants of things it has for everyone. */
-const NOT_MANAGER = new Set<Action>(["billing.manage", "integrations.manage", "reviews.view.own", "sales.view.own"]);
+/**
+ * What the Manager default leaves out: the money and the keys. It keeps the "own" variants (reviews.view.own, sales.view.own) even though
+ * "all" covers them, because a manager may only change a role whose permissions they hold, and the Provider default has those two.
+ */
+const NOT_MANAGER = new Set<Action>(["billing.manage", "integrations.manage"]);
 
 /** Default permissions for the built-in roles. Businesses can edit copies of these. */
 export const DEFAULT_ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {

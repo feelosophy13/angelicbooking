@@ -33,8 +33,8 @@ describe("default role table (phase 1)", () => {
   const table: Record<string, string> = {
     "waitlist.view": "OMF", "waitlist.manage": "OMF",
     "clients.read": "OMFP", "clients.contact": "OMF", "clients.spend": "OMF",
-    "reviews.view": "OMF", "reviews.view.own": "P",
-    "checkout.take": "OMFP", "sales.view.own": "P", "sales.view.all": "OMF", "checkout.discount": "OMF", "checkout.refund": "OM",
+    "reviews.view": "OMF", "reviews.view.own": "MP", // the plan says P; Manager holds it too so a manager can still edit the Provider role
+    "checkout.take": "OMFP", "sales.view.own": "MP", "sales.view.all": "OMF", "checkout.discount": "OMF", "checkout.refund": "OM",
     "giftcards.view": "OMF", "giftcards.issue": "OM", "reports.view": "OM", "payroll.view": "OM",
     "staff.directory": "OMFP", "staff.schedules.view": "OMF", "staff.manage": "OM", "time.view.all": "OMF", "time.edit": "OM", "members.manage": "OM",
     "catalog.view": "OMFP", "catalog.prices": "OMFP", "catalog.costs": "OM", "services.manage": "OM", "inventory.view": "OMF", "inventory.log": "OMFP", "inventory.manage": "OM",

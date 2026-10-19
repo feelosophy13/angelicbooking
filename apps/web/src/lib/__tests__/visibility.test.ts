@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROLE_PERMISSIONS } from "@angelic/core";
-import { canOpenGiftCards, clientForViewer, canSeeClassSession, canSeeClientContact, canSeeGiftCardCodes, canSeeStaffLogins, canViewPrivateFile, maskCode } from "../visibility";
+import { canOpenGiftCards, clientForViewer, canSeeAllSales, canSeeClassSession, canSeeClientContact, canSeeClientSpend, canSeeCosts, canSeeGiftCardCodes, canSeePrices, canSeeReviews, canSeeStaffLogins, canSeeStaffSchedules, canSeeStock, canViewPrivateFile, maskCode, salesScope } from "../visibility";
 
 const { owner, manager, front_desk: frontDesk, provider } = DEFAULT_ROLE_PERMISSIONS;
 const only = (...a: string[]) => new Set(a) as unknown as typeof provider;
 
 describe("gift cards", () => {
-  it("opens for whoever issues cards or reads reports, and codes show in full only to issuers", () => {
+  it("opens with giftcards.view (the desk looks up balances), and codes show in full only to issuers", () => {
     expect(canOpenGiftCards(owner)).toBe(true);
     expect(canOpenGiftCards(manager)).toBe(true);
-    expect(canOpenGiftCards(only("reports.view"))).toBe(true);
-    expect(canOpenGiftCards(frontDesk)).toBe(false);
+    expect(canOpenGiftCards(only("reports.view"))).toBe(false);
+    expect(canOpenGiftCards(only("giftcards.view"))).toBe(true);
+    expect(canOpenGiftCards(frontDesk)).toBe(true);
     expect(canOpenGiftCards(provider)).toBe(false);
     expect(canSeeGiftCardCodes(only("giftcards.issue"))).toBe(true);
     expect(canSeeGiftCardCodes(only("reports.view"))).toBe(false);
@@ -35,7 +36,8 @@ describe("private files", () => {
   const me = { staffId: "me" };
   it("client photos follow clients.photos; signatures and form files follow clients.notes", () => {
     expect(canViewPrivateFile("client", provider, me)).toBe(true); // Provider has photos by default
-    expect(canViewPrivateFile("client", frontDesk, me)).toBe(false);
+    expect(canViewPrivateFile("client", frontDesk, me)).toBe(true); // and so does the desk since the 2026-10-18 plan
+    expect(canViewPrivateFile("client", only("clients.read", "clients.notes"), me)).toBe(false);
     expect(canViewPrivateFile("signature", frontDesk, me)).toBe(true); // Front desk has notes by default
     expect(canViewPrivateFile("form", only("clients.read", "clients.photos"), me)).toBe(false);
     expect(canViewPrivateFile("form", only("clients.notes"), me)).toBe(true);
@@ -64,24 +66,57 @@ describe("classes", () => {
     expect(canSeeClassSession(provider, null, "me")).toBe(false);
     expect(canSeeClassSession(only("clients.read"), "me", "me")).toBe(false);
   });
-  it("prints the roster's phone and email only with clients.read", () => {
-    expect(canSeeClientContact(provider)).toBe(true);
-    expect(canSeeClientContact(only("appointments.read.own", "appointments.write.own"))).toBe(false);
+  it("prints the roster's phone and email only with clients.contact", () => {
+    expect(canSeeClientContact(frontDesk)).toBe(true);
+    expect(canSeeClientContact(provider)).toBe(false);
+    expect(canSeeClientContact(only("clients.read"))).toBe(false);
+    expect(canSeeClientContact(only("clients.contact"))).toBe(true);
+  });
+});
+
+describe("the phase 1 view permissions (PERMISSIONS-PLAN-2026-10-18.md section 3)", () => {
+  it("each helper answers from its own permission, never a role name", () => {
+    expect(canSeeClientSpend(frontDesk)).toBe(true);
+    expect(canSeeClientSpend(provider)).toBe(false);
+    expect(canSeeStaffSchedules(frontDesk)).toBe(true);
+    expect(canSeeStaffSchedules(provider)).toBe(false);
+    expect(canSeeStaffSchedules(only("appointments.read.any"))).toBe(false);
+    expect(canSeePrices(provider)).toBe(true);
+    expect(canSeePrices(only("catalog.view"))).toBe(false);
+    expect(canSeeCosts(manager)).toBe(true);
+    expect(canSeeCosts(frontDesk)).toBe(false);
+    expect(canSeeStock(frontDesk)).toBe(true);
+    expect(canSeeStock(provider)).toBe(false);
+    expect(canSeeAllSales(frontDesk)).toBe(true);
+    expect(canSeeAllSales(provider)).toBe(false);
+  });
+  it("reviews and sales answer own, all or nothing", () => {
+    expect(canSeeReviews(manager)).toBe("all");
+    expect(canSeeReviews(provider)).toBe("own");
+    expect(canSeeReviews(only("clients.read"))).toBeNull();
+    expect(salesScope(frontDesk)).toBe("all");
+    expect(salesScope(provider)).toBe("own");
+    // Taking payments alone works like "own": the ticket they ring up is theirs to finish.
+    expect(salesScope(only("checkout.take"))).toBe("own");
+    expect(salesScope(only("reports.view"))).toBeNull();
   });
 });
 
 describe("a client in the mobile appointment detail", () => {
   const client = { id: "c1", firstName: "Ana", lastName: "Lee", phone: "+15555550100", email: "ana@example.com", notes: "allergic to latex", birthday: "1990-01-01", tags: ["vip"] };
-  it("is only a name without clients.read", () => {
+  it("is only a name without clients.contact, plus the private notes when clients.notes is held", () => {
     expect(clientForViewer(client, only("appointments.read.own", "appointments.write.own"))).toEqual({ id: "c1", firstName: "Ana", lastName: "Lee" });
+    expect(clientForViewer(client, only("clients.read"))).toEqual({ id: "c1", firstName: "Ana", lastName: "Lee" });
+    expect(clientForViewer(client, provider)).toEqual({ id: "c1", firstName: "Ana", lastName: "Lee", notes: "allergic to latex" });
   });
   it("keeps contact details but drops private notes without clients.notes", () => {
-    const seen = clientForViewer(client, only("clients.read"))!;
+    const seen = clientForViewer(client, only("clients.contact"))!;
     expect(seen).toMatchObject({ phone: "+15555550100", email: "ana@example.com", birthday: "1990-01-01" });
     expect(seen).not.toHaveProperty("notes");
   });
   it("is complete with both, and null stays null", () => {
-    expect(clientForViewer(client, provider)).toEqual(client); // Provider: read + notes by default
+    expect(clientForViewer(client, only("clients.contact", "clients.notes"))).toEqual(client);
+    expect(clientForViewer(client, frontDesk)).toEqual(client); // Front desk: contact + notes by default
     expect(clientForViewer(null, owner)).toBeNull();
   });
 });
