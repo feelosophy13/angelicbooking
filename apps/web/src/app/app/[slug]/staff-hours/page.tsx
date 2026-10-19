@@ -33,7 +33,8 @@ const nextDay = (d: string) => shiftISODate(d, 1);
 export default async function StaffHoursPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions } = await requireAction(slug, "appointments.read.any");
+  // Everyone's hours, days and time off: "See colleagues' hours and time off" (S2), not the calendar permission.
+  const { business, permissions } = await requireAction(slug, "staff.schedules.view");
   const base = `/app/${slug}`;
   const manage = can(permissions, "staff.manage");
   const today = instantToISODate(new Date(), business.timezone);

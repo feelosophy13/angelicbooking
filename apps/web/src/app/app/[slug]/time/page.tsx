@@ -25,6 +25,9 @@ export default async function TimePage({ params, searchParams }: { params: Promi
   const isDate = (s?: string) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
   const from = isDate(sp.from) ? sp.from! : shiftISODate(today, -13);
   const to = isDate(sp.to) ? sp.to! : today;
+  // Three things, three permissions (S3): everyone's rows (time.view.all), correcting rows (time.edit), the kiosk QR codes (staff.manage).
+  const viewAll = can(permissions, "time.view.all");
+  const edit = can(permissions, "time.edit");
   const manage = can(permissions, "staff.manage");
 
   const data = await withTenant(business.id, async (tx) => {
@@ -34,7 +37,7 @@ export default async function TimePage({ params, searchParams }: { params: Promi
     const entries = await tx
       .select()
       .from(schema.timeEntries)
-      .where(and(gte(schema.timeEntries.date, from), lte(schema.timeEntries.date, to), manage ? undefined : eq(schema.timeEntries.staffId, me?.id ?? "-")))
+      .where(and(gte(schema.timeEntries.date, from), lte(schema.timeEntries.date, to), viewAll ? undefined : eq(schema.timeEntries.staffId, me?.id ?? "-")))
       .orderBy(desc(schema.timeEntries.date), desc(schema.timeEntries.createdAt));
     return { staff, me, open, entries };
   });
@@ -64,7 +67,7 @@ export default async function TimePage({ params, searchParams }: { params: Promi
           <Input type="date" name="to" defaultValue={to} className="w-40" />
           <Button type="submit" variant="secondary" size="sm">Show</Button>
         </form>
-        {manage ? <LinkButton href={`/app/${slug}/time/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> Add hours</LinkButton> : null}
+        {edit ? <LinkButton href={`/app/${slug}/time/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> Add hours</LinkButton> : null}
       </PageHeader>
       <div className="max-w-3xl">
         <div className="space-y-6">
@@ -120,7 +123,7 @@ export default async function TimePage({ params, searchParams }: { params: Promi
                       {multiLocation ? <td className="px-4 py-2 text-stone-600">{locName(e.locationId) ?? ""}</td> : null}
                       <td className="px-4 py-2 text-right">{fmtHours(e.minutes)}</td>
                       <td className="px-4 py-2 text-stone-600">{e.note ?? ""}</td>
-                      <td className="px-2 py-2 text-right">{manage ? (
+                      <td className="px-2 py-2 text-right">{edit ? (
                         <details className="inline-block text-left">
                           <summary className="cursor-pointer text-xs text-stone-500 hover:text-stone-800">Edit</summary>
                           <form action={editTimeEntry} className="mt-1 flex w-52 flex-col gap-1">
@@ -131,7 +134,7 @@ export default async function TimePage({ params, searchParams }: { params: Promi
                           </form>
                         </details>
                       ) : null}</td>
-                      <td className="px-2 py-2 text-right">{manage ? <form action={deleteTimeEntry}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={e.id} /><ConfirmSubmit title="Remove this time entry?" body="Payroll for this period will no longer include these hours." confirmLabel="Remove" variant="ghost" className="text-stone-500 hover:text-red-600">Remove</ConfirmSubmit></form> : null}</td>
+                      <td className="px-2 py-2 text-right">{edit ? <form action={deleteTimeEntry}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={e.id} /><ConfirmSubmit title="Remove this time entry?" body="Payroll for this period will no longer include these hours." confirmLabel="Remove" variant="ghost" className="text-stone-500 hover:text-red-600">Remove</ConfirmSubmit></form> : null}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -6,8 +6,8 @@ export const metadata: Metadata = { title: "Staff" };
 import { asc, desc, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { can } from "@angelic/core";
-import { requireBusiness } from "@/lib/tenant";
-import { canSeeStaffLogins } from "@/lib/visibility";
+import { requireAction } from "@/lib/tenant";
+import { canSeeStaffLogins, canSeeStaffSchedules } from "@/lib/visibility";
 import { staffLocationIndex } from "@/server/locations";
 import { listRoles } from "@/server/roles";
 import { Card, LinkButton, PageHeader } from "@/components/ui";
@@ -15,7 +15,9 @@ import { moveStaffAction } from "./actions";
 
 export default async function StaffPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, permissions } = await requireBusiness(slug);
+  // The directory is its own permission (S1); colleagues' days worked need "See colleagues' hours and time off".
+  const { business, permissions } = await requireAction(slug, "staff.directory");
+  const seesSchedules = canSeeStaffSchedules(permissions);
   const [rows, locations, members, locIndex] = await Promise.all([
     withTenant(business.id, (tx) => tx.select().from(schema.staff).orderBy(desc(schema.staff.active), asc(schema.staff.sortOrder), asc(schema.staff.displayName))),
     withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, name: schema.locations.name }).from(schema.locations)),
@@ -37,7 +39,7 @@ export default async function StaffPage({ params }: { params: Promise<{ slug: st
   /** "Sterling Mon–Wed · Fairfax Thu–Sat" from the weekly hours; falls back to the primary location. */
   const whereWorks = (staffId: string, primary: string | null) => {
     const days = locIndex.byDay.get(staffId);
-    if (!days?.size) return locationName(primary) ?? "any location";
+    if (!days?.size || !seesSchedules) return locationName(primary) ?? "any location";
     const byLoc = new Map<string, number[]>();
     for (const [wd, locs] of [...days.entries()].sort((a, b) => ((a[0] + 6) % 7) - ((b[0] + 6) % 7))) for (const loc of locs) if (loc) byLoc.set(loc, [...(byLoc.get(loc) ?? []), wd]);
     const span = (wds: number[]) => {

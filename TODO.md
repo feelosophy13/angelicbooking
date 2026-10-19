@@ -74,6 +74,14 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       client hits drop phone and email without `clients.contact`. Gap left: the list's search still matches on phone and email for a role
       without `clients.contact` (it confirms a number belongs to someone); the shared `clientSearchWhere` would need a contact-less variant.
 
+- [x] Phase 1 reviews (R1), 2026-10-19: the Reviews page opens with `reviews.view` (everything) or `reviews.view.own` (pinned to the
+      viewer's own lines: no provider filter, no per-provider card, no "with …"); the author's name shows only with `clients.contact`, the
+      client link only with `clients.read`. A login not linked to a staff member with only `reviews.view.own` sees an empty page.
+- [x] Phase 1 staff and time (S1–S4), 2026-10-19: the staff list needs `staff.directory` and shows days worked only with
+      `staff.schedules.view`; Staff hours needs `staff.schedules.view` (was `appointments.read.any`); the time clock shows everyone's rows with
+      `time.view.all`, adds, edits and removes rows with `time.edit` (the kiosk QR codes stay `staff.manage`); the Log usage page's recent
+      list is the team's only with `inventory.view` or `inventory.manage`, else the viewer's own entries.
+
 ### Roles & permissions review 2026-10-18 (`REVIEW-2026-10-18.md` Part 2; fixed in order S1–S8, then the nav/page mismatches)
 - [x] S1 API `roles:write` / `roles:delete` now go through `server/roles.ts` (createRole / updateRole / deleteRole) with the same rules as
       the app: nobody grants, removes or deletes permissions their own role lacks, nobody edits their own role, Owner is locked. A key acts

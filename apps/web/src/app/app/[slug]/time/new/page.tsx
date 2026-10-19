@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Add hours" };
 
 export default async function NewTimeEntryPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business } = await requireAction(slug, "staff.manage");
+  const { business } = await requireAction(slug, "time.edit");
   const staff = await withTenant(business.id, (tx) => tx.select().from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)));
   const today = instantToISODate(new Date(), business.timezone);
   return (

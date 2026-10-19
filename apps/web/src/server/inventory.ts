@@ -889,7 +889,8 @@ export async function trackedProductIds(businessId: string): Promise<string[]> {
 }
 
 /** Recent logged usage anywhere (for the Log usage page), newest first. */
-export async function recentUsage(businessId: string, limit = 25) {
+/** The latest supply-usage entries: the whole team's, or only what `onlyUserId` logged (for a role that may not see the team's). */
+export async function recentUsage(businessId: string, limit = 25, onlyUserId?: string) {
   return withTenant(businessId, async (tx) => {
     const rows = await tx
       .select({ m: schema.stockMovements, name: schema.products.name, variantLabel: schema.products.variantLabel, location: schema.locations.name, who: schema.user.name, reversed: sql<boolean>`exists (select 1 from stock_movements r where r.reverses_movement_id = ${schema.stockMovements.id})` })
@@ -897,7 +898,7 @@ export async function recentUsage(businessId: string, limit = 25) {
       .innerJoin(schema.products, eq(schema.products.id, schema.stockMovements.productId))
       .leftJoin(schema.locations, eq(schema.locations.id, schema.stockMovements.locationId))
       .leftJoin(schema.user, eq(schema.user.id, schema.stockMovements.createdByUserId))
-      .where(and(eq(schema.stockMovements.reason, "used"), sql`${schema.stockMovements.createdByUserId} is not null`))
+      .where(and(eq(schema.stockMovements.reason, "used"), sql`${schema.stockMovements.createdByUserId} is not null`, onlyUserId ? eq(schema.stockMovements.createdByUserId, onlyUserId) : undefined))
       .orderBy(desc(schema.stockMovements.createdAt))
       .limit(limit);
     return rows.map((r) => ({ ...r.m, label: productLabel(r), location: r.location, who: r.who, takenBack: !!r.reversed }));

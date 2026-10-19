@@ -42,7 +42,7 @@ export async function clockToggle(formData: FormData) {
 export const addTimeEntry = formAction(
   z.object({ slug: z.string(), staffId: f.id(), date: f.isoDate(), hours: f.num(0.25, 24), note: f.optional(120) }),
   async (d) => {
-    const ctx = await requireAction(d.slug, "staff.manage");
+    const ctx = await requireAction(d.slug, "time.edit");
     try {
       await withTenant(ctx.business.id, async (tx) => {
         await assertPeriodOpen(tx, d.date, "Hours");
@@ -61,7 +61,7 @@ export const addTimeEntry = formAction(
 
 export async function deleteTimeEntry(formData: FormData) {
   const d = z.object({ slug: z.string(), id: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAction(d.slug, "staff.manage");
+  const ctx = await requireAction(d.slug, "time.edit");
   try {
     await withTenant(ctx.business.id, async (tx) => {
       const entry = await tx.query.timeEntries.findFirst({ where: eq(schema.timeEntries.id, d.id) });
@@ -96,7 +96,7 @@ export async function editTimeEntry(formData: FormData) {
     await setFlash("Enter hours between 0 and 24.", "error");
     return;
   }
-  const ctx = await requireAction(d.data.slug, "staff.manage");
+  const ctx = await requireAction(d.data.slug, "time.edit");
   try {
     await withTenant(ctx.business.id, async (tx) => {
       const e = await tx.query.timeEntries.findFirst({ where: eq(schema.timeEntries.id, d.data.id) });
