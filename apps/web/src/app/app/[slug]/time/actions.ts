@@ -8,7 +8,7 @@ import { instantToISODate } from "@angelic/core";
 import { requireBusiness, requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
-import { openEntryFor, resetClockToken } from "@/server/time-clock";
+import { ClockError, assertPunchOpen, openEntryFor, resetClockToken } from "@/server/time-clock";
 import { assertPeriodOpen, PayrollLockedError } from "@/server/payroll-lock";
 
 async function ownStaffId(businessId: string, userId: string) {
@@ -22,19 +22,27 @@ export async function clockToggle(formData: FormData) {
   const staffId = await ownStaffId(ctx.business.id, ctx.user.id);
   if (!staffId) return setFlash("You are not set up as a staff member here.", "error");
   const now = new Date();
-  const out = await withTenant(ctx.business.id, async (tx) => {
-    const open = await openEntryFor(tx, staffId, now);
-    if (open && open.clockInAt) {
-      const minutes = Math.max(1, Math.round((now.getTime() - open.clockInAt.getTime()) / 60_000));
-      await tx.update(schema.timeEntries).set({ clockOutAt: now, minutes }).where(eq(schema.timeEntries.id, open.id));
-      return true;
-    }
-    // Recorded at their usual site (else the default), so location reports and pay by site include web clock-ins.
-    const person = await tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true } });
-    const site = person?.locationId ?? (await tx.query.locations.findFirst({ where: eq(schema.locations.isDefault, true), columns: { id: true } }))?.id ?? null;
-    await tx.insert(schema.timeEntries).values({ businessId: ctx.business.id, staffId, date: instantToISODate(now, ctx.business.timezone), minutes: 0, clockInAt: now, locationId: site, createdByUserId: ctx.user.id });
-    return false;
-  });
+  let out: boolean;
+  try {
+    out = await withTenant(ctx.business.id, async (tx) => {
+      const open = await openEntryFor(tx, staffId, now);
+      if (open && open.clockInAt) {
+        await assertPunchOpen(tx, open.date);
+        const minutes = Math.max(1, Math.round((now.getTime() - open.clockInAt.getTime()) / 60_000));
+        await tx.update(schema.timeEntries).set({ clockOutAt: now, minutes }).where(eq(schema.timeEntries.id, open.id));
+        return true;
+      }
+      await assertPunchOpen(tx, instantToISODate(now, ctx.business.timezone));
+      // Recorded at their usual site (else the default), so location reports and pay by site include web clock-ins.
+      const person = await tx.query.staff.findFirst({ where: eq(schema.staff.id, staffId), columns: { locationId: true } });
+      const site = person?.locationId ?? (await tx.query.locations.findFirst({ where: eq(schema.locations.isDefault, true), columns: { id: true } }))?.id ?? null;
+      await tx.insert(schema.timeEntries).values({ businessId: ctx.business.id, staffId, date: instantToISODate(now, ctx.business.timezone), minutes: 0, clockInAt: now, locationId: site, createdByUserId: ctx.user.id });
+      return false;
+    });
+  } catch (e) {
+    if (e instanceof ClockError) return setFlash(e.message, "error");
+    throw e;
+  }
   await setFlash(out ? "Clocked out" : "Clocked in");
   revalidatePath(`/app/${slug}/time`);
 }

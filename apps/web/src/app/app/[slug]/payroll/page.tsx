@@ -7,13 +7,13 @@ import { dateShort } from "@/lib/format";
 export const metadata: Metadata = { title: "Payroll" };
 import { can, instantToISODate, isScheduledPeriod, nextPeriod, PAY_FREQUENCY_LABEL, periodContaining, previousPeriod, rateLabel } from "@angelic/core";
 import { requireAnyAction } from "@/lib/tenant";
-import { driftFromSnapshot, getFinalizedRun, listPayrollRuns, resolveSchedule, runPayroll, salaryShareFor } from "@/server/payroll";
+import { driftFromSnapshot, forHomeLocation, forOwnRow, listPayrollRuns, payrollForPeriod, resolveSchedule, salaryShareFor } from "@/server/payroll";
 import { formatDateLong, formatMoney } from "@/lib/utils";
 import { Button, Card, Input, LinkButton, PageHeader, Empty, Notice } from "@/components/ui";
 import { Disclosure } from "@/components/disclosure";
 import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { ActionForm, SubmitButton } from "@/components/form";
-import { deleteAdjustment, finalize, savePaySchedule, setOvertimeRule } from "./actions";
+import { deleteAdjustment, finalize, markPaid, savePaySchedule, setOvertimeRule, unmarkPaid } from "./actions";
 import { OvertimeOptions } from "./overtime-options";
 import { PayScheduleFields } from "./pay-schedule-fields";
 import { LocationFilter } from "@/components/location-filter";
@@ -37,7 +37,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   // Overtime is on unless the run turns it off (hourly staff are owed it by law; people set to "never" in their pay settings still get none).
   // The form sends "0" before the checkbox, so the last value is the box's state.
   const otParam = Array.isArray(sp.overtime) ? sp.overtime.at(-1) : sp.overtime;
-  const overtime = otParam !== "0";
+  const overtimeAsked = otParam !== "0";
   const period = { start, end };
   const scheduled = isScheduledPeriod(schedule, period);
   const prev = previousPeriod(schedule, period);
@@ -45,8 +45,11 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
   const salary = await salaryShareFor(business, period, today);
   const locations = await listLocations(business.id);
   const locationFilter = locations.some((l) => l.id === sp.location) ? sp.location! : null;
-  const [full, finalized, runs] = await Promise.all([runPayroll(business, period, overtime, locationFilter), getFinalizedRun(business.id, period), listPayrollRuns(business.id)]);
-  const result = manage ? full : { ...full, employees: full.employees.filter((e) => e.employee.staffId === myStaffId), adjustmentRows: full.adjustmentRows.filter((a) => a.staffId === myStaffId), rateChanges: full.rateChanges.filter((c) => c.staffId === myStaffId) };
+  // A finalized period shows what was finalized (the saved snapshot) and keeps the overtime setting it was finalized with; live figures
+  // sit behind "What changed since". A location is the people based there, with all of their pay (one sheet per site, the owner's way).
+  const [{ result: whole, live, finalized, overtime }, runs] = await Promise.all([payrollForPeriod(business, period, overtimeAsked), listPayrollRuns(business.id)]);
+  const result = manage ? forHomeLocation(whole, locationFilter) : forOwnRow(whole, myStaffId ?? null);
+  const paid = !!finalized?.paidOn;
   const money = (c: number) => formatMoney(c, business.currency);
   // "6.00 OT, 1.00 double, incl. $40.00 OT on commission"
   const otText = (e: (typeof result.employees)[number]) =>
@@ -63,8 +66,8 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
       .from(schema.timeEntries)
       .where(and(gte(schema.timeEntries.date, start), lte(schema.timeEntries.date, end), ilike(schema.timeEntries.note, "%Auto clock-out%"))),
   );
-  // A finalized period should not change; if it does (a tip added to an old ticket, an edit made before periods were locked), say who and by how much.
-  const drift = manage && finalized && !locationFilter && finalized.overtime === overtime ? driftFromSnapshot(finalized.snapshot, result) : [];
+  // A finalized period should not change; if it did (a tip added to an old ticket, an edit made before periods were locked), say who and by how much.
+  const drift = manage && finalized ? driftFromSnapshot(finalized.snapshot, manage ? forHomeLocation(live, locationFilter) : live) : [];
   const totals = active.reduce((t, e) => ({ total: t.total + e.totalCents, tips: t.tips + e.cashTipsCents + e.cardTipsCents, rev: t.rev + e.serviceRevenueCents }), { total: 0, tips: 0, rev: 0 });
 
   return (
@@ -103,7 +106,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
         </form>
         <LocationFilter locations={locations} current={locationFilter} query={`start=${start}&end=${end}&overtime=${overtime ? 1 : 0}`} allLabel="All" />
       </PageHeader>
-      <p className="mb-2 text-sm text-stone-600">{formatDateLong(start)} – {formatDateLong(end)}{scheduled ? ` · ${PAY_FREQUENCY_LABEL[schedule.frequency].toLowerCase()}${scheduleSet ? "" : " (assumed: set the pay schedule under Options)"}` : " · custom range"}{locationFilter ? ` · ${locations.find((l) => l.id === locationFilter)?.name} sales only (hours and adjustments are per person)` : ""}{finalized ? <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">finalized {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(finalized.createdAt)}</span> : null}</p>
+      <p className="mb-2 text-sm text-stone-600">{formatDateLong(start)} – {formatDateLong(end)}{scheduled ? ` · ${PAY_FREQUENCY_LABEL[schedule.frequency].toLowerCase()}${scheduleSet ? "" : " (assumed: set the pay schedule under Options)"}` : " · custom range"}{locationFilter ? ` · people based at ${locations.find((l) => l.id === locationFilter)?.name}` : ""}{finalized ? <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800">finalized {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(finalized.createdAt)}{finalized.overtime ? ", overtime on" : ""}</span> : null}{paid ? <span className="ml-2 rounded bg-stone-200 px-2 py-0.5 text-xs text-stone-700">paid {dateShort(finalized!.paidOn!)}{finalized!.paymentRef ? ` · ${finalized!.paymentRef}` : ""}</span> : null}</p>
       <Disclosure variant="inset" title="Custom range" hint="a one-off run between any two dates" open={!scheduled} className="mb-4 bg-white">
         <form className="flex flex-wrap items-center gap-2">
           <Input type="date" name="start" defaultValue={start} className="w-40" aria-label="Period start" />
@@ -126,18 +129,24 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           Pay settings changed during this period: {result.rateChanges.map((c) => `${c.name} from ${formatDateLong(c.effectiveFrom)}`).join(", ")}. Commission and hourly pay follow the rate in force on each day; salary and withholding use the settings in force on {formatDateLong(end)}.
         </p>
       ) : null}
-      {finalized && !locationFilter && finalized.overtime !== overtime ? (
-        <div className="mb-4"><Notice>This period was finalized with overtime {finalized.overtime ? "on" : "off"}; these figures have it {overtime ? "on" : "off"}.</Notice></div>
-      ) : null}
+
       {autoClosed.length ? (
         <div className="mb-4"><Notice>
           {autoClosed.length === 1 ? "One shift was" : `${autoClosed.length} shifts were`} closed automatically after 14 hours because nobody clocked out ({autoClosed.map((a) => `${result.employees.find((e) => e.employee.staffId === a.staffId)?.employee.name ?? "staff"} ${dateShort(a.date)}`).join(", ")}). Check the hours under <Link href={`/app/${slug}/time?from=${start}&to=${end}`} className="underline">Time clock</Link> before paying.
         </Notice></div>
       ) : null}
-      {drift.length ? (
-        <div className="mb-4"><Notice>
-          Changed since this period was finalized: {drift.map((d) => `${d.name} ${money(d.wasCents)} → ${money(d.nowCents)}`).join("; ")}. Pay the difference as an adjustment in the current period, or re-finalize if the snapshot was wrong.
-        </Notice></div>
+      {finalized && manage ? (
+        <Disclosure variant="inset" title="What changed since this period was finalized" hint={drift.length ? `${drift.length} ${drift.length === 1 ? "person differs" : "people differ"}` : "nothing: live figures match"} open={drift.length > 0} className="mb-4 bg-white">
+          {drift.length ? (
+            <div className="text-sm">
+              <p className="mb-2 text-xs text-stone-500">These figures are the ones finalized{paid ? " and paid" : ""}. Running the same period today would give:</p>
+              <ul className="divide-y divide-stone-100">
+                {drift.map((d) => <li key={d.staffId} className="flex items-center justify-between py-1.5"><span>{d.name}</span><span className="tabular-nums">{money(d.wasCents)} → <b>{money(d.nowCents)}</b> ({d.nowCents - d.wasCents > 0 ? "+" : "−"}{money(Math.abs(d.nowCents - d.wasCents))})</span></li>)}
+              </ul>
+              <p className="mt-2 text-xs text-stone-500">Late tickets, refunds and tips added later are paid in the period they happen, so most differences are already in a later period. Re-finalize only if the saved figures were wrong{paid ? " (unmark the payment first)" : ""}.</p>
+            </div>
+          ) : <p className="text-sm text-stone-500">Running this period again today gives the same figures as the finalized snapshot.</p>}
+        </Disclosure>
       ) : null}
       {unconfigured.length ? (
         <div className="mb-4"><Notice>{unconfigured.map((e) => e.employee.name).join(", ")} earned service revenue but {unconfigured.length > 1 ? "have" : "has"} no commission rate. Set it under Staff → Pay.</Notice></div>
@@ -155,12 +164,12 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           {active.length ? <div className="flex gap-2">
             <LinkButton href={`/app/${slug}/payroll/export?${qs}`} size="sm"><Download className="h-4 w-4" /> Workbook (.xlsx)</LinkButton>
             {manage ? <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=w2`} size="sm"><Download className="h-4 w-4" /> W-2 summary</LinkButton> : null}
-            {locationFilter || !manage ? null : <form action={finalize}>
+            {locationFilter || !manage || paid ? null : <form action={finalize}>
               <input type="hidden" name="slug" value={slug} />
               <input type="hidden" name="start" value={start} />
               <input type="hidden" name="end" value={end} />
               {overtime ? <input type="hidden" name="overtime" value="on" /> : null}
-              <ConfirmSubmit title={finalized ? "Re-finalize this period?" : "Finalize this pay period?"} body={finalized ? "This replaces the saved snapshot with today's figures. What changed, person by person, is kept in the activity log." : "A snapshot of these figures is saved. After this, hours, adjustments and pay rates inside the period are locked; refunds made later come off the next period."} confirmLabel={finalized ? "Re-finalize" : "Finalize"} variant="primary">{finalized ? "Re-finalize" : "Finalize period"}</ConfirmSubmit>
+              <ConfirmSubmit title={finalized ? "Re-finalize this period?" : "Finalize this pay period?"} body={finalized ? "This replaces the saved figures with today's. What changed, person by person, is kept in the activity log." : "These figures are saved as the period's record: the page and the workbook show them from now on. Hours, adjustments and pay rates inside the period are locked; refunds and late tickets after this are paid in the period they happen."} confirmLabel={finalized ? "Re-finalize" : "Finalize"} variant={finalized ? "secondary" : "primary"}>{finalized ? "Re-finalize" : "Finalize period"}</ConfirmSubmit>
             </form>}
           </div> : null}
         </div>
@@ -255,9 +264,9 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           <Card className="p-4">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="font-medium">Adjustments</h2>
-              {manage ? <LinkButton href={`/app/${slug}/payroll/adjustments/new?start=${start}&end=${end}`} size="sm"><Plus className="h-4 w-4" /> Add</LinkButton> : null}
+              {manage && !finalized ? <LinkButton href={`/app/${slug}/payroll/adjustments/new?start=${start}&end=${end}`} size="sm"><Plus className="h-4 w-4" /> Add</LinkButton> : null}
             </div>
-            <p className="mb-2 text-xs text-stone-500">One-off lines for this period: training pay, transfers, corrections.</p>
+            <p className="mb-2 text-xs text-stone-500">One-off lines for this period: training pay, transfers, corrections.{finalized ? " This period is finalized; put a correction in the current period." : ""}</p>
             {result.adjustmentRows.length === 0 ? <p className="text-sm text-stone-500">None for this period.</p> : (
               <ul className="divide-y divide-stone-100 text-sm">
                 {result.adjustmentRows.map((a) => (
@@ -269,12 +278,38 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
               </ul>
             )}
           </Card>
+          {manage && finalized ? <Card className="p-4">
+            <h2 className="mb-1 font-medium">{paid ? "Paid" : "Payment"}</h2>
+            {paid ? (
+              <div className="text-sm">
+                <p>Checks went out {dateShort(finalized.paidOn!)}{finalized.paymentRef ? <> · <span className="text-stone-600">{finalized.paymentRef}</span></> : null}.</p>
+                <form action={unmarkPaid} className="mt-2">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="start" value={start} />
+                  <input type="hidden" name="end" value={end} />
+                  <ConfirmSubmit title="Unmark this period as paid?" body="Only do this to correct the record. Re-finalizing becomes possible again." confirmLabel="Unmark" variant="ghost" className="text-stone-500 hover:text-red-600">Unmark</ConfirmSubmit>
+                </form>
+              </div>
+            ) : (
+              <form action={markPaid} className="space-y-2 text-sm">
+                <input type="hidden" name="slug" value={slug} />
+                <input type="hidden" name="start" value={start} />
+                <input type="hidden" name="end" value={end} />
+                <p className="text-xs text-stone-500">Record the day the checks went out and a check number or batch reference. The period can&rsquo;t be re-finalized while it is marked paid.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="date" name="paidOn" defaultValue={today} aria-label="Paid on" required />
+                  <Input name="paymentRef" placeholder="Check # or batch" aria-label="Check or batch reference" maxLength={80} />
+                </div>
+                <Button type="submit" variant="secondary" size="sm">Mark as paid</Button>
+              </form>
+            )}
+          </Card> : null}
           {manage ? <Card className="p-4">
             <h2 className="mb-1 font-medium">Finalized periods</h2>
             {runs.length === 0 ? <p className="text-sm text-stone-500">None yet.</p> : (
               <ul className="divide-y divide-stone-100 text-sm">
                 {runs.map((r) => (
-                  <li key={r.id} className="py-1.5"><Link href={`?start=${r.periodStart}&end=${r.periodEnd}&overtime=${r.overtime ? 1 : 0}`} className="text-brand-700 underline">{dateShort(r.periodStart)} – {dateShort(r.periodEnd)}</Link></li>
+                  <li key={r.id} className="flex items-center justify-between py-1.5"><Link href={`?start=${r.periodStart}&end=${r.periodEnd}&overtime=${r.overtime ? 1 : 0}`} className="text-brand-700 underline">{dateShort(r.periodStart)} – {dateShort(r.periodEnd)}</Link>{r.paidOn ? <span className="text-xs text-stone-500">paid {dateShort(r.paidOn)}</span> : null}</li>
                 ))}
               </ul>
             )}

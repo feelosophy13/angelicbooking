@@ -1016,6 +1016,11 @@ export const payrollRuns = pgTable(
     snapshot: jsonb("snapshot").notNull(),
     createdByUserId: text("created_by_user_id"),
     createdAt: createdAt(),
+    // "Mark as paid": the day the checks went out and a check number or batch reference. While set, the period can't be re-finalized.
+    paidOn: date("paid_on"),
+    paymentRef: text("payment_ref"),
+    paidByUserId: text("paid_by_user_id"),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("payroll_runs_period_uq").on(t.businessId, t.periodStart, t.periodEnd)],
 );

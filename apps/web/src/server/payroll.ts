@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
-import { CARD_FEE_METHODS, computePayroll, isScheduledPeriod, periodContaining, rangesOverlap, salaryShare, weekStartOf, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type PayrollEmployee, type PayrollLine, type PayrollResult, type PaySchedule, type TipPart } from "@angelic/core";
+import { CARD_FEE_METHODS, computePayroll, isScheduledPeriod, periodContaining, rangesOverlap, salaryShare, weekStartOf, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type OmittedLine, type PayrollEmployee, type PayrollLine, type PayrollResult, type PaySchedule, type TipPart } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
 import { ratesForPeriod, syncCurrentRates } from "@/server/pay-rates";
 import { PayrollLockedError } from "@/server/payroll-lock";
@@ -24,23 +24,33 @@ function localDate(at: Date, tz: string) {
  *
  * Refunds are events on the day they happen, not edits to the past: a sale is always credited in full on its own date, and each refund
  * (to the card or as store credit) adds "Refund ·" rows with negative amounts on the refund's date, in proportion to the share of the
- * sale's payments refunded (goods and tips alike). So a refund after a period was paid comes off the next period's pay instead of
- * silently vanishing, and re-running a paid period gives the same numbers it gave then.
+ * sale's payments refunded (goods only: a tip stays with the stylist unless the tip itself was refunded, itemized). So a refund after a
+ * period was paid comes off the next period's pay instead of silently vanishing, and re-running a paid period gives the same numbers.
+ *
+ * Late tickets follow the same rule: a visit whose pay period was finalized before its ticket closed (or before the visit was moved
+ * there by a reschedule) is paid in the period containing the close, as "Late ticket · <visit date>", never in the closed book.
+ *
+ * `omitted` is the Quality Check ledger: every line of a sale closed in the period that nobody is paid for here, and why.
  */
 export async function buildPayrollLines(business: Business, period: PayrollPeriod, locationId?: string | null): Promise<PayrollLine[]> {
+  return (await buildPayrollLinesDetailed(business, period, locationId)).lines;
+}
+
+export async function buildPayrollLinesDetailed(business: Business, period: PayrollPeriod, locationId?: string | null): Promise<{ lines: PayrollLine[]; omitted: OmittedLine[] }> {
   const tz = business.timezone;
-  // Pull a wide window of closed sales (6 months back) because appointment dates
-  // can precede or follow checkout; narrow by credited date below.
-  const from = zonedToInstant(shiftISODate(period.start, -183), "00:00", tz);
-  const to = zonedToInstant(shiftISODate(period.end, 31), "00:00", tz);
-  // Refunds made in the period, whenever their sale was (a day of slack each side; narrowed by local date below).
-  const refundFrom = zonedToInstant(shiftISODate(period.start, -1), "00:00", tz);
-  const refundTo = zonedToInstant(shiftISODate(period.end, 2), "00:00", tz);
+  // Sales closed in the period (a day of slack each side; narrowed by local date below) plus, whenever they closed, sales with a visit
+  // inside the period (a deposit taken months ahead, a ticket closed long after the visit): no look-ahead cap, so nothing is ever unpaid.
+  const from = zonedToInstant(shiftISODate(period.start, -1), "00:00", tz);
+  const to = zonedToInstant(shiftISODate(period.end, 2), "00:00", tz);
+  const periodFrom = zonedToInstant(shiftISODate(period.start, -1), "00:00", tz);
+  const periodTo = zonedToInstant(shiftISODate(period.end, 2), "00:00", tz);
+  const refundFrom = from;
+  const refundTo = to;
   return withTenant(business.id, async (tx) => {
     // Refunds that name their items claw back exactly those lines (itemEvents); the rest are spread over the ticket (refundEvents).
     const itemized = sql`exists (select 1 from refund_items ri where ri.refund_id = ${schema.refunds.id})`;
     const itemizedCredit = sql`exists (select 1 from refund_items ri where ri.credit_ledger_id = ${schema.storeCreditLedger.id})`;
-    const [cardRefunds, creditRefunds, refundedItems] = await Promise.all([
+    const [cardRefunds, creditRefunds, refundedItems, runs] = await Promise.all([
       tx
         .select({ saleId: schema.payments.saleId, cents: schema.refunds.amountCents, at: schema.refunds.createdAt })
         .from(schema.refunds)
@@ -54,6 +64,8 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         .select({ saleId: schema.refundItems.saleId, lineId: schema.refundItems.saleLineId, cents: schema.refundItems.amountCents, at: schema.refundItems.createdAt })
         .from(schema.refundItems)
         .where(and(gte(schema.refundItems.createdAt, refundFrom), lte(schema.refundItems.createdAt, refundTo))),
+      // Every finalized period: a visit inside one that was finalized before its ticket closed is a late ticket (see bookVisit).
+      tx.select({ periodStart: schema.payrollRuns.periodStart, periodEnd: schema.payrollRuns.periodEnd, createdAt: schema.payrollRuns.createdAt }).from(schema.payrollRuns),
     ]);
     const inPeriod = (date: string) => date >= period.start && date <= period.end;
     const refundEvents = [...cardRefunds, ...creditRefunds]
@@ -71,6 +83,9 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       .filter((t) => t.closedAt && localDate(t.at, tz) > localDate(t.closedAt, tz) && inPeriod(localDate(t.at, tz)))
       .map((t) => t.saleId);
     const refundSaleIds = [...new Set([...refundEvents, ...itemEvents].map((r) => r.saleId).concat(lateTipSales))];
+    const visitInPeriod = sql`exists (select 1 from sale_lines sl join appointment_items ai on ai.id = sl.appointment_item_id where sl.sale_id = ${schema.sales.id} and ai.start_at >= ${periodFrom.toISOString()}::timestamptz and ai.start_at <= ${periodTo.toISOString()}::timestamptz)`;
+    // A finalized book can't be opened, so late and moved tickets land in later periods: their sales must be loaded too, whenever they closed.
+    const lateCandidates = runs.length ? [sql`(${schema.sales.closedAt} > ${new Date(Math.min(...runs.map((r) => r.createdAt.getTime()))).toISOString()}::timestamptz and exists (select 1 from sale_lines sl join appointment_items ai on ai.id = sl.appointment_item_id where sl.sale_id = ${schema.sales.id} and ai.start_at < ${periodFrom.toISOString()}::timestamptz))`] : [];
     const sales = await tx
       .select()
       .from(schema.sales)
@@ -78,10 +93,10 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         and(
           sql`${schema.sales.status} in ('paid','refunded')`,
           ...(locationId ? [eq(schema.sales.locationId, locationId)] : []),
-          refundSaleIds.length ? or(and(gte(schema.sales.closedAt, from), lte(schema.sales.closedAt, to)), inArray(schema.sales.id, refundSaleIds)) : and(gte(schema.sales.closedAt, from), lte(schema.sales.closedAt, to)),
+          or(and(gte(schema.sales.closedAt, from), lte(schema.sales.closedAt, to)), visitInPeriod, ...lateCandidates, ...(refundSaleIds.length ? [inArray(schema.sales.id, refundSaleIds)] : [])),
         ),
       );
-    if (!sales.length) return [];
+    if (!sales.length) return { lines: [], omitted: [] };
     const saleIds = sales.map((s) => s.id);
     const [lines, pays] = await Promise.all([
       tx.select().from(schema.saleLines).where(sql`${schema.saleLines.saleId} in ${saleIds}`).orderBy(asc(schema.saleLines.sortOrder)),
@@ -91,20 +106,56 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
     const clientIds = [...new Set(sales.map((s) => s.clientId).filter((x): x is string => !!x))];
     const userIds = [...new Set(sales.map((s) => s.createdByUserId).filter((x): x is string => !!x))];
     const itemIds = [...new Set(lines.map((l) => l.appointmentItemId).filter((x): x is string => !!x))];
-    const [clients, users, items] = await Promise.all([
+    const apptIds = [...new Set(sales.map((s) => s.appointmentId).filter((x): x is string => !!x))];
+    const staffIds = [...new Set(lines.map((l) => l.staffId).filter((x): x is string => !!x))];
+    const [clients, users, items, moves, staffRows] = await Promise.all([
       clientIds.length ? tx.select({ id: schema.clients.id, first: schema.clients.firstName, last: schema.clients.lastName }).from(schema.clients).where(inArray(schema.clients.id, clientIds)) : [],
       userIds.length ? tx.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, userIds)) : [],
       itemIds.length ? tx.select({ id: schema.appointmentItems.id, startAt: schema.appointmentItems.startAt }).from(schema.appointmentItems).where(inArray(schema.appointmentItems.id, itemIds)) : [],
+      // Reschedules after a period was finalized: the visit's old day may already be paid, or its new day may be in a closed book.
+      apptIds.length && runs.length
+        ? tx.select({ apptId: schema.auditLog.entityId, at: schema.auditLog.at, diff: schema.auditLog.diff }).from(schema.auditLog).where(and(eq(schema.auditLog.action, "appointment.reschedule"), inArray(schema.auditLog.entityId, apptIds), gte(schema.auditLog.at, new Date(Math.min(...runs.map((r) => r.createdAt.getTime()))))))
+        : [],
+      staffIds.length ? tx.select({ id: schema.staff.id, name: schema.staff.displayName, active: schema.staff.active }).from(schema.staff).where(inArray(schema.staff.id, staffIds)) : [],
     ]);
     const clientName = new Map(clients.map((c) => [c.id, `${c.first} ${c.last}`.trim()]));
     const userName = new Map(users.map((u) => [u.id, u.name]));
     const itemStart = new Map(items.map((i) => [i.id, i.startAt]));
+    const staffById = new Map(staffRows.map((x) => [x.id, x]));
+    const lastMove = new Map<string, { at: Date; fromDate: string | null }>();
+    for (const m of moves) {
+      if (!m.apptId) continue;
+      let fromDate: string | null = null;
+      try {
+        const d = JSON.parse(m.diff ?? "{}") as { from?: string };
+        if (d.from) fromDate = localDate(new Date(d.from), tz);
+      } catch {}
+      const cur = lastMove.get(m.apptId);
+      if (!cur || m.at > cur.at) lastMove.set(m.apptId, { at: m.at, fromDate: fromDate ?? cur?.fromDate ?? null });
+    }
+    const finalizedOn = (date: string, before: Date) => runs.find((r) => r.periodStart <= date && date <= r.periodEnd && r.createdAt < before);
+    /**
+     * The day a visit is paid on. Its own day, unless that day's period was finalized before the ticket closed (or before the visit was
+     * moved there): then the day it closed or was moved, pushed past any period that was also finalized before then.
+     */
+    const bookVisit = (visitDate: string, settledAt: Date): { date: string; late: boolean } => {
+      if (!finalizedOn(visitDate, settledAt)) return { date: visitDate, late: false };
+      let d = localDate(settledAt, tz);
+      for (let guard = 0; guard < 60; guard++) {
+        const r = finalizedOn(d, settledAt);
+        if (!r) break;
+        d = shiftISODate(r.periodEnd, 1);
+      }
+      return { date: d, late: true };
+    };
 
     const out: PayrollLine[] = [];
+    const omitted: OmittedLine[] = [];
     for (const sale of sales) {
       const sl = lines.filter((l) => l.saleId === sale.id);
       const goods = sl.filter((l) => l.kind !== "tip");
       const checkoutDay = localDate(sale.closedAt ?? sale.createdAt, tz);
+      const closedInPeriod = inPeriod(checkoutDay);
       const isLate = (t: (typeof sl)[number]) => localDate(t.createdAt, tz) > checkoutDay;
       const tips = sl.filter((l) => l.kind === "tip" && !isLate(l));
       const lateTips = sl.filter((l) => l.kind === "tip" && isLate(l));
@@ -119,17 +170,44 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       const tipNoFeeShare = cashShare;
       const checkoutBy = sale.createdByUserId ? (userName.get(sale.createdByUserId) ?? null) : null;
       const customer = sale.clientId ? (clientName.get(sale.clientId) ?? "Walk-in") : "Walk-in";
-      const checkoutDate = localDate(sale.closedAt ?? sale.createdAt, tz);
+      const checkoutDate = checkoutDay;
+      const move = sale.appointmentId ? lastMove.get(sale.appointmentId) : undefined;
+      // A ticket is settled when it closed, or when its visit was last moved if that came later (a reschedule into or out of a closed book).
+      const settledAt = move && sale.closedAt && move.at > sale.closedAt ? move.at : (sale.closedAt ?? sale.createdAt);
+      const staffName = (id: string | null) => (id ? (staffById.get(id)?.name ?? null) : null);
+      const omit = (l: (typeof sl)[number], reason: OmittedLine["reason"], detail?: string, date = checkoutDate) => {
+        if (closedInPeriod || inPeriod(date)) omitted.push({ date, saleNumber: sale.number, customer, name: l.name, kind: l.kind, staffName: staffName(l.staffId), amountCents: l.amountCents + (l.creditCents ?? 0), reason, detail });
+      };
 
       // Tips per staff, attached to that staff's first service line (or a standalone row).
       const tipByStaff = new Map<string, TipPart[]>();
-      for (const t of tips) if (t.staffId) tipByStaff.set(t.staffId, [...(tipByStaff.get(t.staffId) ?? []), { amountCents: t.amountCents, method: t.tipMethod === "cash" || t.tipMethod === "card" ? t.tipMethod : null }]);
+      for (const t of tips) {
+        if (!t.staffId) {
+          omit(t, "no staff credited", "tip with no stylist on it");
+          continue;
+        }
+        tipByStaff.set(t.staffId, [...(tipByStaff.get(t.staffId) ?? []), { amountCents: t.amountCents, method: t.tipMethod === "cash" || t.tipMethod === "card" ? t.tipMethod : null }]);
+      }
 
       const base: PayrollLine[] = [];
       const baseByLine = new Map<string, PayrollLine>();
       const seenStaffTip = new Set<string>();
       for (const l of goods) {
-        if (!l.staffId) continue;
+        const start = l.appointmentItemId ? itemStart.get(l.appointmentItemId) : null;
+        const visitDate = start ? localDate(start, tz) : null;
+        if (!l.staffId) {
+          if (l.kind === "service" || l.kind === "product" || l.kind === "package") omit(l, "no staff credited", undefined, visitDate ?? checkoutDate);
+          else omit(l, "not commissionable", l.kind === "gift_card" ? "gift card" : l.kind, visitDate ?? checkoutDate);
+          continue;
+        }
+        // A visit moved out of a period that was finalized while it was still there was paid in that period's snapshot: not again here.
+        if (move && visitDate && move.fromDate && move.fromDate !== visitDate && sale.closedAt && sale.closedAt < move.at) {
+          const paidIn = finalizedOn(move.fromDate, move.at);
+          if (paidIn && sale.closedAt < paidIn.createdAt) {
+            omit(l, "paid in an earlier period", `paid as a ${move.fromDate} visit in ${paidIn.periodStart} – ${paidIn.periodEnd}, moved to ${visitDate} after that period was finalized`, visitDate);
+            continue;
+          }
+        }
         const disc = goodsTotal > 0 ? Math.round((sale.discountCents * l.amountCents) / goodsTotal) : 0;
         const tax = l.taxable && taxableTotal > 0 ? Math.round((sale.taxCents * l.amountCents) / taxableTotal) : 0;
         // A line covered by a package or membership credit carries its value in creditCents
@@ -149,14 +227,14 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         const card = net - cash;
         // A package or membership sold at the desk is its own sale-line kind (not a product named "package"), so map it directly; gift cards and fees are not commissionable.
         const kind: PayrollLine["kind"] = l.kind === "service" ? "service" : l.kind === "package" ? "package" : l.kind === "membership" ? "membership" : l.kind === "product" ? (/package/i.test(l.name) ? "package" : /membership/i.test(l.name) ? "membership" : "product") : "fee";
-        const start = l.appointmentItemId ? itemStart.get(l.appointmentItemId) : null;
+        const booked = visitDate ? bookVisit(visitDate, settledAt) : { date: checkoutDate, late: false };
         const row: PayrollLine = {
           staffId: l.staffId,
           kind,
           refunded: false,
-          date: start ? localDate(start, tz) : checkoutDate,
+          date: booked.date,
           customer,
-          name: l.name,
+          name: booked.late ? `Late ticket · ${visitDate} · ${l.name}` : l.name,
           checkoutBy,
           saleNumber: sale.number,
           cashCents: cash,
@@ -167,6 +245,9 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
           amtPaidCents: net + tip,
           locationId: sale.locationId,
         };
+        if (kind === "fee") omit(l, "not commissionable", "no-show or late-cancellation fee", booked.date);
+        if (closedInPeriod && !inPeriod(booked.date)) omit(l, "out of period", `closed ${checkoutDate}, paid as a ${booked.date} visit`, booked.date);
+        if (staffById.get(l.staffId)?.active === false) omit(l, "inactive staff", "still paid; the person is off the roster", booked.date);
         base.push(row);
         baseByLine.set(l.id, row);
       }
@@ -180,7 +261,10 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
       // Tips added on a later day: a row of their own, on the day they were added.
       const late: PayrollLine[] = [];
       for (const t of lateTips) {
-        if (!t.staffId) continue;
+        if (!t.staffId) {
+          omit(t, "no staff credited", "tip added later with no stylist on it", localDate(t.createdAt, tz));
+          continue;
+        }
         const split = splitTips([{ amountCents: t.amountCents, method: t.tipMethod === "cash" || t.tipMethod === "card" ? t.tipMethod : null }], tipNoFeeShare);
         late.push({ staffId: t.staffId, kind: "service", refunded: false, date: localDate(t.createdAt, tz), customer, name: "Tip (added later)", checkoutBy, saleNumber: sale.number, cashCents: 0, cardCents: 0, cashTipCents: split.cashCents, cardTipCents: split.cardCents, discountCents: 0, amtPaidCents: split.totalCents, locationId: sale.locationId });
       }
@@ -200,18 +284,23 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
         const cash = Math.round(r.cents * cashShare);
         out.push({ ...b, date: r.date, name: `Refund · ${b.name}`, cashCents: -cash, cardCents: -(r.cents - cash), cashTipCents: 0, cardTipCents: 0, discountCents: 0, amtPaidCents: -r.cents });
       }
-      // Each refund of this sale in the period takes back its share of every row, on the day it was refunded.
-      if (paidTotal > 0) {
+      // Each refund of this sale in the period takes back its share of the goods on every row, on the day it was refunded. Tips stay with
+      // the stylist: a whole-ticket refund is the salon giving the client's money back, not the stylist's, unless the tip itself is refunded
+      // (an itemized refund naming the tip line, above).
+      const goodsPaid = paidTotal - sl.filter((l) => l.kind === "tip").reduce((s, l) => s + l.amountCents, 0);
+      if (goodsPaid > 0) {
         for (const r of refundEvents.filter((e) => e.saleId === sale.id)) {
-          const f = Math.min(1, r.cents / paidTotal);
+          const f = Math.min(1, r.cents / goodsPaid);
           const back = (c: number) => -Math.round(c * f);
-          for (const b of [...base, ...late]) {
-            out.push({ ...b, date: r.date, name: `Refund · ${b.name}`, cashCents: back(b.cashCents), cardCents: back(b.cardCents), cashTipCents: back(b.cashTipCents), cardTipCents: back(b.cardTipCents), discountCents: 0, amtPaidCents: back(b.amtPaidCents) });
+          for (const b of base) {
+            const goodsOnRow = b.amtPaidCents - b.cashTipCents - b.cardTipCents;
+            if (goodsOnRow === 0) continue;
+            out.push({ ...b, date: r.date, name: `Refund · ${b.name}`, cashCents: back(b.cashCents), cardCents: back(b.cardCents), cashTipCents: 0, cardTipCents: 0, discountCents: 0, amtPaidCents: back(goodsOnRow) });
           }
         }
       }
     }
-    return out.filter((l) => l.date >= period.start && l.date <= period.end);
+    return { lines: out.filter((l) => l.date >= period.start && l.date <= period.end), omitted };
   });
 }
 
@@ -222,8 +311,8 @@ export async function buildPayrollLines(business: Business, period: PayrollPerio
  * sheet still shows each person's whole pay.
  */
 export async function getPayrollInputs(business: Business, period: PayrollPeriod, locationId?: string | null, opts: { split?: boolean } = {}) {
-  const [lines, rest] = await Promise.all([
-    buildPayrollLines(business, period, locationId),
+  const [{ lines, omitted }, rest] = await Promise.all([
+    buildPayrollLinesDetailed(business, period, locationId),
     withTenant(business.id, async (tx) => {
       // Scheduled changes whose date has arrived land on the staff record here, so lists stay current.
       await syncCurrentRates(tx, localDate(new Date(), business.timezone));
@@ -253,6 +342,8 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
       staffId: s.id,
       name: s.fullName?.trim() || s.displayName,
       position: s.position,
+      locationId: s.locationId ?? null,
+      inactive: !s.active,
       payType: r.payType,
       mainCommissionBps: r.mainCommissionBps,
       productCommissionBps: r.productCommissionBps,
@@ -273,6 +364,7 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
   return {
     employees,
     lines,
+    omitted,
     hours,
     adjustments,
     adjustmentRows: split ? [] : rest.adjustments,
@@ -310,13 +402,48 @@ export async function salaryShareFor(business: Business, period: PayrollPeriod, 
   return { share: r.share, prorated: true, pieces: r.pieces };
 }
 
-export type PayrollRun = PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[]; rateChanges: { staffId: string; name: string; effectiveFrom: string }[]; salaryShare: number };
+export type PayrollRun = PayrollResult & { adjustmentRows: (typeof schema.payrollAdjustments.$inferSelect)[]; rateChanges: { staffId: string; name: string; effectiveFrom: string }[]; salaryShare: number; omitted: OmittedLine[] };
 
 /** `locationId` limits sales (commission, tips) to one site; hours and adjustments are per person and stay whole. */
 export async function runPayroll(business: Business, period: PayrollPeriod, overtime: boolean, locationId?: string | null, opts: { split?: boolean } = {}): Promise<PayrollRun> {
   const [inputs, salary] = await Promise.all([getPayrollInputs(business, period, locationId, opts), salaryShareFor(business, period, localDate(new Date(), business.timezone))]);
   const result = computePayroll({ employees: inputs.employees, lines: inputs.lines, hours: inputs.hours, adjustments: inputs.adjustments, overtime, overtimeRule: business.overtimeRule, weekStart: business.weekStart, countFrom: period.start, salaryShare: salary.share });
-  return { ...result, adjustmentRows: inputs.adjustmentRows, rateChanges: inputs.rateChanges, salaryShare: salary.share };
+  return { ...result, adjustmentRows: inputs.adjustmentRows, rateChanges: inputs.rateChanges, salaryShare: salary.share, omitted: inputs.omitted };
+}
+
+/** A finalized period's figures, as saved: the snapshot is the whole run. Fields older snapshots lack are filled from the live run. */
+export function runFromSnapshot(snapshot: unknown, live: PayrollRun): PayrollRun {
+  const snap = snapshot as Partial<PayrollRun>;
+  const home = new Map(live.employees.map((e) => [e.employee.staffId, e.employee] as const));
+  const employees = (snap.employees ?? []).map((e) => {
+    const l = home.get(e.employee.staffId);
+    return { ...e, employee: { ...e.employee, locationId: e.employee.locationId === undefined ? (l?.locationId ?? null) : e.employee.locationId, inactive: e.employee.inactive ?? l?.inactive ?? false } };
+  });
+  return { employees, unmatchedStaffIds: snap.unmatchedStaffIds ?? [], adjustmentRows: snap.adjustmentRows ?? live.adjustmentRows, rateChanges: snap.rateChanges ?? [], salaryShare: snap.salaryShare ?? 1, omitted: snap.omitted ?? [] };
+}
+
+/**
+ * What the Payroll page and the exports show for a period: the saved snapshot when the period is finalized (finalized means finalized), else
+ * the live run. The live run comes back as well, for "what changed since". A finalized period keeps the overtime setting it was finalized with.
+ */
+export async function payrollForPeriod(business: Business, period: PayrollPeriod, overtime: boolean) {
+  const finalized = await getFinalizedRun(business.id, period);
+  const live = await runPayroll(business, period, finalized ? finalized.overtime : overtime);
+  const result = finalized ? runFromSnapshot(finalized.snapshot, live) : live;
+  return { result, live, finalized, overtime: finalized ? finalized.overtime : overtime };
+}
+
+/** The people based at one location (staff.locationId), with all of their pay: the owner runs one pay sheet per site, the employee's site deciding. */
+export function forHomeLocation(run: PayrollRun, locationId: string | null): PayrollRun {
+  if (!locationId) return run;
+  const employees = run.employees.filter((e) => (e.employee.locationId ?? null) === locationId);
+  const ids = new Set(employees.map((e) => e.employee.staffId));
+  return { ...run, employees, adjustmentRows: run.adjustmentRows.filter((a) => ids.has(a.staffId)), rateChanges: run.rateChanges.filter((c) => ids.has(c.staffId)), omitted: run.omitted };
+}
+
+/** One person's own row (the "See their own pay sheet" permission). */
+export function forOwnRow(run: PayrollRun, staffId: string | null): PayrollRun {
+  return { ...run, employees: run.employees.filter((e) => e.employee.staffId === staffId), adjustmentRows: run.adjustmentRows.filter((a) => a.staffId === staffId), rateChanges: run.rateChanges.filter((c) => c.staffId === staffId), omitted: [] };
 }
 
 export interface LocationPay {
@@ -386,8 +513,10 @@ export async function overlappingFinalizedRun(tx: TenantDb, period: PayrollPerio
 export async function finalizePayroll(business: Business, period: PayrollPeriod, overtime: boolean, actorUserId: string) {
   const clash = await withTenant(business.id, (tx) => overlappingFinalizedRun(tx, period));
   if (clash) throw new PayrollLockedError(`This period overlaps ${clash.periodStart} to ${clash.periodEnd}, which is already finalized. Pick a period that starts after ${clash.periodEnd} (or ends before ${clash.periodStart}).`);
-  const result = await runPayroll(business, period, overtime);
   const previous = await getFinalizedRun(business.id, period);
+  // Checks that went out are the record; the figures behind them can't be swapped underneath. Unmark first, deliberately.
+  if (previous?.paidOn) throw new PayrollLockedError(`This period was marked paid on ${previous.paidOn}${previous.paymentRef ? ` (${previous.paymentRef})` : ""}. Unmark it before re-finalizing.`);
+  const result = await runPayroll(business, period, overtime);
   await withTenant(business.id, async (tx) => {
     await tx
       .insert(schema.payrollRuns)
@@ -403,10 +532,29 @@ export async function finalizePayroll(business: Business, period: PayrollPeriod,
   return result;
 }
 
+/** Record that a finalized period's checks went out: the day and a check number or batch reference. Audited; locks re-finalize until unmarked. */
+export async function markPayrollPaid(business: Business, period: PayrollPeriod, input: { paidOn: string; paymentRef: string | null }, actorUserId: string) {
+  await withTenant(business.id, async (tx) => {
+    const run = await getFinalizedRunIn(tx, period);
+    if (!run) throw new PayrollLockedError("Finalize the period before marking it paid.");
+    await tx.update(schema.payrollRuns).set({ paidOn: input.paidOn, paymentRef: input.paymentRef, paidByUserId: actorUserId, paidAt: new Date() }).where(eq(schema.payrollRuns.id, run.id));
+    await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "payroll.mark_paid", entity: "payroll_run", entityId: `${period.start}_${period.end}`, diff: JSON.stringify({ paidOn: input.paidOn, paymentRef: input.paymentRef, previous: run.paidOn ? { paidOn: run.paidOn, paymentRef: run.paymentRef } : null }) });
+  });
+}
+
+export async function unmarkPayrollPaid(business: Business, period: PayrollPeriod, actorUserId: string) {
+  await withTenant(business.id, async (tx) => {
+    const run = await getFinalizedRunIn(tx, period);
+    if (!run?.paidOn) return;
+    await tx.update(schema.payrollRuns).set({ paidOn: null, paymentRef: null, paidByUserId: null, paidAt: null }).where(eq(schema.payrollRuns.id, run.id));
+    await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "payroll.unmark_paid", entity: "payroll_run", entityId: `${period.start}_${period.end}`, diff: JSON.stringify({ was: { paidOn: run.paidOn, paymentRef: run.paymentRef } }) });
+  });
+}
+
 export async function listPayrollRuns(businessId: string) {
   return withTenant(businessId, (tx) =>
     tx
-      .select({ id: schema.payrollRuns.id, periodStart: schema.payrollRuns.periodStart, periodEnd: schema.payrollRuns.periodEnd, createdAt: schema.payrollRuns.createdAt, overtime: schema.payrollRuns.overtime })
+      .select({ id: schema.payrollRuns.id, periodStart: schema.payrollRuns.periodStart, periodEnd: schema.payrollRuns.periodEnd, createdAt: schema.payrollRuns.createdAt, overtime: schema.payrollRuns.overtime, paidOn: schema.payrollRuns.paidOn, paymentRef: schema.payrollRuns.paymentRef })
       .from(schema.payrollRuns)
       .orderBy(sql`${schema.payrollRuns.periodStart} desc`)
       .limit(24),

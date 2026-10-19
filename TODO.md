@@ -65,6 +65,20 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Salary is per scheduled period: a custom run pays it pro rata by days of each scheduled period it covers (`salaryShare`, said on
       the page); with no schedule set the page assumes two weeks from the latest finalized period (else the week start) and salary stays
       flat per run. Math in core `pay-schedule.ts` (tests `pay-schedule.test.ts`); DB test `payroll-schedule.test.ts`.
+- [x] Item 2, finalized means finalized, 2026-10-19 (migration 0122 `payroll_runs.paid_on` / `payment_ref` / `paid_by_user_id` /
+      `paid_at`): the Payroll page and both workbook exports read the saved snapshot for a finalized period (`payrollForPeriod`), with the
+      run's own overtime setting; live figures sit behind a "What changed since this period was finalized" disclosure; Re-finalize stays
+      explicit and is refused while the period is marked paid. "Mark as paid" (day + check or batch reference, audited `payroll.mark_paid` /
+      `payroll.unmark_paid`) on a finalized period. Late and backdated tickets book on their own date like refunds: a visit whose period was
+      finalized before its ticket closed (or before a reschedule moved it there) is paid in the period containing the close, as "Late ticket ·
+      <visit date> · <service>", pushed past any other period finalized before then; a visit moved out of a finalized period after it was
+      paid there is not paid again (Quality Check: "paid in an earlier period"). Sales loading has no look-ahead cap any more: a period loads
+      sales closed inside it plus any sale with a visit inside it, whenever it closed. Kiosk and web punches and the 14-hour auto-close refuse
+      a day inside a finalized period (`assertPunchOpen`; the API already did). `/payroll/export` without permission is the "Not allowed"
+      page with status 403, not a 500. A location on the Payroll page now means the people based there with all of their pay (the owner's
+      one-sheet-per-site rule; `forHomeLocation`), not "sales at that site only". `buildPayrollLinesDetailed` also returns the Quality
+      Check ledger (`omitted`: no staff credited, inactive staff, out of period, not commissionable, paid in an earlier period), saved in the
+      snapshot. Whole-ticket refunds no longer claw back tips (item 4, landed here with the rewrite). Tests in `payroll-clawback.test.ts`.
 
 - [x] Demo seed, 2026-10-19: sale lines (service, product, tip) carry the sale's own close time. They used to default to the seed run
       time, so payroll treated every one of the 368 demo tips as "Tip (added later)" on the seed day; now none are.

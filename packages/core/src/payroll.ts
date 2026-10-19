@@ -21,6 +21,10 @@ export interface PayrollEmployee {
   staffId: string;
   name: string;
   position: string | null;
+  /** The person's home location (staff.locationId): a per-location pay sheet lists the people based there, with all of their pay. */
+  locationId?: string | null;
+  /** Off the roster (staff.active = false). Their lines are still paid; the Quality Check tab points them out. */
+  inactive?: boolean;
   payType: PayType;
   mainCommissionBps: number;
   productCommissionBps: number;
@@ -153,6 +157,19 @@ export interface EmployeePayroll {
 export interface PayrollResult {
   employees: EmployeePayroll[];
   unmatchedStaffIds: string[];
+}
+
+/** A sale line (or tip) that pay did not credit to anyone in this period, and why: the Quality Check ledger, so nothing is dropped silently. */
+export interface OmittedLine {
+  date: string;
+  saleNumber: number | null;
+  customer: string;
+  name: string;
+  kind: string;
+  staffName: string | null;
+  amountCents: number;
+  reason: "no staff credited" | "inactive staff" | "out of period" | "not commissionable" | "paid in an earlier period";
+  detail?: string;
 }
 
 /** A tip on a sale and how it was handed over, when the desk said: "cash" or "card"; null means "same as the payment". */

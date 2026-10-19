@@ -10,6 +10,7 @@ import { db, schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { instantToISODate } from "@angelic/core";
 import { tzFor } from "./locations";
 import { sharedRateLimit } from "@/lib/shared-rate-limit";
+import { finalizedPeriodOn } from "./payroll-lock";
 
 export class ClockError extends Error {}
 
@@ -77,18 +78,27 @@ export const MAX_SHIFT_MIN = 14 * 60;
 /**
  * The staff member's open entry, if any. An entry left open longer than a full
  * shift is closed at the cap and marked, so the next punch starts fresh instead
- * of booking days of hours.
+ * of booking days of hours. An open entry whose day is already in a finalized pay
+ * period is left as it is (that book is closed; it is listed under Time clock), so
+ * the auto-close can't write into a paid period any more than a person can.
  */
 export async function openEntryFor(tx: TenantDb, staffId: string, now: Date) {
   const open = await tx.query.timeEntries.findFirst({ where: and(eq(schema.timeEntries.staffId, staffId), isNull(schema.timeEntries.clockOutAt), eq(schema.timeEntries.minutes, 0)) });
   if (!open?.clockInAt) return null;
   const elapsed = (now.getTime() - open.clockInAt.getTime()) / 60_000;
   if (elapsed <= MAX_SHIFT_MIN) return open;
+  if (await finalizedPeriodOn(tx, open.date)) return null;
   await tx
     .update(schema.timeEntries)
     .set({ clockOutAt: new Date(open.clockInAt.getTime() + MAX_SHIFT_MIN * 60_000), minutes: MAX_SHIFT_MIN, note: [open.note, "Auto clock-out: forgot to clock out"].filter(Boolean).join(" · ") })
     .where(eq(schema.timeEntries.id, open.id));
   return null;
+}
+
+/** A punch (in or out) lands on `date`; refuse it when that day's pay period is finalized, like any other hours entry. */
+export async function assertPunchOpen(tx: TenantDb, date: string) {
+  const run = await finalizedPeriodOn(tx, date);
+  if (run) throw new ClockError(`Pay for ${date} is already finalized (${run.periodStart} to ${run.periodEnd}). Ask a manager to add the hours as an adjustment.`);
 }
 
 /** Clock the PIN's owner in (no open entry) or out (closes the open entry). */
@@ -117,10 +127,12 @@ export async function punchWithPin(token: string, pin: string): Promise<Punch> {
     }
     const open = await openEntryFor(tx, person.id, now);
     if (open?.clockInAt) {
+      await assertPunchOpen(tx, open.date);
       const minutes = Math.max(1, Math.round((now.getTime() - open.clockInAt.getTime()) / 60_000));
       await tx.update(schema.timeEntries).set({ clockOutAt: now, minutes }).where(eq(schema.timeEntries.id, open.id));
       return { staffName: person.displayName, action: "out", at: now, minutes, timeZone: tz };
     }
+    await assertPunchOpen(tx, instantToISODate(now, tz));
     await tx.insert(schema.timeEntries).values({ businessId: business.id, staffId: person.id, date: instantToISODate(now, tz), minutes: 0, clockInAt: now, locationId: location.id, note: "Kiosk" });
     return { staffName: person.displayName, action: "in", at: now, minutes: null, timeZone: tz };
   });

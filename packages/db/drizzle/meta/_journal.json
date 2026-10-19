@@ -855,6 +855,13 @@
       "when": 1795201000000,
       "tag": "0121_pay_schedule",
       "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1795201100000,
+      "tag": "0122_payroll_paid_on",
+      "breakpoints": true
     }
   ]
 }

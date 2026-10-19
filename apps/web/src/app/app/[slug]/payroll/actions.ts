@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction, requireAnyAction } from "@/lib/tenant";
-import { finalizePayroll, getFinalizedRunIn } from "@/server/payroll";
+import { finalizePayroll, getFinalizedRunIn, markPayrollPaid, unmarkPayrollPaid } from "@/server/payroll";
 import { PayrollLockedError } from "@/server/payroll-lock";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
@@ -58,6 +58,28 @@ export async function finalize(formData: FormData) {
     throw e;
   }
   await setFlash("Pay period finalized");
+  revalidatePath(`/app/${d.slug}/payroll`);
+}
+
+/** "Mark as paid": the day the checks went out and a check or batch reference, on a finalized period. Locks re-finalize until unmarked. */
+export async function markPaid(formData: FormData) {
+  const d = z.object({ slug: z.string(), start: f.isoDate(), end: f.isoDate(), paidOn: f.isoDate(), paymentRef: f.optional(80) }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "payroll.manage");
+  try {
+    await markPayrollPaid(ctx.business, { start: d.start, end: d.end }, { paidOn: d.paidOn, paymentRef: d.paymentRef }, ctx.user.id);
+  } catch (e) {
+    if (e instanceof PayrollLockedError) return setFlash(e.message, "error");
+    throw e;
+  }
+  await setFlash("Marked as paid");
+  revalidatePath(`/app/${d.slug}/payroll`);
+}
+
+export async function unmarkPaid(formData: FormData) {
+  const d = z.object({ slug: z.string(), start: f.isoDate(), end: f.isoDate() }).parse(Object.fromEntries(formData));
+  const ctx = await requireAction(d.slug, "payroll.manage");
+  await unmarkPayrollPaid(ctx.business, { start: d.start, end: d.end }, ctx.user.id);
+  await setFlash("No longer marked as paid");
   revalidatePath(`/app/${d.slug}/payroll`);
 }
 
