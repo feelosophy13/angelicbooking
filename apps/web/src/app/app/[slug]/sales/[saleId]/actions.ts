@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { can, normalizePhone, parseMoney } from "@angelic/core";
 import { PermissionError, requireAction, requireBusiness } from "@/lib/tenant";
-import { seesOwnOnly } from "@/lib/appointment-access";
+import { salesScope } from "@/lib/visibility";
 import { isStripeConfigured, StripeNotConfigured } from "@/lib/stripe";
 import {
   addProductLine,
@@ -57,21 +57,25 @@ function friendly(e: unknown): SaleActionState {
   throw e;
 }
 
-/** Refunds need the Refund permission itself; being able to read reports doesn't let someone send money back. */
-async function requireRefund(slug: string) {
+/**
+ * Refunds need the Refund permission itself, on a ticket the person may see (M2): any ticket with "See every ticket", otherwise only one
+ * they are credited on. Being able to read reports doesn't let someone send money back.
+ */
+async function requireRefund(slug: string, saleId: string) {
   const ctx = await requireBusiness(slug);
   if (!can(ctx.permissions, "checkout.refund")) throw new PermissionError();
+  if (salesScope(ctx.permissions) !== "all" && !(await isOwnSale(ctx.business.id, saleId, { staffId: ctx.staffId, userId: ctx.user.id }))) throw new PermissionError();
   return ctx;
 }
 
 /**
- * Anyone who takes payments, on a ticket they may see: a role that sees only its own calendar works only on tickets it is credited on (or
+ * Anyone who takes payments, on a ticket they may see (M1): without "See every ticket" they work only on tickets they are credited on (or
  * just opened and not yet filled; the same rule as the Sales list), so a stylist can't open, edit or tip themselves on a colleague's ticket.
  */
 async function ctxFor(slug: string, saleId: string) {
   const ctx = await requireAction(slug, "checkout.take");
   // A ticket that doesn't exist yet will be theirs: they ring it up.
-  if (saleId !== NEW_SALE && seesOwnOnly(ctx.permissions) && !(await isOwnSale(ctx.business.id, saleId, { staffId: ctx.staffId, userId: ctx.user.id }))) throw new PermissionError();
+  if (saleId !== NEW_SALE && salesScope(ctx.permissions) !== "all" && !(await isOwnSale(ctx.business.id, saleId, { staffId: ctx.staffId, userId: ctx.user.id }))) throw new PermissionError();
   return ctx;
 }
 
@@ -352,7 +356,7 @@ export async function finishCardPayment(input: { slug: string; saleId: string; p
 export async function refund(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ paymentId: z.string().min(1), amount: z.string().optional(), reasonId: z.string().min(1, "Pick a reason for the refund."), note: z.string().optional(), to: z.enum(["original", "store_credit"]).optional() }).safeParse(Object.fromEntries(formData));
   if (!d.success) return { error: d.error.issues[0]?.message ?? "Check the refund details." };
-  const ctx = await requireRefund(d.data.slug);
+  const ctx = await requireRefund(d.data.slug, d.data.saleId);
   // Items being refunded ("item:<line id>" = amount, "qty:<line id>" = how many); with none, the amount is a refund off the whole ticket.
   const items: RefundItemInput[] = [];
   for (const [key, v] of formData.entries()) {
@@ -399,7 +403,7 @@ export async function refund(_prev: SaleActionState, formData: FormData): Promis
 /** Change the reason or note on a refund that already happened. Logged; the money is untouched. */
 export async function changeRefundReason(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
   const d = base.extend({ kind: z.enum(["refund", "credit"]), id: z.string().min(1), reasonId: z.string().optional(), note: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await requireRefund(d.slug);
+  const ctx = await requireRefund(d.slug, d.saleId);
   try {
     await updateRefundReason({ businessId: ctx.business.id, kind: d.kind, id: d.id, reasonId: d.reasonId || null, note: d.note?.trim() || null, actorUserId: ctx.user.id });
   } catch (e) {
@@ -676,7 +680,7 @@ export async function editLine(formData: FormData) {
     revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
     return;
   }
-  if (d.staffId !== undefined && (d.staffId || null) !== line.staffId && seesOwnOnly(ctx.permissions)) {
+  if (d.staffId !== undefined && (d.staffId || null) !== line.staffId && salesScope(ctx.permissions) !== "all") {
     await setFlash("Only someone who sees every calendar can move credit between staff.", "error");
     revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
     return;

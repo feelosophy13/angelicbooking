@@ -5,9 +5,9 @@ import { ConfirmSubmit, Field } from "@/components/form";
 import { dateTime } from "@/lib/format";
 import { notFound } from "next/navigation";
 import { can, isMembershipInterval, periodNoun } from "@angelic/core";
-import { requireAction } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
+import { salesScope } from "@/lib/visibility";
 import { getSale, isOwnSale, refundableLines } from "@/server/sales";
-import { seesOwnOnly } from "@/lib/appointment-access";
 import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForSale, validAtLocation } from "@/server/locations";
 import { MapPin, X } from "lucide-react";
@@ -16,7 +16,8 @@ import { Button, Card, Input, PageHeader, Select, MoneyInput } from "@/component
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; saleId: string }> }): Promise<Metadata> {
   const { slug, saleId } = await params;
-  const { business } = await requireAction(slug, "checkout.take");
+  const { business, permissions, staffId, user } = await requireAnyAction(slug, "checkout.take", "sales.view.own", "sales.view.all");
+  if (salesScope(permissions) === "own" && !(await isOwnSale(business.id, saleId, { staffId, userId: user.id }))) return { title: "Sale" };
   const d = await getSale(business.id, saleId);
   return { title: d ? `Sale #${d.sale.number}` : "Sale" };
 }
@@ -43,12 +44,13 @@ import { productLabel } from "@/lib/inventory";
 
 export default async function SalePage({ params }: { params: Promise<{ slug: string; saleId: string }> }) {
   const { slug, saleId } = await params;
-  const { business, permissions, staffId: myStaffId, user } = await requireAction(slug, "checkout.take");
-  if (seesOwnOnly(permissions) && !(await isOwnSale(business.id, saleId, { staffId: myStaffId, userId: user.id }))) notFound();
+  // A ticket they may see (M1): any with sales.view.all, else one they are credited on. Working on it also needs checkout.take.
+  const { business, permissions, staffId: myStaffId, user } = await requireAnyAction(slug, "checkout.take", "sales.view.own", "sales.view.all");
+  const ownOnly = salesScope(permissions) === "own";
+  if (ownOnly && !(await isOwnSale(business.id, saleId, { staffId: myStaffId, userId: user.id }))) notFound();
   const data = await getSale(business.id, saleId);
   if (!data) notFound();
   const canDiscount = can(permissions, "checkout.discount");
-  const ownOnly = seesOwnOnly(permissions);
   const { sale, lines, payments, refunds, credits: creditLedger, client, staff, products } = data;
   const cur = business.currency;
   const money = (c: number) => formatMoney(c, cur);

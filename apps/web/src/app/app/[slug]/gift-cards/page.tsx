@@ -3,7 +3,7 @@ import { Plus } from "lucide-react";
 import { can } from "@angelic/core";
 
 export const metadata: Metadata = { title: "Gift cards" };
-import { requireAnyAction } from "@/lib/tenant";
+import { requireAction } from "@/lib/tenant";
 import { canSeeGiftCardCodes, maskCode } from "@/lib/visibility";
 import { getOffersCatalog } from "@/server/offers";
 import { listLocations } from "@/server/locations";
@@ -12,9 +12,9 @@ import { Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 
 export default async function GiftCardsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  // Whoever issues cards, or reads the money reports (the outstanding balance is a liability). Codes are shown in full only to issuers: a
-  // code plus a balance is spendable at any checkout.
-  const { business, permissions } = await requireAnyAction(slug, "giftcards.issue", "reports.view");
+  // "Look up gift cards" opens the page (M6), so the desk can answer "what's left on my card". Codes are shown in full only to issuers:
+  // a code plus a balance is spendable at any checkout.
+  const { business, permissions } = await requireAction(slug, "giftcards.view");
   const showCodes = canSeeGiftCardCodes(permissions);
   const { giftCards } = await getOffersCatalog(business.id);
   const locations = await listLocations(business.id);

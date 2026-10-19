@@ -246,7 +246,9 @@ export async function chargeNoShowFee(_prev: ActionState, formData: FormData): P
 /** Give back a deposit paid at online booking (only while it has not been applied to a sale). */
 export async function refundDepositAction(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
-  const ctx = await requireAction(slug, "checkout.refund"); // same bar as other refunds
+  // The refund permission, on an appointment they may work on (M2): a stylist can't refund a colleague's client's deposit.
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write", { shared: "allow" });
+  if (!can(ctx.permissions, "checkout.refund")) throw new PermissionError();
   try {
     const pay = await paymentContextForAppointment(ctx.business, appointmentId);
     const done = await refundDeposit({ businessId: ctx.business.id, accountId: pay.accountId, appointmentId, actorUserId: ctx.user.id, reason: "Refunded by staff" });

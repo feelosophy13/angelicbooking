@@ -3,9 +3,9 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { zonedToInstant, instantToISODate } from "@angelic/core";
 import { can } from "@angelic/core";
-import { requireAction } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
+import { salesScope } from "@/lib/visibility";
 import { listSales } from "@/server/sales";
-import { seesOwnOnly } from "@/lib/appointment-access";
 import { listLocations } from "@/server/locations";
 import { formatMoney, shiftISODate, cn } from "@/lib/utils";
 import { Button, Card, Empty, Input, PageHeader, Select } from "@/components/ui";
@@ -22,14 +22,17 @@ type SP = { tab?: string; q?: string; page?: string };
 export default async function SalesPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions, staffId, user } = await requireAction(slug, "checkout.take");
+  // Who sees which tickets is its own permission (M1): every ticket with sales.view.all, else the ones they are credited on
+  // (sales.view.own, or taking payments alone). Starting a sale needs checkout.take.
+  const { business, permissions, staffId, user } = await requireAnyAction(slug, "checkout.take", "sales.view.own", "sales.view.all");
+  const scope = salesScope(permissions)!;
+  const canSell = can(permissions, "checkout.take");
   const locations = await listLocations(business.id);
   const tab = sp.tab === "today" || sp.tab === "all" || sp.tab === "open" ? sp.tab : "open";
   const today = instantToISODate(new Date(), business.timezone);
   const filter = tab === "open" ? { status: "open" as const } : tab === "today" ? { status: "all" as const, from: zonedToInstant(today, "00:00", business.timezone), to: zonedToInstant(shiftISODate(today, 1), "00:00", business.timezone) } : { status: "all" as const };
   const page = Math.max(1, Number(sp.page ?? 1) || 1);
-  // A role that sees only its own calendar sees only its own tickets.
-  const { rows, total, pageSize } = await listSales(business.id, { ...filter, q: sp.q, page, ...(seesOwnOnly(permissions) ? { own: { staffId, userId: user.id } } : {}) });
+  const { rows, total, pageSize } = await listSales(business.id, { ...filter, q: sp.q, page, ...(scope === "own" ? { own: { staffId, userId: user.id } } : {}) });
   const fmt = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: business.timezone });
   const money = (c: number) => formatMoney(c, business.currency);
   const href = (t: string, p = 1) => `?tab=${t}${sp.q ? `&q=${encodeURIComponent(sp.q)}` : ""}${p > 1 ? `&page=${p}` : ""}`;
@@ -39,7 +42,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
       <PageHeader title="Sales & checkout">
         {can(permissions, "reports.view") ? <Link href={`/app/${slug}/reports?from=${today}&to=${today}`} className="text-sm text-brand-700 underline">Today&apos;s report</Link> : null}
       </PageHeader>
-      <div className="mb-4 grid gap-4 lg:grid-cols-[1fr_360px]">
+      <div className={`mb-4 grid gap-4 ${canSell ? "lg:grid-cols-[1fr_360px]" : ""}`}>
         <Card className="p-3">
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm">
@@ -54,7 +57,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
             </form>
           </div>
         </Card>
-        <Card className="p-3">
+        {canSell ? <Card className="p-3">
           {/* Opens the blank checkout; the ticket is saved only when its first item goes on. */}
           <form action={`/app/${slug}/sales/new`} className="space-y-2">
             <p className="text-sm font-medium">Sell a product or gift card</p>
@@ -68,7 +71,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
             ) : null}
             <Button type="submit" size="sm" className="w-full"><Plus className="h-4 w-4" /> Start sale</Button>
           </form>
-        </Card>
+        </Card> : null}
       </div>
       {rows.length === 0 ? (
         <Empty title={tab === "open" ? "No open tickets" : "No sales found"} body={tab === "open" ? "Check out an appointment from the calendar, or use Sell a product or gift card above." : undefined} />
