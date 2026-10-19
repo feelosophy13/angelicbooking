@@ -19,7 +19,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const { business, permissions, staffId } = await requireBusiness(slug);
   const q = (new URL(req.url).searchParams.get("q") ?? "").trim();
   const base = `/app/${slug}`;
-  const pages = searchPages(base, permissions);
+  const pages = searchPages(base, permissions, staffId ?? null);
   const ql = q.toLowerCase();
   // Title matches first, then keyword matches (section name, settings blurb).
   const pageHits = [...pages.filter((p) => !q || p.title.toLowerCase().includes(ql)), ...(q ? pages.filter((p) => !p.title.toLowerCase().includes(ql) && p.keywords?.toLowerCase().includes(ql)) : [])].slice(0, q ? 5 : 8).map((p) => ({ kind: "page" as const, title: p.title, href: p.href }));
@@ -53,7 +53,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
       .limit(5);
     const seen = new Set<string>();
     const appts = [...byClient.map((a) => ({ ...a, who: nameOfClient(clients, a.clientId) })), ...byService.map((a) => ({ ...a, who: a.firstName ? `${a.firstName} ${a.lastName ?? ""}`.trim() : "Walk-in" }))].filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)));
-    const services = await tx.select().from(schema.services).where(and(eq(schema.services.active, true), ilike(schema.services.name, like))).limit(4);
+    const services = can(permissions, "catalog.view") ? await tx.select().from(schema.services).where(and(eq(schema.services.active, true), ilike(schema.services.name, like))).limit(4) : [];
     return { clients, appts, services };
   });
   const hits = [

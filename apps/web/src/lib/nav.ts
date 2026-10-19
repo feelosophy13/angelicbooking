@@ -1,5 +1,6 @@
-import { can, type Action } from "@angelic/core";
-import { canOpenGiftCards } from "./visibility";
+import { can, type Action, type Permissions } from "@angelic/core";
+import { blockingAccess, bookingAccess } from "./appointment-access";
+import { canOpenGiftCards, canOpenSales, canSeeReviews } from "./visibility";
 
 /**
  * The dashboard's navigation, in one place: the sidebar sections, the Settings directory and the ⌘K page
@@ -16,7 +17,7 @@ type Perms = Parameters<typeof can>[0];
  * viewer may open. "business.manage" is the everyday settings; the rest were split out of it (2026-10-18) so an owner can hand over the
  * settings without the money (billing.manage: Stripe, subscription), the keys (integrations.manage: API keys, text number) or the log.
  */
-export const SETTINGS_ACTIONS: readonly Action[] = ["business.manage", "billing.manage", "integrations.manage", "audit.view", "members.manage"];
+export const SETTINGS_ACTIONS: readonly Action[] = ["business.manage", "forms.manage", "billing.manage", "integrations.manage", "audit.view", "members.manage"];
 export const canOpenSettings = (permissions: Perms) => SETTINGS_ACTIONS.some((a) => can(permissions, a));
 
 /** Settings → Payments for a viewer who may open it, else null (pages then say "ask the owner" instead of linking). */
@@ -29,15 +30,16 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
   return [
     { title: "Schedule", items: [
       it(base, "Calendar", "CalendarDays", { exact: true }),
-      ...(ok("appointments.read.any") ? [it(`${base}/appointments`, "Appointments", "CalendarCheck"), it(`${base}/staff-hours`, "Staff hours", "CalendarClock")] : []),
+      ...(ok("appointments.read.any") ? [it(`${base}/appointments`, "Appointments", "CalendarCheck")] : []),
+      ...(ok("staff.schedules.view") ? [it(`${base}/staff-hours`, "Staff hours", "CalendarClock")] : []),
       ...(ok("appointments.read.any") || ok("appointments.read.own") ? [it(`${base}/classes`, "Classes", "GraduationCap")] : []),
-      ...(ok("appointments.read.any") ? [it(`${base}/waitlist`, "Waitlist", "ListOrdered")] : []),
+      ...(ok("waitlist.view") ? [it(`${base}/waitlist`, "Waitlist", "ListOrdered")] : []),
       it(`${base}/time`, "Time clock", "Clock"),
     ] },
     // Who: the client and team directories, and who may do what.
     { title: "People", items: [
-      it(`${base}/clients`, "Clients", "Users"),
-      it(`${base}/staff`, "Staff", "UserCog", { exclude: [`${base}/staff-hours`] }),
+      ...(ok("clients.read") ? [it(`${base}/clients`, "Clients", "Users")] : []),
+      ...(ok("staff.directory") ? [it(`${base}/staff`, "Staff", "UserCog", { exclude: [`${base}/staff-hours`] })] : []),
       // Who may do what. A Settings page that is also a daily tool for whoever manages people, so it has its own entry (and Settings steps aside).
       ...(ok("members.manage") ? [it(`${base}/settings/roles`, "Roles", "ShieldCheck")] : []),
     ] },
@@ -45,19 +47,18 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     { title: "Client care", items: [
       ...(ok("clients.messages") ? [it(`${base}/inbox`, "Inbox", "Inbox")] : []),
       ...(ok("business.manage") ? [it(`${base}/messages`, "Message log", "MessageSquare")] : []),
-      ...(ok("business.manage") ? [it(`${base}/settings/forms`, "Forms", "FileText")] : []),
+      ...(ok("forms.manage") ? [it(`${base}/settings/forms`, "Forms", "FileText")] : []),
       ...(ok("clients.photos") ? [it(`${base}/gallery`, "Gallery", "Images")] : []),
     ] },
     { title: "Catalog", items: [
-      it(`${base}/services`, "Services", "Scissors"),
-      it(`${base}/products`, "Products", "ShoppingBag"),
-      ...(ok("inventory.manage") ? [it(`${base}/inventory`, "Inventory", "Boxes")] : ok("inventory.log") ? [it(`${base}/inventory/use`, "Log supplies", "Boxes")] : []),
-      it(`${base}/packages`, "Packages", "Package"),
-      it(`${base}/memberships`, "Memberships", "BadgePercent"),
+      ...(ok("catalog.view") ? [it(`${base}/services`, "Services", "Scissors"), it(`${base}/products`, "Products", "ShoppingBag")] : []),
+      // Managing stock, or reading it, opens Inventory; someone who only logs supplies gets that page.
+      ...(ok("inventory.manage") || ok("inventory.view") ? [it(`${base}/inventory`, "Inventory", "Boxes")] : ok("inventory.log") ? [it(`${base}/inventory/use`, "Log supplies", "Boxes")] : []),
+      ...(ok("catalog.view") ? [it(`${base}/packages`, "Packages", "Package"), it(`${base}/memberships`, "Memberships", "BadgePercent")] : []),
       ...(canOpenGiftCards(permissions) ? [it(`${base}/gift-cards`, "Gift cards", "Gift")] : []),
     ] },
     { title: "Money", items: [
-      ...(ok("checkout.take") ? [it(`${base}/sales`, "Sales & checkout", "Receipt")] : []),
+      ...(canOpenSales(permissions) ? [it(`${base}/sales`, "Sales & checkout", "Receipt")] : []),
       ...(ok("reports.view") ? [it(`${base}/reports`, "Reports", "BarChart3")] : []),
       ...(ok("payroll.view") ? [it(`${base}/payroll`, "Payroll", "Wallet")] : []),
     ] },
@@ -65,7 +66,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     { title: "Grow", items: [
       ...(ok("marketing.send") ? [it(`${base}/marketing`, "Marketing", "Megaphone", { exclude: [`${base}/marketing/automations`] })] : []),
       ...(ok("business.manage") ? [it(`${base}/marketing/automations`, "Automations", "Workflow"), it(`${base}/loyalty`, "Loyalty & referrals", "Heart", { exclude: [`${base}/settings/loyalty`] })] : []),
-      ...(ok("clients.read") ? [it(`${base}/reviews`, "Reviews", "Star")] : []),
+      ...(canSeeReviews(permissions) ? [it(`${base}/reviews`, "Reviews", "Star")] : []),
     ] },
     { title: "", items: [
       ...(ok("integrations.manage") ? [it(`${base}/settings/api`, "API", "KeyRound")] : []),
@@ -107,7 +108,7 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
       title: "Online booking",
       entries: [
         { href: `${sb}/booking`, title: "Booking rules", blurb: "Notice, cancellation window, reminders, deposits and no-show fee.", status: s ? (s.onlineBookingEnabled ? "on" : "off") : undefined },
-        { href: `${sb}/forms`, title: "Forms", blurb: "Intake questionnaires and waivers." },
+        { href: `${sb}/forms`, title: "Forms", blurb: "Intake questionnaires and waivers.", action: "forms.manage" },
         { href: `${sb}/reviews`, title: "Reviews", blurb: "Rating requests and your Google review link." },
         { href: `${sb}/loyalty`, title: "Loyalty & referrals", blurb: "Points, redemption value and referral bonuses.", status: s ? (s.loyaltyEnabled ? "on" : "off") : undefined },
         { href: `${sb}/store`, title: "Online store", blurb: "Gift cards and products on your booking page.", status: s ? (s.storeEnabled ? "on" : s.giftCardsOnline ? "gift cards" : "off") : undefined },
@@ -143,14 +144,19 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
   return groups.map((g) => ({ ...g, entries: g.entries.filter((e) => can(permissions, e.action ?? "business.manage")) })).filter((g) => g.entries.length > 0);
 }
 
-/** Every page the ⌘K palette can jump to: the sidebar, common "new …" screens and the Settings directory. */
-export function searchPages(base: string, permissions: Perms): { title: string; href: string; keywords?: string }[] {
+/**
+ * Every page the ⌘K palette can jump to: the sidebar, common "new …" screens and the Settings directory. The "New …" entries follow the
+ * same access as the "+ New" menu (A5): booking and blocking need the calendar permissions (an own-calendar role also needs a linked staff
+ * member, `staffId`), a new client needs "Add and edit clients".
+ */
+export function searchPages(base: string, permissions: Perms, staffId: string | null = null): { title: string; href: string; keywords?: string }[] {
   const ok = (a: Action) => can(permissions, a);
+  const perms = typeof permissions === "string" || !permissions ? null : (permissions as Permissions);
   const nav = navSections(base, permissions).flatMap((s) => s.items.map((i) => ({ title: i.label, href: i.href, keywords: s.title })));
   const extras = [
-    { title: "New appointment", href: `${base}/appointments/new` },
-    { title: "Block time", href: `${base}/appointments/block`, keywords: "schedule time off" },
-    { title: "New client", href: `${base}/clients/new` },
+    ...(perms && bookingAccess(perms, staffId) ? [{ title: "New appointment", href: `${base}/appointments/new` }] : []),
+    ...(perms && blockingAccess(perms, staffId) ? [{ title: "Block time", href: `${base}/appointments/block`, keywords: "schedule time off" }] : []),
+    ...(ok("clients.write") ? [{ title: "New client", href: `${base}/clients/new` }] : []),
     ...(ok("inventory.manage") ? [{ title: "Receive stock", href: `${base}/inventory/receive`, keywords: "inventory delivery" }, { title: "Count stock", href: `${base}/inventory/count`, keywords: "inventory stocktake" }, { title: "Reorder", href: `${base}/inventory/reorder`, keywords: "inventory low stock purchase order" }, { title: "Purchase orders", href: `${base}/inventory/orders`, keywords: "inventory suppliers" }, { title: "Stock history", href: `${base}/inventory/history`, keywords: "inventory movements ledger log audit" }] : []),
     ...(ok("marketing.send") ? [{ title: "Campaigns", href: `${base}/marketing`, keywords: "marketing email text" }, { title: "Promo codes", href: `${base}/marketing/promos`, keywords: "marketing discount" }] : []),
   ];
