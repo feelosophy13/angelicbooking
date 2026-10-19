@@ -76,14 +76,14 @@ describe.skipIf(!up)("payroll: commission rules", () => {
       return a!.id;
     });
     const saleId = await openFeeSaleForAppointment({ businessId: kit.A, appointmentId: apptId, name: "No-show fee", feeCents: 3_000, actorUserId: userId, taxRateBps: 0, currency: "usd", auditAction: "appointment.no_show_fee" });
-    await recordManualPayment({ businessId: kit.A, saleId, method: "card", amountCents: 3_000, note: null, actorUserId: userId, taxRateBps: 0 });
+    await recordManualPayment({ businessId: kit.A, saleId, method: "cash", amountCents: 3_000, note: null, actorUserId: userId, taxRateBps: 0 });
     const number = (await getSale(kit.A, saleId))!.sale.number;
     const before = await buildPayrollLinesDetailed(business, { start: today, end: today });
     expect(before.lines.filter((l) => l.saleNumber === number)).toEqual([]);
     expect(before.omitted.filter((o) => o.saleNumber === number).map((o) => o.reason)).toEqual(["not commissionable"]);
     await setRules({ feeShareBps: 5000 });
     const [l] = await linesOf(number);
-    expect([l!.staffId, l!.kind, l!.amtPaidCents, l!.cardCents, l!.name]).toEqual([staffId, "fee", 1_500, 1_500, "No-show fee · 50% share"]);
+    expect([l!.staffId, l!.kind, l!.amtPaidCents, l!.cashCents, l!.name]).toEqual([staffId, "fee", 1_500, 1_500, "No-show fee · 50% share"]);
     const e = await sam();
     expect(e.feeShareCents).toBe(1_500);
     expect(e.totalCents).toBe(e.mainCommissionCents + 1_500);
