@@ -63,7 +63,7 @@ export async function changeStatus(formData: FormData) {
 
 export async function saveNotes(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
-  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write", { shared: "allow" });
   const notes = String(formData.get("notes") ?? "").trim() || null;
   await updateAppointmentNotes(ctx.business.id, appointmentId, notes, ctx.user.id);
   revalidatePath(`/app/${slug}/appointments/${appointmentId}`);
@@ -73,8 +73,8 @@ export async function addService(_prev: ActionState, formData: FormData): Promis
   const d = base
     .extend({ serviceId: z.string().min(1), staffId: z.string().min(1), startAt: z.string().datetime() })
     .parse(Object.fromEntries(formData));
-  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "change");
-  if (ctx.access === "own" && d.staffId !== ctx.staffId) return { error: "You can only add services on your own calendar." };
+  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "change", { shared: "allow" });
+  if (ctx.access !== "any" && d.staffId !== ctx.staffId) return { error: "You can only add services on your own calendar." };
   try {
     await addServiceToAppointment({
       businessId: ctx.business.id,
@@ -97,8 +97,8 @@ export async function moveService(_prev: ActionState, formData: FormData): Promi
   const d = base
     .extend({ itemId: z.string().min(1), startAt: z.string().datetime(), staffId: z.string().min(1) })
     .parse(Object.fromEntries(formData));
-  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "change");
-  if (ctx.access === "own" && d.staffId !== ctx.staffId) return { error: "You can only move appointments within your own calendar." };
+  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "change", { line: d.itemId });
+  if (ctx.access !== "any" && d.staffId !== ctx.staffId) return { error: "You can only move appointments within your own calendar." };
   try {
     await rescheduleService({
       businessId: ctx.business.id,
@@ -119,7 +119,7 @@ export async function moveService(_prev: ActionState, formData: FormData): Promi
 
 export async function removeService(formData: FormData) {
   const d = base.extend({ itemId: z.string().min(1) }).parse(Object.fromEntries(formData));
-  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "change");
+  const ctx = await requireAppointmentAccess(d.slug, d.appointmentId, "change", { line: d.itemId });
   const r = await removeServiceFromAppointment({ businessId: ctx.business.id, itemId: d.itemId, actorUserId: ctx.user.id });
   // Removing the last service cancels the visit: tell the client and drop its reminders.
   if (r?.cancelled) await notifyAppointment(ctx.business, r.appointmentId, "cancellation");
@@ -129,7 +129,8 @@ export async function removeService(formData: FormData) {
 
 export async function startCheckout(formData: FormData) {
   const { slug, appointmentId, skipForms } = base.extend({ skipForms: z.string().optional() }).parse(Object.fromEntries(formData));
-  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
+  // The ticket credits each line to its own stylist, so checking out a visit shared with a colleague takes nothing from them.
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write", { shared: "allow" });
   if (!can(ctx.permissions, "checkout.take")) throw new PermissionError();
   // Required forms are prompted for at checkout; the desk can still proceed deliberately.
   if (!skipForms) {
@@ -284,7 +285,7 @@ export async function cancelSeries(formData: FormData) {
 /** Staff record the supplies they used on this visit: the suggested products (quantities as edited) and, optionally, one more. */
 export async function logSupplies(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
-  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write", { shared: "allow" });
   if (!can(ctx.permissions, "inventory.log")) throw new PermissionError();
   const items: { productId: string; qty: number }[] = [];
   for (const [key, v] of formData.entries()) {
@@ -307,7 +308,7 @@ export async function logSupplies(formData: FormData) {
 
 export async function undoSupplies(formData: FormData) {
   const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
-  const ctx = await requireAppointmentAccess(slug, appointmentId, "write");
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write", { shared: "allow" });
   if (!can(ctx.permissions, "inventory.log")) throw new PermissionError();
   try {
     await undoUsage({ businessId: ctx.business.id, appointmentId, productId: String(formData.get("productId")), qty: Number(String(formData.get("qty") ?? "0")), actorUserId: ctx.user.id });

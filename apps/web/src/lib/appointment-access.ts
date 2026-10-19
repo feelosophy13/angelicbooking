@@ -7,13 +7,30 @@ import { APPOINTMENT_CAPABILITIES, can, type AppointmentCapability, type Permiss
  */
 export type AppointmentMode = Exclude<AppointmentCapability, "book">;
 
-export function appointmentAccess(permissions: Permissions, mode: AppointmentMode, myStaffId: string | null, itemStaffIds: string[]): "any" | "own" | null {
+/**
+ * How far someone's access to one appointment reaches.
+ *   any     every line of it (the "any" permission)
+ *   own     every line is theirs: the whole appointment is theirs to update, change or cancel (as far as their "own" permissions go)
+ *   shared  some lines are theirs and some are a colleague's: they may see it, and update, move or remove their own lines, but nothing
+ *           that touches the colleague's lines (the visit's status, cancelling it, moving it as one)
+ */
+export type AppointmentAccess = "any" | "own" | "shared";
+
+export function appointmentAccess(permissions: Permissions, mode: AppointmentMode, myStaffId: string | null, itemStaffIds: string[]): AppointmentAccess | null {
   const cap = APPOINTMENT_CAPABILITIES[mode];
   if (can(permissions, cap.any)) return "any";
   // Acting on an appointment implies being allowed to see it.
-  if (can(permissions, cap.own) && can(permissions, APPOINTMENT_CAPABILITIES.read.own) && myStaffId && itemStaffIds.includes(myStaffId)) return "own";
-  return null;
+  if (!can(permissions, cap.own) || !can(permissions, APPOINTMENT_CAPABILITIES.read.own) || !myStaffId || !itemStaffIds.includes(myStaffId)) return null;
+  if (itemStaffIds.every((id) => id === myStaffId)) return "own";
+  // Booked on it alongside a colleague: cancelling takes their lines with it, so it needs the "any" permission.
+  return mode === "cancel" ? null : "shared";
 }
+
+/** Whether this access reaches the whole appointment: its status (which every line follows), cancelling it, moving it as one. */
+export const coversWholeAppointment = (access: AppointmentAccess | null) => access === "any" || access === "own";
+/** Whether this access reaches one line of the appointment (a service booked with `lineStaffId`). */
+export const coversLine = (access: AppointmentAccess | null, myStaffId: string | null, lineStaffId: string | null | undefined) =>
+  access === "any" || access === "own" || (access === "shared" && !!myStaffId && lineStaffId === myStaffId);
 
 /** Creating something new on a calendar (a booking, or a block of time): anyone with "any" for anyone's, "own" only for their own calendar. */
 export function creationAccess(permissions: Permissions, kind: "book" | "block", myStaffId: string | null): "any" | "own" | null {

@@ -6,15 +6,25 @@ import { getAppointmentDetail } from "@/server/appointments";
 import { BookingError, setAppointmentStatus } from "@/server/booking";
 import { listCancellationReasons } from "@/server/cancellation-reasons";
 import { triggerAppointmentWorkflows } from "@/server/workflows";
-import { appointmentAccess, type AppointmentMode } from "@/lib/appointment-access";
+import { appointmentAccess, coversWholeAppointment, type AppointmentMode } from "@/lib/appointment-access";
 import { notifyAppointment } from "@/lib/notify";
 
 type Ctx = Exclude<Awaited<ReturnType<typeof mobileContext>>, { error: unknown }>;
 
-/** The same rule as the web app: "any" roles act on every appointment, "own" roles only on ones they are booked on. */
+/** Whose lines the appointment still has (a colleague's cancelled line no longer makes it shared); a fully cancelled visit keeps everyone's. */
+function liveStaffIds(items: { staffId: string; status: string }[]) {
+  const live = items.filter((i) => i.status !== "cancelled");
+  return (live.length ? live : items).map((i) => i.staffId);
+}
+
+/**
+ * The same rule as the web app: "any" roles act on every appointment, "own" roles only on ones they are booked on. A status change reaches
+ * every line of the visit, so someone who shares it with a colleague may read it here but not change it.
+ */
 function access(c: Ctx, mode: AppointmentMode, kind: string, staffIds: string[]) {
   return appointmentAccess(c.permissions, kind === "block" ? "block" : mode, c.myStaffId, staffIds);
 }
+const mayChange = (c: Ctx, mode: AppointmentMode, kind: string, staffIds: string[]) => coversWholeAppointment(access(c, mode, kind, staffIds));
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -23,12 +33,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if ("error" in c) return c.error;
   if (!c.business) return NextResponse.json({ error: "no business" }, { status: 404 });
   const d = await getAppointmentDetail(c.business.id, id);
-  const staffIds = d?.items.map((i) => i.staffId) ?? [];
+  const staffIds = liveStaffIds(d?.items ?? []);
   if (!d || !access(c, "read", d.appointment.kind, staffIds)) return NextResponse.json({ error: "not found" }, { status: 404 });
-  const canCancel = Boolean(access(c, "cancel", d.appointment.kind, staffIds));
+  const canCancel = mayChange(c, "cancel", d.appointment.kind, staffIds);
   return NextResponse.json({
     ...d,
-    can: { write: Boolean(access(c, "write", d.appointment.kind, staffIds)), cancel: canCancel },
+    can: { write: mayChange(c, "write", d.appointment.kind, staffIds), cancel: canCancel },
     cancelReasons: canCancel ? (await listCancellationReasons(c.business.id)).map((r) => ({ id: r.id, name: r.name })) : [],
   });
 }
@@ -48,8 +58,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const d = await getAppointmentDetail(c.business.id, id);
   if (!d) return NextResponse.json({ error: "not found" }, { status: 404 });
   const { status, reasonId } = body.data;
-  const staffIds = d.items.map((i) => i.staffId);
-  if (!access(c, status === "cancelled" ? "cancel" : "write", d.appointment.kind, staffIds)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const staffIds = liveStaffIds(d.items);
+  if (!mayChange(c, status === "cancelled" ? "cancel" : "write", d.appointment.kind, staffIds)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   if (d.appointment.status === status) return NextResponse.json({ ok: true });
   if (d.appointment.status === "cancelled") return NextResponse.json({ error: "This appointment is cancelled. Rebook it on the web app." }, { status: 409 });
   if (status === "cancelled" && d.appointment.kind !== "block" && !reasonId) return NextResponse.json({ error: "Choose why it is being cancelled." }, { status: 400 });

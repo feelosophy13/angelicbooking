@@ -66,6 +66,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       others see the last four. Redeeming a card at checkout records who redeemed it on the payment and in the audit log, and neither
       keeps the full code (the ticket note and the log say "Gift card ••••1234"). Gap: Front desk can no longer look up a card's balance
       on that page; selling and redeeming at checkout still work with `checkout.take`.
+- [x] S3 Partial ownership: `appointmentAccess` now answers "own" (every live line is mine) or "shared" (some lines are a colleague's).
+      On a shared visit an own-calendar role may read it, edit notes, add or remove photos of their own service, log supplies and start
+      checkout, and (with "change their own bookings") add, move or remove their own lines only; they may not cancel it, change its
+      status (which every line follows), or move it as one. `requireAppointmentAccess` refuses shared access by default; a change opts
+      in with the line it is about (`line`) or `shared: "allow"` for work that belongs to no single line. The appointment page, the calendar
+      drag, quick status and the mobile API follow the same rule (the mobile detail says `can.write: false` on a shared visit).
 
 ### Full review 2026-10-16 (`REVIEW-2026-10-16.md` has every finding; the "Fix first" table is the order)
 - [x] Client-data permissions split, 2026-10-18 (migration 0114): `clients.read` ("View clients") now means only the client list, a

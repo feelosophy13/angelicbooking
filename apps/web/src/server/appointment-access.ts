@@ -2,18 +2,32 @@ import { can } from "@angelic/core";
 import { eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { PermissionError, requireBusiness, type TenantContext } from "@/lib/tenant";
-import { appointmentAccess, blockingAccess, bookingAccess, type AppointmentMode } from "@/lib/appointment-access";
+import { appointmentAccess, blockingAccess, bookingAccess, type AppointmentAccess, type AppointmentMode } from "@/lib/appointment-access";
+
+/**
+ * What a change may do when the person is booked on the appointment alongside a colleague ("shared" access, lib/appointment-access.ts).
+ * The default refuses: a status change, a cancellation or a move-as-one reaches the colleague's lines. A change that touches only this
+ * person's own work opts in: `line` names the appointment item it is about (allowed when that line is theirs), `shared: "allow"` is for
+ * work that belongs to no single line (notes, photos, supplies, checkout). Reading is always allowed.
+ */
+export type AppointmentAccessOptions = { shared?: "refuse" | "allow"; line?: string };
 
 /**
  * Open an appointment for reading or changing. Front desk and managers get any appointment; a Provider gets the ones they are booked on
  * (and only when their login is linked to a staff member). Everyone else gets the permission error.
  */
-export async function requireAppointmentAccess(slug: string, appointmentId: string, mode: AppointmentMode): Promise<TenantContext & { access: "any" | "own" }> {
+export async function requireAppointmentAccess(slug: string, appointmentId: string, mode: AppointmentMode, opts: AppointmentAccessOptions = {}): Promise<TenantContext & { access: AppointmentAccess }> {
   const ctx = await requireBusiness(slug);
   if (can(ctx.permissions, mode === "read" ? "appointments.read.any" : "appointments.write.any")) return { ...ctx, access: "any" };
-  const items = await withTenant(ctx.business.id, (tx) => tx.select({ staffId: schema.appointmentItems.staffId }).from(schema.appointmentItems).where(eq(schema.appointmentItems.appointmentId, appointmentId)));
-  const access = appointmentAccess(ctx.permissions, mode, ctx.staffId ?? null, items.map((i) => i.staffId));
+  const items = await withTenant(ctx.business.id, (tx) => tx.select({ id: schema.appointmentItems.id, staffId: schema.appointmentItems.staffId, status: schema.appointmentItems.status }).from(schema.appointmentItems).where(eq(schema.appointmentItems.appointmentId, appointmentId)));
+  // A colleague's cancelled line no longer makes the visit shared; a fully cancelled visit still belongs to whoever was on it.
+  const live = items.filter((i) => i.status !== "cancelled");
+  const access = appointmentAccess(ctx.permissions, mode, ctx.staffId ?? null, (live.length ? live : items).map((i) => i.staffId));
   if (!access) throw new PermissionError();
+  if (access === "shared" && mode !== "read") {
+    const ok = opts.line ? items.some((i) => i.id === opts.line && i.staffId === ctx.staffId) : opts.shared === "allow";
+    if (!ok) throw new PermissionError();
+  }
   return { ...ctx, access };
 }
 
