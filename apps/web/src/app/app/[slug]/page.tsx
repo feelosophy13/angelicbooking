@@ -17,6 +17,7 @@ import { MonthGrid } from "./month-grid";
 import { SetupChecklist, type SetupStep } from "./setup-checklist";
 import { TodayStrip } from "./today-strip";
 import { LocationPills } from "./location-pills";
+import { CalendarShortcuts, DateJump } from "./calendar-nav";
 import { money } from "@/lib/format";
 import { sql } from "drizzle-orm";
 import { can } from "@angelic/core";
@@ -196,6 +197,8 @@ export default async function CalendarPage({
           <LinkButton href={nav(shiftISODate(date, -step))} size="sm" aria-label={`Previous ${view}`}><ChevronLeft className="h-4 w-4" /></LinkButton>
           <LinkButton href={nav(today)} size="sm" variant={atNow ? "ghost" : "secondary"} aria-current={atNow ? "date" : undefined}>{nowLabel}</LinkButton>
           <LinkButton href={nav(shiftISODate(date, step))} size="sm" aria-label={`Next ${view}`}><ChevronRight className="h-4 w-4" /></LinkButton>
+          <DateJump date={date} today={today} hrefTemplate={nav("{date}")} />
+          {!noCalendar ? <CalendarShortcuts hrefs={{ today: nav(today), prev: nav(shiftISODate(date, -step)), next: nav(shiftISODate(date, step)), day: viewHref("day"), week: viewHref("week"), month: viewHref("month"), create: canBook ? `/app/${slug}/appointments/new?date=${date}${locationFilter ? `&location=${locationFilter}` : ""}` : null }} /> : null}
         </div>
         {locations.length > 1 ? (
           <LocationPills businessId={business.id} locations={locations.map((l) => ({ id: l.id, name: l.name }))} current={locationFilter} query={`view=${view}&date=${date}${staffParam ? `&staff=${staffParam}` : ""}`} />

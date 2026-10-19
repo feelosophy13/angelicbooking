@@ -24,8 +24,14 @@ export function CommandPalette({ slug }: { slug: string }) {
       }
       if (e.key === "Escape") setOpen(false);
     };
+    // The calendar's "/" shortcut (and anything else) can open the palette without a modifier.
+    const onOpen = () => setOpen(true);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("app:search", onOpen);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("app:search", onOpen);
+    };
   }, []);
   useEffect(() => {
     if (open) setTimeout(() => input.current?.focus(), 10);

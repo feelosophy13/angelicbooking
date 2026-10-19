@@ -146,6 +146,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       front-desk time off in the next weeks. Every demo staff member now has a login with the demo password in their role (Ava is a
       Manager, the artists Providers, the desk Front desk), linked to their staff row like an accepted invite, shared between the two
       demo businesses; so the People filter, Roles and Staff → Access show real members and the demo can be walked as each role.
+### Calendar: Google Calendar behaviours (2026-10-18; plan and audit in the side-session notes, `calendar-google-parity-audit.md`)
+- [x] Jump to a date and keyboard shortcuts, 2026-10-18: a calendar button beside the arrows opens a Monday-first mini month ("Pick a
+      date", `calendar-nav.tsx`; picking a day keeps the view, staff, location and forms filters); the keys are Google Calendar's: t today,
+      ← → or j k or p n to move, g pick a date, d w m views, c new appointment, / search (⌘K opens from an `app:search` window event
+      too), ? the list of shortcuts (a quiet keyboard icon opens it as well), Escape closes. Nothing fires while typing in a field, with a
+      modifier held, or while a dialog is open. Helpers and the key map in `lib/calendar-nav.ts` (tested).
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,
