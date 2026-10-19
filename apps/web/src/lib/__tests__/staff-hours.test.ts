@@ -18,7 +18,7 @@ describe("peopleOptions", () => {
       { value: "providers", label: "Providers" },
       { value: "other", label: "Front desk & other staff" },
       { value: "p:brow & wax specialist", label: "Brow & Wax Specialist" },
-      { value: "p:color consultant & pmu artist", label: "Color Consultant & Pmu Artist" },
+      { value: "p:color consultant & pmu artist", label: "Color Consultant & PMU Artist" },
       { value: "p:front desk", label: "Front Desk" },
       { value: "p:lash artist", label: "Lash Artist" },
     ]);

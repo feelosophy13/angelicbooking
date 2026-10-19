@@ -15,7 +15,14 @@ export function orderStaff<T extends Pick<StaffLike, "name" | "takesAppointments
  */
 export type PeopleFilter = "" | "providers" | "other" | `p:${string}`;
 
-export const titleCase = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase().replace(/(^|[\s\-/&(])(\p{L})/gu, (m, pre, ch) => pre + ch.toUpperCase());
+/** "lash artist" → "Lash Artist"; a word already in capitals ("PMU", "RN") stays as written. */
+export const titleCase = (s: string) =>
+  s
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .map((w) => (w.length > 1 && w === w.toUpperCase() && /\p{L}/u.test(w) ? w : w.toLowerCase().replace(/(^|[\-/&(])(\p{L})/gu, (m, pre, ch) => pre + ch.toUpperCase())))
+    .join(" ");
 
 export function peopleOptions(staff: Pick<StaffLike, "position">[]): { value: PeopleFilter; label: string }[] {
   const positions = new Map<string, string>();
