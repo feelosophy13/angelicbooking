@@ -62,6 +62,10 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       as the person who created it (`api_keys.created_by_user_id`) with their current role; a key with no recorded creator, or whose
       creator left the business, gets 403 on every role write. Audit rows carry the creator as actor and the key id. The login system's
       copy of a custom role is still only synced when someone saves it in the app (a key has no session to call it with).
+- [x] S2 Gift cards: the page (and its sidebar entry) needs `giftcards.issue` or `reports.view`; codes show in full only to issuers,
+      others see the last four. Redeeming a card at checkout records who redeemed it on the payment and in the audit log, and neither
+      keeps the full code (the ticket note and the log say "Gift card ••••1234"). Gap: Front desk can no longer look up a card's balance
+      on that page; selling and redeeming at checkout still work with `checkout.take`.
 
 ### Full review 2026-10-16 (`REVIEW-2026-10-16.md` has every finding; the "Fix first" table is the order)
 - [x] Client-data permissions split, 2026-10-18 (migration 0114): `clients.read` ("View clients") now means only the client list, a

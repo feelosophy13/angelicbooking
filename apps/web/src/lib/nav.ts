@@ -1,4 +1,5 @@
 import { can, type Action } from "@angelic/core";
+import { canOpenGiftCards } from "./visibility";
 
 /**
  * The dashboard's navigation, in one place: the sidebar sections, the Settings directory and the ⌘K page
@@ -53,7 +54,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
       ...(ok("inventory.manage") ? [it(`${base}/inventory`, "Inventory", "Boxes")] : ok("inventory.log") ? [it(`${base}/inventory/use`, "Log supplies", "Boxes")] : []),
       it(`${base}/packages`, "Packages", "Package"),
       it(`${base}/memberships`, "Memberships", "BadgePercent"),
-      it(`${base}/gift-cards`, "Gift cards", "Gift"),
+      ...(canOpenGiftCards(permissions) ? [it(`${base}/gift-cards`, "Gift cards", "Gift")] : []),
     ] },
     { title: "Money", items: [
       ...(ok("checkout.take") ? [it(`${base}/sales`, "Sales & checkout", "Receipt")] : []),

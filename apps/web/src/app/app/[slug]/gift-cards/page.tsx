@@ -3,7 +3,8 @@ import { Plus } from "lucide-react";
 import { can } from "@angelic/core";
 
 export const metadata: Metadata = { title: "Gift cards" };
-import { requireBusiness } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
+import { canSeeGiftCardCodes, maskCode } from "@/lib/visibility";
 import { getOffersCatalog } from "@/server/offers";
 import { listLocations } from "@/server/locations";
 import { formatMoney } from "@/lib/utils";
@@ -11,7 +12,10 @@ import { Card, LinkButton, PageHeader, Empty } from "@/components/ui";
 
 export default async function GiftCardsPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const { business, permissions } = await requireBusiness(slug);
+  // Whoever issues cards, or reads the money reports (the outstanding balance is a liability). Codes are shown in full only to issuers: a
+  // code plus a balance is spendable at any checkout.
+  const { business, permissions } = await requireAnyAction(slug, "giftcards.issue", "reports.view");
+  const showCodes = canSeeGiftCardCodes(permissions);
   const { giftCards } = await getOffersCatalog(business.id);
   const locations = await listLocations(business.id);
   const validAtLabel = (ids: string[]) => (ids.length ? ` · valid at ${ids.map((id) => locations.find((l) => l.id === id)?.name.replace(/^.*? - /, "") ?? "?").join(", ")} only` : "");
@@ -29,7 +33,7 @@ export default async function GiftCardsPage({ params }: { params: Promise<{ slug
             <tbody className="divide-y divide-stone-100">
               {giftCards.map((g) => (
                 <tr key={g.id} className={g.balanceCents === 0 ? "text-stone-400" : ""}>
-                  <td className="px-4 py-2 font-mono">{g.code}</td><td className="px-4 py-2">{g.recipientName ?? ""}{g.validLocationIds.length ? <span className="block text-xs text-stone-500">{validAtLabel(g.validLocationIds).replace(/^ · /, "")}</span> : null}</td><td className="px-4 py-2 text-right">{money(g.initialCents)}</td><td className="px-4 py-2 text-right font-medium">{money(g.balanceCents)}</td><td className="px-4 py-2 text-stone-500">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(g.createdAt)}</td>
+                  <td className="px-4 py-2 font-mono">{showCodes ? g.code : maskCode(g.code)}</td><td className="px-4 py-2">{g.recipientName ?? ""}{g.validLocationIds.length ? <span className="block text-xs text-stone-500">{validAtLabel(g.validLocationIds).replace(/^ · /, "")}</span> : null}</td><td className="px-4 py-2 text-right">{money(g.initialCents)}</td><td className="px-4 py-2 text-right font-medium">{money(g.balanceCents)}</td><td className="px-4 py-2 text-stone-500">{new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(g.createdAt)}</td>
                 </tr>
               ))}
             </tbody>
