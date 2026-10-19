@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { can, instantToISODate } from "@angelic/core";
-import { requireBusiness } from "@/lib/tenant";
+import { requireAnyAction } from "@/lib/tenant";
+import { canSeeClassSession } from "@/lib/visibility";
 import { listGroupServices, listSessions } from "@/server/classes";
 import { formatDateLong, formatTime, shiftISODate } from "@/lib/utils";
 import { Card, LinkButton, PageHeader, Empty } from "@/components/ui";
@@ -12,14 +13,16 @@ export const metadata: Metadata = { title: "Classes" };
 export default async function ClassesPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ past?: string }> }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const { business, permissions } = await requireBusiness(slug);
+  // Classes are appointments on their instructor's calendar: whoever sees every calendar sees every class, an own-calendar role only their own.
+  const { business, permissions, staffId } = await requireAnyAction(slug, "appointments.read.any", "appointments.read.own");
   const tz = business.timezone;
   const past = sp.past === "1";
   const now = new Date();
-  const [sessions, groupServices] = await Promise.all([
+  const [allSessions, groupServices] = await Promise.all([
     listSessions(business.id, past ? { from: new Date(now.getTime() - 90 * 86_400_000), to: now, includeCancelled: true } : { from: new Date(now.getTime() - 3 * 3_600_000), to: new Date(now.getTime() + 120 * 86_400_000), includeCancelled: true }),
     listGroupServices(business.id),
   ]);
+  const sessions = allSessions.filter((s) => canSeeClassSession(permissions, staffId ?? null, s.staffId));
   const byDate = new Map<string, typeof sessions>();
   for (const s of past ? [...sessions].reverse() : sessions) {
     const k = instantToISODate(s.startAt, tz);

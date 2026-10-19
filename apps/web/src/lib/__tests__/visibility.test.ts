@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ROLE_PERMISSIONS } from "@angelic/core";
-import { canOpenGiftCards, canSeeGiftCardCodes, canSeeStaffLogins, canViewPrivateFile, maskCode } from "../visibility";
+import { canOpenGiftCards, canSeeClassSession, canSeeClientContact, canSeeGiftCardCodes, canSeeStaffLogins, canViewPrivateFile, maskCode } from "../visibility";
 
 const { owner, manager, front_desk: frontDesk, provider } = DEFAULT_ROLE_PERMISSIONS;
 const only = (...a: string[]) => new Set(a) as unknown as typeof provider;
@@ -53,5 +53,19 @@ describe("private files", () => {
   it("serves nothing else, whatever the permissions", () => {
     expect(canViewPrivateFile("import", owner, me)).toBe(false);
     expect(canViewPrivateFile("logo", owner, me)).toBe(false);
+  });
+});
+
+describe("classes", () => {
+  it("shows every class to whoever sees every calendar, and an own-calendar role only their own", () => {
+    expect(canSeeClassSession(frontDesk, null, "other")).toBe(true);
+    expect(canSeeClassSession(provider, "me", "me")).toBe(true);
+    expect(canSeeClassSession(provider, "me", "other")).toBe(false);
+    expect(canSeeClassSession(provider, null, "me")).toBe(false);
+    expect(canSeeClassSession(only("clients.read"), "me", "me")).toBe(false);
+  });
+  it("prints the roster's phone and email only with clients.read", () => {
+    expect(canSeeClientContact(provider)).toBe(true);
+    expect(canSeeClientContact(only("appointments.read.own", "appointments.write.own"))).toBe(false);
   });
 });

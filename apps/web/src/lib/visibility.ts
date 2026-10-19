@@ -16,6 +16,13 @@ export const canSeeGiftCardCodes = (permissions: Subject) => can(permissions, "g
 /** "••••1234": the last four characters, for receipts, tickets and the log. */
 export const maskCode = (code: string) => `••••${code.slice(-4)}`;
 
+/** A client's phone and email, wherever a list prints them (a class roster, a mobile appointment). */
+export const canSeeClientContact = (permissions: Subject) => can(permissions, "clients.read");
+
+/** A class session is an appointment on its instructor's calendar: everyone with "see every calendar" sees it, an own-calendar role only their own classes. */
+export const canSeeClassSession = (permissions: Subject, myStaffId: string | null, instructorStaffId: string) =>
+  typeof permissions !== "string" && !!permissions && appointmentAccess(permissions, "read", myStaffId, [instructorStaffId]) !== null;
+
 /** The staff directory shows a co-worker's email and whether they have a login only to whoever manages staff or logins. */
 export const canSeeStaffLogins = (permissions: Subject) => can(permissions, "staff.manage") || can(permissions, "members.manage");
 

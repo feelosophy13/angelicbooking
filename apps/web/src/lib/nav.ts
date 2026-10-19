@@ -30,7 +30,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     { title: "Schedule", items: [
       it(base, "Calendar", "CalendarDays", { exact: true }),
       ...(ok("appointments.read.any") ? [it(`${base}/appointments`, "Appointments", "CalendarCheck"), it(`${base}/staff-hours`, "Staff hours", "CalendarClock")] : []),
-      it(`${base}/classes`, "Classes", "GraduationCap"),
+      ...(ok("appointments.read.any") || ok("appointments.read.own") ? [it(`${base}/classes`, "Classes", "GraduationCap")] : []),
       it(`${base}/waitlist`, "Waitlist", "ListOrdered"),
       it(`${base}/time`, "Time clock", "Clock"),
     ] },
