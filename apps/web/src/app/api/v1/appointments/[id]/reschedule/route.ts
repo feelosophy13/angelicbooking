@@ -5,7 +5,7 @@ import { schema, withTenant } from "@angelic/db";
 import { apiAudit, ApiErrors, readBody, route } from "@/lib/api";
 import { getAppointmentApi } from "@/server/api-v1";
 import { rescheduleService } from "@/server/booking";
-import { notifyAppointment } from "@/lib/notify";
+import { appointmentChangedSilently, notifyAppointment } from "@/lib/notify";
 
 const body = z.object({
   start_at: z.string().refine((s) => /(Z|[+-]\d{2}:\d{2})$/.test(s) && !Number.isNaN(Date.parse(s)), "Use an ISO 8601 time with an offset, e.g. 2026-11-02T14:00:00-05:00"),
@@ -31,6 +31,8 @@ export const POST = route<{ id: string }>("appointments:change", async (ctx, req
   if ("missing" in found) return ApiErrors.notFound(found.missing);
   await rescheduleService({ businessId: b, itemId: found.itemId, newStartAt: new Date(d.start_at), newStaffId: d.staff_id ?? null, actorUserId: ctx.actor });
   await apiAudit(ctx, "api.appointment.reschedule", "appointment", id, { startAt: d.start_at, staffId: d.staff_id ?? null });
+  // Silent or not, runs timed from the visit (the reminder) follow it to the new time.
   if (d.notify) after(() => notifyAppointment(ctx.business, id, "rescheduled").catch((e) => console.error("[api/v1] notify failed", (e as Error).message)));
+  else after(() => appointmentChangedSilently(ctx.business, id, "rescheduled"));
   return NextResponse.json({ data: await getAppointmentApi(b, id) });
 });

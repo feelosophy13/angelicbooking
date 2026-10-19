@@ -6,7 +6,7 @@ import { schema, withTenant } from "@angelic/db";
 import { apiAudit, ApiErrors, list, pageParams, readBody, route } from "@/lib/api";
 import { getAppointmentApi, listAppointmentsApi } from "@/server/api-v1";
 import { bookAppointment } from "@/server/booking";
-import { notifyAppointment, scheduleReminderFor } from "@/lib/notify";
+import { afterAppointmentBooked, notifyAppointment } from "@/lib/notify";
 
 const STATUSES = schema.appointmentStatus.enumValues as readonly string[];
 const when = (v: string | null) => (v && !Number.isNaN(Date.parse(v)) ? new Date(v) : undefined);
@@ -50,7 +50,8 @@ export const POST = route("appointments:book", async (ctx, req) => {
   if (!found.staff) return ApiErrors.notFound("staff member");
   const { appointmentId } = await bookAppointment({ businessId, clientId: d.client_id, serviceId: d.service_id, staffId: d.staff_id, startAt: new Date(d.start_at), notes: d.notes ?? null, createdByUserId: null, source: "staff" });
   await apiAudit(ctx, "api.appointment.create", "appointment", appointmentId, { serviceId: d.service_id, staffId: d.staff_id, startAt: d.start_at });
+  // No confirmation still starts the "Appointment booked" workflows (owner alerts, custom flows); reminders:false leaves out only the ones with a reminder step.
   if (d.notify) after(() => notifyAppointment(ctx.business, appointmentId, "confirmation").catch((e) => console.error("[api/v1] notify failed", (e as Error).message)));
-  else if (d.reminders) after(() => scheduleReminderFor(ctx.business, appointmentId).catch((e) => console.error("[api/v1] reminders failed", (e as Error).message)));
+  else after(() => afterAppointmentBooked(ctx.business, appointmentId, { reminders: d.reminders }).catch((e) => console.error("[api/v1] workflows failed", (e as Error).message)));
   return NextResponse.json({ data: await getAppointmentApi(businessId, appointmentId) }, { status: 201 });
 });

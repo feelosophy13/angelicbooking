@@ -4,7 +4,7 @@ import { schema, withTenant } from "@angelic/db";
 import { apiAudit, ApiErrors, readBody, route } from "@/lib/api";
 import { cancelSeriesBody } from "@/server/api-v1-appointments";
 import { cancelSeriesFrom } from "@/server/series";
-import { cancelQueuedReminders, notifyAppointment } from "@/lib/notify";
+import { appointmentChangedSilently, cancelQueuedReminders, notifyAppointment } from "@/lib/notify";
 
 /**
  * POST /api/v1/appointments/:id/cancel-series {reason?, notify?}: cancel this visit and every later open visit of its standing appointment, and end
@@ -18,8 +18,9 @@ export const POST = route<{ id: string }>("appointments:cancel", async (ctx, req
   if (!appt || appt.kind !== "visit") return ApiErrors.notFound("appointment");
   const ids = await cancelSeriesFrom({ businessId: b, appointmentId: id, actorUserId: ctx.actor, reason: body.data.reason ?? null });
   await apiAudit(ctx, "api.series.cancel", "appointment", id, { cancelled: ids.length, reason: body.data.reason ?? null });
-  // Queued reminders for every cancelled visit stop; the client is told once, about the first.
+  // Queued reminders and reminder runs for every cancelled visit stop; the client is told once, about the first.
   for (const apptId of ids.slice(body.data.notify ? 1 : 0)) await cancelQueuedReminders(b, apptId);
   if (body.data.notify && ids[0]) after(() => notifyAppointment(ctx.business, ids[0]!, "cancellation").catch((e) => console.error("[api/v1] notify failed", (e as Error).message)));
+  after(async () => { for (const apptId of ids.slice(body.data.notify ? 1 : 0)) await appointmentChangedSilently(ctx.business, apptId, "cancelled"); });
   return NextResponse.json({ data: { cancelled_appointment_ids: ids, cancelled: ids.length } });
 });

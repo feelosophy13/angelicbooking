@@ -5,7 +5,7 @@ import { parseBirthday, parseBool, parseDate, parseDuration, parseTime, splitNam
 import { sameClientName } from "@/lib/client-match";
 import { timingFor } from "./availability";
 import { isSmsSuppressed } from "./consent";
-import { scheduleReminderFor } from "@/lib/notify";
+import { afterAppointmentBooked } from "@/lib/notify";
 
 type Business = typeof schema.businesses.$inferSelect;
 export interface ImportResult {
@@ -67,7 +67,7 @@ export async function runImport(business: Business, kind: ImportKind, rows: Reco
     await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: `import.${kind}`, entity: "import", entityId: filename, diff: JSON.stringify({ rows: rows.length, ...r, errors: r.errors.length }) });
   });
   // Future visits get the salon's reminders like any booking made here (no confirmation: they were booked elsewhere already).
-  for (const id of upcoming) await scheduleReminderFor(business, id).catch((e) => console.error("[import] reminders failed", id, (e as Error).message));
+  for (const id of upcoming) await afterAppointmentBooked(business, id).catch((e) => console.error("[import] reminders failed", id, (e as Error).message));
   return r;
 }
 

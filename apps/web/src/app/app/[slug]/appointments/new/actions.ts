@@ -8,7 +8,7 @@ import { requireBookingAccess } from "@/server/appointment-access";
 import { tzFor } from "@/server/locations";
 import { addServiceToAppointment, bookAppointment, BookingError, OverlapError } from "@/server/booking";
 import { createSeries } from "@/server/series";
-import { notifyAppointment, scheduleReminderFor } from "@/lib/notify";
+import { afterAppointmentBooked, notifyAppointment } from "@/lib/notify";
 import { setFlash } from "@/lib/flash";
 
 const schema = z.object({
@@ -114,8 +114,8 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
       // One confirmation (for the first visit) rather than one per occurrence; reminders for all.
       // Unticking "Send confirmation" skips the confirmation, not the reminders.
       if (d.sendConfirmation) await notifyAppointment(ctx.business, kept[0]!.appointmentId, "confirmation");
-      else await scheduleReminderFor(ctx.business, kept[0]!.appointmentId);
-      for (const c of kept.slice(1)) await scheduleReminderFor(ctx.business, c.appointmentId);
+      else await afterAppointmentBooked(ctx.business, kept[0]!.appointmentId);
+      for (const c of kept.slice(1)) await afterAppointmentBooked(ctx.business, c.appointmentId);
       const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: ctx.business.timezone });
       const skipped = skippedDates.length ? ` ${skippedDates.length} skipped (${skippedDates.map((s) => `${fmt.format(s.startAt)}: ${s.reason}`).join("; ")}).` : "";
       await setFlash(`Booked ${kept.length} of ${d.repeatCount} visits.${skipped}`, skippedDates.length ? "info" : "success");
@@ -134,7 +134,7 @@ export async function book(_prev: BookState, formData: FormData): Promise<BookSt
       await appendServices(ctx.business.id, appointmentId, extraServiceIds, d.staffId, ctx.user.id, allowOverlap);
       // Unticking "Send confirmation" skips the confirmation, not the reminders.
       if (d.sendConfirmation) await notifyAppointment(ctx.business, appointmentId, "confirmation");
-      else await scheduleReminderFor(ctx.business, appointmentId);
+      else await afterAppointmentBooked(ctx.business, appointmentId);
     }
   } catch (e) {
     if (e instanceof OverlapError && mayDoubleBook && !allowOverlap) {

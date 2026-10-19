@@ -4,7 +4,7 @@ import { apiAudit, ApiErrors, firstForeign, readBody, route } from "@/lib/api";
 import { getAppointmentApi } from "@/server/api-v1";
 import { findVisitItem, moveItemBody } from "@/server/api-v1-appointments";
 import { rescheduleService } from "@/server/booking";
-import { notifyAppointment } from "@/lib/notify";
+import { appointmentChangedSilently, notifyAppointment } from "@/lib/notify";
 
 /** POST /api/v1/appointments/:id/items/:itemId/move {start_at, staff_id?, notify?}: move one service of a visit (with its finishing segment), optionally to another provider. 409 when the time is taken or outside their hours; class seats cannot be moved. */
 export const POST = route<{ id: string; itemId: string }>("appointments:change", async (ctx, req, { id, itemId }) => {
@@ -18,5 +18,6 @@ export const POST = route<{ id: string; itemId: string }>("appointments:change",
   await rescheduleService({ businessId: b, itemId, newStartAt: new Date(d.start_at), newStaffId: d.staff_id ?? null, actorUserId: ctx.actor });
   await apiAudit(ctx, "api.appointment.move_service", "appointment", id, { itemId, startAt: d.start_at, staffId: d.staff_id ?? null });
   if (d.notify) after(() => notifyAppointment(ctx.business, id, "rescheduled").catch((e) => console.error("[api/v1] notify failed", (e as Error).message)));
+  else after(() => appointmentChangedSilently(ctx.business, id, "rescheduled"));
   return NextResponse.json({ data: await getAppointmentApi(b, id) });
 });
