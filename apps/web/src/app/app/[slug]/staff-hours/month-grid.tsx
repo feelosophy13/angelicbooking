@@ -11,7 +11,7 @@ const DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
  * hours are already applied. Closed days are hatched like the week grid's closed areas. Below `md` the days stack,
  * each with its date as a row header, so it reads on a phone.
  */
-export function MonthGrid({ coverage, month, people, today, hoursHref, weekHref }: {
+export function MonthGrid({ coverage, month, people, today, hoursHref, weekHref, hideOff = false }: {
   coverage: Coverage;
   /** "2026-10" */
   month: string;
@@ -20,6 +20,8 @@ export function MonthGrid({ coverage, month, people, today, hoursHref, weekHref 
   hoursHref: (staffId: string) => string | null;
   /** The week view for the week this date falls in. */
   weekHref: (date: string) => string;
+  /** "Only working": leave out the people who are off that day, and say so when that is everyone. */
+  hideOff?: boolean;
 }) {
   const blanks = monthLeadingBlanks(month);
   const long = (d: string) => new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(d + "T00:00:00Z"));
@@ -43,10 +45,13 @@ export function MonthGrid({ coverage, month, people, today, hoursHref, weekHref 
                 </Link>
                 {closed ? <span className="text-stone-500">Closed</span> : null}
               </h4>
-              {closed ? null : (
+              {closed ? null : hideOff && !people.some((p) => day.lanes.some((l) => l.staffId === p.id)) ? (
+                <p className="py-1.5 text-xs text-stone-400 md:py-0 md:text-[11px]">Nobody in</p>
+              ) : (
                 <ul className="text-xs md:space-y-0.5 md:text-[11px] md:leading-4">
                   {people.map((p) => {
                     const lane = day.lanes.find((l) => l.staffId === p.id);
+                    if (hideOff && !lane) return null;
                     const override = day.overrides.find((o) => o.staffId === p.id)?.kind;
                     const text = lane ? `${override === "custom" ? "Custom " : ""}${hoursShort(lane.blocks)}` : override === "off" ? "Time off" : "Off";
                     const href = hoursHref(p.id);

@@ -20,7 +20,7 @@ import { MonthGrid } from "./month-grid";
 
 export const metadata: Metadata = { title: "Staff hours" };
 
-type SP = { week?: string; location?: string; scope?: string; view?: string; people?: string; period?: string; month?: string };
+type SP = { week?: string; location?: string; scope?: string; view?: string; people?: string; period?: string; month?: string; off?: string };
 const nextDay = (d: string) => shiftISODate(d, 1);
 
 /**
@@ -42,6 +42,8 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
   const period: "week" | "month" = sp.period === "month" ? "month" : "week";
   const thisMonth = monthOf(today);
   const month = /^\d{4}-\d{2}$/.test(sp.month ?? "") ? sp.month! : thisMonth;
+  // Month only: "Only working" drops the people who are off that day from each cell, so a busy roster reads as who is actually in.
+  const hideOff = period === "month" && sp.off === "hide";
   const horizon = shiftISODate(today, 90);
 
   const { people, peopleFilter, shown, overrides, locations, cats } = await withTenant(business.id, async (tx) => {
@@ -79,6 +81,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
       period: period === "month" ? "month" : null,
       week: period === "week" && weekStart !== thisMonday ? weekStart : null,
       month: period === "month" && month !== thisMonth ? month : null,
+      off: hideOff ? "hide" : null,
       location: locationId,
       scope: categoryId ? `c:${categoryId}` : null,
       view: view === "coverage" ? "coverage" : null,
@@ -157,6 +160,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
           {multi ? <LocationFilter locations={locations} current={locationId} query={qs({ location: null })} allLabel={null} /> : null}
           <AutoSubmitForm className="flex flex-wrap items-center gap-2">
             {period === "month" ? <input type="hidden" name="period" value="month" /> : null}
+            {hideOff ? <input type="hidden" name="off" value="hide" /> : null}
             {period === "month" && month !== thisMonth ? <input type="hidden" name="month" value={month} /> : null}
             {period === "week" && weekStart !== thisMonday ? <input type="hidden" name="week" value={weekStart} /> : null}
             {multi ? <input type="hidden" name="location" value={locationId ?? ""} /> : null}
@@ -181,7 +185,13 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
                 <Link key={key} href={`?${qs({ view: key === "coverage" ? "coverage" : null })}`} aria-current={view === key ? "true" : undefined} className={cn("rounded-md px-3 py-0.5", view === key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{label}</Link>
               ))}
             </div>
-          ) : null}
+          ) : (
+            <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Who to list on each day">
+              {([[false, "Everyone"], [true, "Only working"]] as const).map(([hide, label]) => (
+                <Link key={label} href={`?${qs({ off: hide ? "hide" : null })}`} aria-current={hideOff === hide ? "true" : undefined} className={cn("rounded-md px-3 py-0.5", hideOff === hide ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{label}</Link>
+              ))}
+            </div>
+          )}
           <p className="flex flex-wrap items-center gap-3 text-xs text-stone-500">
             {period === "week" && view === "coverage" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-emerald-400 align-middle" />{coverage.scope.label === "All services" ? "every service covered" : `${coverage.scope.label} covered`}</span> : null}
             {period === "week" && view === "coverage" ? <span><span className="mr-1 inline-block h-2.5 w-1.5 rounded-sm bg-amber-400 align-middle" />some services uncovered</span> : null}
@@ -194,7 +204,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
         ) : shown.length === 0 ? (
           <div className="p-4"><Empty title={`No one under “${peopleLabel}”`} body="Pick another group in the People filter." /></div>
         ) : period === "month" ? (
-          <MonthGrid coverage={coverage} month={month} people={coverage.staff.filter((s) => shown.some((p) => p.id === s.id))} today={today} hoursHref={hoursHref} weekHref={weekHref} />
+          <MonthGrid coverage={coverage} month={month} people={coverage.staff.filter((s) => shown.some((p) => p.id === s.id))} today={today} hoursHref={hoursHref} weekHref={weekHref} hideOff={hideOff} />
         ) : (
           <CoverageGrid coverage={coverage} today={today} hoursHref={hoursHref} mode={view} />
         )}

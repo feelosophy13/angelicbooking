@@ -137,6 +137,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       `dates` and reports each day's overrides); closed days are hatched; a date opens that week; days stack with the date as a row
       header below `md`. Needs attention, the coverage strip and the People / Coverage switch stay week-only
       (`staff-hours/month-grid.tsx`, month helpers in `lib/staff-hours.ts`).
+- [x] Staff hours Month view "Everyone / Only working" pill, 2026-10-18 (`?off=hide`): Only working leaves out the people who are off
+      or on time off that day, and a day where nobody in the People filter works says "Nobody in". Kept by the other filters; week view
+      has no such switch (its lanes only ever show people who are in).
+- [x] Demo tenants have receptionists, 2026-10-18: Dana Whitfield is Front Desk Lead; Marcus Bell (Tue–Sat) and Leila Haddad (late
+      shifts and the weekend; home site Reston in `demo-twosites`) are Receptionists, hourly, no calendar column, with front-desk time
+      off in the next weeks, so Staff hours, the People filter, the time clock and payroll have front-desk people to show.
 - [x] Security and privacy batch, 2026-10-16:
       - Online booking, shared forms and store orders attach to an existing client only when signed in, or when phone/email AND name match
         (`lib/client-match.ts`); otherwise a new client is made. Forms filled from a manage link or anonymously only fill blank email/phone,

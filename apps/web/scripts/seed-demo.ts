@@ -65,7 +65,7 @@ const PROFILES: Record<string, Profile> = {
       { name: "Glow Collective - Arlington", address1: "2200 Clarendon Blvd", city: "Arlington", state: "VA", phone: "(571) 555-0190", hours: WEEK },
       { name: "Glow Collective - Reston", address1: "11900 Market Street", city: "Reston", state: "VA", phone: "(571) 555-0191", hours: { ...WEEK, "0": { open: "10:00", close: "16:00" }, "1": null } },
     ],
-    staffLocation: { 2: 1, 3: 1, 4: 1 },
+    staffLocation: { 2: 1, 3: 1, 4: 1, 7: 1 },
     // Jordan lends Wednesdays to Reston; Priya, Sofia and Mina spend a few days at Arlington.
     otherSite: { 1: { 3: 1 }, 2: { 2: 0, 6: 0 }, 3: { 1: 0, 5: 0 }, 4: { 4: 0 } },
   },
@@ -248,7 +248,11 @@ const STAFF: StaffDef[] = [
   { name: "Sofia Rossi", email: "sofia@luxebeauty.demo", color: "#7c3aed", position: "Brow & Wax Specialist", payType: "hourly", hourly: 2000, main: 2000, product: 500, skills: ["Brow Lamination & Tint", "Waxing", "Korean Lash Lift & Tint"], hours: { 1: ["10:00", "18:00"], 3: ["09:00", "19:00"], 4: ["12:00", "20:00"], 5: ["09:00", "19:00"] } },
   // Colour analysis and permanent makeup: Mina is out Wednesdays and Fridays.
   { name: "Mina Park", email: "mina@luxebeauty.demo", color: "#d97706", position: "Color Consultant & PMU Artist", payType: "commission", main: 5500, product: 500, skills: ["Personal Color Analysis", "Permanent Makeup"], hours: { 1: ["10:00", "18:00"], 2: ["10:00", "19:00"], 4: ["09:00", "17:00"], 6: ["09:00", "17:00"] } },
-  { name: "Dana Whitfield", email: "dana@luxebeauty.demo", color: "#64748b", position: "Front Desk", payType: "salary", salary: 180000, product: 500, skills: [], hours: { 1: ["10:00", "18:00"], 2: ["09:00", "18:00"], 3: ["09:00", "18:00"], 4: ["09:00", "18:00"], 5: ["09:00", "18:00"] }, frontDesk: true },
+  // Front desk: Dana leads it on weekdays, Marcus covers Tuesday to Saturday, Leila does the late shifts and the weekend. None of them
+  // take appointments, so they have no calendar column; they show on Staff hours, the time clock and payroll.
+  { name: "Dana Whitfield", email: "dana@luxebeauty.demo", color: "#64748b", position: "Front Desk Lead", payType: "salary", salary: 180000, product: 500, skills: [], hours: { 1: ["10:00", "18:00"], 2: ["09:00", "18:00"], 3: ["09:00", "18:00"], 4: ["09:00", "18:00"], 5: ["09:00", "18:00"] }, frontDesk: true },
+  { name: "Marcus Bell", email: "marcus@luxebeauty.demo", color: "#0891b2", position: "Receptionist", payType: "hourly", hourly: 1900, product: 500, skills: [], hours: { 2: ["09:00", "17:00"], 3: ["09:00", "17:00"], 4: ["09:00", "17:00"], 5: ["09:00", "17:00"], 6: ["09:00", "17:00"] }, frontDesk: true },
+  { name: "Leila Haddad", email: "leila@luxebeauty.demo", color: "#a16207", position: "Receptionist", payType: "hourly", hourly: 1800, product: 500, skills: [], hours: { 0: ["10:00", "16:00"], 4: ["14:00", "20:00"], 5: ["13:00", "19:00"], 6: ["11:00", "17:00"] }, frontDesk: true },
 ];
 
 // ---- Dates and working windows (all relative to the day the script runs) ----
@@ -492,6 +496,8 @@ async function main() {
       { who: "Sofia Rossi", from: 38, span: 5, note: "Vacation" },
       { who: "Mina Park", from: -12, span: 1, note: "Sick day", working: true },
       { who: "Mina Park", from: 24, span: 2, note: "Industry conference" },
+      { who: "Dana Whitfield", from: 17, span: 3, note: "Vacation" },
+      { who: "Marcus Bell", from: 6, span: 1, note: "Doctor's appointment", hours: ["12:00", "17:00"], working: true },
     ];
     for (const t of planOff) {
       const p = byName(t.who);
