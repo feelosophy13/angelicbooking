@@ -1306,6 +1306,24 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       This also defines brand-200/300/400/800/900, which were used in ~30 places but missing from the theme (they rendered no color).
 - [ ] The Expo mobile app and the admin app keep the default violet; the logo mark stays violet on purpose.
 
+### Mobile review (2026-10-20, `MOBILE-REVIEW-2026-10-20.md`)
+- [x] All 151 staff, booking and public pages measured at 375, 390 and 768 wide; none scrolls sideways now (Settings was 708px,
+      Reports 1005px, Locations 555px, Appointments 445px, Gallery 446px, Form submissions 491px, Developers 438px).
+- [x] Shared fixes in `globals.css`: single-column grids can't grow past their container; table scrollers contain their sr-only
+      labels; fields are 16px below `md` (no iOS zoom on focus; 85 pages had 14px fields); `data-segmented` controls are 40px
+      tall on phones and scroll inside themselves. `size="sm"` buttons are 40px below `md`.
+- [x] Clients and Appointments lists are stacked rows on phones; opening hours, category rows, appointment Move / Add a service and
+      the Time clock range stack or wrap; the calendar's stat cards are two per row; seven more tables sit in scroll boxes; the
+      compact service picker opens leftward near the right edge.
+- [ ] Inline text links ("Back", "Change", "+1 week", booking-page phone / website links) are 16–20px tall; give `BackLink` and
+      text links a 40px hit area.
+- [ ] Appointments' four-way switcher scrolls inside itself at 375px ("Past" half shown); a shorter phone label for
+      "Recently booked" would fit it.
+- [ ] Reports, Payroll, Audit log, Messages log, Gift cards and Time clock entries still scroll sideways inside their cards on a
+      phone; stacked rows like Clients would read better.
+- [ ] Phone numbers show unformatted (`+17035551024`) in the clients list and the appointment sheet.
+- [ ] Sign-in / sign-up were checked by code only (they redirect while signed in); measure them signed out.
+
 ### Vagaro parity gaps (added 2026-10-10; all built 2026-10-10 — Stripe-dependent ones are untested until keys exist)
 
 **Booking**
