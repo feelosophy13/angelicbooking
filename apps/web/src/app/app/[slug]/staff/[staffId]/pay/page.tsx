@@ -28,7 +28,7 @@ export default async function StaffPayPage({ params }: { params: Promise<{ slug:
   const users = userIds.length ? await db.select({ id: schema.user.id, name: schema.user.name }).from(schema.user).where(inArray(schema.user.id, userIds)) : [];
   const who = (id: string | null) => (id ? users.find((u) => u.id === id)?.name ?? "a former member" : "system");
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,32rem)_minmax(0,22rem)]">
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,32rem)_minmax(0,22rem)]">
       <Card className="p-5">
         {upcoming.length ? (
           <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">

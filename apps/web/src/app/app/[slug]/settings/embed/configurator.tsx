@@ -33,7 +33,7 @@ export function EmbedConfigurator({ slug, appUrl, brand, groups, staff, location
   }, [appUrl, slug, service, person, location]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[22rem_1fr]">
+    <div className="grid gap-6 xl:grid-cols-[22rem_1fr]">
       <div className="space-y-3">
         <Field label="How it appears">
           <Select value={mode} onChange={(e) => setMode(e.target.value as "inline" | "popup")}>

@@ -34,7 +34,7 @@ export default async function BookingSettingsPage({ params }: { params: Promise<
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Online booking" />
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
         <Card className="p-4">
           <BookingForm
             slug={slug}

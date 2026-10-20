@@ -227,7 +227,7 @@ export default async function AppointmentPage({
         ) : null}
       </PageHeader>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
           <Card className="p-4">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">

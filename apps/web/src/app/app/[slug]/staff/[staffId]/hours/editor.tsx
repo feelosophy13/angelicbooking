@@ -76,11 +76,14 @@ export function WeeklyHoursEditor({
   const setBlock = (w: number, weekday: number, i: number, patch: Partial<Block>) => update(w, weekday, (d) => ({ ...d, blocks: d.blocks.map((b, j) => (j === i ? { ...b, ...patch } : b)) }));
   const copyFromFirst = (w: number) => setWeeks((ws) => ws.map((week, i) => (i === w ? cloneWeek(ws[0]!) : week)));
 
-  // Phones: the day (and the location) take a row of their own above the times. Wider: one row per block.
+  // Phones: the day (and the location) take a row of their own above the times. Wider: one row per block. With a
+  // location column the full row needs ~46rem, so it waits for xl; in between (tablets, a laptop beside the sidebar)
+  // the day sits on its own line and the times and location share the next.
   const grid = multi
-    ? "grid-cols-[minmax(0,1fr)_max-content_minmax(0,1fr)_2rem] sm:grid-cols-[8.5rem_9.5rem_max-content_9.5rem_2rem_minmax(14rem,22rem)]"
+    ? "grid-cols-[minmax(0,1fr)_max-content_minmax(0,1fr)_2rem] md:grid-cols-[minmax(0,1fr)_max-content_minmax(0,1fr)_2rem_minmax(0,1.4fr)] xl:grid-cols-[8.5rem_9.5rem_max-content_9.5rem_2rem_minmax(14rem,22rem)]"
     : "grid-cols-[minmax(0,1fr)_max-content_minmax(0,1fr)_2rem] sm:grid-cols-[8.5rem_9.5rem_max-content_9.5rem_2rem]";
-  const span = "col-span-4 sm:col-span-1";
+  const span = multi ? "col-span-4 md:col-span-5 xl:col-span-1" : "col-span-4 sm:col-span-1";
+  const locSpan = "col-span-4 md:col-span-1";
   const iconBtn = "inline-flex h-8 w-8 items-center justify-center rounded-md text-stone-500 hover:bg-stone-100 hover:text-stone-800";
   const weekLabel = (i: number) => `Week ${i + 1}`;
 
@@ -161,11 +164,11 @@ export function WeeklyHoursEditor({
                     )}
                     {multi ? (
                       i === 0 ? (
-                        <Select name={`loc_${w}_${d.weekday}`} value={d.locationId} disabled={!on} onChange={(e) => update(w, d.weekday, (x) => ({ ...x, locationId: e.target.value }))} aria-label={`${label} location`} className={`${span} disabled:opacity-50`}>
+                        <Select name={`loc_${w}_${d.weekday}`} value={d.locationId} disabled={!on} onChange={(e) => update(w, d.weekday, (x) => ({ ...x, locationId: e.target.value }))} aria-label={`${label} location`} className={`${locSpan} disabled:opacity-50`}>
                           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                         </Select>
                       ) : (
-                        <span className="hidden sm:block" />
+                        <span className="hidden xl:block" />
                       )
                     ) : null}
                   </div>

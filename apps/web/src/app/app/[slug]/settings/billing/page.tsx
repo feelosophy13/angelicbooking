@@ -94,7 +94,7 @@ export default async function BillingPage({ params, searchParams }: { params: Pr
       {!state.enabled ? <div className="mb-4"><Notice kind="info">Billing is not configured on this platform yet. Everything is free until it is.</Notice></div> : null}
       {stripeDown ? <div className="mb-4"><Notice kind="info">Stripe could not be reached just now, so the figures below come from your price book and today&apos;s counts. Refresh in a minute for the amounts Stripe will charge.</Notice></div> : null}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <Card className="p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>

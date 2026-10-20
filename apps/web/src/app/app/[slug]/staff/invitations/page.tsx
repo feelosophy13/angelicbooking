@@ -24,7 +24,7 @@ export default async function InvitationsPage({ params, searchParams }: { params
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/staff`}>Staff</BackLink></div>
       <PageHeader title="Staff invitations" />
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Pending</h2>
           {invites.length === 0 ? <div className="p-4"><Empty title="No pending invitations" /></div> : (

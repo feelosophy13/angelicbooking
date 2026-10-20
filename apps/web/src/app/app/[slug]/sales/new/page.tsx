@@ -40,7 +40,7 @@ export default async function NewSalePage({ params, searchParams }: { params: Pr
   return (
     <>
       <PageHeader title="New sale" />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
         <div className="min-w-0 space-y-6">
           <Card className="p-4">
             <p className="font-medium">{client ? `${client.firstName} ${client.lastName}`.trim() : "Walk-in"}</p>

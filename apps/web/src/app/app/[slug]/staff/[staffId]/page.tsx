@@ -24,7 +24,7 @@ export default async function StaffProfilePage({ params }: { params: Promise<{ s
   const feedUrl = appUrl(`/api/calendar/${person.calendarToken}.ics`);
   const webcal = feedUrl.replace(/^https?:\/\//, "webcal://");
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,32rem)_minmax(0,22rem)]">
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,32rem)_minmax(0,22rem)]">
     <Card className="p-5">
       <ActionForm action={updateStaffProfile}>
         <input type="hidden" name="slug" value={slug} />

@@ -42,7 +42,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
       <PageHeader title="Sales & checkout">
         {can(permissions, "reports.view") ? <Link href={`/app/${slug}/reports?from=${today}&to=${today}`} className="text-sm text-brand-700 underline">Today&apos;s report</Link> : null}
       </PageHeader>
-      <div className={`mb-4 grid gap-4 ${canSell ? "lg:grid-cols-[1fr_360px]" : ""}`}>
+      <div className={`mb-4 grid gap-4 ${canSell ? "xl:grid-cols-[1fr_360px]" : ""}`}>
         <Card className="p-3">
           <div className="flex flex-wrap items-center gap-2">
             <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm">

@@ -16,7 +16,7 @@ export default async function LoyaltySettingsPage({ params }: { params: Promise<
       <PageHeader title="Loyalty & referrals">
         <Link href={`/app/${slug}/loyalty`} className="text-sm text-brand-700 underline">Activity</Link>
       </PageHeader>
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
         <Card className="p-4">
           <LoyaltyForm slug={slug} v={{ loyaltyEnabled: b.loyaltyEnabled, loyaltyPointsPerDollar: b.loyaltyPointsPerDollar, loyaltyPointsPerVisit: b.loyaltyPointsPerVisit, loyaltyPointValueCents: b.loyaltyPointValueCents, loyaltyMinRedeemPoints: b.loyaltyMinRedeemPoints, referralBonusPoints: b.referralBonusPoints, referralFriendBonusPoints: b.referralFriendBonusPoints }} />
         </Card>

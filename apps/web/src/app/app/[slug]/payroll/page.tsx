@@ -214,7 +214,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
         )}
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="space-y-6">
           {active.map((e) => {
             const emp = e.employee;

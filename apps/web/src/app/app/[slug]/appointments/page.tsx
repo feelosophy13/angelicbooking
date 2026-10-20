@@ -116,10 +116,10 @@ export default async function AppointmentsPage({ params, searchParams }: { param
                 <tr>
                   <th className="px-4 py-2">When</th>
                   <th className="px-4 py-2">Client</th>
-                  <th className="hidden px-4 py-2 sm:table-cell">Service</th>
-                  <th className="hidden px-4 py-2 sm:table-cell">Provider</th>
-                  {locations.length > 1 ? <th className="hidden px-4 py-2 sm:table-cell">Location</th> : null}
-                  <th className="hidden px-4 py-2 sm:table-cell">Booked</th>
+                  <th className="hidden px-4 py-2 md:table-cell">Service</th>
+                  <th className="hidden px-4 py-2 lg:table-cell">Provider</th>
+                  {locations.length > 1 ? <th className="hidden px-4 py-2 lg:table-cell">Location</th> : null}
+                  <th className="hidden px-4 py-2 lg:table-cell">Booked</th>
                   <th className="px-4 py-2">Status</th>
                 </tr>
               </thead>
@@ -134,15 +134,17 @@ export default async function AppointmentsPage({ params, searchParams }: { param
                         <Link href={`/app/${slug}/appointments/${r.id}`} className="font-medium text-stone-900 hover:underline">{when.format(start)}</Link>
                         <span className="block text-xs text-stone-500">{time.format(start)}<span className="hidden sm:inline"> – {time.format(end)}</span></span>
                       </td>
-                      {/* On a phone the service and provider move under the client and the other columns hide, so the list fits without scrolling. */}
+                      {/* Narrower screens fold columns under the client instead of scrolling: phones show "service · provider" there,
+                          portrait tablets add the Service column and keep the provider underneath; everything shows from lg. */}
                       <td className="px-4 py-2 max-sm:w-full max-sm:max-w-0">
                         <span className="block truncate">{client || <span className="text-stone-500">Walk-in</span>}</span>
-                        <span className="block truncate text-xs text-stone-500 sm:hidden">{[r.services, r.staffName].filter(Boolean).join(" · ")}</span>
+                        <span className="block truncate text-xs text-stone-500 md:hidden">{[r.services, r.staffName].filter(Boolean).join(" · ")}</span>
+                        {r.staffName ? <span className="hidden truncate text-xs text-stone-500 md:block lg:hidden">{r.staffName}</span> : null}
                       </td>
-                      <td className="hidden max-w-[18rem] truncate px-4 py-2 text-stone-700 sm:table-cell" title={r.services ?? ""}>{r.services}</td>
-                      <td className="hidden whitespace-nowrap px-4 py-2 text-stone-700 sm:table-cell">{r.staffName ?? ""}{Number(r.staffCount) > 1 ? <span className="text-stone-500"> +{Number(r.staffCount) - 1}</span> : null}</td>
-                      {locations.length > 1 ? <td className="hidden whitespace-nowrap px-4 py-2 text-stone-600 sm:table-cell">{locName(r.locationId)}</td> : null}
-                      <td className="hidden whitespace-nowrap px-4 py-2 text-stone-600 sm:table-cell">
+                      <td className="hidden max-w-[18rem] truncate px-4 py-2 text-stone-700 md:table-cell" title={r.services ?? ""}>{r.services}</td>
+                      <td className="hidden whitespace-nowrap px-4 py-2 text-stone-700 lg:table-cell">{r.staffName ?? ""}{Number(r.staffCount) > 1 ? <span className="text-stone-500"> +{Number(r.staffCount) - 1}</span> : null}</td>
+                      {locations.length > 1 ? <td className="hidden whitespace-nowrap px-4 py-2 text-stone-600 lg:table-cell">{locName(r.locationId)}</td> : null}
+                      <td className="hidden whitespace-nowrap px-4 py-2 text-stone-600 lg:table-cell">
                         {r.source === "online" ? <span className="mr-1.5 inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 ring-1 ring-inset ring-brand-200">online</span> : <span className="mr-1.5 text-xs text-stone-500">{SOURCE_LABEL[r.source] ?? r.source}</span>}
                         <span className="text-xs" title={new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: tz }).format(r.createdAt)}>{relative(r.createdAt)}</span>
                       </td>

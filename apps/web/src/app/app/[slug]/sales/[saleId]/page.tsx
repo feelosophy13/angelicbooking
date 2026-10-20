@@ -118,7 +118,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
         <Link href={`/app/${slug}/sales/${sale.id}/receipt`} className="text-sm text-brand-700 underline">Receipt</Link>
       </PageHeader>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
         <div className="min-w-0 space-y-6">
           <Card className="p-4">
             <div className="mb-2 flex items-center justify-between">

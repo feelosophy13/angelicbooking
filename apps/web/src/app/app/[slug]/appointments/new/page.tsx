@@ -174,7 +174,7 @@ export default async function NewAppointmentPage({
   return (
     <>
       <PageHeader title="New appointment" />
-      <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+      <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
         <Card className="p-4">
           <AutoSubmitForm className="space-y-3">
             {multi ? (

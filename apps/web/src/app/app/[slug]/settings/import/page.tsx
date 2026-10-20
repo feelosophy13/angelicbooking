@@ -33,7 +33,7 @@ export default async function ImportPage({ params, searchParams }: { params: Pro
           </Notice>
         </div>
       ) : null}
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
           {staged ? (
             <Card className="p-4">

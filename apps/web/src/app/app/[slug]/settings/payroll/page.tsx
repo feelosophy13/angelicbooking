@@ -16,7 +16,7 @@ export default async function PayrollRulesPage({ params }: { params: Promise<{ s
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Payroll rules" />
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
         <div className="space-y-6">
         <Card className="p-5">
           <h2 className="mb-1 font-medium">Pay schedule</h2>

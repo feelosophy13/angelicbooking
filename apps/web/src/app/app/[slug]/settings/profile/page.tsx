@@ -19,7 +19,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Business profile" />
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
         <div className="space-y-6">
         <Card className="p-5">
           <h2 className="mb-3 font-medium">Basics</h2>

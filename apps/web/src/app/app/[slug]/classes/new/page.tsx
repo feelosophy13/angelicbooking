@@ -33,7 +33,7 @@ export default async function NewClassPage({ params, searchParams }: { params: P
       {services.length === 0 ? (
         <Empty title="No group services yet" body="Set a group size above 1 on a service first." action={{ href: `/app/${slug}/services`, label: "Services" }} />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
+        <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
           <Card className="p-4">
             <form className="space-y-3">
               <Field label="Class">

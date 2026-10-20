@@ -16,7 +16,7 @@ export default async function StoreSettingsPage({ params }: { params: Promise<{ 
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Online store" />
-      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
         <Card className="p-4">
           {!ready ? <div className="mb-4"><Notice>Online payments need Stripe connected{paymentsHrefFor(slug, permissions) ? <> under <Link className="underline" href={paymentsHrefFor(slug, permissions)!}>Settings → Payments</Link></> : " (ask the owner)"}. The pages show a “being set up” notice until then.</Notice></div> : null}
           <StoreForm slug={slug} giftCardsOnline={business.giftCardsOnline} storeEnabled={business.storeEnabled} shippingFlatCents={business.shippingFlatCents} giftUrl={appUrl(`/book/${business.slug}/gift`)} shopUrl={appUrl(`/book/${business.slug}/shop`)} />

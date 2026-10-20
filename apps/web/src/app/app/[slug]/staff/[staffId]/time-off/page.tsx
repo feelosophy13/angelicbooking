@@ -46,7 +46,7 @@ export default async function StaffTimeOffPage({ params }: { params: Promise<{ s
   const groups = groupConsecutive(overrides);
   const hhmm = (t: string) => t.slice(0, 5);
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
+    <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
       <Card>
         <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Upcoming time off &amp; custom hours</h2>
         {groups.length === 0 ? <div className="p-4"><Empty title="Nothing scheduled" body="Add a day off, a vacation or custom hours on the right." /></div> : (

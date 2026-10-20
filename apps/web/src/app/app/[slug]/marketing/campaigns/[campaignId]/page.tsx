@@ -27,7 +27,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   ]);
   const stats = campaign.status === "sent" ? await campaignStats(business.id, campaign.id) : null;
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+    <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
       <Card className="p-5">
         {campaign.status === "sent" ? (
           <div className="space-y-2 text-sm">

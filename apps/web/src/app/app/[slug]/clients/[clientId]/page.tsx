@@ -187,7 +187,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
           </div>
         ))}
       </Card>
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[1fr_380px]">
         <div className="space-y-6">
           {canNotes ? (
           <Card>

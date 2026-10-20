@@ -45,7 +45,7 @@ export default async function OrderPage({ params }: { params: Promise<{ slug: st
       <PageHeader title={`Order #${po.number}`}>
         <StatusPill status={po.status} />
       </PageHeader>
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-4">
           <Card className="p-4">
             {open ? (

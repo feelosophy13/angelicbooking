@@ -40,7 +40,7 @@ export default async function ClassSessionPage({ params }: { params: Promise<{ s
       <PageHeader title={s.service?.name ?? "Class"}>
         {s.session.status === "cancelled" ? <StatusBadge status="cancelled" /> : null}
       </PageHeader>
-      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[1fr_340px]">
         <div className="space-y-6">
           <Card>
             <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2">
