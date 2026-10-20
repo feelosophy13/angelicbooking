@@ -12,6 +12,7 @@ import { savedCardsFor } from "@/server/stripe-connect";
 import { listLocations, paymentContextForSale, validAtLocation } from "@/server/locations";
 import { MapPin, X } from "lucide-react";
 import { formatMoney, shiftISODate } from "@/lib/utils";
+import { paymentMethodLabel } from "@/lib/payment-methods";
 import { Button, Card, Input, PageHeader, Select, MoneyInput } from "@/components/ui";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; saleId: string }> }): Promise<Metadata> {
@@ -35,6 +36,7 @@ import { asc, eq } from "drizzle-orm";
 import { instantToISODate } from "@angelic/core";
 import { DiscountForm, LateTipForm, RefundForm, RefundReasonEditor, SaleNoteForm, SendReceiptForm, TipsForm } from "./forms";
 import { AddToTicket, TakePayment } from "./add-and-pay";
+import { ClientTipScreen } from "./client-tip";
 import { LineRow } from "./line-row";
 import { pointsBalance } from "@/server/loyalty";
 import { storeCreditBalance } from "@/server/store-credit";
@@ -231,8 +233,25 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               </Disclosure>
               {goods.length > 0 && (open || canAdjustTips) ? (
                 <Card className="p-4">
-                  <h2 className="mb-2 font-medium">Tips</h2>
-                  <TipsForm key={JSON.stringify([currentTips, currentTipMethods])} action={applyTips} slug={slug} saleId={sale.id} staff={tipStaff} current={currentTips} currentMethods={currentTipMethods} baseCents={Math.max(0, sale.subtotalCents - sale.discountCents)} currency={cur} choices={tipStaff.length ? [] : staff.map((x) => ({ id: x.id, name: x.displayName }))} />
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="font-medium">Tips</h2>
+                    {open && tipStaff.length && sale.subtotalCents - sale.discountCents > 0 ? (
+                      <ClientTipScreen
+                        slug={slug}
+                        saleId={sale.id}
+                        action={applyTips}
+                        baseCents={Math.max(0, sale.subtotalCents - sale.discountCents)}
+                        totalBeforeTipCents={sale.totalCents - sale.tipCents}
+                        currency={cur}
+                        presets={business.tipPercents}
+                        target={tipStaff.length === 1 ? tipStaff[0]!.id : ""}
+                        staffNames={tipStaff.map((s) => s.name.split(" ")[0]!)}
+                        business={{ name: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor }}
+                        clientFirstName={client?.firstName ?? null}
+                      />
+                    ) : null}
+                  </div>
+                  <TipsForm percents={business.tipPercents} key={JSON.stringify([currentTips, currentTipMethods])} action={applyTips} slug={slug} saleId={sale.id} staff={tipStaff} current={currentTips} currentMethods={currentTipMethods} baseCents={Math.max(0, sale.subtotalCents - sale.discountCents)} currency={cur} choices={tipStaff.length ? [] : staff.map((x) => ({ id: x.id, name: x.displayName }))} />
                 </Card>
               ) : null}
             </div>
@@ -249,7 +268,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                     <li key={p.id} className="py-2">
                       <div className="flex items-center justify-between">
                         <span>
-                          {p.method.replace("_", " ")}{p.cardBrand ? ` · ${p.cardBrand.toUpperCase()} •••• ${p.cardLast4}` : ""}
+                          {paymentMethodLabel(p.method)}{p.cardLast4 ? ` · ${p.cardBrand ? `${p.cardBrand.toUpperCase()} ` : ""}•••• ${p.cardLast4}` : ""}
                           <StatusBadge status={p.status} className="ml-2" />
                           {p.note ? <span className="ml-2 text-xs text-stone-500">{p.note}</span> : null}
                         </span>
@@ -268,7 +287,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         </div>
                       ))}
                       {p.status !== "pending" && p.status !== "failed" && refundable > 0 && canRefund ? (
-                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} reasons={reasonOptions} items={refundLines} goods={[...stockState.entries()].filter(([, v]) => v.sold - v.returned > 0).map(([productId, v]) => ({ productId, name: lines.find((l) => l.productId === productId)?.name ?? "Product", left: v.sold - v.returned }))} />
+                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} external={p.method === "external_card"} reasons={reasonOptions} items={refundLines} goods={[...stockState.entries()].filter(([, v]) => v.sold - v.returned > 0).map(([productId, v]) => ({ productId, name: lines.find((l) => l.productId === productId)?.name ?? "Product", left: v.sold - v.returned }))} />
                       ) : null}
                     </li>
                   );

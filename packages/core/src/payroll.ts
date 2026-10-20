@@ -187,8 +187,8 @@ export interface TipPart {
   method: "cash" | "card" | null;
 }
 
-/** Payment methods that cost the salon a card-processing fee. Cash, "other", gift cards, store credit and loyalty points do not. */
-export const CARD_FEE_METHODS = new Set(["card", "card_on_file", "terminal"]);
+/** Payment methods that cost the salon a card-processing fee (including a card run on its own card machine). Cash, "other", gift cards, store credit and loyalty points do not. */
+export const CARD_FEE_METHODS = new Set(["card", "card_on_file", "terminal", "external_card"]);
 
 /**
  * Cash versus card for one person's tips on one sale. A tip the desk marked cash or card goes where it was marked;

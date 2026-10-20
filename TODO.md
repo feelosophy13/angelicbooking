@@ -1296,6 +1296,18 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### Checkout: client tip screen and own card machine (built 2026-10-20, migration 0127)
+- [x] Client-facing tip screen: on a ticket, Tips → "Ask the client" fills the screen in the business's brand color with the
+      salon's tip choices, "Other amount" (keypad) and "No tip", a confirm step with the new total, then "hand the device back".
+      Saves through the same `applyTips` (one stylist gets it; several split by revenue), so it works with any way of charging.
+- [x] Tip choices: Settings → Checkout & tips (`businesses.tip_percents`, default 18/20/25, one to four), used by the tip screen
+      and the staff tip form (which had 15/20/25 hard-coded).
+- [x] "Card (own terminal)" (`payment_method` `external_card`): Card → "Own card machine" records a card charged on any card
+      machine, with optional last 4. Counts as a card for payroll card tips and fee sharing (`CARD_FEE_METHODS`); refunds are
+      recorded only and the confirm says to refund on the machine too. Card is offered even without Stripe connected.
+- [ ] Not verified on a real tablet: fullscreen is requested where the browser allows it (iPad Safari ignores it; the overlay
+      still covers the page).
+
 ### App color (built 2026-10-19, migration 0126)
 - [x] Owners and managers (`settings.business`) pick the staff app's primary color under Settings → Business profile → App color:
       eight presets, the booking page's brand color when it differs, or any custom color. The whole app recolors as you pick and the

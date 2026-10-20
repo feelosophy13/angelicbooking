@@ -43,6 +43,7 @@ import { browserStripe } from "@/lib/stripe-demo";
 import { TerminalError, terminalConnectionToken, terminalLocationFor } from "@/server/stripe-terminal";
 import { findProductByCode, InventoryError, returnToShelf } from "@/server/inventory";
 import { productLabel } from "@/lib/inventory";
+import { paymentMethodLabel } from "@/lib/payment-methods";
 
 export type SaleActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -235,16 +236,18 @@ export async function applyTips(_prev: SaleActionState, formData: FormData): Pro
 }
 
 export async function payManual(_prev: SaleActionState, formData: FormData): Promise<SaleActionState> {
-  const d = base.extend({ method: z.enum(["cash", "other"]), amount: z.string(), tendered: z.string().optional(), note: z.string().optional() }).parse(Object.fromEntries(formData));
+  const d = base.extend({ method: z.enum(["cash", "other", "external_card"]), amount: z.string(), tendered: z.string().optional(), note: z.string().optional(), last4: z.string().optional() }).parse(Object.fromEntries(formData));
   const ctx = await ctxFor(d.slug, d.saleId);
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter the amount received." };
   // Cash handed over beyond the amount: remember it and the change given back on the payment.
   const given = d.method === "cash" && d.tendered ? parseMoney(d.tendered) : null;
   if (given !== null && given < cents) return { error: "The cash received is less than the amount being paid." };
+  const last4 = d.method === "external_card" ? (d.last4 ?? "").replace(/\D/g, "") : "";
+  if (last4 && last4.length !== 4) return { error: "The last four digits are four numbers, or leave it blank." };
   const cashNote = given !== null && given > cents ? `Received ${formatMoney(given, ctx.business.currency)}, change ${formatMoney(given - cents, ctx.business.currency)}` : null;
   try {
-    await recordManualPayment({ businessId: ctx.business.id, saleId: d.saleId, method: d.method, amountCents: cents, note: [d.note?.trim(), cashNote].filter(Boolean).join(" · ") || null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    await recordManualPayment({ businessId: ctx.business.id, saleId: d.saleId, method: d.method, amountCents: cents, note: [d.note?.trim(), cashNote].filter(Boolean).join(" · ") || null, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, cardLast4: last4 || null });
   } catch (e) {
     return friendly(e);
   }
@@ -542,7 +545,7 @@ export async function sendReceipt(formData: FormData) {
     taxRate: sale.taxCents ? `${(pay.taxRateBps / 100).toFixed(2).replace(/\.?0+$/, "")}%` : null,
     tip: sale.tipCents ? m(sale.tipCents) : null,
     total: m(sale.totalCents),
-    payments: payments.filter((p) => p.status !== "failed" && p.status !== "pending").map((p) => ({ label: `${p.method.replace("_", " ")}${p.cardLast4 ? ` ****${p.cardLast4}` : ""}`, amount: m(p.amountCents) })),
+    payments: payments.filter((p) => p.status !== "failed" && p.status !== "pending").map((p) => ({ label: `${paymentMethodLabel(p.method)}${p.cardLast4 ? ` ****${p.cardLast4}` : ""}`, amount: m(p.amountCents) })),
     refunded: sale.refundedCents ? m(sale.refundedCents) : null,
     footer: b.receiptFooter,
     referral: client && referralsEnabled(b) && client.referralCode ? referralPitch(b, client.referralCode) : null,

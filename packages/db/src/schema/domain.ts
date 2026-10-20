@@ -79,6 +79,8 @@ export const businesses = pgTable("businesses", {
   packageRedemptionBase: text("package_redemption_base").$type<"list" | "package_share">().notNull().default("package_share"),
   // Reports counts a client as lapsed (churned) once this many days pass after their last completed visit with nothing booked ahead.
   lapsedAfterDays: integer("lapsed_after_days").notNull().default(90),
+  // Tip choices offered at checkout (client tip screen and the staff tip form), percent of the goods after discount.
+  tipPercents: integer("tip_percents").array().notNull().default(sql`'{18,20,25}'`),
   phone: text("phone"),
   email: text("email"),
   // Stripe Connect (Phase 2)

@@ -29,6 +29,7 @@ import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { serviceGroups, serviceIdsInScope } from "@/server/service-groups";
 import { parseScope, scopeLabel, scopeValue } from "@/lib/service-scope";
 import { StackTable } from "@/components/stack-table";
+import { paymentMethodLabel } from "@/lib/payment-methods";
 
 export default async function ReportsPage({
   params,
@@ -548,7 +549,7 @@ export default async function ReportsPage({
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Method</th><th className="px-4 py-2 text-right">Count</th><th className="px-4 py-2 text-right">Collected</th><th className="px-4 py-2 text-right">of which tips</th><th className="px-4 py-2 text-right">Refunded</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {byMethod.map((r) => (
-                  <tr key={r.method}><td className="px-4 py-2 capitalize">{r.method.replace("_", " ")}</td><td className="px-4 py-2 text-right">{Number(r.count)}</td><td className="px-4 py-2 text-right">{money(r.amount)}</td><td className="px-4 py-2 text-right">{money(r.tips)}</td><td className="px-4 py-2 text-right">{money(r.refunded)}</td></tr>
+                  <tr key={r.method}><td className="px-4 py-2">{paymentMethodLabel(r.method)}</td><td className="px-4 py-2 text-right">{Number(r.count)}</td><td className="px-4 py-2 text-right">{money(r.amount)}</td><td className="px-4 py-2 text-right">{money(r.tips)}</td><td className="px-4 py-2 text-right">{money(r.refunded)}</td></tr>
                 ))}
               </tbody>
             </StackTable></div>

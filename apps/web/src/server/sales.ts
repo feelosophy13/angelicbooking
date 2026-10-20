@@ -758,11 +758,14 @@ export async function settleIfPaid(businessId: string, saleId: string, actorUser
 export async function recordManualPayment(input: {
   businessId: string;
   saleId: string;
-  method: "cash" | "other";
+  /** external_card: a card charged on the salon's own card machine (any processor), recorded here by hand. */
+  method: "cash" | "other" | "external_card";
   amountCents: number;
   note: string | null;
   actorUserId: string;
   taxRateBps: number;
+  /** For external_card: the last four digits, when the desk typed them. */
+  cardLast4?: string | null;
 }) {
   await withTenant(input.businessId, async (tx) => {
     const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) });
@@ -780,6 +783,7 @@ export async function recordManualPayment(input: {
       amountCents: amount,
       tipCents: tipShare(sale, amount),
       note: input.note,
+      cardLast4: input.method === "external_card" ? input.cardLast4 || null : null,
       createdByUserId: input.actorUserId,
     });
     await audit(tx, input.businessId, input.actorUserId, `payment.${input.method}`, sale.id, { amount });

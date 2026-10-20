@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Button, Input, MoneyInput, Select } from "@/components/ui";
 import { SaleProductPicker, type PickerProduct } from "@/components/sale-product-picker";
 import { ServicePicker, type ServiceGroup } from "@/components/service-picker";
-import { GiftCardPayForm, ManualPayForm, PointsPayForm, SavedCardForm, Segmented, StoreCreditPayForm } from "./forms";
+import { ExternalCardForm, GiftCardPayForm, ManualPayForm, PointsPayForm, SavedCardForm, Segmented, StoreCreditPayForm } from "./forms";
 import { CardPayment } from "./card-payment";
 import { TerminalPayment } from "./terminal-payment";
 import type { SaleActionState } from "./actions";
@@ -119,11 +119,11 @@ export function AddToTicket({ slug, saleId, start, staff, products, productsHref
 }
 
 type PayMethod = "cash" | "card" | "gift_card" | "store_credit" | "points";
-type CardWay = "saved" | "reader" | "typed";
+type CardWay = "saved" | "reader" | "typed" | "own";
 
 /**
  * Taking payment: pick how, then see only that method's fields. Methods the client can't use (no store credit,
- * too few points, no Stripe) are not offered.
+ * too few points) are not offered. Card is always there: without a connected processor it is the salon's own card machine.
  */
 export function TakePayment({ slug, saleId, dueCents, currency, hasClient, savedCards, stripe, storeCredit, points, actions }: {
   slug: string;
@@ -132,7 +132,7 @@ export function TakePayment({ slug, saleId, dueCents, currency, hasClient, saved
   currency: string;
   hasClient: boolean;
   savedCards: { id: string; brand: string; last4: string; expMonth: number; expYear: number }[];
-  /** Null when cards can't be taken yet. */
+  /** Null when cards can't be taken through Stripe. */
   stripe: { publishableKey: string | null; test: boolean } | null;
   /** Balance to spend, or 0. */
   storeCredit: number;
@@ -141,14 +141,18 @@ export function TakePayment({ slug, saleId, dueCents, currency, hasClient, saved
   actions: { payManual: StateAction; payWithGiftCard: StateAction; payWithSavedCard: StateAction; payWithStoreCredit: StateAction; payWithPoints: StateAction };
 }) {
   const methods: { value: PayMethod; label: string }[] = [
-    ...(stripe ? [{ value: "card" as const, label: "Card" }] : []),
+    { value: "card", label: "Card" },
     { value: "cash", label: "Cash / other" },
     { value: "gift_card", label: "Gift card" },
     ...(storeCredit > 0 ? [{ value: "store_credit" as const, label: "Store credit" }] : []),
     ...(points ? [{ value: "points" as const, label: "Points" }] : []),
   ];
   const [method, setMethod] = useState<PayMethod>(methods[0]!.value);
-  const ways: { value: CardWay; label: string }[] = [...(savedCards.length ? [{ value: "saved" as const, label: "Card on file" }] : []), { value: "reader", label: "Card reader" }, { value: "typed", label: "Type it in" }];
+  const ways: { value: CardWay; label: string }[] = [
+    ...(stripe && savedCards.length ? [{ value: "saved" as const, label: "Card on file" }] : []),
+    ...(stripe ? [{ value: "reader" as const, label: "Card reader" }, { value: "typed" as const, label: "Type it in" }] : []),
+    { value: "own", label: "Own card machine" },
+  ];
   const [way, setWay] = useState<CardWay>(ways[0]!.value);
   return (
     <div className="space-y-3">
@@ -161,15 +165,17 @@ export function TakePayment({ slug, saleId, dueCents, currency, hasClient, saved
         <StoreCreditPayForm key={`sc${dueCents}`} action={actions.payWithStoreCredit} slug={slug} saleId={saleId} balanceCents={storeCredit} dueCents={dueCents} />
       ) : method === "points" && points ? (
         <PointsPayForm key={`pt${dueCents}`} action={actions.payWithPoints} slug={slug} saleId={saleId} balance={points.balance} pointValueCents={points.pointValueCents} dueCents={dueCents} minPoints={points.minPoints} />
-      ) : method === "card" && stripe ? (
+      ) : method === "card" ? (
         <div className="space-y-3">
-          <Segmented label="Which card" value={way} onChange={setWay} options={ways} />
-          {way === "saved" ? (
+          {ways.length > 1 ? <Segmented label="Which card" value={way} onChange={setWay} options={ways} /> : null}
+          {way === "saved" && stripe ? (
             <SavedCardForm key={dueCents} action={actions.payWithSavedCard} slug={slug} saleId={saleId} dueCents={dueCents} cards={savedCards} />
-          ) : way === "reader" ? (
+          ) : way === "reader" && stripe ? (
             <TerminalPayment key={`tp${dueCents}`} slug={slug} saleId={saleId} dueCents={dueCents} hasClient={hasClient} test={stripe.test} />
-          ) : (
+          ) : way === "typed" && stripe ? (
             <CardPayment key={`cp${dueCents}`} slug={slug} saleId={saleId} dueCents={dueCents} publishableKey={stripe.publishableKey} hasClient={hasClient} />
+          ) : (
+            <ExternalCardForm key={`ex${dueCents}`} action={actions.payManual} slug={slug} saleId={saleId} dueCents={dueCents} />
           )}
         </div>
       ) : null}

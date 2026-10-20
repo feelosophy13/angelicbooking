@@ -3,6 +3,7 @@ import { requireAction } from "@/lib/tenant";
 import { getSale } from "@/server/sales";
 import { formatMoney } from "@/lib/utils";
 import { paymentContextForSale } from "@/server/locations";
+import { paymentMethodLabel } from "@/lib/payment-methods";
 
 export default async function ReceiptPage({ params }: { params: Promise<{ slug: string; saleId: string }> }) {
   const { slug, saleId } = await params;
@@ -40,7 +41,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ slug: 
       <hr className="my-3 border-dashed" />
       {payments.filter((p) => p.status !== "failed" && p.status !== "pending").map((p) => (
         <div key={p.id}>
-          <div className="flex justify-between"><span>{p.method.replace("_", " ")}{p.cardLast4 ? ` ****${p.cardLast4}` : ""}</span><span>{money(p.amountCents)}</span></div>
+          <div className="flex justify-between"><span>{paymentMethodLabel(p.method)}{p.cardLast4 ? ` ****${p.cardLast4}` : ""}</span><span>{money(p.amountCents)}</span></div>
           {p.method === "cash" && p.note?.includes("change") ? <p className="text-xs text-stone-500">{p.note.split(" · ").filter((x) => /^Received|^change/i.test(x)).join(" · ")}</p> : null}
         </div>
       ))}

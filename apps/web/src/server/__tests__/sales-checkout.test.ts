@@ -8,8 +8,9 @@ import { eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { buildPayrollLines } from "@/server/payroll";
 import { getSaleApi } from "@/server/api-v1";
-import { addProductLine, addTipAfterPayment, completeNoCharge, discardEmptySale, getSale, openWalkInSale, recordManualPayment, removeLine, salesReport, setSaleNotes, setTaxExempt, setTips } from "@/server/sales";
+import { addProductLine, addTipAfterPayment, completeNoCharge, discardEmptySale, getSale, openWalkInSale, recordManualPayment, refundPayment, removeLine, salesReport, setSaleNotes, setTaxExempt, setTips } from "@/server/sales";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
+import { CARD_FEE_METHODS } from "@angelic/core";
 
 const up = await reachable();
 const TAX = 600; // 6%
@@ -99,6 +100,18 @@ describe.skipIf(!up)("checkout: a products-only ticket", () => {
     expect(d.sale.status).toBe("paid");
     expect(d.payments.map((p) => p.amountCents)).toEqual([6890]);
     await expect(removeLine({ businessId: kit.A, saleId, lineId: d.lines[0]!.id, taxRateBps: TAX })).rejects.toThrow(/paid/);
+  });
+
+  it("records a card run on the salon's own card machine: last 4 kept, counted as a card payment, refunded by record only", async () => {
+    const saleId = await open();
+    await addProductLine({ ...base(), saleId, productId, quantity: 1, staffId: null });
+    await recordManualPayment({ ...base(), saleId, method: "external_card", amountCents: 6890, note: null, cardLast4: "4242" });
+    const d = (await getSale(kit.A, saleId))!;
+    expect(d.sale.status).toBe("paid");
+    expect(d.payments.map((p) => [p.method, p.cardLast4, p.amountCents])).toEqual([["external_card", "4242", 6890]]);
+    expect(CARD_FEE_METHODS.has("external_card")).toBe(true);
+    await refundPayment({ businessId: kit.A, paymentId: d.payments[0]!.id, amountCents: 1000, reason: null, actorUserId: userId, accountId: null, taxRateBps: TAX });
+    expect((await getSale(kit.A, saleId))!.payments[0]!.refundedCents).toBe(1000);
   });
 
   it("keeps how a tip was handed over, and payroll splits cash and card tips by it (gift-card payments carry no card fee)", async () => {

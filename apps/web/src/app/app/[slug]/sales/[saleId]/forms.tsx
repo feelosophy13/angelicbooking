@@ -80,14 +80,14 @@ export function DiscountForm({ action, promoAction, removePromoAction, slug, sal
   );
 }
 
-export function TipsForm({ action, slug, saleId, staff, current, currentMethods = {}, baseCents, choices = [], currency = "USD" }: { action: Action; slug: string; saleId: string; staff: { id: string; name: string }[]; current: Record<string, number>; /** How each tip already on the ticket was handed over ("" = same as the payment). */ currentMethods?: Record<string, "cash" | "card" | "">; /** Everyone who could receive a tip, offered when nobody is credited on the ticket yet (a products-only sale). */ choices?: { id: string; name: string }[]; /** What a percentage tip is worked out on: the goods after any discount, before tax. */ baseCents: number; currency?: string }) {
+export function TipsForm({ action, slug, saleId, staff, current, currentMethods = {}, baseCents, choices = [], currency = "USD", percents = [18, 20, 25] }: { action: Action; /** The business's tip choices (Settings → Checkout & tips). */ percents?: number[]; slug: string; saleId: string; staff: { id: string; name: string }[]; current: Record<string, number>; /** How each tip already on the ticket was handed over ("" = same as the payment). */ currentMethods?: Record<string, "cash" | "card" | "">; /** Everyone who could receive a tip, offered when nobody is credited on the ticket yet (a products-only sale). */ choices?: { id: string; name: string }[]; /** What a percentage tip is worked out on: the goods after any discount, before tax. */ baseCents: number; currency?: string }) {
   const [state, act, pending] = useActionState(action, undefined);
   const money = (c: number) => new Intl.NumberFormat("en-US", { style: "currency", currency }).format(c / 100);
   const nobody = staff.length === 0;
   const hasTips = Object.values(current).some((c) => c > 0);
   // One person: a preset fills their tip; several: it tips the whole ticket, split by who earned the revenue.
   const target = staff.length === 1 ? staff[0]!.id : "";
-  const presets = baseCents > 0 ? [15, 20, 25] : [];
+  const presets = baseCents > 0 ? percents : [];
   type Mode = "none" | "custom" | `${number}`;
   // The tips already on the ticket decide the opening mode: a preset when they match one exactly, else the amounts as typed.
   const matching = presets.find((pct) => { const want = Math.round((baseCents * pct) / 100); return target ? current[target] === want && Object.values(current).reduce((a, b) => a + b, 0) === want : false; });
@@ -224,6 +224,28 @@ export function ManualPayForm({ action, slug, saleId, dueCents, currency = "USD"
   );
 }
 
+/**
+ * A card charged on the salon's own card machine (any processor, not connected to the app): the desk charges it there and
+ * records it here, so the ticket, reports and the stylist's card tips stay right. Refunds go back through that machine.
+ */
+export function ExternalCardForm({ action, slug, saleId, dueCents }: { action: Action; slug: string; saleId: string; dueCents: number }) {
+  const [state, act] = useActionState(action, undefined);
+  return (
+    <form action={act} className="space-y-2">
+      <input type="hidden" name="slug" value={slug} />
+      <input type="hidden" name="saleId" value={saleId} />
+      <input type="hidden" name="method" value="external_card" />
+      <p className="text-xs text-stone-500">Charge this amount on your card machine, then record it here once it&apos;s approved.</p>
+      <div className="grid grid-cols-[1fr_7rem] gap-2">
+        <Field label="Amount charged"><MoneyInput name="amount" defaultValue={(dueCents / 100).toFixed(2)} /></Field>
+        <Field label="Last 4 (optional)"><Input name="last4" inputMode="numeric" maxLength={4} placeholder="1234" autoComplete="off" /></Field>
+      </div>
+      {state?.error ? <Notice>{state.error}</Notice> : null}
+      <SubmitButton size="sm" pendingText="Recording…">Record card payment</SubmitButton>
+    </form>
+  );
+}
+
 export function SavedCardForm({ action, slug, saleId, dueCents, cards }: { action: Action; slug: string; saleId: string; dueCents: number; cards: { id: string; brand: string; last4: string; expMonth: number; expYear: number }[] }) {
   const [state, act, pending] = useActionState(action, undefined);
   return (
@@ -250,7 +272,7 @@ export type ReasonOption = { id: string; name: string };
 
 export type RefundLineOption = { id: string; name: string; kind: string; productId?: string | null; quantity: number; remainingCents: number };
 
-export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons, goods = [], items = [] }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[]; /** Products this sale took off the shelf that haven't come back, so a returned item can go back on it. */ goods?: { productId: string; name: string; left: number }[]; /** Ticket lines with money left to refund: choosing them refunds exactly those (and takes exactly them back from the stylist's pay). */ items?: RefundLineOption[] }) {
+export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons, goods = [], items = [], external = false }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[]; /** Paid on the salon's own card machine: the refund is only recorded here. */ external?: boolean; /** Products this sale took off the shelf that haven't come back, so a returned item can go back on it. */ goods?: { productId: string; name: string; left: number }[]; /** Ticket lines with money left to refund: choosing them refunds exactly those (and takes exactly them back from the stylist's pay). */ items?: RefundLineOption[] }) {
   const [state, act, pending] = useActionState(action, undefined);
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState<"original" | "store_credit">("original");
@@ -336,7 +358,7 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
       ) : null}
       <ConfirmSubmit
         title={to === "store_credit" ? "Refund as store credit?" : "Issue this refund?"}
-        body={to === "store_credit" ? "The money stays with you and the client gets the amount as store credit to spend on a future visit." : "Card refunds go back to the original card through Stripe and can't be reversed."}
+        body={to === "store_credit" ? "The money stays with you and the client gets the amount as store credit to spend on a future visit." : external ? "This records the refund here. Refund the card on your own card machine too: the app can't reach it." : "Card refunds go back to the original card and can't be reversed."}
         confirmLabel={to === "store_credit" ? "Give store credit" : "Refund"}
         variant={to === "store_credit" ? "primary" : "danger"}
       >

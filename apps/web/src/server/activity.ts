@@ -40,7 +40,7 @@ const STATUS_WORDS: Record<string, string> = {
   cancelled: "cancelled it",
 };
 
-const METHOD_WORDS: Record<string, string> = { cash: "cash", other: "another method", card: "card", card_on_file: "the card on file", terminal: "the terminal", gift_card: "a gift card", loyalty: "loyalty points", store_credit: "store credit" };
+const METHOD_WORDS: Record<string, string> = { cash: "cash", other: "another method", card: "card", card_on_file: "the card on file", terminal: "the terminal", gift_card: "a gift card", loyalty: "loyalty points", store_credit: "store credit", external_card: "a card on their own card machine" };
 
 function describe(action: string, diff: Record<string, unknown>, currency: string, source: string | null): { what: string; detail: string | null } {
   const money = (c: unknown) => (typeof c === "number" ? formatMoney(c, currency) : null);
