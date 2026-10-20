@@ -114,7 +114,7 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
     {
       title: "Your business",
       entries: [
-        { href: `${sb}/profile`, title: "Business profile", blurb: "Name, timezone, logo, colours, about text and links." },
+        { href: `${sb}/profile`, title: "Business profile", blurb: "Name, timezone, logo, brand and app colors, about text and links." },
         { href: `${sb}/locations`, title: "Locations", blurb: "Addresses, opening hours and tax rates.", status: s ? (s.locationCount === 1 ? "1 location" : `${s.locationCount} locations`) : undefined },
         { href: `${sb}/roles`, title: "Roles & permissions", blurb: "What each role can see and do.", action: "members.manage" },
       ],

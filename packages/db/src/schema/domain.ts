@@ -148,6 +148,7 @@ export const businesses = pgTable("businesses", {
   logoUrl: text("logo_url"),
   coverUrl: text("cover_url"),
   brandColor: text("brand_color"), // #rrggbb; null = default violet
+  appColor: text("app_color"), // the staff app's primary color, #rrggbb; null = default violet
   tagline: text("tagline"),
   about: text("about"),
   website: text("website"),

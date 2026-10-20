@@ -6,6 +6,7 @@ import { db, schema } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { deleteFileByUrl, FileError, storeImage } from "@/lib/files";
+import { DEFAULT_APP_COLOR, MIN_APP_COLOR_CONTRAST, whiteContrast } from "@/lib/brand";
 
 const url = z.string().trim().max(500).refine((v) => !v || /^https?:\/\/\S+$/i.test(v), "Enter a full URL starting with https://").transform((v) => v || null);
 
@@ -16,7 +17,7 @@ export const saveProfile = formAction(
     about: f.optional(1500),
     logoUrl: url,
     coverUrl: url,
-    brandColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, "Pick a colour"),
+    brandColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, "Pick a color"),
     website: url,
     instagram: z.string().trim().max(60).transform((v) => v.replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/\/$/, "") || null),
     hoursText: f.optional(600),
@@ -50,5 +51,19 @@ export const saveProfile = formAction(
     revalidatePath(`/app/${d.slug}/settings/profile`);
     revalidatePath(`/book/${ctx.business.slug}`, "layout");
     return "Profile saved";
+  },
+);
+
+/** The staff app's primary color, for everyone at the business. The default violet is stored as null. */
+export const saveAppColor = formAction(
+  z.object({
+    slug: z.string(),
+    appColor: z.string().trim().toLowerCase().regex(/^#[0-9a-f]{6}$/, "Pick a color").refine((v) => whiteContrast(v) >= MIN_APP_COLOR_CONTRAST, "Too light for white button text; pick a darker shade"),
+  }),
+  async (d) => {
+    const ctx = await requireAction(d.slug, "settings.business");
+    await db.update(schema.businesses).set({ appColor: d.appColor === DEFAULT_APP_COLOR ? null : d.appColor }).where(eq(schema.businesses.id, ctx.business.id));
+    revalidatePath(`/app/${d.slug}`, "layout");
+    return "App color saved";
   },
 );

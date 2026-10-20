@@ -1296,6 +1296,15 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### App color (built 2026-10-19, migration 0126)
+- [x] Owners and managers (`settings.business`) pick the staff app's primary color under Settings → Business profile → App color:
+      eight presets, the booking page's brand color when it differs, or any custom color, with a live preview. Stored as
+      `businesses.app_color` (null = default violet), separate from `brand_color`, which still colors only the booking page and emails.
+      Every `brand-*` utility now reads `--brand-50…900`; the app layout writes them on `:root` (`appColorCss` in `lib/brand.ts`, shades
+      mixed toward white/black) so portaled dialogs follow. Colors too light for white button text (contrast under 3:1) are refused.
+      This also defines brand-200/300/400/800/900, which were used in ~30 places but missing from the theme (they rendered no color).
+- [ ] The Expo mobile app and the admin app keep the default violet; the logo mark stays violet on purpose.
+
 ### Vagaro parity gaps (added 2026-10-10; all built 2026-10-10 — Stripe-dependent ones are untested until keys exist)
 
 **Booking**

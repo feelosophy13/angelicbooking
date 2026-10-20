@@ -6,7 +6,9 @@ import { BackLink, Card, Input, PageHeader, Select, Textarea, Checkbox } from "@
 import { TIMEZONES } from "@/lib/utils";
 import { updateBusiness } from "../actions";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { saveProfile } from "./actions";
+import { saveAppColor, saveProfile } from "./actions";
+import { AppColorPicker } from "./app-color-picker";
+import { DEFAULT_APP_COLOR } from "@/lib/brand";
 
 export const metadata: Metadata = { title: "Business profile" };
 
@@ -75,6 +77,15 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
             </div>
             <Field label="Opening hours (free text)" name="hoursText" hint="Only used when no location has opening hours set. Set real hours under Settings → Locations; they also cap online booking times."><Textarea name="hoursText" rows={4} defaultValue={business.hoursText ?? ""} placeholder={"Mon–Fri 9am–7pm\nSat 9am–5pm\nSun closed"} /></Field>
             <SubmitButton pendingText="Saving…">Save profile</SubmitButton>
+          </ActionForm>
+        </Card>
+        <Card className="p-5">
+          <h2 className="font-medium">App color</h2>
+          <p className="mb-3 mt-0.5 text-sm text-stone-500">Buttons, links and highlights in this app, for everyone on your team. Clients see your brand color instead.</p>
+          <ActionForm action={saveAppColor}>
+            <input type="hidden" name="slug" value={slug} />
+            <AppColorPicker initial={business.appColor ?? DEFAULT_APP_COLOR} brandColor={business.brandColor} />
+            <SubmitButton pendingText="Saving…">Save app color</SubmitButton>
           </ActionForm>
         </Card>
         </div>

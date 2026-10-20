@@ -8,6 +8,7 @@ import { schema, withTenant } from "@angelic/db";
 import { permissionsForRole, listRoles } from "@/server/roles";
 import { appUrl } from "@/lib/stripe";
 import { Wordmark } from "@/components/brand";
+import { appColorCss } from "@/lib/brand";
 import { UserMenu } from "@/components/user-menu";
 import { ResendVerification } from "@/components/resend-verification";
 import { ownerEmailVerified } from "@/server/access";
@@ -37,6 +38,9 @@ export default async function AppLayout({ children, params }: { children: React.
   const viewAsStaff = viewAsEnabled() ? await withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName))) : [];
   const roleName = roles.find((r) => r.key === role)?.name ?? role.replace("_", " ");
   const base = `/app/${slug}`;
+  // The business's App color: on :root so dialogs and menus portaled to <body> pick it up too; gone when the app unmounts.
+  const appCss = appColorCss(business.appColor);
+  const appColorStyle = appCss ? <style>{appCss}</style> : null;
   // What clients see: the public booking page (custom domain when one is set). Opens in a new tab.
   const bookingUrl = business.customDomain ? `https://${business.customDomain}` : appUrl(`/book/${business.slug}`);
   // "+ New": what can be started from any page, in the sidebar and at the top of the phone menu.
@@ -63,6 +67,7 @@ export default async function AppLayout({ children, params }: { children: React.
   if (plan.state === "expired") {
     return (
       <div className="min-h-screen">
+        {appColorStyle}
         <header className="flex items-center justify-between border-b border-stone-200 bg-white px-4 py-3">
           <Link href="/" aria-label="Home"><Wordmark /></Link>
           <div className="w-56"><UserMenu user={user} businesses={mine} currentSlug={slug} /></div>
@@ -75,6 +80,7 @@ export default async function AppLayout({ children, params }: { children: React.
   const awaitingVerification = owner && business.publishRequiresVerified && !(await ownerEmailVerified(business.id));
   return (
     <div className="flex min-h-screen">
+      {appColorStyle}
       <NavHistory />
       <aside className="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:flex print:hidden">
         <div className="px-4 pb-3 pt-4">
