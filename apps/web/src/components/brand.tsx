@@ -20,3 +20,22 @@ export function Wordmark({ className, dark = false }: { className?: string; dark
     </span>
   );
 }
+
+/** The business's own mark for the staff app's header: its logo, or its first letter on the app color. */
+export function BusinessMark({ name, logoUrl, className }: { name: string; logoUrl?: string | null; className?: string }) {
+  return logoUrl ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={logoUrl} alt="" className={cn("h-8 w-8 shrink-0 rounded-lg border border-stone-200 bg-white object-cover", className)} />
+  ) : (
+    <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-semibold text-white", className)} aria-hidden>{name.trim().slice(0, 1).toUpperCase()}</span>
+  );
+}
+
+/** "Powered by Angelic Booking" at the foot of client-facing pages, linking to the marketing site. */
+export function PoweredBy({ className }: { className?: string }) {
+  return (
+    <a href="https://angelicbooking.com" target="_blank" rel="noreferrer" className={cn("inline-flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-700", className)}>
+      Powered by <LogoMark className="h-4 w-4" /><span className="font-semibold text-stone-700">Angelic Booking</span>
+    </a>
+  );
+}

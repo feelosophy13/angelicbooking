@@ -5,6 +5,7 @@ import { ChevronDown, Gift, Globe, Instagram, MapPin, Phone, ShoppingBag, UserCi
 import { getBusinessForLinks, getPublicBusiness, getPublicLocations, getPublicRating } from "@/server/public-booking";
 import { appUrl } from "@/lib/stripe";
 import { brandVars } from "@/lib/brand";
+import { PoweredBy } from "@/components/brand";
 import { describeHours } from "@/lib/hours";
 import { cn } from "@/lib/utils";
 import { Stars } from "./ui";
@@ -109,7 +110,10 @@ export default async function BookLayout({ children, params }: { children: React
             </div>
           </div>
         </div>
-        <p className="flex items-center justify-center gap-1.5 pt-4 text-center text-xs text-stone-400">{/* eslint-disable-next-line @next/next/no-img-element */}<img src="/brand/mark-brown.svg" alt="" className="h-4 w-4 opacity-70" />Online booking by Angelic Booking · <a href={appUrl("/privacy")} className="hover:text-stone-600">Privacy</a></p>
+        <div className="flex flex-col items-center gap-1 pt-5 text-center">
+          <PoweredBy />
+          <a href={appUrl("/privacy")} className="text-xs text-stone-400 hover:text-stone-600">Privacy</a>
+        </div>
       </footer>
     </div>
   );

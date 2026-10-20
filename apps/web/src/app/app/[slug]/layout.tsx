@@ -7,7 +7,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { permissionsForRole, listRoles } from "@/server/roles";
 import { appUrl } from "@/lib/stripe";
-import { Wordmark } from "@/components/brand";
+import { BusinessMark } from "@/components/brand";
 import { appColorCss } from "@/lib/brand";
 import { UserMenu } from "@/components/user-menu";
 import { ResendVerification } from "@/components/resend-verification";
@@ -69,7 +69,7 @@ export default async function AppLayout({ children, params }: { children: React.
       <div className="min-h-screen">
         {appColorStyle}
         <header className="flex items-center justify-between border-b border-stone-200 bg-white px-4 py-3">
-          <Link href="/" aria-label="Home"><Wordmark /></Link>
+          <span className="flex items-center gap-2.5"><BusinessMark name={business.name} logoUrl={business.logoUrl} /><span className="font-semibold tracking-tight">{business.name}</span></span>
           <div className="w-56"><UserMenu user={user} businesses={mine} currentSlug={slug} /></div>
         </header>
         <main className="p-4 md:p-8">{children}</main>
@@ -84,8 +84,13 @@ export default async function AppLayout({ children, params }: { children: React.
       <NavHistory />
       <aside className="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:flex print:hidden">
         <div className="px-4 pb-3 pt-4">
-          <Link href="/" aria-label="Home"><Wordmark /></Link>
-          <p className="mt-2 truncate text-xs font-medium text-stone-500">{business.name} · {roleName}</p>
+          <Link href={base} className="flex items-center gap-2.5" title={business.name}>
+            <BusinessMark name={business.name} logoUrl={business.logoUrl} />
+            <span className="min-w-0">
+              <span className="block truncate font-semibold leading-tight tracking-tight text-stone-900">{business.name}</span>
+              <span className="block truncate text-xs text-stone-500">{roleName}</span>
+            </span>
+          </Link>
           {locations.length > 1 ? (
             <p className="mt-0.5 truncate text-[11px] text-stone-400" title={locations.map((l) => l.name).join(", ")}>
               {can(permissions, "settings.business") ? <Link href={`${base}/settings/locations`} className="hover:text-stone-600">{locations.length} locations · {locations.map((l) => l.name.replace(`${business.name} - `, "")).join(", ")}</Link> : `${locations.length} locations · ${locations.map((l) => l.name.replace(`${business.name} - `, "")).join(", ")}`}
@@ -121,7 +126,7 @@ export default async function AppLayout({ children, params }: { children: React.
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <MobileNav sections={sections as NavSection[]} businessName={business.name} userName={`${user.name} · ${roleName}`} tabs={tabs} bookingUrl={bookingUrl} quick={quickActions}>
+        <MobileNav sections={sections as NavSection[]} businessName={business.name} businessLogo={business.logoUrl} homeHref={base} userName={`${user.name} · ${roleName}`} tabs={tabs} bookingUrl={bookingUrl} quick={quickActions}>
           <UserMenu user={user} businesses={mine} currentSlug={slug} />
         </MobileNav>
         <main className="flex-1 p-4 pb-24 md:p-8 md:pb-8">

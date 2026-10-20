@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ExternalLink, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Wordmark } from "@/components/brand";
+import { BusinessMark } from "@/components/brand";
 
 export type NavSection = { title: string; items: { href: string; label: string; exact?: boolean; iconName: string; /** A count drawn after the label (the inbox's keeps itself current). */ badge?: React.ReactNode }[] };
 
@@ -13,7 +13,7 @@ export type NavSection = { title: string; items: { href: string; label: string; 
  * slide-in drawer with the full grouped menu, plus a bottom tab bar with the
  * four most-used destinations. Hidden at md and up (the sidebar takes over).
  */
-export function MobileNav({ sections, businessName, userName, tabs, bookingUrl, quick, children }: { sections: NavSection[]; businessName: string; userName: string; tabs: { href: string; label: string; exact?: boolean; iconName: string }[]; bookingUrl?: string; quick?: React.ReactNode; children?: React.ReactNode }) {
+export function MobileNav({ sections, businessName, businessLogo, homeHref, userName, tabs, bookingUrl, quick, children }: { sections: NavSection[]; businessName: string; businessLogo?: string | null; homeHref: string; userName: string; tabs: { href: string; label: string; exact?: boolean; iconName: string }[]; bookingUrl?: string; quick?: React.ReactNode; children?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const path = usePathname();
   useEffect(() => setOpen(false), [path]);
@@ -28,7 +28,7 @@ export function MobileNav({ sections, businessName, userName, tabs, bookingUrl, 
   return (
     <>
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-stone-200 bg-white/95 px-3 py-2 backdrop-blur md:hidden">
-        <Link href="/" aria-label="Home"><Wordmark className="scale-90" /></Link>
+        <Link href={homeHref} className="flex min-w-0 items-center gap-2"><BusinessMark name={businessName} logoUrl={businessLogo} className="h-7 w-7" /><span className="truncate font-semibold tracking-tight">{businessName}</span></Link>
         <button onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open} className="rounded-lg p-2 text-stone-700 hover:bg-stone-100">
           <Menu className="h-5 w-5" />
         </button>
