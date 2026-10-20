@@ -19,3 +19,8 @@ Where it is wired in the app: `apps/web/src/components/brand.tsx` (`LogoMark`, h
 The marketing site copies what it needs into its own `assets/`.
 
 To regenerate the PNGs on a Mac: `qlmanage -t -s <size> -o png <file>.svg`.
+
+**2026-10-19 (later): the purple tile is retired.** The user disliked it, so the favicon, Apple icon, `favicon.ico`, the email
+footer mark (`public/brand/mark-192.png`) and `LogoMark` (`public/brand/mark.svg`) now use the salon's own favicon set as
+delivered in `~/Desktop/angelic-beauty-logo-favicon`: brown line art, no tile. Copies are in `favicon-set/`. The booking-page
+footer is text only ("Powered by Angelic Booking").
