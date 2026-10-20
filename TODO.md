@@ -1306,7 +1306,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       This also defines brand-200/300/400/800/900, which were used in ~30 places but missing from the theme (they rendered no color).
 - [ ] The Expo mobile app and the admin app keep the default violet; the logo mark stays violet on purpose.
 
-### Mobile review (2026-10-20, `MOBILE-REVIEW-2026-10-20.md`)
+### Mobile and tablet review (2026-10-20, `MOBILE-REVIEW-2026-10-20.md`)
 - [x] All 151 staff, booking and public pages measured at 375, 390 and 768 wide; none scrolls sideways now (Settings was 708px,
       Reports 1005px, Locations 555px, Appointments 445px, Gallery 446px, Form submissions 491px, Developers 438px).
 - [x] Shared fixes in `globals.css`: single-column grids can't grow past their container; table scrollers contain their sr-only
@@ -1315,6 +1315,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Clients and Appointments lists are stacked rows on phones; opening hours, category rows, appointment Move / Add a service and
       the Time clock range stack or wrap; the calendar's stat cards are two per row; seven more tables sit in scroll boxes; the
       compact service picker opens leftward near the right edge.
+- [x] Tablets (768×1024 and 1024×768, §3 of the review): the phone shell (top bar, drawer, bottom tabs) runs until `lg`, so
+      portrait tablets get the full width; side-column layouts go two-column at `xl` (pages whose side holds the primary
+      action keep a 300px side at `lg`); touch sizes follow the pointer (`lg:pointer-fine:`, coarse-pointer CSS), so an
+      iPad keeps 40px buttons and 16px fields; Appointments folds columns until `lg`; Weekly hours with two locations is
+      two lines per day until `xl`; the inbox composer and automation save bar sit above the tab bar.
+- [ ] Check the touch-only sizes on a real iPad (the emulator can't report a coarse pointer at 1024px).
 - [ ] Inline text links ("Back", "Change", "+1 week", booking-page phone / website links) are 16–20px tall; give `BackLink` and
       text links a 40px hit area.
 - [ ] Appointments' four-way switcher scrolls inside itself at 375px ("Past" half shown); a shorter phone label for

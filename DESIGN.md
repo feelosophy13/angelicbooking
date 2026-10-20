@@ -25,9 +25,18 @@ wrong: fix the page.
   a bookmark or a new tab, does it go to the hard-coded parent and show that page's name. Never hand-write a
   back link.
 - Content is a `Card` (or a few). Cards have a 1px border and no heavy shadow. Don't nest cards.
-- Two-column detail pages use `grid gap-6 lg:grid-cols-[1fr_360px]`: the main object left, actions and context right.
-  On a phone the right column follows the left; the primary action must be reachable without scrolling past
-  secondary panels.
+- Two-column detail pages use `grid gap-6 xl:grid-cols-[1fr_360px]`: the main object left, actions and context right.
+  Below `xl` the right column follows the left; the primary action must be reachable without scrolling past
+  secondary panels. Use `xl`, not `lg`, for any layout with a fixed-width side column: the sidebar appears at `lg`
+  (1024px, a landscape tablet), which leaves about 720px for the page, too little for a main column next to a
+  320–380px card. When the side column holds the page's primary action (appointment, sale, client, class session),
+  keep two columns at `lg` with a narrower side, `lg:grid-cols-[minmax(0,1fr)_300px] xl:grid-cols-[1fr_360px]`, so
+  Checkout and the status buttons stay on the first screen of a landscape tablet.
+- Phones and portrait tablets (under `lg`) get the top bar, the menu drawer and the bottom tabs; the sidebar starts at
+  `lg`. Anything sticky or fixed to the bottom of a page sits above the tab bar until `lg` (`bottom-14 lg:bottom-0`).
+- Touch targets: tablets are touch screens at desktop widths, so sizes that shrink for a mouse use
+  `lg:pointer-fine:` (small buttons are 40px everywhere except a mouse on a large screen), and the CSS rules for 16px
+  fields and 40px segmented controls apply below `lg` or on any coarse pointer.
 - Full width by default. Only forms are capped (`FormPage`, `max-w-2xl`); lists and tables never are. A form
   keeps the default width unless it has at most three fields (`width="max-w-md"`) or is a builder with its own
   table (`max-w-3xl`). Never pick a width per page by taste.

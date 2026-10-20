@@ -1,4 +1,4 @@
-# Mobile review — 2026-10-20
+# Mobile and tablet review — 2026-10-20
 
 A pass over the web app at phone width: the staff app under `/app/[slug]`, the client booking flow under `/book/[slug]`
 and `/embed/[slug]`, and the auth, onboarding and public pages. Done on the demo tenant `demo-twosites` (Glow Collective,
@@ -20,7 +20,7 @@ Ordered by impact. "Pages" counts what the scan flagged before the fix.
 
 | # | Where | Problem at 375px | Fix |
 |---|---|---|---|
-| 1 | Every form (85 pages) | `Input`, `Select`, `Textarea` and most hand-written fields are `text-sm` (14px). iOS Safari zooms the page into any field under 16px on focus and stays zoomed, so every search box, filter and form jumped. | `globals.css`: below `md` every text field, select and textarea is 16px (larger sizes left alone). The service picker's button matches (`max-md:text-base`). |
+| 1 | Every form (85 pages) | `Input`, `Select`, `Textarea` and most hand-written fields are `text-sm` (14px). iOS Safari zooms the page into any field under 16px on focus and stays zoomed, so every search box, filter and form jumped. | `globals.css`: below `lg` and on any touch screen every text field, select and textarea is 16px (larger sizes left alone); first done below `md`, widened for tablets in §3. The service picker's button matches. |
 | 2 | Settings (708px wide), Reports, Locations new/edit (549px), and any page with a one-column `grid` | A `grid` with no `grid-cols-*` gets an `auto` column, which grows to fit its widest line. One truncated blurb ("Name, timezone, logo, brand and app colors, about text and…") made the Settings cards 708px wide: the right half of every row, its status chip and chevron were off screen. | `globals.css` base layer: `.grid { grid-template-columns: minmax(0, 1fr) }`. Any `grid-cols-*` utility (including `sm:` / `lg:`) still wins, so only single-column grids change, and they now stay inside their container. Fixed Settings, Locations and Reports' card grid in one place. |
 | 3 | Reports (1005px wide) | An `sr-only` label inside the "Revenue by service category" table scroller is `position: absolute`. The scroller was not positioned, so the label escaped it at x≈1000 and stretched the page; on a phone the layout viewport widened to 1005px and the fixed bottom tabs stretched with it. | `globals.css` base layer: `.overflow-x-auto, .overflow-auto { position: relative }`, so every table scroller contains its absolutely positioned children. |
 | 4 | Clients list | Six-column table scrolled sideways inside its card (711px of content in 341px); the contact line widened the name column to 362px. | Phone layout: name, contact line and a "Last visit …" line, then Visits and the chevron. Last visit / spend / client since columns show from `sm`. The name cell is `w-full max-w-0` so the contact line truncates instead of widening the table. |
@@ -49,10 +49,37 @@ Ordered by impact. "Pages" counts what the scan flagged before the fix.
 - Landing, help, privacy, terms, forgot / reset password, two-factor, onboarding, account.
 - Wide content that is meant to scroll inside its card and does: Reports tables, Payroll, Audit log, Messages log, Gift
   cards, Time clock entries, Staff hours week grid, Products bulk edit, the Inventory and Staff sub-tabs.
-- After the fixes, the full 151-page scan at 375×812, 390×844 and 768×1024 finds no page that scrolls sideways and, below
-  768px, no field under 16px. (At 768px fields are 14px by design; the 16px rule is for phone widths.)
+- After the fixes, the full 151-page scan at 375×812, 390×844 and 768×1024 finds no page that scrolls sideways and, on
+  phones and tablets, no field under 16px (see §3 for the tablet rules).
 
-## 3. Left over
+## 3. Tablets (768×1024 portrait, 1024×768 landscape)
+
+Added the same day: tablets are a full target, not a spot check. The same 151 pages were scanned at both sizes and the
+calendar (Day grid, Month, the appointment panel, quick create), appointment, sale, reports, inbox, staff hours, booking
+and settings pages were walked by hand. Tablets are touch screens at desktop widths, so sizes now follow the pointer
+as well as the width.
+
+| # | Where | Problem | Fix |
+|---|---|---|---|
+| T1 | Whole staff app, portrait (768–1023px) | The sidebar switched on at `md` (768), leaving ~450px for the page next to 240px of menu: the Day grid showed 2½ of 5 stylists, two-column cards were squeezed. | The phone shell (top bar, menu drawer, bottom tabs) now runs until `lg`; the sidebar starts at 1024. Portrait pages get the full width (the Day grid shows 4 of 5 stylists). `main` keeps its bottom padding above the tabs until `lg`. |
+| T2 | Detail pages with a side column, landscape (1024px) | `lg:grid-cols-[1fr_320–380px]` beside the sidebar left a 316–376px main column: the appointment's service line wrapped one word per line ("Color / + / Style"). 26 layouts: appointment, client, class session, sale, new sale, payroll, staff pages, invitations, most settings pages, campaigns, purchase orders, new appointment / class, embed builder. | Side-column layouts switch to two columns at `xl` (1280). Where the side column holds the primary action (appointment, client, class session, sale, new sale) they keep two columns at `lg` with a 300px side (`lg:grid-cols-[minmax(0,1fr)_300px]`), so Checkout and the status buttons stay on the first screen. DESIGN.md says so. |
+| T3 | Touch targets on tablets | The 40px sizes from §1 (#6, #7) and the 16px field rule stopped at 767px, so an iPad got 32px buttons, 28px segmented choices and 14px fields (zoom on focus). | Everything that shrinks for a mouse now uses `lg:pointer-fine:` (small buttons, the date-picker button, the opening-hours boxes, the staff-hours toggle, inbox quick replies, category Rename / Edit); the CSS rules for 16px fields and 40px segmented controls apply below `lg` or on any coarse pointer. A touch screen at any width keeps the large sizes. |
+| T4 | Appointments list, portrait | From `sm` all seven columns showed: 1046px of table in a 687px card. | Service shows from `md` with the provider folded under the client; Provider, Location and Booked show from `lg`. |
+| T5 | Staff → Weekly hours with two locations, portrait | The one-row layout (day, from, to, +, location) started at `sm` and needs ~46rem: 818px, the location select off screen. | Phones keep three lines per day; from `md` the day is one line and times + location share the next; the single row waits for `xl`. |
+| T6 | Inbox composer and the automation editor's save bar | The composer moved to the bottom edge at `md`, under the tab bar that tablets now have. The automation save bar is `sticky bottom-0`, which would put it under the tab bar wherever it sticks (in practice it doesn't stick on the edit page, see §4). | Both are offset above the tab bar until `lg` (`bottom-16` / `bottom-14 lg:bottom-0`). |
+
+Checked and fine on tablets: the appointment panel (a right-hand panel from `md`, full-size buttons), quick create
+(kept on screen, above the tab bar), Month view, the booking flow (calendar beside the times in landscape), sale and
+reports pages in one column, the inbox thread, and the menu drawer at 768. After the fixes neither size has a page that
+scrolls sideways; wide tables (Reports, Payroll, Audit, Messages, Products bulk edit, the Staff hours week grid) scroll
+inside their cards.
+
+Left over on tablets: the Check in / Complete icons on calendar cards are 22px. They are a shortcut on top of the card
+(on touch they are always visible, and a tap on the card opens the panel with full-size buttons), so they were left
+small rather than covering the card's text. The emulator can't report a coarse pointer, so the touch-only sizes at
+1024px were checked in the CSS rather than on a device; a pass on a real iPad is worth doing.
+
+## 4. Left over
 
 - **Small text links.** Inline links such as "Back", "Change", "View", "+1 week", "New client" and the booking page's
   phone and website links are 16–20px tall. They sit in running text with space around them, so a miss lands on nothing,
@@ -67,5 +94,7 @@ Ordered by impact. "Pages" counts what the scan flagged before the fix.
   formatting pass belongs with the client list.
 - **Sign-in and sign-up** redirect while signed in, so they were checked by code and the shared auth layout (`max-w-sm`
   column, `Input` fields that the 16px rule covers) rather than measured signed out.
+- The automation editor's save bar is meant to stick to the bottom of the screen but doesn't on the edit page (an ancestor
+  clips it); it shows at the end of the form instead.
 - The Next.js dev indicator (the round "N" bottom-left in development) overlaps the first bottom tab. It does not exist in
   production builds.
