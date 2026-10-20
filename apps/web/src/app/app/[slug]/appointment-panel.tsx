@@ -11,6 +11,7 @@ import type { CalItem } from "./calendar-grid";
 import { quickStatus, removeBlock } from "./actions";
 import { startCheckout } from "./appointments/[id]/actions";
 import { Receipt } from "lucide-react";
+import { phone } from "@/lib/format";
 
 /**
  * Google Calendar's "click an event, read it beside the grid": a panel down the right edge (a sheet from the bottom on a phone) with
@@ -68,7 +69,7 @@ export function AppointmentPanel({ item, slug, fmt, canEdit, canRemoveBlock, can
       <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 text-sm">
         {tip.sub || item.clientHref ? (
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-stone-700">
-            {tip.sub && !isClass ? <a href={`tel:${tip.sub.replace(/[^+\d]/g, "")}`} className="inline-flex items-center gap-1.5 hover:underline"><Phone className="h-3.5 w-3.5 text-stone-400" />{tip.sub}</a> : null}
+            {tip.sub && !isClass ? <a href={`tel:${tip.sub.replace(/[^+\d]/g, "")}`} className="inline-flex items-center gap-1.5 hover:underline"><Phone className="h-3.5 w-3.5 text-stone-400" />{phone(tip.sub)}</a> : null}
             {isClass && tip.sub ? <span>{tip.sub}</span> : null}
             {item.clientHref ? <Link href={item.clientHref} className="inline-flex items-center gap-1.5 text-brand-700 hover:underline"><UserRound className="h-3.5 w-3.5" />View client</Link> : null}
           </div>

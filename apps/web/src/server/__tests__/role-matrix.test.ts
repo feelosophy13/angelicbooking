@@ -100,6 +100,8 @@ describe.skipIf(!up)("what each default role sees", () => {
   const ids = {} as Record<"jordan" | "ava" | "client" | "service" | "a1" | "a2" | "a3" | "main", string>;
   let business: typeof schema.businesses.$inferSelect;
   const PHONE = "+17035551001";
+  /** How the client list prints it (lib/format.ts `phone`). */
+  const PHONE_SHOWN = "(703) 555-1001";
   const EMAIL = "jo.lee@example.test";
 
   beforeAll(async () => {
@@ -183,7 +185,7 @@ describe.skipIf(!up)("what each default role sees", () => {
       for (const role of ["owner", "manager", "front_desk"] as const) {
         as(role);
         const html = await render(pages.clients);
-        expect(html, role).toContain(PHONE);
+        expect(html, role).toContain(PHONE_SHOWN);
         expect(html, role).toContain(EMAIL);
         expect(html, role).toContain("Lifetime spend");
       }
@@ -191,6 +193,7 @@ describe.skipIf(!up)("what each default role sees", () => {
       const p = await render(pages.clients);
       expect(p).toContain("Jo Lee");
       expect(p).not.toContain(PHONE);
+      expect(p).not.toContain(PHONE_SHOWN);
       expect(p).not.toContain(EMAIL);
       expect(p).not.toContain("Lifetime spend");
     });
@@ -479,7 +482,7 @@ describe.skipIf(!up)("what each default role sees", () => {
   describe("owner", () => {
     it("sees everything, as before", async () => {
       as("owner");
-      expect(await render(pages.clients)).toContain(PHONE);
+      expect(await render(pages.clients)).toContain(PHONE_SHOWN);
       expect(await render(pages.reviews)).toContain("Jo Lee");
       expect(await render(pages.giftCards)).toContain("GC-TEST-9Q2M");
       expect(await render(pages.time)).toContain("Ava shift");

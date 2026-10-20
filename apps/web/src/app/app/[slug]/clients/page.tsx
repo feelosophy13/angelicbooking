@@ -5,7 +5,7 @@ import { can } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { canSeeClientContact, canSeeClientSpend } from "@/lib/visibility";
 import { listClients, type ClientSort } from "@/server/clients";
-import { dateShort, money } from "@/lib/format";
+import { dateShort, money, phone } from "@/lib/format";
 import { Button, Card, Input, LinkButton, PageHeader, Empty } from "@/components/ui";
 import { LinkRow } from "@/components/table-row";
 import { cn } from "@/lib/utils";
@@ -81,7 +81,7 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
                       other columns hide and the last visit joins the grey line. */}
                   <td className="w-full max-w-0 px-4 py-2">
                     <Link href={`/app/${slug}/clients/${c.id}`} className="font-medium hover:underline">{c.firstName} {c.lastName}</Link>
-                    {contact || (locations.length > 1 && c.homeLocationName) ? <p className="truncate text-xs text-stone-500">{[contact ? [c.phone, c.email].filter(Boolean).join(" · ") || "no contact info" : null, locations.length > 1 && c.homeLocationName ? c.homeLocationName.replace(/^.*? - /, "") : null].filter(Boolean).join(" · ")}</p> : null}
+                    {contact || (locations.length > 1 && c.homeLocationName) ? <p className="truncate text-xs text-stone-500">{[contact ? [c.phone ? phone(c.phone) : null, c.email].filter(Boolean).join(" · ") || "no contact info" : null, locations.length > 1 && c.homeLocationName ? c.homeLocationName.replace(/^.*? - /, "") : null].filter(Boolean).join(" · ")}</p> : null}
                     <p className="truncate text-xs text-stone-500 sm:hidden">{c.lastVisit ? `Last visit ${dateShort(c.lastVisit, business.timezone)}` : "No visits yet"}</p>
                   </td>
                   <td className="hidden whitespace-nowrap px-4 py-2 text-stone-600 sm:table-cell">{c.lastVisit ? dateShort(c.lastVisit, business.timezone) : <span className="text-stone-400">—</span>}</td>

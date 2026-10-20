@@ -4,6 +4,13 @@ export function money(cents: number, currency = "usd"): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
 }
 
+/** A stored phone number as people read it: US / Canada numbers as "(703) 555-1024"; anything else unchanged. */
+export function phone(value: string): string {
+  const d = value.replace(/[^\d+]/g, "");
+  const m = d.match(/^(?:\+?1)?(\d{3})(\d{3})(\d{4})$/);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : value;
+}
+
 export function dateShort(at: Date | string, tz?: string): string {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: tz ?? (typeof at === "string" ? "UTC" : undefined) }).format(typeof at === "string" ? new Date(at + "T00:00:00Z") : at);
 }

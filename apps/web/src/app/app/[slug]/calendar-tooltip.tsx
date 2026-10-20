@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import type { CalTip } from "@/lib/calendar-tip";
+import { phone } from "@/lib/format";
 
 export type AnchorRect = { left: number; right: number; top: number; bottom: number };
 const WIDTH = 288;
@@ -37,7 +38,7 @@ export function CalendarTip({ tip, anchor, fmt }: { tip: CalTip; anchor: AnchorR
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-stone-900">{tip.heading}</p>
-          {tip.sub ? <p className="text-stone-500">{tip.sub}</p> : null}
+          {tip.sub ? <p className="text-stone-500">{phone(tip.sub)}</p> : null}
         </div>
         <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-[11px] font-medium text-stone-700">{tip.status}</span>
       </div>
