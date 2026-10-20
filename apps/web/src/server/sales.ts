@@ -15,6 +15,7 @@ import { decrementStockForSale } from "./inventory";
 import { productLabel } from "@/lib/inventory";
 import { countPromoUse, promoDiscount, validatePromo, PromoError } from "./promos";
 import { locationOrDefault } from "./locations";
+import { brandOf, helcim, HelcimError, last4Of, type HelcimTransaction } from "./helcim/client";
 
 export class SaleError extends Error {}
 
@@ -1190,6 +1191,126 @@ export async function markCardPaymentSucceeded(input: {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Helcim (HELCIM-PLAN-2026-10-20.md). The same shape as the Stripe paths: a pending row is committed first, Helcim is called with no
+// transaction open, and the row is settled by whoever learns the result first (the request, the terminal poll, or the webhook).
+// ---------------------------------------------------------------------------
+
+/** A pending Helcim payment on an open ticket, capped at what is due. `invoice` is what a terminal is sent; `session` an encrypted HelcimPay.js secret. */
+export async function openHelcimPayment(input: {
+  businessId: string;
+  saleId: string;
+  amountCents: number;
+  method: "terminal" | "card" | "card_on_file";
+  actorUserId: string;
+  invoice?: string | null;
+  session?: string | null;
+}) {
+  return withTenant(input.businessId, async (tx) => {
+    const [sale] = await tx.select().from(schema.sales).where(eq(schema.sales.id, input.saleId)).for("update");
+    if (!sale) throw new SaleError("Sale not found.");
+    assertOpen(sale);
+    const [inflight] = await tx
+      .select({ cents: sql<number>`coalesce(sum(${schema.payments.amountCents}), 0)::int` })
+      .from(schema.payments)
+      .where(and(eq(schema.payments.saleId, sale.id), eq(schema.payments.status, "pending"), eq(schema.payments.provider, "helcim"), sql`${schema.payments.createdAt} > now() - interval '3 minutes'`));
+    const amount = Math.min(input.amountCents, balance(sale) - (inflight?.cents ?? 0));
+    if ((inflight?.cents ?? 0) > 0 && amount < 50) throw new SaleError("A card payment for this ticket is already in progress. Finish or cancel it on the terminal, then try again.");
+    if (amount < 50) throw new SaleError("Amount must be at least $0.50.");
+    const client = sale.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) }) : undefined;
+    const [row] = await tx
+      .insert(schema.payments)
+      .values({ businessId: input.businessId, saleId: sale.id, method: input.method, status: "pending", amountCents: amount, tipCents: tipShare(sale, amount), provider: "helcim", providerInvoice: input.invoice ?? null, providerSession: input.session ?? null, createdByUserId: input.actorUserId })
+      .returning({ id: schema.payments.id });
+    return { sale, client, amount, paymentId: row!.id };
+  });
+}
+
+/** Drop a pending Helcim row nothing was charged for (the call to Helcim failed, or the checkout was closed). */
+export async function discardHelcimPayment(businessId: string, paymentId: string) {
+  await withTenant(businessId, (tx) => tx.delete(schema.payments).where(and(eq(schema.payments.id, paymentId), eq(schema.payments.status, "pending"), eq(schema.payments.provider, "helcim"), sql`${schema.payments.providerPaymentId} is null`)));
+}
+
+/** A Helcim transaction that came back declined: the pending row becomes "failed". */
+export async function failHelcimPayment(businessId: string, paymentId: string, reason: string) {
+  await failPendingPayment(businessId, paymentId, reason);
+}
+
+/**
+ * Settle a pending Helcim payment from Helcim's transaction: approved → paid (card brand and last 4 kept, the ticket closes when paid
+ * in full); declined → failed. Runs once whoever gets there first; a second call finds the row already settled. Returns the outcome.
+ */
+export async function settleHelcimPayment(input: { businessId: string; paymentId: string; transaction: HelcimTransaction; taxRateBps: number; expectedAmountCents?: number }): Promise<"paid" | "declined" | "already" | "mismatch"> {
+  const t = input.transaction;
+  return withTenant(input.businessId, async (tx) => {
+    const [p] = await tx.select().from(schema.payments).where(eq(schema.payments.id, input.paymentId)).for("update");
+    if (!p || p.status !== "pending") return "already";
+    if (t.status !== "APPROVED") {
+      await tx.update(schema.payments).set({ status: "failed", note: `Declined by the card's bank${t.approvalCode ? ` (${t.approvalCode})` : ""}`, providerSession: null }).where(eq(schema.payments.id, p.id));
+      return "declined";
+    }
+    const charged = Math.round(Number(t.amount) * 100);
+    if (charged !== (input.expectedAmountCents ?? p.amountCents)) {
+      // Never mark a different amount as paid silently: record what Helcim actually charged.
+      await tx.update(schema.payments).set({ amountCents: charged }).where(eq(schema.payments.id, p.id));
+    }
+    const card = { status: "succeeded" as const, providerPaymentId: String(t.transactionId), cardBrand: brandOf(t.cardType), cardLast4: last4Of(t.cardNumber), providerSession: null };
+    await tx.update(schema.payments).set(card).where(eq(schema.payments.id, p.id));
+    await audit(tx, input.businessId, p.createdByUserId ?? "system", `payment.${p.method}`, p.saleId, { amount: charged, helcim: t.transactionId });
+    await closeIfPaid(tx, p.saleId, input.taxRateBps, p.createdByUserId ?? "system", input.businessId);
+    return charged === p.amountCents ? "paid" : "mismatch";
+  });
+}
+
+/** The pending Helcim payment a terminal was sent (by its invoice number), for the webhook and the poll. */
+export async function pendingHelcimPaymentByInvoice(businessId: string, invoice: string) {
+  return withTenant(businessId, (tx) => tx.query.payments.findFirst({ where: and(eq(schema.payments.providerInvoice, invoice), eq(schema.payments.provider, "helcim")) }));
+}
+
+/**
+ * Charge a client's saved Helcim card (card on file, no-show and late-cancel fees). The card and customer come from Helcim; the
+ * pending row goes first, so a crash between charging and recording leaves a row the webhook can settle by its invoice number.
+ */
+export async function chargeHelcimSavedCard(input: { businessId: string; saleId: string; token: string; cardToken: string; customerCode: string; amountCents: number; actorUserId: string; taxRateBps: number; ipAddress: string }) {
+  const invoice = `AB-${crypto.randomUUID().replace(/-/g, "").slice(0, 16).toUpperCase()}`;
+  const { sale, amount, paymentId } = await openHelcimPayment({ businessId: input.businessId, saleId: input.saleId, amountCents: input.amountCents, method: "card_on_file", actorUserId: input.actorUserId, invoice });
+  let t: HelcimTransaction;
+  try {
+    t = await helcim.purchaseWithToken(input.token, { key: paymentId, amountCents: amount, currency: sale.currency, cardToken: input.cardToken, customerCode: input.customerCode, ipAddress: input.ipAddress, invoiceNumber: invoice });
+  } catch (e) {
+    await failPendingPayment(input.businessId, paymentId, (e as Error).message);
+    throw new SaleError(`Card declined: ${(e as Error).message}`);
+  }
+  const outcome = await settleHelcimPayment({ businessId: input.businessId, paymentId, transaction: t, taxRateBps: input.taxRateBps });
+  if (outcome === "declined") throw new SaleError("The card was declined.");
+  return outcome;
+}
+
+/** A tip added to a paid sale and charged to the client's saved Helcim card. */
+export async function addTipAfterPaymentHelcim(input: { businessId: string; saleId: string; staffId: string; amountCents: number; token: string; cardToken: string; customerCode: string; actorUserId: string; taxRateBps: number; ipAddress: string }) {
+  if (!Number.isInteger(input.amountCents) || input.amountCents < 50) throw new SaleError("A card tip must be at least $0.50.");
+  const paymentId = await withTenant(input.businessId, async (tx) => {
+    const [sale] = await tx.select().from(schema.sales).where(eq(schema.sales.id, input.saleId)).for("update");
+    if (!sale) throw new SaleError("Sale not found.");
+    if (sale.status !== "paid") throw new SaleError("A tip can be added to a sale once it is paid in full.");
+    const [row] = await tx.insert(schema.payments).values({ businessId: input.businessId, saleId: sale.id, method: "card_on_file", status: "pending", amountCents: input.amountCents, tipCents: input.amountCents, note: LATE_TIP_NOTE, provider: "helcim", createdByUserId: input.actorUserId }).returning({ id: schema.payments.id });
+    return row!.id;
+  });
+  const sale = (await withTenant(input.businessId, (tx) => tx.query.sales.findFirst({ where: eq(schema.sales.id, input.saleId) })))!;
+  let t: HelcimTransaction;
+  try {
+    t = await helcim.purchaseWithToken(input.token, { key: paymentId, amountCents: input.amountCents, currency: sale.currency, cardToken: input.cardToken, customerCode: input.customerCode, ipAddress: input.ipAddress });
+  } catch (e) {
+    await failPendingPayment(input.businessId, paymentId, (e as Error).message);
+    throw new SaleError(`Card declined: ${(e as Error).message}`);
+  }
+  if (t.status !== "APPROVED") {
+    await failPendingPayment(input.businessId, paymentId, "Declined");
+    throw new SaleError("The card was declined, so the tip was not charged.");
+  }
+  await withTenant(input.businessId, (tx) => settleLateTip(tx, input.businessId, paymentId, input.staffId, "card", input.taxRateBps, input.actorUserId, { providerPaymentId: String(t.transactionId), cardBrand: brandOf(t.cardType), cardLast4: last4Of(t.cardNumber) }));
+}
+
 export async function markCardPaymentFailed(businessId: string, paymentIntentId: string, reason: string | null) {
   await withTenant(businessId, async (tx) => {
     await tx
@@ -1214,6 +1335,9 @@ export async function refundPayment(input: {
   items?: RefundItemInput[];
   /** Already refunded in Stripe's dashboard (reported by the webhook): record it, don't refund again. */
   externalRefundId?: string | null;
+  /** The business's Helcim API token, for refunding a payment Helcim took, and the IP of whoever asked (Helcim wants one). */
+  helcimToken?: string | null;
+  ipAddress?: string;
   /** With externalRefundId: Stripe's total refunded on the payment. Only what we haven't recorded yet is booked (worked out under the lock). */
   externalTotalCents?: number;
 }) {
@@ -1226,7 +1350,9 @@ export async function refundPayment(input: {
     if (!["succeeded", "partially_refunded", "refunded"].includes(p.status)) throw new SaleError("Only a completed payment can be refunded.");
     // A card payment with no Stripe reference (e.g. a renewal recorded before its PaymentIntent was known) can't be refunded from here:
     // recording it would say the money went back when it didn't.
-    if (["card", "card_on_file", "terminal"].includes(p.method) && !p.stripePaymentIntentId) throw new SaleError("This card payment has no Stripe reference, so it can't be refunded here. Refund it in your Stripe dashboard.");
+    if (p.provider === "helcim") {
+      if (!p.providerPaymentId) throw new SaleError("This card payment has no Helcim reference, so it can't be refunded here. Refund it in your Helcim dashboard.");
+    } else if (["card", "card_on_file", "terminal"].includes(p.method) && !p.stripePaymentIntentId) throw new SaleError("This card payment has no Stripe reference, so it can't be refunded here. Refund it in your Stripe dashboard.");
     // With items, the ticket is locked too (two refunds from different payments must not both refund the same line) and checked first.
     const planned = input.items?.length ? await planRefundItems(tx, (await tx.select().from(schema.sales).where(eq(schema.sales.id, p.saleId)).for("update"))[0]!, input.items) : null;
     const refundable = p.amountCents - p.refundedCents - (await creditedAgainstPayment(tx, p.id));
@@ -1236,6 +1362,8 @@ export async function refundPayment(input: {
     if (planned && wanted > refundable) throw new SaleError(`That's ${(wanted / 100).toFixed(2)}, more than the ${(refundable / 100).toFixed(2)} left on this payment. Refund some of it from another payment.`);
     const amount = Math.min(wanted, refundable);
     if (amount <= 0) throw new SaleError("Nothing left to refund.");
+    const viaHelcim = p.provider === "helcim" && !!p.providerPaymentId && !input.externalRefundId;
+    if (viaHelcim) return { helcim: { p, amount, planned } };
     const viaStripe = !!p.stripePaymentIntentId && !input.externalRefundId;
     // No Stripe call (cash, gift card, points, store credit, or a refund Stripe already made): record it in this same transaction.
     if (!viaStripe) return { done: await recordRefund(tx, input, p, amount, planned, input.externalRefundId ?? null) };
@@ -1247,6 +1375,30 @@ export async function refundPayment(input: {
   if (!prep) return;
   if ("done" in prep) {
     await stopMembershipBilling(input.businessId, prep.done!, input.actorUserId);
+    return;
+  }
+  if ("helcim" in prep && prep.helcim) {
+    const { p: before, amount } = prep.helcim;
+    if (!input.helcimToken) throw new SaleError("Helcim isn't connected, so this card payment can't be refunded here. Refund it in your Helcim dashboard.");
+    const txId = Number(before.providerPaymentId);
+    const key = `${before.id}_${before.refundedCents + amount}`;
+    let r: HelcimTransaction;
+    try {
+      r = await helcim.refund(input.helcimToken, { key, transactionId: txId, amountCents: amount, ipAddress: input.ipAddress ?? "127.0.0.1" });
+    } catch (e) {
+      // A same-day payment that hasn't settled yet can't be refunded, only reversed in full.
+      if (e instanceof HelcimError && amount === before.amountCents - before.refundedCents && /settl|batch|reverse/i.test(e.message)) r = await helcim.reverse(input.helcimToken, { key, transactionId: txId, ipAddress: input.ipAddress ?? "127.0.0.1" });
+      else throw new SaleError(`Helcim refused the refund: ${(e as Error).message}`);
+    }
+    if (r.status !== "APPROVED") throw new SaleError("Helcim declined the refund.");
+    const stop = await withTenant(input.businessId, async (tx) => {
+      const [p] = await tx.select().from(schema.payments).where(eq(schema.payments.id, input.paymentId)).for("update");
+      const [known] = await tx.select().from(schema.refunds).where(eq(schema.refunds.providerRefundId, String(r.transactionId)));
+      if (known) return [];
+      const planned = input.items?.length ? await planRefundItems(tx, (await tx.select().from(schema.sales).where(eq(schema.sales.id, p!.saleId)).for("update"))[0]!, input.items).catch(() => null) : null;
+      return recordRefund(tx, input, p!, amount, planned, null, String(r.transactionId));
+    });
+    await stopMembershipBilling(input.businessId, stop, input.actorUserId);
     return;
   }
   const { p: before, amount, account } = prep.stripe;
@@ -1282,6 +1434,7 @@ async function recordRefund(
   amount: number,
   planned: PlannedItem[] | null,
   stripeRefundId: string | null,
+  providerRefundId: string | null = null,
 ): Promise<string[]> {
   const stopBilling: string[] = [];
   const [refundRow] = await tx
@@ -1293,6 +1446,7 @@ async function recordRefund(
       reason: input.reason,
       reasonId: input.reasonId ?? null,
       stripeRefundId,
+      providerRefundId,
       createdByUserId: input.externalRefundId ? null : input.actorUserId,
     })
     .returning({ id: schema.refunds.id });

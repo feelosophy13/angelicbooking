@@ -337,6 +337,14 @@ export const payments = pgTable(
     /** The Stripe account that took it (a location's own or the main one): refunds go back through this account. */
     stripeAccountId: text("stripe_account_id"),
     stripeChargeId: text("stripe_charge_id"),
+    /** The processor that took it ("stripe" or "helcim"); the Stripe columns above stay Stripe's. */
+    provider: text("provider").$type<"stripe" | "helcim">().notNull().default("stripe"),
+    /** Helcim: the card transaction id (refunds go against it). */
+    providerPaymentId: text("provider_payment_id"),
+    /** Helcim: the invoice number a card terminal was sent, which its webhook reports back. */
+    providerInvoice: text("provider_invoice"),
+    /** Helcim: the HelcimPay.js secret (encrypted) that proves a browser checkout's result; cleared once settled. */
+    providerSession: text("provider_session"),
     giftCardId: text("gift_card_id"), // method = gift_card
     cardBrand: text("card_brand"),
     cardLast4: text("card_last4"),
@@ -424,6 +432,8 @@ export const refunds = pgTable(
     reason: text("reason"),
     reasonId: text("reason_id").references(() => refundReasons.id, { onDelete: "set null" }),
     stripeRefundId: text("stripe_refund_id"),
+    /** Helcim: the refund transaction id. */
+    providerRefundId: text("provider_refund_id"),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },

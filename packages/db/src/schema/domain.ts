@@ -151,6 +151,12 @@ export const businesses = pgTable("businesses", {
   coverUrl: text("cover_url"),
   brandColor: text("brand_color"), // #rrggbb; null = default violet
   appColor: text("app_color"), // the staff app's primary color, #rrggbb; null = default violet
+  // Card processor: "stripe" (default, Connect accounts above) or "helcim" (the merchant's own Helcim account, HELCIM-PLAN-2026-10-20.md).
+  paymentProvider: text("payment_provider").$type<"stripe" | "helcim">().notNull().default("stripe"),
+  // Encrypted with lib/secrets.ts: the merchant's Helcim API token and its webhook verifier token.
+  helcimApiToken: text("helcim_api_token"),
+  helcimWebhookVerifier: text("helcim_webhook_verifier"),
+  helcimConnectedAt: timestamp("helcim_connected_at", { withTimezone: true }),
   tagline: text("tagline"),
   about: text("about"),
   website: text("website"),
@@ -484,6 +490,35 @@ export const clients = pgTable(
 
 // Stripe Customer per (client, connected account). A business with several locations can
 // have several Stripe accounts, and a customer object only exists on one of them.
+/** Helcim Smart Terminals paired with the app (Settings → Payments): the device code shown on the terminal, per location. */
+export const helcimDevices = pgTable(
+  "helcim_devices",
+  {
+    id: id(),
+    businessId: businessId(),
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("helcim_devices_code_uq").on(t.businessId, t.code)],
+);
+
+/** A client's Helcim customer, where their saved cards live (the Helcim twin of client_stripe_customers). */
+export const clientHelcimCustomers = pgTable(
+  "client_helcim_customers",
+  {
+    businessId: businessId(),
+    clientId: text("client_id")
+      .primaryKey()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    helcimCustomerId: integer("helcim_customer_id").notNull(),
+    customerCode: text("customer_code").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("client_helcim_customers_business_idx").on(t.businessId)],
+);
+
 export const clientStripeCustomers = pgTable(
   "client_stripe_customers",
   {

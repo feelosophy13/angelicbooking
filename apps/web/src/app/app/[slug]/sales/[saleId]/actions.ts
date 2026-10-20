@@ -44,6 +44,10 @@ import { TerminalError, terminalConnectionToken, terminalLocationFor } from "@/s
 import { findProductByCode, InventoryError, returnToShelf } from "@/server/inventory";
 import { productLabel } from "@/lib/inventory";
 import { paymentMethodLabel } from "@/lib/payment-methods";
+import { addTipAfterPaymentHelcim, chargeHelcimSavedCard } from "@/server/sales";
+import { helcimTokenOf } from "@/server/helcim/account";
+import { abandonHelcimDeskCheckout, cancelHelcimTerminalWait, checkHelcimTerminalPayment, customerCodeFor, finishHelcimDeskCheckout, startHelcimDeskCheckout, startHelcimTerminalPayment } from "@/server/helcim/payments";
+import { requestIp } from "@/lib/request-ip";
 
 export type SaleActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -262,6 +266,21 @@ export async function payWithSavedCard(_prev: SaleActionState, formData: FormDat
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
   const pay = await paymentContextForSale(ctx.business, d.saleId);
+  if (pay.provider === "helcim") {
+    const token = helcimTokenOf(ctx.business);
+    if (!token) return { error: "Connect Helcim under Settings → Payments first." };
+    const sale = await withTenant(ctx.business.id, (tx) => tx.query.sales.findFirst({ where: eq(dbSchema.sales.id, d.saleId), columns: { clientId: true } }));
+    const customer = sale?.clientId ? await customerCodeFor(ctx.business.id, sale.clientId) : null;
+    if (!customer) return { error: "This client has no saved card in Helcim." };
+    try {
+      await chargeHelcimSavedCard({ businessId: ctx.business.id, saleId: d.saleId, token, cardToken: d.paymentMethodId, customerCode: customer.code, amountCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, ipAddress: await requestIp() });
+    } catch (e) {
+      return friendly(e);
+    }
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    revalidatePath(`/app/${d.slug}`);
+    return { ok: true };
+  }
   if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
   try {
     await chargeCardOnFile({ businessId: ctx.business.id, accountId: pay.accountId, saleId: d.saleId, paymentMethodId: d.paymentMethodId, amountCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
@@ -382,7 +401,7 @@ export async function refund(_prev: SaleActionState, formData: FormData): Promis
       await refundToStoreCredit({ businessId: ctx.business.id, paymentId: d.data.paymentId, amountCents: cents, reason: note, reasonId: d.data.reasonId, actorUserId: ctx.user.id, items });
     } else {
       const pay = await paymentContextForSale(ctx.business, d.data.saleId);
-      await refundPayment({ businessId: ctx.business.id, accountId: pay.accountId, paymentId: d.data.paymentId, amountCents: cents, reason: note, reasonId: d.data.reasonId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, items });
+      await refundPayment({ businessId: ctx.business.id, accountId: pay.accountId, paymentId: d.data.paymentId, amountCents: cents, reason: note, reasonId: d.data.reasonId, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, items, helcimToken: ctx.business.helcimApiToken ? helcimTokenOfAny(ctx.business) : null, ipAddress: await requestIp() });
     }
   } catch (e) {
     return friendly(e);
@@ -718,6 +737,12 @@ export async function addLateTip(_prev: SaleActionState, formData: FormData): Pr
   try {
     if (d.data.paidIn === "cash") {
       await addTipAfterPayment({ businessId: ctx.business.id, saleId: d.data.saleId, staffId: d.data.staffId, amountCents: cents, method: "cash", actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    } else if (ctx.business.paymentProvider === "helcim") {
+      const token = helcimTokenOf(ctx.business);
+      const sale = await withTenant(ctx.business.id, (tx) => tx.query.sales.findFirst({ where: eq(dbSchema.sales.id, d.data.saleId), columns: { clientId: true } }));
+      const customer = sale?.clientId ? await customerCodeFor(ctx.business.id, sale.clientId) : null;
+      if (!token || !customer) return { error: "This client has no saved card in Helcim." };
+      await addTipAfterPaymentHelcim({ businessId: ctx.business.id, saleId: d.data.saleId, staffId: d.data.staffId, amountCents: cents, token, cardToken: d.data.paidIn, customerCode: customer.code, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, ipAddress: await requestIp() });
     } else {
       const pay = await paymentContextForSale(ctx.business, d.data.saleId);
       if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments to charge a card." };
@@ -729,4 +754,85 @@ export async function addLateTip(_prev: SaleActionState, formData: FormData): Pr
   revalidatePath(`/app/${d.data.slug}/sales/${d.data.saleId}`);
   revalidatePath(`/app/${d.data.slug}`);
   return { ok: true };
+}
+
+/** A Helcim refund still works after switching back to Stripe, as long as the token is kept (it is cleared on disconnect). */
+function helcimTokenOfAny(business: { paymentProvider: "stripe" | "helcim"; helcimApiToken: string | null }) {
+  return helcimTokenOf({ ...business, paymentProvider: "helcim" });
+}
+
+// --- Helcim at the desk ------------------------------------------------------
+
+/** Card reader (Helcim Smart Terminal): send the amount to the chosen terminal. The screen then polls helcimTerminalStatus. */
+export async function startHelcimTerminal(input: { slug: string; saleId: string; deviceId: string; amount: string }): Promise<{ paymentId: string } | { error: string }> {
+  const d = base.extend({ deviceId: z.string().min(1), amount: z.string() }).parse(input);
+  const ctx = await ctxFor(d.slug, d.saleId);
+  const token = helcimTokenOf(ctx.business);
+  if (!token) return { error: "Connect Helcim under Settings → Payments first." };
+  const cents = parseMoney(d.amount);
+  if (cents === null || cents <= 0) return { error: "Enter an amount." };
+  try {
+    const r = await startHelcimTerminalPayment({ businessId: ctx.business.id, token, saleId: d.saleId, deviceId: d.deviceId, amountCents: cents, actorUserId: ctx.user.id });
+    return { paymentId: r.paymentId };
+  } catch (e) {
+    return { error: friendly(e)?.error ?? "Couldn't reach the terminal." };
+  }
+}
+
+export async function helcimTerminalStatus(input: { slug: string; saleId: string; paymentId: string }): Promise<{ status: "pending" | "paid" | "declined" | "cancelled" }> {
+  const d = base.extend({ paymentId: z.string().min(1) }).parse(input);
+  const ctx = await ctxFor(d.slug, d.saleId);
+  const token = helcimTokenOf(ctx.business);
+  if (!token) return { status: "cancelled" };
+  const status = await checkHelcimTerminalPayment({ businessId: ctx.business.id, token, paymentId: d.paymentId, taxRateBps: ctx.business.taxRateBps });
+  if (status === "paid") {
+    revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+    revalidatePath(`/app/${d.slug}`);
+  }
+  return { status };
+}
+
+export async function cancelHelcimTerminal(input: { slug: string; saleId: string; paymentId: string }): Promise<void> {
+  const d = base.extend({ paymentId: z.string().min(1) }).parse(input);
+  const ctx = await ctxFor(d.slug, d.saleId);
+  await cancelHelcimTerminalWait(ctx.business.id, d.paymentId);
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+}
+
+/** A card typed in at the desk: open a HelcimPay.js checkout for the amount. */
+export async function startHelcimCard(input: { slug: string; saleId: string; amount: string; saveCard: boolean }): Promise<{ paymentId: string; checkoutToken: string } | { error: string }> {
+  const d = base.extend({ amount: z.string(), saveCard: z.boolean() }).parse(input);
+  const ctx = await ctxFor(d.slug, d.saleId);
+  const token = helcimTokenOf(ctx.business);
+  if (!token) return { error: "Connect Helcim under Settings → Payments first." };
+  const cents = parseMoney(d.amount);
+  if (cents === null || cents <= 0) return { error: "Enter an amount." };
+  try {
+    const r = await startHelcimDeskCheckout({ businessId: ctx.business.id, token, saleId: d.saleId, amountCents: cents, saveCard: d.saveCard, actorUserId: ctx.user.id, brandColor: ctx.business.appColor ?? "#6d28d9" });
+    return { paymentId: r.paymentId, checkoutToken: r.checkoutToken };
+  } catch (e) {
+    return { error: friendly(e)?.error ?? "Couldn't open the card form." };
+  }
+}
+
+export async function finishHelcimCard(input: { slug: string; saleId: string; paymentId: string; eventMessage: unknown }): Promise<SaleActionState> {
+  const d = base.extend({ paymentId: z.string().min(1) }).parse(input);
+  const ctx = await ctxFor(d.slug, d.saleId);
+  const token = helcimTokenOf(ctx.business);
+  if (!token) return { error: "Helcim isn't connected." };
+  try {
+    const r = await finishHelcimDeskCheckout({ businessId: ctx.business.id, token, paymentId: d.paymentId, eventMessage: input.eventMessage, taxRateBps: ctx.business.taxRateBps });
+    if (r === "declined") return { error: "The card was declined." };
+  } catch (e) {
+    return friendly(e);
+  }
+  revalidatePath(`/app/${d.slug}/sales/${d.saleId}`);
+  revalidatePath(`/app/${d.slug}`);
+  return { ok: true };
+}
+
+export async function abandonHelcimCard(input: { slug: string; saleId: string; paymentId: string }): Promise<void> {
+  const d = base.extend({ paymentId: z.string().min(1) }).parse(input);
+  const ctx = await ctxFor(d.slug, d.saleId);
+  await abandonHelcimDeskCheckout(ctx.business.id, d.paymentId);
 }

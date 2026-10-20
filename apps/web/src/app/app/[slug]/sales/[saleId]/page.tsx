@@ -9,6 +9,8 @@ import { requireAnyAction } from "@/lib/tenant";
 import { salesScope } from "@/lib/visibility";
 import { getSale, isOwnSale, refundableLines } from "@/server/sales";
 import { savedCardsFor } from "@/server/stripe-connect";
+import { helcimTokenOf } from "@/server/helcim/account";
+import { listHelcimDevices, savedHelcimCards } from "@/server/helcim/payments";
 import { listLocations, paymentContextForSale, validAtLocation } from "@/server/locations";
 import { MapPin, X } from "lucide-react";
 import { formatMoney, shiftISODate } from "@/lib/utils";
@@ -62,7 +64,9 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
   const pay = await paymentContextForSale(business, sale.id);
   const multiLocation = (await listLocations(business.id)).length > 1;
   const stripeReady = pay.ready;
-  const savedCards = await savedCardsFor(business.id, pay, client?.id);
+  const helcimToken = pay.provider === "helcim" ? helcimTokenOf(business) : null;
+  const savedCards = pay.provider === "helcim" ? await savedHelcimCards(business.id, helcimToken, client?.id) : await savedCardsFor(business.id, pay, client?.id);
+  const helcimDevices = helcimToken && open ? (await listHelcimDevices(business.id, pay.location?.id)).map((x) => ({ id: x.id, name: x.name })) : [];
   const staffOnTicket = [...new Set(lines.filter((l) => l.kind === "service").map((l) => l.staffId).filter((x): x is string => !!x))]
     .map((id) => staff.find((s) => s.id === id))
     .filter((s): s is NonNullable<typeof s> => !!s)
@@ -323,12 +327,13 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       currency={cur}
                       hasClient={!!client}
                       savedCards={savedCards.map((c) => ({ id: c.id, brand: c.brand, last4: c.last4, expMonth: c.expMonth, expYear: c.expYear }))}
+                      helcim={helcimToken ? { devices: helcimDevices } : null}
                       stripe={stripeReady ? { publishableKey: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? null, test: (process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "").startsWith("pk_test") } : null}
                       storeCredit={client ? storeCredit : 0}
                       points={business.loyaltyEnabled && client && points >= business.loyaltyMinRedeemPoints ? { balance: points, pointValueCents: business.loyaltyPointValueCents, minPoints: business.loyaltyMinRedeemPoints } : null}
                       actions={{ payManual, payWithGiftCard, payWithSavedCard, payWithStoreCredit: payWithStoreCreditAction, payWithPoints }}
                     />
-                    {!stripeReady && can(permissions, "billing.manage") ? (
+                    {!stripeReady && !helcimToken && can(permissions, "billing.manage") ? (
                       <p className="text-xs text-stone-500">To take cards, connect Stripe under <Link className="underline" href={`/app/${slug}/settings/payments`}>Settings → Payments</Link>.</p>
                     ) : null}
                   </div>

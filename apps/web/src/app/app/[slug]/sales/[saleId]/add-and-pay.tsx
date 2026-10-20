@@ -7,6 +7,8 @@ import { ServicePicker, type ServiceGroup } from "@/components/service-picker";
 import { ExternalCardForm, GiftCardPayForm, ManualPayForm, PointsPayForm, SavedCardForm, Segmented, StoreCreditPayForm } from "./forms";
 import { CardPayment } from "./card-payment";
 import { TerminalPayment } from "./terminal-payment";
+import { HelcimTerminalPayment } from "./helcim-terminal-payment";
+import { HelcimCardPayment } from "./helcim-card-payment";
 import type { SaleActionState } from "./actions";
 
 type PlainAction = (fd: FormData) => Promise<void>;
@@ -125,7 +127,7 @@ type CardWay = "saved" | "reader" | "typed" | "own";
  * Taking payment: pick how, then see only that method's fields. Methods the client can't use (no store credit,
  * too few points) are not offered. Card is always there: without a connected processor it is the salon's own card machine.
  */
-export function TakePayment({ slug, saleId, dueCents, currency, hasClient, savedCards, stripe, storeCredit, points, actions }: {
+export function TakePayment({ slug, saleId, dueCents, currency, hasClient, savedCards, stripe, helcim, storeCredit, points, actions }: {
   slug: string;
   saleId: string;
   dueCents: number;
@@ -134,6 +136,8 @@ export function TakePayment({ slug, saleId, dueCents, currency, hasClient, saved
   savedCards: { id: string; brand: string; last4: string; expMonth: number; expYear: number }[];
   /** Null when cards can't be taken through Stripe. */
   stripe: { publishableKey: string | null; test: boolean } | null;
+  /** Set when the business takes cards through Helcim: its paired terminals for this location. Saved cards above are then Helcim's. */
+  helcim?: { devices: { id: string; name: string }[] } | null;
   /** Balance to spend, or 0. */
   storeCredit: number;
   /** Null when loyalty is off, the client has too few points, or there is no client. */
@@ -148,9 +152,10 @@ export function TakePayment({ slug, saleId, dueCents, currency, hasClient, saved
     ...(points ? [{ value: "points" as const, label: "Points" }] : []),
   ];
   const [method, setMethod] = useState<PayMethod>(methods[0]!.value);
+  const processor = !!(stripe || helcim);
   const ways: { value: CardWay; label: string }[] = [
-    ...(stripe && savedCards.length ? [{ value: "saved" as const, label: "Card on file" }] : []),
-    ...(stripe ? [{ value: "reader" as const, label: "Card reader" }, { value: "typed" as const, label: "Type it in" }] : []),
+    ...(processor && savedCards.length ? [{ value: "saved" as const, label: "Card on file" }] : []),
+    ...(processor ? [{ value: "reader" as const, label: "Card reader" }, { value: "typed" as const, label: "Type it in" }] : []),
     { value: "own", label: "Own card machine" },
   ];
   const [way, setWay] = useState<CardWay>(ways[0]!.value);
@@ -168,8 +173,12 @@ export function TakePayment({ slug, saleId, dueCents, currency, hasClient, saved
       ) : method === "card" ? (
         <div className="space-y-3">
           {ways.length > 1 ? <Segmented label="Which card" value={way} onChange={setWay} options={ways} /> : null}
-          {way === "saved" && stripe ? (
+          {way === "saved" && processor ? (
             <SavedCardForm key={dueCents} action={actions.payWithSavedCard} slug={slug} saleId={saleId} dueCents={dueCents} cards={savedCards} />
+          ) : way === "reader" && helcim ? (
+            <HelcimTerminalPayment key={`ht${dueCents}`} slug={slug} saleId={saleId} dueCents={dueCents} devices={helcim.devices} />
+          ) : way === "typed" && helcim ? (
+            <HelcimCardPayment key={`hc${dueCents}`} slug={slug} saleId={saleId} dueCents={dueCents} hasClient={hasClient} />
           ) : way === "reader" && stripe ? (
             <TerminalPayment key={`tp${dueCents}`} slug={slug} saleId={saleId} dueCents={dueCents} hasClient={hasClient} test={stripe.test} />
           ) : way === "typed" && stripe ? (

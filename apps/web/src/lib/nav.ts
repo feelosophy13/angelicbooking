@@ -97,6 +97,9 @@ export interface SettingsStatusSource {
   giftCardsOnline: boolean;
   customDomain: string | null;
   stripeChargesEnabled: boolean;
+  /** "helcim" when the business takes cards through Helcim. */
+  paymentProvider?: string;
+  helcimApiToken?: string | null;
   locationCount: number;
   /** The fixed monthly platform cost from the price book (server/billing.ts planMonthlyCents); null when comped. */
   planMonthlyCents: number | null;
@@ -134,7 +137,7 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
     {
       title: "Payments & billing",
       entries: [
-        { href: `${sb}/payments`, title: "Card payments", blurb: "Your Stripe account for cards, deposits and saved cards.", status: s ? (s.stripeChargesEnabled ? "connected" : "not connected") : undefined, action: "billing.manage" },
+        { href: `${sb}/payments`, title: "Card payments", blurb: "Stripe or Helcim for cards, the card terminal, deposits and saved cards.", status: s ? (s.paymentProvider === "helcim" ? (s.helcimApiToken ? "Helcim" : "Helcim · not connected") : s.stripeChargesEnabled ? "connected" : "not connected") : undefined, action: "billing.manage" },
         { href: `${sb}/checkout`, title: "Checkout & tips", blurb: "The tip percentages clients choose from at checkout.", action: "settings.booking" },
         { href: `${sb}/refund-reasons`, title: "Refund reasons", blurb: "The list staff pick from when refunding; Reports group refunds by it." },
         { href: `${sb}/cancellation-reasons`, title: "Cancellation reasons", blurb: "The list staff pick from when cancelling an appointment; Reports group cancellations by it." },

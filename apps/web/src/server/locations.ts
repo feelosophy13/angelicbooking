@@ -24,8 +24,12 @@ export interface PaymentContext {
   name: string;
   addressLine: string | null;
   phone: string | null;
-  /** Platform keys present, account connected and charges enabled. */
+  /** Stripe can take cards here: Stripe is the processor, platform keys present, account connected and charges enabled. */
   ready: boolean;
+  /** The business's card processor. */
+  provider: "stripe" | "helcim";
+  /** Helcim is the processor and its account is connected. */
+  helcimReady: boolean;
 }
 
 export function addressOf(l: Pick<Location, "addressLine1" | "addressLine2" | "city" | "state" | "postalCode"> | null | undefined): string | null {
@@ -72,7 +76,9 @@ export function paymentContext(business: Business, location: Location | null | u
     name: own ? location!.name : business.name,
     addressLine: own ? (addressOf(location) ?? business.addressLine) : (business.addressLine ?? addressOf(location)),
     phone: own ? (location!.phone ?? business.phone) : (business.phone ?? location?.phone ?? null),
-    ready: isStripeConfigured() && !!accountId && chargesEnabled,
+    ready: business.paymentProvider !== "helcim" && isStripeConfigured() && !!accountId && chargesEnabled,
+    provider: business.paymentProvider === "helcim" ? "helcim" : "stripe",
+    helcimReady: business.paymentProvider === "helcim" && !!business.helcimApiToken,
   };
 }
 

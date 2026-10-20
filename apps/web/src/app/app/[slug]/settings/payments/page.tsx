@@ -9,7 +9,11 @@ import { ActionForm, ConfirmSubmit, Field, SubmitButton } from "@/components/for
 import { Textarea } from "@/components/ui";
 
 export const metadata: Metadata = { title: "Payments" };
-import { connectStripe, disconnectStripe, refreshStripe, saveReceiptFooter, saveTax } from "./actions";
+import { addHelcimDevice, connectHelcimAction, connectStripe, disconnectHelcimAction, disconnectStripe, pingHelcimDeviceAction, refreshStripe, removeHelcimDevice, saveHelcimVerifierAction, saveReceiptFooter, saveTax } from "./actions";
+import { Disclosure } from "@/components/disclosure";
+import { Select } from "@/components/ui";
+import { listHelcimDevices } from "@/server/helcim/payments";
+import { appUrl } from "@/lib/stripe";
 
 export default async function PaymentsSettingsPage({
   params,
@@ -27,14 +31,99 @@ export default async function PaymentsSettingsPage({
   const fee = await platformFeeBpsFor(business.id);
   const locations = await listLocations(business.id);
   const multi = locations.length > 1;
+  const onHelcim = business.paymentProvider === "helcim";
+  const devices = onHelcim ? await listHelcimDevices(business.id) : [];
+  const webhookUrl = appUrl(`/api/helcim/webhook/${business.id}`);
+  const helcimConnect = (
+    <ActionForm action={connectHelcimAction} className="space-y-3">
+      <input type="hidden" name="slug" value={slug} />
+      <Field label="Helcim API token" name="apiToken" hint="In Helcim: All Tools → Integrations → API Access Configuration → New. Give it General, Transaction Processing (Positive and Negative) and Customer permissions.">
+        <Input name="apiToken" autoComplete="off" spellCheck={false} className="font-mono" />
+      </Field>
+      <Field label="Webhook verifier token (optional now)" name="verifierToken" hint="In Helcim: All Tools → Integrations → Webhooks. Turn webhooks on, paste the URL below as the Deliver URL, and copy the verifier token here.">
+        <Input name="verifierToken" autoComplete="off" spellCheck={false} className="font-mono" />
+      </Field>
+      <p className="text-xs text-stone-500">Webhook URL: <code className="break-all rounded bg-stone-100 px-1">{webhookUrl}</code></p>
+      <SubmitButton pendingText="Checking with Helcim…">Connect Helcim</SubmitButton>
+    </ActionForm>
+  );
 
   return (
     <>
       <div className="mb-2"><BackLink href={`/app/${slug}/settings`}>Settings</BackLink></div>
       <PageHeader title="Payments" />
       <div className="grid gap-6 lg:grid-cols-2">
+        <Card className="p-4 lg:col-span-2">
+          <h2 className="mb-1 font-medium">Card processor</h2>
+          {onHelcim ? (
+            <div className="space-y-3">
+              <p className="text-sm text-stone-600">Cards go through <span className="font-medium">your Helcim account</span>: the card terminal at the desk, cards typed in, and saved cards. Payouts, statements and disputes are in your Helcim dashboard.</p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+                <dt className="text-stone-500">Connected</dt>
+                <dd className="text-emerald-700">{business.helcimConnectedAt ? `Since ${business.helcimConnectedAt.toLocaleDateString("en-US", { dateStyle: "medium" })}` : "Yes"}</dd>
+                <dt className="text-stone-500">Webhook</dt>
+                <dd className={business.helcimWebhookVerifier ? "text-emerald-700" : "text-amber-700"}>{business.helcimWebhookVerifier ? "Verifier saved" : "Not set up: terminal payments are checked by polling until it is"}</dd>
+              </dl>
+              {!business.helcimWebhookVerifier ? (
+                <ActionForm action={saveHelcimVerifierAction} className="space-y-2">
+                  <input type="hidden" name="slug" value={slug} />
+                  <p className="text-xs text-stone-500">In Helcim: All Tools → Integrations → Webhooks. Turn webhooks on, set the Deliver URL to <code className="break-all rounded bg-stone-100 px-1">{webhookUrl}</code>, tick Card Transaction and Terminal Cancel, then paste the verifier token.</p>
+                  <Field label="Verifier token" name="verifierToken"><Input name="verifierToken" autoComplete="off" spellCheck={false} className="font-mono" /></Field>
+                  <SubmitButton size="sm" variant="secondary" pendingText="Saving…">Save verifier</SubmitButton>
+                </ActionForm>
+              ) : (
+                <p className="text-xs text-stone-500">Webhook URL: <code className="break-all rounded bg-stone-100 px-1">{webhookUrl}</code></p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <a href="https://hub.helcim.com/" target="_blank" rel="noreferrer" className="inline-flex h-10 items-center rounded-lg px-3 text-sm text-brand-700 underline">Open Helcim dashboard</a>
+                <form action={disconnectHelcimAction}>
+                  <input type="hidden" name="slug" value={slug} />
+                  <ConfirmSubmit title="Switch back to Stripe?" body="New card payments go through Stripe. Payments already taken through Helcim stay there; refund those in your Helcim dashboard." confirmLabel="Use Stripe" variant="ghost">Switch back to Stripe</ConfirmSubmit>
+                </form>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-stone-600">Cards go through <span className="font-medium">Stripe</span>. If you already process with Helcim, you can use your Helcim account and terminal instead.</p>
+              <Disclosure title="Use Helcim instead" hint="your own Helcim account">{helcimConnect}</Disclosure>
+            </div>
+          )}
+        </Card>
+
+        {onHelcim ? (
+          <Card className="p-4 lg:col-span-2">
+            <h2 className="mb-1 font-medium">Card terminals</h2>
+            <p className="mb-3 text-sm text-stone-600">Pair each Helcim Smart Terminal once with the four-character code it shows after registering. At checkout, &ldquo;Card reader&rdquo; sends the amount straight to the terminal.</p>
+            {devices.length ? (
+              <ul className="mb-4 divide-y divide-stone-100">
+                {devices.map((dv) => (
+                  <li key={dv.id} className="flex flex-wrap items-center gap-3 py-2 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium">{dv.name} <span className="font-mono text-xs text-stone-500">{dv.code}</span></p>
+                      {multi ? <p className="text-xs text-stone-500">{locations.find((l) => l.id === dv.locationId)?.name ?? "Any location"}</p> : null}
+                    </div>
+                    <form action={pingHelcimDeviceAction}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="deviceId" value={dv.id} /><Button type="submit" size="sm" variant="secondary">Test</Button></form>
+                    <form action={removeHelcimDevice}><input type="hidden" name="slug" value={slug} /><input type="hidden" name="deviceId" value={dv.id} /><ConfirmSubmit title={`Remove ${dv.name}?`} body="It won't be offered at checkout. Pair it again with its code any time." confirmLabel="Remove" variant="ghost">Remove</ConfirmSubmit></form>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <ActionForm action={addHelcimDevice} className="grid gap-3 sm:grid-cols-[8rem_1fr_auto] sm:items-end">
+              <input type="hidden" name="slug" value={slug} />
+              <Field label="Device code" name="code"><Input name="code" maxLength={4} autoComplete="off" className="font-mono uppercase" placeholder="AB12" /></Field>
+              <Field label="Name" name="name"><Input name="name" placeholder="Front desk" /></Field>
+              {multi ? (
+                <Field label="Location" name="locationId" className="sm:col-span-3">
+                  <Select name="locationId" defaultValue=""><option value="">Any location</option>{locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Select>
+                </Field>
+              ) : null}
+              <SubmitButton pendingText="Pairing…" className={multi ? "sm:col-start-1" : ""}>Pair terminal</SubmitButton>
+            </ActionForm>
+          </Card>
+        ) : null}
+
         <Card className="p-4">
-          <h2 className="mb-1 font-medium">Stripe account</h2>
+          <h2 className="mb-1 font-medium">Stripe account{onHelcim ? <span className="ml-2 rounded bg-stone-100 px-1.5 py-0.5 text-xs font-normal text-stone-600">not in use</span> : null}</h2>
           <p className="mb-4 text-sm text-stone-600">
             Payments go directly to <span className="font-medium">your own</span> Stripe account. You keep your Stripe dashboard,
             payouts and reports{fee > 0 ? `; the platform takes a ${fee / 100}% fee per card payment` : ""}.
