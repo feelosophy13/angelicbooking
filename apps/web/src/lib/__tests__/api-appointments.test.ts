@@ -7,7 +7,7 @@ import "../../../../../packages/db/src/env"; // must come first: @angelic/db con
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
-import { instantToISODate, zonedToInstant } from "@angelic/core";
+import { addDays, instantToISODate, zonedToInstant } from "@angelic/core";
 import { call, mkKey, reachable, send, setupKit } from "./api-test-kit";
 
 // Even a silent booking (notify:false, reminders:false) hands its "Appointment booked" workflows to `after`, which needs a request scope.
@@ -38,8 +38,11 @@ let otherKey: string; // a scope that is not appointments:*
 let tz = "America/New_York";
 const ids: Record<string, string> = {};
 
-/** A start time `days` ahead at hh:00 salon time (all test staff work 09:00-17:00 every day). */
-const slot = (days: number, hh: number, min = 0) => zonedToInstant(instantToISODate(new Date(Date.now() + days * 86_400_000), tz), `${String(hh).padStart(2, "0")}:${String(min).padStart(2, "0")}`, tz);
+/**
+ * A start time `days` calendar days ahead at hh:00 salon time (all test staff work 09:00-17:00 every day). Counts salon dates, not 24-hour
+ * steps: across a fall-back night, now + 13 × 24h near midnight lands on the same date as now + 12 × 24h, and two "different days" collide.
+ */
+const slot = (days: number, hh: number, min = 0) => zonedToInstant(addDays(instantToISODate(new Date(), tz), days), `${String(hh).padStart(2, "0")}:${String(min).padStart(2, "0")}`, tz);
 
 async function mkStaff(biz: string, name = "Stylist") {
   const [st] = await withTenant(biz, (tx) => tx.insert(schema.staff).values({ businessId: biz, displayName: name }).returning());
