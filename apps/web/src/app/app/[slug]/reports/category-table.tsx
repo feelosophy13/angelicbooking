@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StackTable } from "@/components/stack-table";
 
 export type CategoryLine = {
   id: string;
@@ -64,7 +65,7 @@ export function CategoryTable({ rows, total, periodLabel }: { rows: CategoryLine
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <StackTable className="w-full text-sm">
         <thead className="text-left text-xs text-stone-500">
           <tr>
             <th className="py-2 pl-4 pr-3">Category</th>
@@ -94,7 +95,7 @@ export function CategoryTable({ rows, total, periodLabel }: { rows: CategoryLine
             <td />
           </tr>
         </tfoot>
-      </table>
+      </StackTable>
     </div>
   );
 }

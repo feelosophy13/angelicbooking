@@ -6,6 +6,7 @@ import { and, desc, eq, inArray, like, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
 import { BackLink, Button, Card, PageHeader, Empty, Select } from "@/components/ui";
+import { StackTable } from "@/components/stack-table";
 
 export default async function AuditPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ page?: string; area?: string; who?: string }> }) {
   const { slug } = await params;
@@ -56,7 +57,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
         <Empty title="Nothing yet" body="Bookings, reschedules and status changes will show up here." />
       ) : (
         <Card>
-          <div className="overflow-x-auto"><table className="w-full text-sm">
+          <div className="overflow-x-auto"><StackTable className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500">
               <tr>
                 <th className="px-4 py-2">When</th>
@@ -83,7 +84,7 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
                 </tr>
               ))}
             </tbody>
-          </table></div>
+          </StackTable></div>
           <div className="flex items-center justify-between border-t border-stone-200 px-4 py-2 text-sm">
             {page > 1 ? <Link href={`?${keep(`page=${page - 1}`)}`} className="text-brand-700 underline">Newer</Link> : <span />}
             {rows.length > PAGE ? <Link href={`?${keep(`page=${page + 1}`)}`} className="text-brand-700 underline">Older</Link> : <span />}

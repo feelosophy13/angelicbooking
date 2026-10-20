@@ -6,6 +6,7 @@ import { MOVEMENT_REASONS, productLabel } from "@/lib/inventory";
 import { dateLong } from "@/lib/format";
 import { formatMoney } from "@/lib/utils";
 import { Card } from "@/components/ui";
+import { StackTable } from "@/components/stack-table";
 
 export const metadata: Metadata = { title: "Report · Inventory" };
 
@@ -30,7 +31,7 @@ export default async function InventoryReportPage({ params, searchParams }: { pa
 
       <Section title="Cost of what left the shelf" note={`Sold to clients ${money(r.soldCostCents)} · used in services ${money(r.usedCostCents)} at what each unit cost when it left, over the last ${days} days.`}>
         {r.costSplit.length === 0 ? <None>Nothing sold or used in this period.</None> : (
-          <table className="w-full text-sm">
+          <StackTable className="w-full text-sm">
             <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-1.5">Product</th><th className="px-2 py-1.5 text-right">Sold</th><th className="px-2 py-1.5 text-right">Cost of sold</th><th className="px-2 py-1.5 text-right">Used</th><th className="px-4 py-1.5 text-right">Cost of used</th></tr></thead>
             <tbody className="divide-y divide-stone-100">
               {r.costSplit.slice(0, 20).map((c) => (
@@ -43,13 +44,13 @@ export default async function InventoryReportPage({ params, searchParams }: { pa
                 </tr>
               ))}
             </tbody>
-          </table>
+          </StackTable>
         )}
       </Section>
 
       <Section title="Supplies by service" note={sc.visits ? `Supplies were logged on ${sc.visitsWithSupplies} of ${sc.visits} visits in the last ${days} days. Averages use only visits where supplies were logged, so log them on the visit to make this complete.${sc.untiedCents ? ` ${money(sc.untiedCents)} more was logged without a visit.` : ""}` : undefined}>
         {sc.services.filter((x) => x.logged).length === 0 ? <None>No supplies have been logged on a visit in this period. Log them on the appointment (the "Supplies used" card) to see what each service costs.</None> : (
-          <table className="w-full text-sm">
+          <StackTable className="w-full text-sm">
             <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-1.5">Service</th><th className="px-2 py-1.5 text-right">Visits logged</th><th className="px-2 py-1.5 text-right">Supplies</th><th className="px-2 py-1.5 text-right">Per visit</th><th className="px-2 py-1.5 text-right">Price</th><th className="px-4 py-1.5 text-right">% of price</th></tr></thead>
             <tbody className="divide-y divide-stone-100">
               {sc.services.filter((x) => x.logged).slice(0, 20).map((x) => (
@@ -63,13 +64,13 @@ export default async function InventoryReportPage({ params, searchParams }: { pa
                 </tr>
               ))}
             </tbody>
-          </table>
+          </StackTable>
         )}
       </Section>
 
       <Section title="Supplies by stylist" note="Average supplies on a visit where they logged any, against the team's average. A stylist well above it may be using more, or logging more.">
         {sc.staff.filter((x) => x.logged).length === 0 ? <None>Nothing logged against visits yet.</None> : (
-          <table className="w-full text-sm">
+          <StackTable className="w-full text-sm">
             <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-1.5">Stylist</th><th className="px-2 py-1.5 text-right">Visits logged</th><th className="px-2 py-1.5 text-right">Supplies</th><th className="px-2 py-1.5 text-right">Per visit</th><th className="px-4 py-1.5 text-right">vs team</th></tr></thead>
             <tbody className="divide-y divide-stone-100">
               {sc.staff.filter((x) => x.logged).map((x) => {
@@ -85,7 +86,7 @@ export default async function InventoryReportPage({ params, searchParams }: { pa
                 );
               })}
             </tbody>
-          </table>
+          </StackTable>
         )}
       </Section>
 

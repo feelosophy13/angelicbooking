@@ -20,6 +20,7 @@ import { LocationFilter } from "@/components/location-filter";
 import { listLocations } from "@/server/locations";
 import { and, gte, ilike, lte } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
+import { StackTable } from "@/components/stack-table";
 
 export default async function PayrollPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ start?: string; end?: string; overtime?: string | string[]; location?: string }> }) {
   const { slug } = await params;
@@ -169,7 +170,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
       <Card className="mb-6 overflow-x-auto">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-2">
           <h2 className="text-sm font-semibold text-stone-600">Summary</h2>
-          {active.length ? <div className="flex gap-2">
+          {active.length ? <div className="flex flex-wrap gap-2">
             <LinkButton href={`/app/${slug}/payroll/export?${qs}`} size="sm"><Download className="h-4 w-4" /> Workbook (.xlsx)</LinkButton>
             {manage ? <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=w2`} size="sm"><Download className="h-4 w-4" /> W-2 summary</LinkButton> : null}
             {manage ? <LinkButton href={`/app/${slug}/payroll/export?${qs}&kind=csv`} size="sm" variant="ghost"><Download className="h-4 w-4" /> Summary CSV</LinkButton> : null}
@@ -183,7 +184,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
           </div> : null}
         </div>
         {active.length === 0 ? <div className="p-4"><Empty title="No pay activity in this period" body="Closed sales, hours and adjustments drive payroll." /></div> : (
-          <div className="overflow-x-auto"><table className="w-full text-sm">
+          <div className="overflow-x-auto"><StackTable className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500">
               <tr>{["Employee", "Position", "Pay type", "Rate", "Commission", "Wage", "Cash tip", "Card tip", "Card-tip fee", "Total", "Svc revenue", "Svc profit"].map((h) => <th key={h} className="px-3 py-2">{h}</th>)}</tr>
             </thead>
@@ -210,7 +211,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                 );
               })}
             </tbody>
-          </table></div>
+          </StackTable></div>
         )}
       </Card>
 
@@ -253,7 +254,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                 {e.mainRows.length + e.miscRows.length > 0 ? (
                   <details className="mt-3 text-sm">
                     <summary className="cursor-pointer text-brand-700">{e.mainRows.length + e.miscRows.length} transactions{[...e.mainRows, ...e.miscRows].some((l) => l.amtPaidCents < 0) ? ` · includes refunds` : ""}</summary>
-                    <div className="overflow-x-auto"><table className="mt-2 w-full text-xs">
+                    <div className="overflow-x-auto"><StackTable className="mt-2 w-full text-xs">
                       <thead className="text-left text-stone-500"><tr><th className="py-1 pr-2">Date</th><th className="py-1 pr-2">Customer</th><th className="py-1 pr-2">Item</th><th className="py-1 pr-2">Section</th><th className="py-1 pr-2 text-right">Cash</th><th className="py-1 pr-2 text-right">Cash tip</th><th className="py-1 pr-2 text-right">Card</th><th className="py-1 pr-2 text-right">CC tip</th><th className="py-1 pr-2 text-right">Disc</th><th className="py-1 text-right">Amt paid</th></tr></thead>
                       <tbody className="divide-y divide-stone-100">
                         {[...e.miscRows, ...e.mainRows].map((l, i) => (
@@ -263,7 +264,7 @@ export default async function PayrollPage({ params, searchParams }: { params: Pr
                           </tr>
                         ))}
                       </tbody>
-                    </table></div>
+                    </StackTable></div>
                   </details>
                 ) : null}
               </Card>

@@ -5,6 +5,7 @@ import { Card, Input, MoneyInput } from "@/components/ui";
 import { SubmitButton } from "@/components/form";
 import { formatMoney } from "@/lib/utils";
 import { saveServiceStylistTerms } from "../actions";
+import { StackTable } from "@/components/stack-table";
 
 /**
  * Every stylist who performs this service with their own price and minutes, in one table.
@@ -30,7 +31,7 @@ export async function PricesByStylist({ slug, businessId, currency, service }: {
           <input type="hidden" name="slug" value={slug} />
           <input type="hidden" name="serviceId" value={service.id} />
           <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <StackTable className="w-full text-sm">
             <thead className="text-left text-xs text-stone-500"><tr><th className="py-1 pr-3">Stylist</th><th className="px-3 py-1">Price</th><th className="px-3 py-1">Minutes</th></tr></thead>
             <tbody className="divide-y divide-stone-100">
               {rows.map((r) => (
@@ -41,7 +42,7 @@ export async function PricesByStylist({ slug, businessId, currency, service }: {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </StackTable>
           </div>
           <SubmitButton pendingText="Saving…">Save prices by stylist</SubmitButton>
         </form>

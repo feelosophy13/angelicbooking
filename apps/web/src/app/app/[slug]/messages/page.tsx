@@ -7,6 +7,7 @@ import { emailConfigured, smsConfigured } from "@/lib/notify/providers";
 import { Button, Card, Empty, Notice, PageHeader } from "@/components/ui";
 import { StatusBadge } from "@/components/status-badge";
 import { resendMessage } from "./actions";
+import { StackTable } from "@/components/stack-table";
 
 export const metadata: Metadata = { title: "Message log" };
 
@@ -42,7 +43,7 @@ export default async function MessagesPage({ params }: { params: Promise<{ slug:
       ) : null}
       {rows.length === 0 ? <Empty title="No messages yet" body="Confirmations, reminders and cancellations will appear here." /> : (
         <Card>
-          <div className="overflow-x-auto"><table className="w-full text-sm">
+          <div className="overflow-x-auto"><StackTable className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-2">Created</th><th className="px-4 py-2">Channel</th><th className="px-4 py-2">Type</th><th className="px-4 py-2">To</th><th className="px-4 py-2">Scheduled</th><th className="px-4 py-2">Status</th></tr></thead>
             <tbody className="divide-y divide-stone-200">
               {rows.map(({ n, workflowName, workflowId }) => (
@@ -66,7 +67,7 @@ export default async function MessagesPage({ params }: { params: Promise<{ slug:
                 </tr>
               ))}
             </tbody>
-          </table></div>
+          </StackTable></div>
         </Card>
       )}
     </>

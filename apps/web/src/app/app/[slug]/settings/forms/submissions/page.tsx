@@ -6,6 +6,7 @@ import { seesOwnOnly } from "@/lib/appointment-access";
 import { listForms, listSubmissions, outstandingForms } from "@/server/forms";
 import { BackLink, Card, Empty, Input, PageHeader, Select } from "@/components/ui";
 import { LinkRow } from "@/components/table-row";
+import { StackTable } from "@/components/stack-table";
 
 export const metadata: Metadata = { title: "Form submissions" };
 
@@ -54,7 +55,7 @@ export default async function SubmissionsInboxPage({ params, searchParams }: { p
       {rows.length === 0 ? <Empty title="No submissions" body={sp.form || sp.q ? "Nothing matches these filters." : "Signed forms will appear here."} /> : (
         <Card>
           <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <StackTable className="w-full text-sm">
             <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">When</th><th className="px-4 py-2">Client</th><th className="px-4 py-2">Form</th><th className="px-4 py-2">Status</th></tr></thead>
             <tbody className="divide-y divide-stone-100">
               {rows.map((r) => (
@@ -66,7 +67,7 @@ export default async function SubmissionsInboxPage({ params, searchParams }: { p
                 </LinkRow>
               ))}
             </tbody>
-          </table>
+          </StackTable>
           </div>
           {pages > 1 ? (
             <div className="flex items-center justify-between border-t border-stone-200 px-4 py-2 text-xs text-stone-500">

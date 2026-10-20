@@ -28,6 +28,7 @@ import { ServicePicker } from "@/components/service-picker";
 import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { serviceGroups, serviceIdsInScope } from "@/server/service-groups";
 import { parseScope, scopeLabel, scopeValue } from "@/lib/service-scope";
+import { StackTable } from "@/components/stack-table";
 
 export default async function ReportsPage({
   params,
@@ -184,10 +185,10 @@ export default async function ReportsPage({
           ))}
           <details className="relative">
             <summary className={`cursor-pointer select-none rounded-md px-3 py-1 marker:content-none [&::-webkit-details-marker]:hidden ${isPreset ? "text-stone-700 hover:bg-stone-50" : "bg-stone-900 text-white"}`}>Custom</summary>
-            <form className="absolute right-0 z-20 mt-1 flex w-max items-center gap-2 rounded-lg border border-stone-200 bg-white p-3 shadow-lg">
-              <Input type="date" name="from" defaultValue={from} className="w-40" aria-label="From" />
+            <form className="absolute right-0 z-20 mt-1 flex w-max max-w-[calc(100vw-5rem)] flex-wrap items-center gap-2 rounded-lg border border-stone-200 bg-white p-3 shadow-lg">
+              <Input type="date" name="from" defaultValue={from} className="w-36 sm:w-40" aria-label="From" />
               <span className="text-sm text-stone-500">to</span>
-              <Input type="date" name="to" defaultValue={to} className="w-40" aria-label="To" />
+              <Input type="date" name="to" defaultValue={to} className="w-36 sm:w-40" aria-label="To" />
               {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
               {scopeVal ? <input type="hidden" name="service" value={scopeVal} /> : null}
               <Button type="submit" variant="secondary" size="sm">Show</Button>
@@ -295,7 +296,7 @@ export default async function ReportsPage({
               <span className="text-xs text-stone-500">{lapsed.count ? `${money(lapsed.revenueCents)} spent in the year before they lapsed${lapsed.count > lapsed.top.length ? ` · the ${lapsed.top.length} biggest spenders below` : ""}` : `nobody has gone ${cohorts.lapsedDays} days without a visit and nothing booked`}</span>
             </p>
             {lapsed.top.length ? (
-              <div className="overflow-x-auto"><table className="mt-1 w-full text-sm">
+              <div className="overflow-x-auto"><StackTable className="mt-1 w-full text-sm">
                 <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Client</th><th className="px-4 py-2">Last visit</th><th className="px-4 py-2 text-right">Visits</th>{canSpend ? <th className="px-4 py-2 text-right">Spent, year before lapsing</th> : null}<th /></tr></thead>
                 <tbody className="divide-y divide-stone-100">
                   {lapsed.top.map((c) => (
@@ -311,7 +312,7 @@ export default async function ReportsPage({
                     </LinkRow>
                   ))}
                 </tbody>
-              </table></div>
+              </StackTable></div>
             ) : <div className="pb-3" />}
           </div>
           <div className="space-y-1 border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
@@ -336,7 +337,7 @@ export default async function ReportsPage({
           <Card className="lg:col-span-2">
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By location</h2>
             {locRows.length === 0 ? <div className="p-4"><Empty title="No closed sales in this range" /></div> : (
-              <div className="overflow-x-auto"><table className="w-full text-sm">
+              <div className="overflow-x-auto"><StackTable className="w-full text-sm">
                 <thead className="text-left text-xs text-stone-500">
                   <tr>
                     <th className="py-2 pl-3 pr-2">Location</th><th className="px-2 py-2 text-right">Sales</th><th className="px-2 py-2 text-right">Services</th><th className="px-2 py-2 text-right">Products</th><th className="px-2 py-2 text-right">Tips</th><th className="px-2 py-2 text-right">Tax</th><th className="px-2 py-2 text-right">Refunded</th><th className="px-2 py-2 text-right">Tickets</th>
@@ -384,7 +385,7 @@ export default async function ReportsPage({
                     </tr>
                   </tfoot>
                 ) : null}
-              </table></div>
+              </StackTable></div>
             )}
             {payByLoc ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Pay by site, calculated the way Payroll does with overtime off and before adjustments or withholding. Commissions follow the location of the sale, hourly pay follows where the person clocked in, and salary is charged to their primary location. Tips are passed through, not a cost.</p> : null}
             {crossLocation.length ? (
@@ -426,7 +427,7 @@ export default async function ReportsPage({
                   })}
                 </div>
               ) : null}
-              <div className="overflow-x-auto"><table className="w-full text-sm">
+              <div className="overflow-x-auto"><StackTable className="w-full text-sm">
                 <thead className="text-left text-xs text-stone-500">
                   <tr>
                     <th className="py-2 pl-3 pr-2">Staff</th><th className="px-2 py-2 text-right">Services</th><th className="px-2 py-2 text-right">Products</th><th className="px-2 py-2 text-right">Tips</th><th className="px-2 py-2 text-right">Refunded</th>
@@ -467,7 +468,7 @@ export default async function ReportsPage({
                     ) : null}
                   </tr>
                 </tfoot>
-              </table></div>
+              </StackTable></div>
               {canPayroll ? (
                 <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">
                   Services, products and tips are what was rung up. Pay is calculated the way Payroll does for these dates, with overtime off and before adjustments or withholding: commissions on amounts paid after discounts, with package and membership credits counted for the provider. Tips are passed through, not a cost. Cost of revenue is commissions plus wages as a share of the service revenue Payroll credits to that person.
@@ -480,34 +481,34 @@ export default async function ReportsPage({
         <Card className={scoped ? "hidden" : ""}>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Refunds by reason</h2>
           {byReason.length === 0 ? <div className="p-4"><Empty title="No refunds in this range" /></div> : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><StackTable className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Reason</th><th className="px-4 py-2 text-right">Refunds</th><th className="px-4 py-2 text-right">Money back</th><th className="px-4 py-2 text-right">Store credit</th><th className="px-4 py-2 text-right">Total</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {byReason.map((r) => (
                   <tr key={r.reasonId ?? "none"}><td className="px-4 py-2">{r.name}</td><td className="px-4 py-2 text-right tabular-nums">{r.count}</td><td className="px-4 py-2 text-right tabular-nums">{money(r.moneyCents)}</td><td className="px-4 py-2 text-right tabular-nums">{money(r.creditCents)}</td><td className="px-4 py-2 text-right font-medium tabular-nums">{money(r.moneyCents + r.creditCents)}</td></tr>
                 ))}
               </tbody>
-            </table></div>
+            </StackTable></div>
           )}
           {can(permissions, "settings.business") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/refund-reasons`} className="text-brand-700 underline">Settings → Refund reasons</Link>.</p> : null}
         </Card>
         {byItem.length ? (
           <Card className={scoped ? "hidden" : ""}>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Refunds by item</h2>
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><StackTable className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Item</th><th className="px-4 py-2 text-right">Refunds</th><th className="px-4 py-2 text-right">Qty</th><th className="px-4 py-2 text-right">Total</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {byItem.slice(0, 20).map((r) => (
                   <tr key={`${r.kind}:${r.name}`}><td className="px-4 py-2">{r.name}</td><td className="px-4 py-2 text-right tabular-nums">{r.count}</td><td className="px-4 py-2 text-right tabular-nums">{r.quantity || ""}</td><td className="px-4 py-2 text-right font-medium tabular-nums">{money(r.cents)}</td></tr>
                 ))}
               </tbody>
-            </table></div>
+            </StackTable></div>
           </Card>
         ) : null}
         <Card className={scoped ? "hidden" : ""}>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Cancellations by reason</h2>
           {cancels.length === 0 ? <div className="p-4"><Empty title="No cancellations in this range" /></div> : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><StackTable className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Reason</th><th className="px-4 py-2 text-right">Cancelled</th><th className="px-4 py-2 text-right">By client</th><th className="px-4 py-2 text-right">Inside window</th><th className="px-4 py-2 text-right">Booked value lost</th><th className="px-4 py-2 text-right">Deposits kept</th><th className="px-4 py-2 text-right">Fees collected</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {cancels.map((r) => (
@@ -515,7 +516,7 @@ export default async function ReportsPage({
                 ))}
                 <tr className="font-medium"><td className="px-4 py-2">Total</td><td className="px-4 py-2 text-right tabular-nums">{cancels.reduce((n, r) => n + r.count, 0)}</td><td className="px-4 py-2 text-right tabular-nums">{cancels.reduce((n, r) => n + r.byClient, 0)}</td><td className="px-4 py-2 text-right tabular-nums">{cancels.reduce((n, r) => n + r.lateCount, 0)}</td><td className="px-4 py-2 text-right tabular-nums">{money(cancels.reduce((n, r) => n + r.lostCents, 0))}</td><td className="px-4 py-2 text-right tabular-nums">{money(cancels.reduce((n, r) => n + r.depositKeptCents, 0))}</td><td className="px-4 py-2 text-right tabular-nums">{money(cancels.reduce((n, r) => n + r.feeCents, 0))}</td></tr>
               </tbody>
-            </table></div>
+            </StackTable></div>
           )}
           {can(permissions, "settings.business") ? <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">Reasons are managed under <Link href={`/app/${slug}/settings/cancellation-reasons`} className="text-brand-700 underline">Settings → Cancellation reasons</Link>. Cancellations made before reasons existed show as &quot;No reason given&quot;.</p> : null}
         </Card>
@@ -523,7 +524,7 @@ export default async function ReportsPage({
           <Card>
             <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Referrals</h2>
             {referrals.length === 0 ? <div className="p-4"><Empty title="No referrals joined or had a first visit in this range" /></div> : (
-              <div className="overflow-x-auto"><table className="w-full text-sm">
+              <div className="overflow-x-auto"><StackTable className="w-full text-sm">
                 <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Referred by</th><th className="px-4 py-2">New client</th><th className="px-4 py-2">Joined</th><th className="px-4 py-2">First paid visit</th></tr></thead>
                 <tbody className="divide-y divide-stone-100">
                   {referrals.map((r) => (
@@ -535,7 +536,7 @@ export default async function ReportsPage({
                     </tr>
                   ))}
                 </tbody>
-              </table></div>
+              </StackTable></div>
             )}
             <p className="border-t border-stone-100 px-4 py-2 text-xs text-stone-500">{referrals.length} referred · {referrals.filter((r) => r.rewardedAt).length} visited and paid. Codes are on receipts, the client account page and the “Refer a friend” automation.</p>
           </Card>
@@ -543,14 +544,14 @@ export default async function ReportsPage({
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">By payment method</h2>
           {byMethod.length === 0 ? <div className="p-4"><Empty title="No payments in this range" /></div> : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><StackTable className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Method</th><th className="px-4 py-2 text-right">Count</th><th className="px-4 py-2 text-right">Collected</th><th className="px-4 py-2 text-right">of which tips</th><th className="px-4 py-2 text-right">Refunded</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {byMethod.map((r) => (
                   <tr key={r.method}><td className="px-4 py-2 capitalize">{r.method.replace("_", " ")}</td><td className="px-4 py-2 text-right">{Number(r.count)}</td><td className="px-4 py-2 text-right">{money(r.amount)}</td><td className="px-4 py-2 text-right">{money(r.tips)}</td><td className="px-4 py-2 text-right">{money(r.refunded)}</td></tr>
                 ))}
               </tbody>
-            </table></div>
+            </StackTable></div>
           )}
         </Card>
         <Card className="lg:col-span-2">
@@ -567,12 +568,12 @@ export default async function ReportsPage({
         <Card>
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Top services &amp; products</h2>
           {byService.length === 0 ? <div className="p-4"><Empty title="Nothing sold in this range" /></div> : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><StackTable className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">Item</th><th className="px-4 py-2 text-right">Qty</th><th className="px-4 py-2 text-right">Revenue</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {byService.map((r) => <tr key={`${r.kind}:${r.name}`}><td className="px-4 py-2">{r.name} <span className="text-xs text-stone-400">{r.kind}</span></td><td className="px-4 py-2 text-right">{Number(r.count)}</td><td className="px-4 py-2 text-right">{money(r.amount)}</td></tr>)}
               </tbody>
-            </table></div>
+            </StackTable></div>
           )}
         </Card>
         <Card>
@@ -595,7 +596,7 @@ export default async function ReportsPage({
         <Card className="lg:col-span-2">
           <h2 className="border-b border-stone-200 px-4 py-2 text-sm font-semibold text-stone-600">Closed sales</h2>
           {sales.length === 0 ? <div className="p-4"><Empty title="Nothing closed in this range" /></div> : (
-            <div className="overflow-x-auto"><table className="w-full text-sm">
+            <div className="overflow-x-auto"><StackTable className="w-full text-sm">
               <thead className="text-left text-xs text-stone-500"><tr><th className="px-4 py-2">#</th><th className="px-4 py-2">When</th>{locations.length > 1 ? <th className="px-4 py-2">Location</th> : null}<th className="px-4 py-2">Client</th><th className="px-4 py-2 text-right">Total</th><th className="px-4 py-2 text-right">Tips</th><th className="px-4 py-2">Status</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
                 {sales.map((s) => (
@@ -610,7 +611,7 @@ export default async function ReportsPage({
                   </tr>
                 ))}
               </tbody>
-            </table></div>
+            </StackTable></div>
           )}
         </Card>
       </div>
@@ -618,7 +619,7 @@ export default async function ReportsPage({
         <Card className="mt-6">
           <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2"><h2 className="text-sm font-semibold text-stone-600">Stock on hand</h2><span className="text-xs text-stone-500">{stock.lowCount ? `${stock.lowCount} low · ` : ""}value at cost {money(stock.totalValueCents)} · retail {money(stock.totalRetailCents)}</span></div>
           <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <StackTable className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-2">Product</th><th className="px-4 py-2 text-right">On hand</th><th className="px-4 py-2 text-right">Cost value</th><th className="px-4 py-2 text-right">Retail value</th></tr></thead>
             <tbody className="divide-y divide-stone-100">
               {stock.items.map((i) => (
@@ -630,7 +631,7 @@ export default async function ReportsPage({
                 </tr>
               ))}
             </tbody>
-          </table>
+          </StackTable>
           </div>
         </Card>
       ) : null}
