@@ -165,8 +165,10 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
         status: "succeeded",
         amountCents: appt.depositCents,
         tipCents: 0,
-        stripePaymentIntentId: appt.depositPaymentIntentId,
-        stripeAccountId: appt.depositStripeAccountId,
+        // A Helcim deposit is refunded against its Helcim transaction; a Stripe one against its PaymentIntent.
+        ...(appt.depositProvider === "helcim"
+          ? { provider: "helcim" as const, providerPaymentId: appt.depositProviderPaymentId, providerInvoice: appt.depositPaymentIntentId }
+          : { stripePaymentIntentId: appt.depositPaymentIntentId, stripeAccountId: appt.depositStripeAccountId }),
         cardBrand: m?.[1]?.toLowerCase() ?? null,
         cardLast4: m?.[2] ?? null,
         note: "Deposit paid online",
@@ -214,7 +216,7 @@ export async function openFeeSaleForAppointment(input: { businessId: string; app
     if (existing) {
       if (existing.status !== "open") throw new SaleError("This appointment already has a paid ticket. Refund or void it first.");
       const pays = await tx.select().from(schema.payments).where(and(eq(schema.payments.saleId, existing.id), sql`${schema.payments.status} in ('pending','succeeded','partially_refunded','refunded')`));
-      const isDeposit = (p: (typeof pays)[number]) => p.note === "Deposit paid online" && !!appt.depositPaymentIntentId && p.stripePaymentIntentId === appt.depositPaymentIntentId;
+      const isDeposit = (p: (typeof pays)[number]) => p.note === "Deposit paid online" && !!appt.depositPaymentIntentId && (p.stripePaymentIntentId === appt.depositPaymentIntentId || (p.provider === "helcim" && p.providerInvoice === appt.depositPaymentIntentId));
       if (pays.some((p) => !isDeposit(p))) throw new SaleError("This appointment's ticket already has a payment. Finish or refund it first.");
       const deposit = pays.find(isDeposit);
       if (deposit) {

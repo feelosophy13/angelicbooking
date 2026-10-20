@@ -21,6 +21,7 @@ import { isSmsSuppressed, smsMarketingConsent } from "./consent";
 import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt, tzFor } from "./locations";
 import { addClientPhotos, clientPhotoCounts } from "./visit-photos";
 import type { DroppedPhoto } from "@/lib/booking-photos";
+import { markHelcimCheckoutUsed, refundUnusedCheckout } from "./helcim/online";
 
 export type PublicBusiness = typeof schema.businesses.$inferSelect;
 
@@ -483,7 +484,7 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
       notes: input.notes,
       createdByUserId: null, // self-service: the activity log records "client" as the actor
       source: "online",
-      deposit: paid?.kind === "deposit" ? { paymentIntentId: paid.paymentIntentId, cents: paid.cents, cardLabel: paid.cardLabel, accountId: paid.accountId } : null,
+      deposit: paid?.kind === "deposit" ? { paymentIntentId: paid.paymentIntentId, cents: paid.cents, cardLabel: paid.cardLabel, accountId: paid.accountId, provider: paid.provider ?? "stripe", providerPaymentId: paid.providerPaymentId ?? null } : null,
       cardSetupIntentId: paid?.kind === "card" ? paid.setupIntentId : null,
       classSessionId: input.classSessionId ?? null,
       promoCodeId,
@@ -497,6 +498,8 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
     throw e;
   }
   const token = await withTenant(business.id, async (tx) => (await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appointmentId) }))!.manageToken);
+  // A Helcim checkout's money is now this booking's: the sweep for paid-but-unbooked checkouts must leave it alone.
+  if (paid?.provider === "helcim") await markHelcimCheckoutUsed(business.id, paid.kind === "deposit" ? paid.paymentIntentId : paid.setupIntentId);
   // The booking is made; the pictures come after it and can never undo it. Stored before the messages go out so they can mention them.
   const photos: BookingPhotosResult = business.clientPhotosOnBooking && input.photos?.length ? await addClientPhotos({ businessId: business.id, appointmentId, files: input.photos }) : { stored: 0, dropped: [] };
   await notifyAppointment(business, appointmentId, "confirmation");
@@ -509,6 +512,10 @@ async function undoPayment(business: PublicBusiness, paid: VerifiedIntent | unde
   if (paid?.kind !== "deposit") return;
   // A double submit: the twin request already booked with this deposit (that's often why this one failed). Keep the money.
   if (await appointmentForIntent(business.id, paid.paymentIntentId)) return;
+  if (paid.provider === "helcim") {
+    await refundUnusedCheckout(business, paid.paymentIntentId).catch((e) => console.error("[helcim] could not refund orphan deposit", paid.paymentIntentId, (e as Error).message));
+    return;
+  }
   const pay = await paymentContextFor(business, paid.meta.locationId || null);
   if (!pay.accountId) return;
   try {

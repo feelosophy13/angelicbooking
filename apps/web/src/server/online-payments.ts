@@ -17,6 +17,8 @@ import { ensureStripeCustomer } from "./stripe-connect";
 import { BookingError } from "./booking";
 import type { PublicBusiness } from "./public-booking";
 import type { PaymentContext } from "./locations";
+import { helcimTokenOf } from "./helcim/account";
+import { HelcimCheckoutError, openHelcimCheckout, refundHelcimTransaction, verifyHelcimCheckout, voidHelcimCheckout } from "./helcim/online";
 
 export type PaymentMode = "deposit" | "card" | "none";
 
@@ -37,7 +39,7 @@ export function depositLabel(service: DepositTerms, money: (cents: number) => st
 
 /** What (if anything) the booking page must collect before this service can be booked at this location. */
 export function onlinePaymentRequirement(business: PublicBusiness, service: DepositTerms, pay: PaymentContext, priceCents: number): { mode: PaymentMode; amountCents: number; full: boolean } {
-  const ready = pay.ready && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  const ready = (pay.ready && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) || pay.helcimReady;
   if (!ready) return { mode: "none", amountCents: 0, full: false };
   const due = depositAmount(service, priceCents);
   if (due >= 50) return { mode: "deposit", amountCents: due, full: service.depositType === "full" || due >= priceCents };
@@ -57,6 +59,17 @@ export interface IntentMeta {
 
 /** Create the PaymentIntent / SetupIntent the browser will confirm, on the location's Stripe account. */
 export async function startOnlinePayment(business: PublicBusiness, pay: PaymentContext, mode: Exclude<PaymentMode, "none">, meta: IntentMeta, amountCents: number) {
+  // Helcim: a HelcimPay.js checkout (deposit = purchase, card hold = verify) instead of a PaymentIntent / SetupIntent.
+  if (pay.provider === "helcim") {
+    const client = await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, meta.clientId) }));
+    if (!client) throw new BookingError("Client not found.");
+    try {
+      const r = await openHelcimCheckout(business, { purpose: mode, meta: { ...meta, kind: mode }, amountCents, client });
+      return { provider: "helcim" as const, kind: mode, id: r.id, checkoutToken: r.checkoutToken, clientSecret: "", accountId: null };
+    } catch (e) {
+      throw new BookingError(e instanceof HelcimCheckoutError ? e.message : "Online payments are unavailable right now. Please try again.");
+    }
+  }
   const accountId = pay.accountId;
   if (!accountId || !pay.ready) throw new BookingError("Online payments are not set up.");
   const client = await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, meta.clientId) }));
@@ -78,14 +91,15 @@ export async function startOnlinePayment(business: PublicBusiness, pay: PaymentC
       },
       { stripeAccount: accountId },
     );
-    return { kind: "deposit" as const, id: pi.id, clientSecret: pi.client_secret!, accountId };
+    return { provider: "stripe" as const, kind: "deposit" as const, id: pi.id, checkoutToken: null, clientSecret: pi.client_secret!, accountId };
   }
   const si = await stripe().setupIntents.create({ customer, allowed_payment_method_types: ["card"], usage: "off_session", metadata }, { stripeAccount: accountId });
-  return { kind: "card" as const, id: si.id, clientSecret: si.client_secret!, accountId };
+  return { provider: "stripe" as const, kind: "card" as const, id: si.id, checkoutToken: null, clientSecret: si.client_secret!, accountId };
 }
 
 /** The client went back to edit their details: drop the unpaid intent so abandoned ones don't pile up. Best effort; only ours and only if nothing was paid. */
 export async function cancelOnlineIntent(business: PublicBusiness, pay: PaymentContext, kind: "deposit" | "card", intentId: string): Promise<void> {
+  if (pay.provider === "helcim") return voidHelcimCheckout(business.id, intentId);
   const accountId = pay.accountId;
   if (!accountId) return;
   const opts = { stripeAccount: accountId };
@@ -103,19 +117,32 @@ export async function cancelOnlineIntent(business: PublicBusiness, pay: PaymentC
 }
 
 export type VerifiedIntent =
-  | { kind: "deposit"; paymentIntentId: string; cents: number; cardLabel: string | null; meta: IntentMeta; accountId: string }
-  | { kind: "card"; setupIntentId: string; meta: IntentMeta };
+  | { kind: "deposit"; paymentIntentId: string; cents: number; cardLabel: string | null; meta: IntentMeta; accountId: string; provider?: "stripe" | "helcim"; providerPaymentId?: string | null }
+  | { kind: "card"; setupIntentId: string; meta: IntentMeta; provider?: "stripe" | "helcim" };
 
 /** Fetch the intent from Stripe and make sure it is ours, succeeded, and for the booking being made. */
-export async function verifyOnlineIntent(business: PublicBusiness, pay: PaymentContext, kind: "deposit" | "card", intentId: string, expected: Omit<IntentMeta, "clientId">): Promise<VerifiedIntent> {
-  const accountId = pay.accountId;
-  if (!accountId) throw new BookingError("Online payments are not set up.");
+export async function verifyOnlineIntent(business: PublicBusiness, pay: PaymentContext, kind: "deposit" | "card", intentId: string, expected: Omit<IntentMeta, "clientId">, /** Helcim: the HelcimPay.js answer from the browser. */ eventMessage?: unknown): Promise<VerifiedIntent> {
   const check = (md: Stripe.Metadata) => {
     if (md.businessId !== expected.businessId || md.serviceId !== expected.serviceId || md.staffId !== expected.staffId || md.startAt !== expected.startAt || (md.locationId ?? "") !== expected.locationId || !md.clientId) {
       throw new BookingError("That payment doesn't match this booking. Please start again.");
     }
     return { businessId: md.businessId, clientId: md.clientId, serviceId: md.serviceId, staffId: md.staffId, startAt: md.startAt, locationId: md.locationId ?? "" } satisfies IntentMeta;
   };
+  if (pay.provider === "helcim") {
+    let row;
+    try {
+      row = await verifyHelcimCheckout(business, intentId, eventMessage);
+    } catch (e) {
+      if (e instanceof HelcimCheckoutError) throw new BookingError(e.message);
+      throw e;
+    }
+    const meta = check(row.meta);
+    if (row.purpose !== kind) throw new BookingError("That payment doesn't match this booking. Please start again.");
+    if (kind === "deposit") return { kind, provider: "helcim", accountId: "", paymentIntentId: row.id, providerPaymentId: row.transactionId, cents: row.amountCents, cardLabel: row.cardLabel, meta };
+    return { kind, provider: "helcim", setupIntentId: row.id, meta };
+  }
+  const accountId = pay.accountId;
+  if (!accountId) throw new BookingError("Online payments are not set up.");
   if (kind === "deposit") {
     const pi = await stripe().paymentIntents.retrieve(intentId, { expand: ["latest_charge"] }, { stripeAccount: accountId });
     const meta = check(pi.metadata);
@@ -157,13 +184,22 @@ export async function refundDeposit(input: { businessId: string; accountId: stri
       await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.store_credit", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: refundCents, kept: appt.depositCents - refundCents, reason: input.reason }) });
       return true;
     }
+    if (appt.depositProvider === "helcim") {
+      const business = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId) });
+      const token = business ? helcimTokenOf({ ...business, paymentProvider: "helcim" }) : null;
+      if (!token || !appt.depositProviderPaymentId) throw new BookingError("Helcim isn't connected. Refund the deposit in your Helcim dashboard.");
+      return { appt, refundCents, partial, account: "", helcimToken: token };
+    }
     // Back through the account that took the deposit (the location may have switched accounts since).
     const account = appt.depositStripeAccountId ?? input.accountId;
     if (!account) throw new BookingError("Stripe account not connected.");
-    return { appt, refundCents, partial, account };
+    return { appt, refundCents, partial, account, helcimToken: null as string | null };
   });
   if (typeof prep === "boolean") return prep;
-  const { appt, refundCents, partial, account } = prep;
+  const { appt, refundCents, partial, account, helcimToken } = prep;
+  if (helcimToken) {
+    await refundHelcimTransaction(helcimToken, { key: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}`, transactionId: appt.depositProviderPaymentId!, amountCents: refundCents, full: !partial });
+  } else
   // Stripe is called with no transaction open. A partial refund names its amount; a full one lets Stripe refund what is left. The key
   // carries the deposit as it stood, so a double click is one refund but a second, equal partial refund later is a refund of its own.
   await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId!, ...(partial ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: account, idempotencyKey: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}` });

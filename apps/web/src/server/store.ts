@@ -22,7 +22,10 @@ import { platformFeeBpsFor } from "./price-book";
 import { paymentContextFor, paymentContextForSale } from "./locations";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { findOrCreateClient, type PublicBusiness } from "./public-booking";
-import { markCardPaymentSucceeded } from "./sales";
+import { markCardPaymentSucceeded, settleHelcimPayment } from "./sales";
+import { helcimTokenOf } from "./helcim/account";
+import { helcim } from "./helcim/client";
+import { getHelcimCheckout, HelcimCheckoutError, markHelcimCheckoutUsed, openHelcimCheckout, verifyHelcimCheckout, voidHelcimCheckout } from "./helcim/online";
 import { onlineAvailability } from "./inventory";
 import { productLabel } from "@/lib/inventory";
 import { queueOneOff } from "@/lib/notify";
@@ -37,7 +40,7 @@ export const GIFT_PRESETS_CENTS = [2500, 5000, 7500, 10000, 15000, 20000];
 /** Online orders are taken at the chosen location (its Stripe account and tax rate), else the default one. */
 export async function storeReady(business: PublicBusiness, locationId?: string | null): Promise<boolean> {
   const pay = await paymentContextFor(business, locationId);
-  return pay.ready && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+  return (pay.ready && !!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) || pay.helcimReady;
 }
 
 /** What the shop lists, with how many can still be sold at the location (null: stock isn't tracked). */
@@ -71,6 +74,7 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
   if (input.giftCard && (input.giftCard.amountCents < 500 || input.giftCard.amountCents > 100000)) throw new StoreError("Gift cards are between $5 and $1,000.");
   if (input.fulfillment.method === "ship" && (!business.shippingFlatCents || !input.fulfillment.address)) throw new StoreError("Enter a shipping address.");
   const clientId = await findOrCreateClient(business.id, { ...input.buyer, phone: input.buyer.phone, notes: null, serviceId: "", staffId: "", startAt: new Date(), email: input.buyer.email });
+  const onHelcim = pay.provider === "helcim";
   const accountId = pay.accountId!;
   const { sale, pending, total, client, fee } = await withTenant(business.id, async (tx) => {
     const products = input.items.length ? await tx.select().from(schema.products).where(and(eq(schema.products.active, true), eq(schema.products.sellOnline, true), eq(schema.products.kind, "retail"), sql`${schema.products.id} in ${input.items.map((i) => i.productId)}`)) : [];
@@ -129,10 +133,24 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
       await tx.update(schema.sales).set({ discountNote: null, fulfillment: { ...sale!.fulfillment!, giftRecipientEmail: input.giftCard.recipientEmail, giftRecipientName: input.giftCard.recipientName ?? undefined } as never }).where(eq(schema.sales.id, sale!.id));
     }
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
-    const [pending] = await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card", status: "pending", amountCents: total, tipCents: 0, stripeAccountId: accountId }).returning();
+    const [pending] = await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card", status: "pending", amountCents: total, tipCents: 0, ...(onHelcim ? { provider: "helcim" as const } : { stripeAccountId: accountId }) }).returning();
     const fee = Math.round((total * (await platformFeeBpsFor(business.id, tx))) / 10_000);
     return { sale: sale!, pending: pending!, total, client, fee };
   });
+  // Helcim: a HelcimPay.js preauth checkout; its id rides on the pending payment (provider_invoice) so the sweep can find it.
+  if (onHelcim) {
+    try {
+      const c = await openHelcimCheckout(business, { purpose: "order", meta: { saleId: sale.id, paymentId: pending.id }, amountCents: total, client: client ?? null });
+      await withTenant(business.id, (tx) => tx.update(schema.payments).set({ providerInvoice: c.id }).where(eq(schema.payments.id, pending.id)));
+      return { provider: "helcim" as const, saleId: sale.id, checkoutToken: c.checkoutToken, checkoutId: c.id, totalCents: total, clientSecret: "", accountId: null, publishableKey: null };
+    } catch (e) {
+      await withTenant(business.id, async (tx) => {
+        await tx.delete(schema.payments).where(and(eq(schema.payments.id, pending.id), eq(schema.payments.status, "pending")));
+        await tx.update(schema.sales).set({ status: "void", closedAt: new Date() }).where(and(eq(schema.sales.id, sale.id), eq(schema.sales.status, "open")));
+      });
+      throw new StoreError(e instanceof HelcimCheckoutError ? e.message : "Online payments are unavailable right now. Please try again.");
+    }
+  }
   // Stripe is called with no transaction open (the order and its pending payment are already saved).
   try {
     const customer = client ? await ensureStripeCustomer({ accountId, businessId: business.id, client }) : undefined;
@@ -143,7 +161,7 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
     );
     await withTenant(business.id, (tx) => tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending.id)));
     const browser = await browserStripe(accountId, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
-    return { saleId: sale.id, clientSecret: pi.client_secret!, accountId: browser.stripeAccount, publishableKey: browser.publishableKey, totalCents: total };
+    return { provider: "stripe" as const, saleId: sale.id, checkoutToken: null, checkoutId: null, clientSecret: pi.client_secret!, accountId: browser.stripeAccount, publishableKey: browser.publishableKey, totalCents: total };
   } catch (e) {
     // Nothing was charged: drop the payment and void the order so it stops holding stock.
     await withTenant(business.id, async (tx) => {
@@ -158,7 +176,21 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
  * The browser confirmed (authorized) the PaymentIntent: verify it with Stripe, capture it if the stock is still there and close the sale,
  * email the buyer (and gift recipient). Sold out meanwhile: the authorization is released, the order voided, and the buyer told why.
  */
-export async function finishOrder(business: PublicBusiness, saleId: string, paymentIntentId: string) {
+export async function finishOrder(business: PublicBusiness, saleId: string, paymentIntentId: string, /** Helcim: HelcimPay.js's answer; paymentIntentId is then the checkout id. */ helcimEvent?: unknown) {
+  if ((await paymentContextForSale(business, saleId)).provider === "helcim") {
+    let row;
+    try {
+      row = await verifyHelcimCheckout(business, paymentIntentId, helcimEvent);
+    } catch (e) {
+      if (e instanceof HelcimCheckoutError) throw new StoreError(e.message);
+      throw e;
+    }
+    if (row.meta.saleId !== saleId || row.purpose !== "order") throw new StoreError("That payment doesn't match this order.");
+    const out = await settleHelcimOrder(business, saleId, row.id);
+    if (out.status === "released") throw new StoreError(out.message);
+    after(() => sendOrderEmailsOnce(business.id, saleId).catch((e) => console.error("[store] order emails failed", saleId, (e as Error).message)));
+    return getOrder(business.id, saleId);
+  }
   const accountId = (await paymentContextForSale(business, saleId)).accountId;
   if (!accountId) throw new StoreError("Payments aren't set up.");
   const pi = await stripe().paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] }, { stripeAccount: accountId });
@@ -187,7 +219,57 @@ export async function settleOrderPayment(business: PublicBusiness, saleId: strin
   if (pi.status === "succeeded") return closePaidOrder(business, pi);
   if (pi.status === "canceled") return voidOrder(business.id, saleId, pi.id, CANCELED);
   if (pi.status !== "requires_capture") throw new StoreError(`Payment ${pi.status.replace(/_/g, " ")}.`);
-  const shortfall = await withTenant(business.id, async (tx) => {
+  const shortfall = await orderShortfall(business.id, saleId);
+  const opts = (op: "capture" | "cancel") => ({ stripeAccount: accountId, idempotencyKey: `order_${op}_${pi.id}` });
+  if (!shortfall) {
+    const done = await stripe().paymentIntents.capture(pi.id, { expand: ["latest_charge"] }, opts("capture")).catch((e) => settledInStripe(pi.id, accountId, e));
+    if (done.status === "canceled") return voidOrder(business.id, saleId, pi.id, CANCELED);
+    if (done.status !== "succeeded") throw new StoreError(`Payment ${done.status.replace(/_/g, " ")}.`);
+    return closePaidOrder(business, done);
+  }
+  const done = await stripe().paymentIntents.cancel(pi.id, {}, opts("cancel")).catch((e) => settledInStripe(pi.id, accountId, e));
+  // Captured first by the other settle: the money was taken, so the sale is recorded rather than lost.
+  if (done.status === "succeeded") return closePaidOrder(business, done);
+  return voidOrder(business.id, saleId, pi.id, shortfall);
+}
+
+/**
+ * Settle a Helcim order whose card was authorised (the checkout is verified and paid): the same stock check as Stripe's, then capture the
+ * preauth and close the sale, or reverse it (nothing charged) and void the order. Runs once: the checkout turns "used" either way.
+ */
+export async function settleHelcimOrder(business: PublicBusiness, saleId: string, checkoutId: string): Promise<OrderSettlement> {
+  const row = await getHelcimCheckout(business.id, checkoutId);
+  const token = helcimTokenOf({ ...business, paymentProvider: "helcim" });
+  if (!row || !row.transactionId || !token) throw new StoreError("Payments aren't set up.");
+  const payment = await withTenant(business.id, (tx) => tx.query.payments.findFirst({ where: and(eq(schema.payments.saleId, saleId), eq(schema.payments.providerInvoice, checkoutId)) }));
+  if (!payment) throw new StoreError("Order not found.");
+  if (row.status === "used") return payment.status === "succeeded" ? { status: "paid" } : { status: "released", message: CANCELED };
+  const shortfall = await orderShortfall(business.id, saleId);
+  const preauth = Number(row.transactionId);
+  if (!shortfall) {
+    const captured = await helcim.capture(token, { key: row.id, preAuthTransactionId: preauth, amountCents: row.amountCents, ipAddress: "127.0.0.1" });
+    await settleHelcimPayment({ businessId: business.id, paymentId: payment.id, transaction: captured, taxRateBps: business.taxRateBps });
+    await markHelcimCheckoutUsed(business.id, row.id);
+    if (captured.status !== "APPROVED") return voidHelcimOrder(business.id, saleId, payment.id, `The payment didn't go through. ${NOT_CHARGED}`);
+    return { status: "paid" };
+  }
+  await helcim.reverse(token, { key: `release_${row.id}`, transactionId: preauth, ipAddress: "127.0.0.1" }).catch((e) => console.error("[store] could not release Helcim preauth", row.id, (e as Error).message));
+  await markHelcimCheckoutUsed(business.id, row.id);
+  return voidHelcimOrder(business.id, saleId, payment.id, shortfall);
+}
+
+async function voidHelcimOrder(businessId: string, saleId: string, paymentId: string, message: string): Promise<OrderSettlement> {
+  await withTenant(businessId, async (tx) => {
+    await tx.update(schema.payments).set({ status: "failed", note: message }).where(and(eq(schema.payments.id, paymentId), inArray(schema.payments.status, ["pending", "failed"])));
+    const voided = await tx.update(schema.sales).set({ status: "void", closedAt: new Date() }).where(and(eq(schema.sales.id, saleId), eq(schema.sales.status, "open"))).returning({ id: schema.sales.id });
+    if (voided.length) await tx.insert(schema.auditLog).values({ businessId, actorUserId: null, action: "order.released", entity: "sale", entityId: saleId, diff: JSON.stringify({ paymentId, why: message }) });
+  });
+  return { status: "released", message };
+}
+
+/** Whether every product on the order is still there at its location (products locked, the order's own hold left out); the reason when not. */
+async function orderShortfall(businessId: string, saleId: string): Promise<string | null> {
+  return withTenant(businessId, async (tx) => {
     const [sale] = await tx.select().from(schema.sales).where(eq(schema.sales.id, saleId)).for("update");
     if (!sale) throw new StoreError("Order not found.");
     if (sale.status === "void") return `This order was canceled. ${NOT_CHARGED}`;
@@ -203,17 +285,6 @@ export async function settleOrderPayment(business: PublicBusiness, saleId: strin
     }
     return null;
   });
-  const opts = (op: "capture" | "cancel") => ({ stripeAccount: accountId, idempotencyKey: `order_${op}_${pi.id}` });
-  if (!shortfall) {
-    const done = await stripe().paymentIntents.capture(pi.id, { expand: ["latest_charge"] }, opts("capture")).catch((e) => settledInStripe(pi.id, accountId, e));
-    if (done.status === "canceled") return voidOrder(business.id, saleId, pi.id, CANCELED);
-    if (done.status !== "succeeded") throw new StoreError(`Payment ${done.status.replace(/_/g, " ")}.`);
-    return closePaidOrder(business, done);
-  }
-  const done = await stripe().paymentIntents.cancel(pi.id, {}, opts("cancel")).catch((e) => settledInStripe(pi.id, accountId, e));
-  // Captured first by the other settle: the money was taken, so the sale is recorded rather than lost.
-  if (done.status === "succeeded") return closePaidOrder(business, done);
-  return voidOrder(business.id, saleId, pi.id, shortfall);
 }
 
 /** After a capture or cancel failed: the PaymentIntent if it is already captured or canceled (someone else settled it), else the error. */
@@ -258,11 +329,12 @@ export const ORDER_ABANDONED_AFTER_HOURS = 24;
  */
 export async function sweepAuthorizedOrders(opts: { businessIds?: string[] } = {}): Promise<{ checked: number; captured: number; released: number; abandoned: number; failed: number }> {
   const out = { checked: 0, captured: 0, released: 0, abandoned: 0, failed: 0 };
+  await sweepHelcimOrders(out, opts);
   if (!isStripeConfigured()) return out;
   const businesses = await db
     .select()
     .from(schema.businesses)
-    .where(and(or(eq(schema.businesses.storeEnabled, true), eq(schema.businesses.giftCardsOnline, true)), opts.businessIds ? inArray(schema.businesses.id, opts.businessIds) : sql`true`));
+    .where(and(or(eq(schema.businesses.storeEnabled, true), eq(schema.businesses.giftCardsOnline, true)), eq(schema.businesses.paymentProvider, "stripe"), opts.businessIds ? inArray(schema.businesses.id, opts.businessIds) : sql`true`));
   const settleBefore = new Date(Date.now() - ORDER_SETTLE_AFTER_MINUTES * 60_000);
   const abandonedBefore = new Date(Date.now() - ORDER_ABANDONED_AFTER_HOURS * 3_600_000);
   // An authorization lasts about 7 days; older orders are left alone.
@@ -313,6 +385,50 @@ export async function sweepAuthorizedOrders(opts: { businessIds?: string[] } = {
     }
   }
   return out;
+}
+
+/** The Helcim half of the order sweep: authorised orders whose buyer never came back are settled; never-paid ones are voided after a day. */
+async function sweepHelcimOrders(out: { checked: number; captured: number; released: number; abandoned: number; failed: number }, opts: { businessIds?: string[] }) {
+  const businesses = await db
+    .select()
+    .from(schema.businesses)
+    .where(and(or(eq(schema.businesses.storeEnabled, true), eq(schema.businesses.giftCardsOnline, true)), eq(schema.businesses.paymentProvider, "helcim"), opts.businessIds ? inArray(schema.businesses.id, opts.businessIds) : sql`true`));
+  const settleBefore = new Date(Date.now() - ORDER_SETTLE_AFTER_MINUTES * 60_000);
+  const abandonedBefore = new Date(Date.now() - ORDER_ABANDONED_AFTER_HOURS * 3_600_000);
+  const since = new Date(Date.now() - 8 * 86_400_000);
+  for (const business of businesses) {
+    const rows = await withTenant(business.id, (tx) =>
+      tx
+        .select({ saleId: schema.sales.id, createdAt: schema.sales.createdAt, paymentId: schema.payments.id, checkoutId: schema.payments.providerInvoice })
+        .from(schema.sales)
+        .innerJoin(schema.payments, eq(schema.payments.saleId, schema.sales.id))
+        .where(and(eq(schema.sales.source, "online"), eq(schema.sales.status, "open"), eq(schema.payments.provider, "helcim"), eq(schema.payments.method, "card"), inArray(schema.payments.status, ["pending", "failed"]), isNotNull(schema.payments.providerInvoice), lt(schema.sales.createdAt, settleBefore), gte(schema.sales.createdAt, since)))
+        .orderBy(asc(schema.sales.createdAt))
+        .limit(50),
+    );
+    for (const r of rows) {
+      out.checked++;
+      try {
+        const c = await getHelcimCheckout(business.id, r.checkoutId!);
+        if (c?.status === "paid") {
+          const s = await settleHelcimOrder(business, r.saleId, c.id);
+          if (s.status === "released") out.released++;
+          else {
+            out.captured++;
+            await sendOrderEmailsOnce(business.id, r.saleId).catch((e) => console.error("[store] order emails failed", r.saleId, (e as Error).message));
+          }
+        } else if (!c || c.status === "void" || r.createdAt < abandonedBefore) {
+          // Never paid (or the checkout was dropped): the order stops holding stock. A HelcimPay.js session can't be paid after 60 minutes.
+          if (c) await voidHelcimCheckout(business.id, c.id);
+          await voidHelcimOrder(business.id, r.saleId, r.paymentId, `Checkout was never finished. ${NOT_CHARGED}`);
+          out.abandoned++;
+        }
+      } catch (e) {
+        out.failed++;
+        console.error("[store] settling Helcim order failed", r.saleId, (e as Error).message);
+      }
+    }
+  }
 }
 
 /** Unguessable key that lets the buyer (and only the buyer) open the order page; it is never emailed or stored. */

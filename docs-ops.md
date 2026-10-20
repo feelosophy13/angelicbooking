@@ -82,6 +82,11 @@ Production runs on Render (workspace "My Workspace", region Virginia):
   `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, `JOBS_SECRET`, `GOOGLE_CLIENT_ID/SECRET`,
   `RESEND_API_KEY`, `EMAIL_FROM`, `TWILIO_ACCOUNT_SID/AUTH_TOKEN`. Every variable set on Render must also exist in the local `.env`.
   Prices are not environment variables any more (see "What the Pricing page does").
+  Helcim (2026-10-20): `APP_ENCRYPTION_KEY` (32 random bytes, base64: `openssl rand -base64 32`) encrypts each merchant's Helcim
+  API token in the database and is required in production before any business connects Helcim; never rotate it without
+  re-encrypting (a lost key means every Helcim business reconnects). `HELCIM_PARTNER_TOKEN` (optional) is sent on every Helcim
+  request once the Integration Partner Program is joined, so revenue share is credited; `HELCIM_API_URL` overrides the API host.
+  Each Helcim business pastes its own webhook URL (`/api/helcim/webhook/<businessId>`, shown on Settings → Payments).
   Stripe, Resend and Twilio keys are not set yet; add them there when ready.
 - The app lives at **`app.angelicbooking.com`** (`BETTER_AUTH_URL` and `NEXT_PUBLIC_APP_URL`); it is the only custom
   domain on the Render service. Cloudflare DNS: `CNAME app angelic-booking.onrender.com` (DNS only, not proxied).

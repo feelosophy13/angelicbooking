@@ -504,6 +504,29 @@ export const helcimDevices = pgTable(
   (t) => [uniqueIndex("helcim_devices_code_uq").on(t.businessId, t.code)],
 );
 
+/** A HelcimPay.js checkout opened online (booking deposit or card hold, store order), kept until its result is verified and used. */
+export const helcimCheckouts = pgTable(
+  "helcim_checkouts",
+  {
+    id: id(),
+    businessId: businessId(),
+    purpose: text("purpose").$type<"deposit" | "card" | "order">().notNull(),
+    meta: jsonb("meta").$type<Record<string, string>>().notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    checkoutToken: text("checkout_token").notNull(),
+    /** Encrypted (lib/secrets.ts). */
+    secretToken: text("secret_token").notNull(),
+    /** open → paid (verified) → used (booked / ordered); refunded or void when it never was. */
+    status: text("status").$type<"open" | "paid" | "used" | "refunded" | "void">().notNull().default("open"),
+    transactionId: text("transaction_id"),
+    cardLabel: text("card_label"),
+    createdAt: createdAt(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (t) => [index("helcim_checkouts_sweep_idx").on(t.status, t.paidAt)],
+);
+
 /** A client's Helcim customer, where their saved cards live (the Helcim twin of client_stripe_customers). */
 export const clientHelcimCustomers = pgTable(
   "client_helcim_customers",
@@ -888,6 +911,9 @@ export const appointments = pgTable(
     /** The Stripe account that took the deposit, so a refund goes to the right one even after the location's account changes. */
     depositStripeAccountId: text("deposit_stripe_account_id"),
     depositCardLabel: text("deposit_card_label"), // "VISA •••• 4242"
+    /** Which processor took the deposit; for Helcim, deposit_payment_intent_id holds the helcim_checkouts id and this its transaction. */
+    depositProvider: text("deposit_provider").$type<"stripe" | "helcim">().notNull().default("stripe"),
+    depositProviderPaymentId: text("deposit_provider_payment_id"),
     // SetupIntent that saved a card on file at booking (no money moved).
     cardSetupIntentId: text("card_setup_intent_id"),
     // Promo code entered online; applied as the discount when checkout opens.

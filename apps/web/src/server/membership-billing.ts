@@ -16,6 +16,9 @@ import { stripe } from "@/lib/stripe";
 import { addMembershipPeriod, isMembershipInterval, renewedCredits } from "@angelic/core";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { locationOrDefault, paymentContextFor } from "./locations";
+import { helcimTokenOf } from "./helcim/account";
+import { brandOf, helcim, last4Of } from "./helcim/client";
+import { customerCodeFor } from "./helcim/payments";
 
 export class MembershipBillingError extends Error {}
 
@@ -45,7 +48,7 @@ export async function enableAutoRenew(business: Business, membershipId: string, 
   // A membership paused by a failed card comes back to life here; a frozen one has to be resumed first.
   const revivable = m?.status === "paused" && !m.frozenUntil;
   if (!m || (m.status !== "active" && !revivable)) throw new MembershipBillingError(m?.status === "paused" ? "Resume the membership first." : "Membership is not active.");
-  if (m.stripeSubscriptionId) throw new MembershipBillingError("Auto-renew is already on.");
+  if (m.stripeSubscriptionId || (m.autoRenew && m.helcimCardToken)) throw new MembershipBillingError("Auto-renew is already on.");
   const [plan, client] = await withTenant(business.id, async (tx) => [await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, m.planId) }), await tx.query.clients.findFirst({ where: eq(schema.clients.id, m.clientId) })] as const);
   if (!plan || !client) throw new MembershipBillingError("Plan or client not found.");
   const interval = isMembershipInterval(plan.interval) ? plan.interval : "month";
@@ -53,6 +56,15 @@ export async function enableAutoRenew(business: Business, membershipId: string, 
   if (periodsLeft !== null && periodsLeft <= 0) throw new MembershipBillingError("This plan's last period is already paid; there is nothing left to renew.");
   // The subscription lives on the account of the site that sold the membership (else the client's home site, else the default).
   const pay = await paymentContextFor(business, m.locationId ?? client.homeLocationId);
+  // Helcim: the app charges the saved card when each period ends (renewHelcimMemberships); nothing is set up at Helcim.
+  if (pay.provider === "helcim") {
+    if (!pay.helcimReady) throw new MembershipBillingError("Connect Helcim under Settings → Payments first.");
+    await withTenant(business.id, async (tx) => {
+      await tx.update(schema.clientMemberships).set({ helcimCardToken: paymentMethodId, autoRenew: true, status: "active", paymentFailedAt: null, locationId: m.locationId ?? pay.location?.id ?? null }).where(eq(schema.clientMemberships.id, m.id));
+      await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: "membership.autorenew_on", entity: "client_membership", entityId: m.id, diff: JSON.stringify({ processor: "helcim" }) });
+    });
+    return;
+  }
   const accountId = pay.accountId;
   if (!accountId || !pay.ready) throw new MembershipBillingError("Connect Stripe under Settings → Payments first.");
   const customer = await ensureStripeCustomer({ accountId, businessId: business.id, client });
@@ -92,7 +104,7 @@ export async function disableAutoRenew(business: Business, membershipId: string,
   await withTenant(business.id, async (tx) => {
     await tx
       .update(schema.clientMemberships)
-      .set({ stripeSubscriptionId: null, autoRenew: false, ...(cancelMembership ? { status: "cancelled" as const, cancelledAt: new Date() } : {}) })
+      .set({ stripeSubscriptionId: null, helcimCardToken: null, autoRenew: false, ...(cancelMembership ? { status: "cancelled" as const, cancelledAt: new Date() } : {}) })
       .where(eq(schema.clientMemberships.id, m.id));
     await tx.insert(schema.auditLog).values({ businessId: business.id, actorUserId, action: cancelMembership ? "membership.cancel" : "membership.autorenew_off", entity: "client_membership", entityId: m.id });
   });
@@ -146,36 +158,51 @@ export async function handleRenewalInvoice(business: Business, invoice: Stripe.I
   }
   // Fetched before the transaction: the renewal's PaymentIntent is what a later refund sends money back through.
   const piId = (invoice.amount_paid ?? 0) > 0 ? await paymentIntentOfInvoice(invoice, accountId) : null;
+  const periodEnd = invoice.lines.data[0]?.period?.end;
+  await recordRenewal(business, m.id, {
+    ref: invoice.id,
+    amountCents: invoice.amount_paid ?? 0,
+    currency: invoice.currency,
+    periodEnd: periodEnd ? new Date(periodEnd * 1000) : null,
+    locationId,
+    payment: { stripePaymentIntentId: piId, stripeAccountId: accountId ?? m.stripeAccountId, note: `Membership renewal · invoice ${invoice.number ?? invoice.id}` },
+  });
+  return true;
+}
+
+/**
+ * A renewal was paid (a Stripe invoice, or a Helcim charge the app made): extend the period, top up the credits (plus any rollover) and
+ * record a paid sale. Idempotent per `ref` (kept as the membership's last invoice id).
+ */
+async function recordRenewal(business: Business, membershipId: string, r: { ref: string; amountCents: number; currency: string; periodEnd: Date | null; locationId: string | null; payment: Partial<typeof schema.payments.$inferInsert> & { note: string } }) {
   await withTenant(business.id, async (tx) => {
-    const fresh = await tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, m.id) });
-    if (!fresh || fresh.lastInvoiceId === invoice.id) return;
+    const fresh = await tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, membershipId) });
+    if (!fresh || fresh.lastInvoiceId === r.ref) return;
     const plan = await tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, fresh.planId) });
-    const periodEnd = invoice.lines.data[0]?.period?.end;
     const base = fresh.currentPeriodEnd > new Date() ? fresh.currentPeriodEnd : new Date();
     const fallbackEnd = addMembershipPeriod(base, plan && isMembershipInterval(plan.interval) ? plan.interval : "month", plan?.intervalCount ?? 1);
     await tx
       .update(schema.clientMemberships)
       .set({
-        currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : fallbackEnd,
+        currentPeriodEnd: r.periodEnd ?? fallbackEnd,
         creditsRemaining: renewedCredits(fresh.creditsRemaining, plan?.includedSessions ?? 0, plan?.rolloverCap ?? 0),
         cyclesBilled: fresh.cyclesBilled + 1,
         status: "active",
         paymentFailedAt: null,
-        lastInvoiceId: invoice.id,
+        lastInvoiceId: r.ref,
       })
       .where(eq(schema.clientMemberships.id, fresh.id));
-    const amount = invoice.amount_paid ?? 0;
+    const amount = r.amountCents;
     if (amount > 0) {
       const rows = await tx.execute<{ n: number }>(sql`select next_sale_number(${business.id}) as n`);
       const [sale] = await tx
         .insert(schema.sales)
-        .values({ businessId: business.id, number: Number(rows[0]?.n ?? 1001), clientId: fresh.clientId, locationId: fresh.locationId ?? locationId ?? (await locationOrDefault(tx, null))?.id ?? null, currency: invoice.currency, source: "membership", status: "paid", subtotalCents: amount, totalCents: amount, paidCents: amount, closedAt: new Date() })
+        .values({ businessId: business.id, number: Number(rows[0]?.n ?? 1001), clientId: fresh.clientId, locationId: fresh.locationId ?? r.locationId ?? (await locationOrDefault(tx, null))?.id ?? null, currency: r.currency, source: "membership", status: "paid", subtotalCents: amount, totalCents: amount, paidCents: amount, closedAt: new Date() })
         .returning();
       await tx.insert(schema.saleLines).values({ businessId: business.id, saleId: sale!.id, kind: "membership", productId: fresh.planId, name: `${plan?.name ?? "Membership"} renewal`, quantity: 1, unitCents: amount, amountCents: amount, taxable: false });
-      await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card_on_file", status: "succeeded", amountCents: amount, tipCents: 0, stripePaymentIntentId: piId, stripeAccountId: accountId ?? fresh.stripeAccountId, note: `Membership renewal · invoice ${invoice.number ?? invoice.id}` }).onConflictDoNothing();
+      await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card_on_file", status: "succeeded", amountCents: amount, tipCents: 0, ...r.payment }).onConflictDoNothing();
     }
   });
-  return true;
 }
 
 export async function handleRenewalFailed(business: Business, invoice: Stripe.Invoice) {
@@ -225,3 +252,41 @@ function subscriptionIdOf(invoice: Stripe.Invoice): string | null {
 
 // Unscoped lookups used by the webhook (business by account id) live in webhooks.ts.
 void db;
+
+/**
+ * Helcim memberships: charge each auto-renewing membership whose period has ended to its saved card, then extend it like a Stripe renewal.
+ * A declined card pauses the membership and starts the "membership payment failed" automation, as with Stripe. Fixed-length plans stop
+ * after their last period. Run by the daily jobs; a charge is keyed on the membership and period, so a rerun never charges twice.
+ */
+export async function renewHelcimMemberships(): Promise<{ due: number; renewed: number; failed: number }> {
+  const due = await withJobs((tx) =>
+    tx.select().from(schema.clientMemberships).where(sql`${schema.clientMemberships.autoRenew} and ${schema.clientMemberships.helcimCardToken} is not null and ${schema.clientMemberships.status} = 'active' and ${schema.clientMemberships.cancelledAt} is null and ${schema.clientMemberships.currentPeriodEnd} <= now()`).limit(200),
+  );
+  let renewed = 0;
+  let failed = 0;
+  for (const m of due) {
+    const business = await db.query.businesses.findFirst({ where: eq(schema.businesses.id, m.businessId) });
+    const token = business ? helcimTokenOf(business) : null;
+    if (!business || !token) continue;
+    const plan = await withTenant(business.id, (tx) => tx.query.membershipPlans.findFirst({ where: eq(schema.membershipPlans.id, m.planId) }));
+    if (!plan) continue;
+    if (plan.cycleCount && m.cyclesBilled >= plan.cycleCount) {
+      await withTenant(business.id, (tx) => tx.update(schema.clientMemberships).set({ autoRenew: false, helcimCardToken: null }).where(eq(schema.clientMemberships.id, m.id)));
+      continue;
+    }
+    const customer = await customerCodeFor(business.id, m.clientId);
+    try {
+      if (!customer) throw new Error("No Helcim customer for this client.");
+      const t = await helcim.purchaseWithToken(token, { key: `renew_${m.id}_${m.cyclesBilled}`, amountCents: plan.priceCents, currency: business.currency, cardToken: m.helcimCardToken!, customerCode: customer.code, ipAddress: "127.0.0.1" });
+      if (t.status !== "APPROVED") throw new Error("Declined");
+      await recordRenewal(business, m.id, { ref: `helcim_${t.transactionId}`, amountCents: plan.priceCents, currency: business.currency, periodEnd: null, locationId: m.locationId, payment: { provider: "helcim", providerPaymentId: String(t.transactionId), cardBrand: brandOf(t.cardType), cardLast4: last4Of(t.cardNumber), note: "Membership renewal" } });
+      renewed++;
+    } catch (e) {
+      failed++;
+      await withTenant(business.id, (tx) => tx.update(schema.clientMemberships).set({ paymentFailedAt: new Date(), status: "paused" }).where(eq(schema.clientMemberships.id, m.id)));
+      await triggerWorkflows(business, "membership_payment_failed", { clientId: m.clientId, dedupeKey: `${m.id}:helcim:${m.cyclesBilled}`, context: { membershipId: m.id, locationId: m.locationId, reason: "Membership payment failed" } }).catch((err) => console.error("[workflows] membership_payment_failed failed", (err as Error).message));
+      console.error("[membership] Helcim renewal failed", m.id, (e as Error).message);
+    }
+  }
+  return { due: due.length, renewed, failed };
+}

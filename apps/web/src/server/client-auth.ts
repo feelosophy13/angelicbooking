@@ -12,6 +12,9 @@ import { emailConfigured } from "@/lib/notify/providers";
 import { getActiveNumber } from "./messaging";
 import { getClientSessionId } from "@/lib/client-session";
 import { customerIdFor, savedCardsFor } from "./stripe-connect";
+import { helcimTokenOf } from "./helcim/account";
+import { helcim } from "./helcim/client";
+import { customerCodeFor, savedHelcimCards } from "./helcim/payments";
 import { readyAccountsOf } from "./locations";
 import { stripe } from "@/lib/stripe";
 import { pointsBalance, ensureReferralCode } from "./loyalty";
@@ -137,8 +140,10 @@ export async function clientAccountData(business: PublicBusiness, clientId: stri
   });
   if (!data) return null;
   // A business can run several Stripe accounts (one per separate-entity location): list the client's cards on each.
-  const accounts = await readyAccountsOf(business);
-  const cards = (await Promise.all(accounts.map(async (pay) => (await savedCardsFor(business.id, pay, clientId)).map((c) => ({ ...c, accountId: pay.accountId!, siteName: pay.name }))))).flat();
+  const accounts = business.paymentProvider === "helcim" ? [] : await readyAccountsOf(business);
+  const cards = business.paymentProvider === "helcim"
+    ? (await savedHelcimCards(business.id, helcimTokenOf(business), clientId)).map((c) => ({ ...c, accountId: "helcim", siteName: business.name }))
+    : (await Promise.all(accounts.map(async (pay) => (await savedCardsFor(business.id, pay, clientId)).map((c) => ({ ...c, accountId: pay.accountId!, siteName: pay.name }))))).flat();
   const done = new Set(["cancelled", "completed", "no_show"]);
   return {
     ...data,
@@ -150,6 +155,7 @@ export async function clientAccountData(business: PublicBusiness, clientId: stri
 
 /** Remove a saved card, after checking it belongs to this client's Stripe customer. */
 export async function removeSavedCard(business: PublicBusiness, clientId: string, paymentMethodId: string) {
+  if (business.paymentProvider === "helcim") return removeHelcimCard(business, clientId, paymentMethodId);
   // The card may live on any of the business's accounts; it must belong to this client's customer there.
   for (const pay of await readyAccountsOf(business)) {
     const customerId = await withTenant(business.id, (tx) => customerIdFor(tx, clientId, pay.accountId));
@@ -206,4 +212,22 @@ export async function updateClientProfile(business: PublicBusiness, clientId: st
       .set({ ...rest, smsOptIn: stopped ? false : input.smsOptIn, ...(marketing === cur?.smsMarketingOptIn ? {} : smsMarketingConsent(marketing, "client account page")) })
       .where(eq(schema.clients.id, clientId));
   });
+}
+
+/** Helcim: remove a saved card (identified by its card token) from the client's own Helcim customer, unless a booking hold still needs it. */
+async function removeHelcimCard(business: PublicBusiness, clientId: string, cardToken: string) {
+  const token = helcimTokenOf(business);
+  const customer = await customerCodeFor(business.id, clientId);
+  if (!token || !customer) throw new ClientAuthError("No saved cards.");
+  const cards = await helcim.customerCards(token, customer.id);
+  const card = cards.find((c) => c.cardToken === cardToken);
+  if (!card) throw new ClientAuthError("That card isn't yours.");
+  // An upcoming booking held with a card: keep the client's last card while it is holding one.
+  const held = await withTenant(business.id, (tx) =>
+    tx.select({ id: schema.appointments.id }).from(schema.appointments).where(and(eq(schema.appointments.clientId, clientId), isNotNull(schema.appointments.cardSetupIntentId), inArray(schema.appointments.status, ["booked", "confirmed"]), sql`exists (select 1 from ${schema.appointmentItems} i where i.appointment_id = ${schema.appointments.id} and i.end_at > now())`)),
+  );
+  if (held.length && cards.length <= 1) throw new ClientAuthError("That card is holding an upcoming booking. Call us to change it.");
+  const renewing = await withTenant(business.id, (tx) => tx.select({ id: schema.clientMemberships.id }).from(schema.clientMemberships).where(and(eq(schema.clientMemberships.clientId, clientId), eq(schema.clientMemberships.autoRenew, true), eq(schema.clientMemberships.helcimCardToken, cardToken), isNull(schema.clientMemberships.cancelledAt))));
+  if (renewing.length) throw new ClientAuthError("That card pays your membership. Call us to change it.");
+  await helcim.deleteCard(token, customer.id, card.id);
 }

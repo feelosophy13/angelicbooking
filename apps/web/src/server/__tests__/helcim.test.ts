@@ -3,6 +3,8 @@
 import "../../../../../packages/db/src/env";
 import { createHash, createHmac } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+// Order emails go out in `after`, which needs a request scope.
+vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: () => undefined }));
 import { eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { addProductLine, chargeHelcimSavedCard, getSale, openWalkInSale, refundPayment } from "@/server/sales";
@@ -10,6 +12,10 @@ import { checkHelcimTerminalPayment, finishHelcimDeskCheckout, handleHelcimCardT
 import { verifyCheckoutHash, verifyWebhookSignature } from "@/server/helcim/client";
 import { helcimTokenOf } from "@/server/helcim/account";
 import { encryptSecret } from "@/lib/secrets";
+import { openHelcimCheckout, sweepHelcimCheckouts, verifyHelcimCheckout } from "@/server/helcim/online";
+import { finishOrder, startOrder } from "@/server/store";
+import { refundDeposit } from "@/server/online-payments";
+import { renewHelcimMemberships } from "@/server/membership-billing";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
 
 const up = await reachable();
@@ -45,6 +51,8 @@ function defaults(c: Call, key: string): unknown {
     return t;
   }
   if (key === "POST /payment/refund") return { transactionId: nextId++, status: "APPROVED", type: "refund", amount: (c.body as { amount: number }).amount };
+  if (key === "POST /payment/capture") return { transactionId: nextId++, status: "APPROVED", type: "purchase", amount: (c.body as { amount: number }).amount, cardType: "VI", cardNumber: "4242424242" };
+  if (key === "POST /payment/reverse") return { transactionId: nextId++, status: "APPROVED", type: "reverse", amount: 0 };
   return { errors: [`unexpected ${key}`] };
 }
 
@@ -161,6 +169,80 @@ describe.skipIf(!up)("Helcim as the card processor", () => {
     p = d.payments[0]!;
     expect([p.refundedCents, p.status]).toEqual([2500, "partially_refunded"]);
     expect(d.refunds[0]!.providerRefundId).toBeTruthy();
+  });
+
+  const business = async () => (await db.query.businesses.findFirst({ where: eq(schema.businesses.id, kit.A) }))!;
+  /** What HelcimPay.js hands the browser after a checkout, signed with that checkout's secret. */
+  const paid = (transactionId: number, extra: Record<string, unknown> = {}) => {
+    const data = { transactionId, status: "APPROVED", ...extra };
+    return { data, hash: createHash("sha256").update(JSON.stringify(data) + "sec_456").digest("hex") };
+  };
+
+  it("verifies an online deposit once, and refunds a paid checkout nobody booked with after 20 minutes", async () => {
+    fakeHelcim();
+    const b = await business();
+    const client = { id: clientId, firstName: "Pat", lastName: "Lee", phone: null };
+    const c = await openHelcimCheckout(b, { purpose: "deposit", meta: { businessId: kit.A, clientId }, amountCents: 5000, client });
+    expect(calls.find((x) => x.path === "/helcim-pay/initialize")!.body).toMatchObject({ paymentType: "purchase", amount: 50, customerCode: clientId });
+    transactions.push({ transactionId: 6001, status: "APPROVED", type: "purchase", amount: 50, cardType: "VI", cardNumber: "4242424242" });
+    await expect(verifyHelcimCheckout(b, c.id, { data: { transactionId: 6001 }, hash: "nope" })).rejects.toThrow(/couldn't be verified/);
+    const row = await verifyHelcimCheckout(b, c.id, paid(6001));
+    expect([row.status, row.transactionId, row.cardLabel]).toEqual(["paid", "6001", "VISA •••• 4242"]);
+    expect((await verifyHelcimCheckout(b, c.id, null)).status).toBe("paid"); // a refresh gets the verified checkout
+    // Twenty minutes later and no booking holds it: refunded.
+    await withTenant(kit.A, (tx) => tx.update(schema.helcimCheckouts).set({ paidAt: new Date(Date.now() - 25 * 60_000) }).where(eq(schema.helcimCheckouts.id, c.id)));
+    const swept = await sweepHelcimCheckouts();
+    expect(swept.refunded).toBeGreaterThanOrEqual(1);
+    expect(calls.find((x) => x.path === "/payment/refund")!.body).toMatchObject({ originalTransactionId: 6001, amount: 50 });
+    expect((await withTenant(kit.A, (tx) => tx.query.helcimCheckouts.findFirst({ where: eq(schema.helcimCheckouts.id, c.id) })))!.status).toBe("refunded");
+  });
+
+  it("refunds part of a Helcim deposit still on its appointment", async () => {
+    fakeHelcim();
+    const [appt] = await withTenant(kit.A, (tx) => tx.insert(schema.appointments).values({ businessId: kit.A, clientId, depositCents: 5000, depositStatus: "paid", depositPaymentIntentId: "chk_x", depositProvider: "helcim", depositProviderPaymentId: "6100" }).returning());
+    expect(await refundDeposit({ businessId: kit.A, accountId: null, appointmentId: appt!.id, actorUserId: userId, reason: "test", amountCents: 2000, as: "original" })).toBe(true);
+    expect(calls.find((x) => x.path === "/payment/refund")!.body).toMatchObject({ originalTransactionId: 6100, amount: 20 });
+    const after = (await withTenant(kit.A, (tx) => tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appt!.id) })))!;
+    expect([after.depositStatus, after.depositCents]).toEqual(["paid", 3000]);
+  });
+
+  it("authorises a store order, captures it when the stock is there, and releases it when it sold out", async () => {
+    fakeHelcim();
+    await db.update(schema.businesses).set({ storeEnabled: true }).where(eq(schema.businesses.id, kit.A));
+    await withTenant(kit.A, (tx) => tx.update(schema.products).set({ sellOnline: true }).where(eq(schema.products.id, productId)));
+    const b = await business();
+    const order = { items: [{ productId, quantity: 1 }], giftCard: null, buyer: { firstName: "Pat", lastName: "Lee", email: "pat@example.test", phone: null }, fulfillment: { method: "pickup" as const, address: null } };
+    const r = await startOrder(b, order);
+    expect(r.provider).toBe("helcim");
+    expect(calls.find((x) => x.path === "/helcim-pay/initialize")!.body).toMatchObject({ paymentType: "preauth", amount: 100 });
+    transactions.push({ transactionId: 7001, status: "APPROVED", type: "preauth", amount: 100, cardType: "VI", cardNumber: "4242424242" });
+    await finishOrder(b, r.saleId, r.checkoutId!, paid(7001));
+    expect(calls.find((x) => x.path === "/payment/capture")!.body).toMatchObject({ preAuthTransactionId: 7001, amount: 100 });
+    expect((await getSale(kit.A, r.saleId))!.sale.status).toBe("paid");
+    // Second order: the product is tracked with nothing left by the time the card is authorised.
+    const r2 = await startOrder(b, order);
+    await withTenant(kit.A, (tx) => tx.update(schema.products).set({ trackStock: true }).where(eq(schema.products.id, productId)));
+    transactions.push({ transactionId: 7002, status: "APPROVED", type: "preauth", amount: 100, cardType: "VI", cardNumber: "4242424242" });
+    await expect(finishOrder(b, r2.saleId, r2.checkoutId!, paid(7002))).rejects.toThrow(/sold out|left/);
+    expect(calls.find((x) => x.path === "/payment/reverse")!.body).toMatchObject({ cardTransactionId: 7002 });
+    expect((await getSale(kit.A, r2.saleId))!.sale.status).toBe("void");
+    await withTenant(kit.A, (tx) => tx.update(schema.products).set({ trackStock: false }).where(eq(schema.products.id, productId)));
+  });
+
+  it("renews a Helcim membership from the app when its period ends, once", async () => {
+    fakeHelcim();
+    await withTenant(kit.A, (tx) => tx.insert(schema.clientHelcimCustomers).values({ businessId: kit.A, clientId, helcimCustomerId: 77, customerCode: clientId }).onConflictDoNothing());
+    const [plan] = await withTenant(kit.A, (tx) => tx.insert(schema.membershipPlans).values({ businessId: kit.A, name: "Glow club", priceCents: 4900, includedSessions: 1 }).returning());
+    const [m] = await withTenant(kit.A, (tx) => tx.insert(schema.clientMemberships).values({ businessId: kit.A, clientId, planId: plan!.id, currentPeriodEnd: new Date(Date.now() - 3_600_000), autoRenew: true, helcimCardToken: "tok_card" }).returning());
+    const r = await renewHelcimMemberships();
+    expect(r.renewed).toBeGreaterThanOrEqual(1);
+    expect(calls.filter((x) => x.path === "/payment/purchase").map((x) => x.body)).toEqual([expect.objectContaining({ amount: 49, cardData: { cardToken: "tok_card" } })]);
+    const after = (await withTenant(kit.A, (tx) => tx.query.clientMemberships.findFirst({ where: eq(schema.clientMemberships.id, m!.id) })))!;
+    expect(after.currentPeriodEnd.getTime()).toBeGreaterThan(Date.now());
+    expect(after.cyclesBilled).toBe(2);
+    calls.length = 0;
+    await renewHelcimMemberships();
+    expect(calls.filter((x) => x.path === "/payment/purchase")).toEqual([]);
   });
 
   it("checks webhook signatures with the verifier token", () => {

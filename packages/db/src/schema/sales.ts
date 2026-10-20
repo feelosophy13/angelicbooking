@@ -585,6 +585,8 @@ export const clientMemberships = pgTable(
     // Sold at: the renewal subscription lives on this location's Stripe account.
     locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
     stripeSubscriptionId: text("stripe_subscription_id"),
+    /** Helcim: the saved card token renewals are charged to (the app renews; there is no Helcim subscription). */
+    helcimCardToken: text("helcim_card_token"),
     /** The Stripe account the subscription lives on. */
     stripeAccountId: text("stripe_account_id"),
     autoRenew: boolean("auto_renew").notNull().default(false),

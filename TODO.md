@@ -1296,6 +1296,33 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### Helcim as a second card processor (built 2026-10-20, migrations 0128–0130; plan in `HELCIM-PLAN-2026-10-20.md`)
+- [x] Settings → Payments → Card processor: connect the business's own Helcim account (API token, tested before saving; webhook
+      verifier), switch back to Stripe any time. Tokens are encrypted (`lib/secrets.ts`, `APP_ENCRYPTION_KEY`).
+- [x] Smart Terminals paired by device code (per location, "Test" pings the screen). Checkout → Card reader sends the amount to the
+      terminal; a signed webhook per business (`/api/helcim/webhook/<id>`) settles it, with a 2-second poll as fallback; a cancel
+      on the terminal fails it; "Stop waiting" still records a payment that lands later.
+- [x] Type it in at the desk: HelcimPay.js; the result's hash is checked against the payment's secret, then confirmed with Helcim.
+- [x] Saved cards (Helcim customer per client): card on file, no-show and late-cancel fees, late card tips, client portal list and
+      remove (blocked while a card holds a booking or pays a membership). Refunds of Helcim payments go back through Helcim
+      (reverse when same-day and not settled).
+- [x] Booking page deposits (purchase) and card holds (verify) through HelcimPay.js; the booking is made only after the result is
+      verified; a paid checkout nobody booked with is refunded after 20 minutes (jobs run). Deposits refund through Helcim, and a
+      deposit carried onto the visit's ticket stays refundable there.
+- [x] Online store and gift cards: preauth at checkout, stock checked again, then capture or reverse; the order sweep settles
+      abandoned ones.
+- [x] Memberships: auto-renew on Helcim is run by the app (jobs run charges the saved card when the period ends, once per period;
+      a decline pauses it and starts the payment-failed automation).
+- [ ] Not run against a real Helcim account yet: tested against a fake Helcim API (`helcim.test.ts`, 11 tests) and endpoint paths
+      checked against devdocs.helcim.com. Needs a Helcim developer test account (tier2support@helcim.com) and a Smart Terminal
+      for an end-to-end pass, especially the HelcimPay.js hash format and the webhook payloads.
+- [ ] Set `APP_ENCRYPTION_KEY` on Render before the first business connects Helcim (connecting fails in production without it).
+- [ ] Join the Integration Partner Program and set `HELCIM_PARTNER_TOKEN` (revenue share is only credited on tagged requests).
+- [ ] Ask Helcim: how to flag merchant-initiated charges on saved cards; dispute webhooks (none today: Helcim emails the merchant);
+      tips on the terminal; Apple Pay in HelcimPay.js; importing saved cards from Stripe.
+- [ ] Gaps: Helcim is per business, not per location (Stripe allows a location its own account); no platform fee on Helcim
+      payments (revenue share instead); the terminal tip prompt isn't used (tips are entered in the app, Option B screen).
+
 ### Checkout: client tip screen and own card machine (built 2026-10-20, migration 0127)
 - [x] Client-facing tip screen: on a ticket, Tips → "Ask the client" fills the screen in the business's brand color with the
       salon's tip choices, "Other amount" (keypad) and "No tip", a confirm step with the new total, then "hand the device back".

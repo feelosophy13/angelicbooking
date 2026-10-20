@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { chargeCardOnFile, openFeeSaleForAppointment, openSaleForAppointment, SaleError } from "@/server/sales";
+import { openFeeSaleForAppointment, openSaleForAppointment, SaleError } from "@/server/sales";
 import { refundDeposit } from "@/server/online-payments";
 import { paymentContextForAppointment } from "@/server/locations";
 import { cancelSeriesFrom } from "@/server/series";
@@ -25,6 +25,8 @@ import {
   setAppointmentStatus,
   updateAppointmentNotes,
 } from "@/server/booking";
+import { canChargeSavedCards, chargeSavedCard } from "@/server/card-on-file";
+import { requestIp } from "@/lib/request-ip";
 
 export type ActionState = { error?: string; ok?: boolean } | undefined;
 
@@ -176,10 +178,10 @@ export async function cancelAppointment(_prev: ActionState, formData: FormData):
       const fee = lateCancelFee({ feeType: ctx.business.lateCancelFeeType as "none" | "flat" | "percent", feeValue: ctx.business.lateCancelFeeValue, deposit: ctx.business.lateCancelDeposit as "toward" | "extra" }, servicesCents, appt.depositStatus === "paid" ? appt.depositCents : 0);
       if (fee.chargeCents <= 0) return { error: "Nothing to charge: the deposit covers the fee." };
       const pay = await paymentContextForAppointment(ctx.business, d.appointmentId);
-      if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
+      if (!canChargeSavedCards(pay)) return { error: "Connect a card processor under Settings → Payments first." };
       // A fee-only ticket: the deposit stays on the appointment (kept or refunded below), the visit is not marked completed.
       const saleId = await openFeeSaleForAppointment({ businessId: ctx.business.id, appointmentId: d.appointmentId, name: "Late cancellation fee", feeCents: fee.chargeCents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, currency: ctx.business.currency, auditAction: "appointment.late_fee", auditDiff: { feeCents: fee.feeCents, depositCoversCents: fee.depositCoversCents, chargeCents: fee.chargeCents } });
-      await chargeCardOnFile({ businessId: ctx.business.id, accountId: pay.accountId, saleId, paymentMethodId: d.paymentMethodId, amountCents: fee.chargeCents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+      await chargeSavedCard({ business: ctx.business, pay, saleId, cardId: d.paymentMethodId, amountCents: fee.chargeCents, actorUserId: ctx.user.id, ipAddress: await requestIp() });
     }
     // The refund amount is worked out here, not taken from the form: all of it, or what is left after the late fee the deposit covers.
     let refundCents: number | null = null;
@@ -229,11 +231,11 @@ export async function chargeNoShowFee(_prev: ActionState, formData: FormData): P
   const cents = parseMoney(d.amount);
   if (cents === null || cents <= 0) return { error: "Enter an amount." };
   const pay = await paymentContextForAppointment(ctx.business, d.appointmentId);
-  if (!pay.accountId || !pay.chargesEnabled) return { error: "Connect Stripe under Settings → Payments first." };
+  if (!canChargeSavedCards(pay)) return { error: "Connect a card processor under Settings → Payments first." };
   try {
     // A fee-only ticket: closing it doesn't mark the visit completed or award points; a paid deposit stays on the appointment.
     const saleId = await openFeeSaleForAppointment({ businessId: ctx.business.id, appointmentId: d.appointmentId, name: "No-show fee", feeCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, currency: ctx.business.currency, auditAction: "appointment.no_show_fee", auditDiff: { cents } });
-    await chargeCardOnFile({ businessId: ctx.business.id, accountId: pay.accountId, saleId, paymentMethodId: d.paymentMethodId, amountCents: cents, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps });
+    await chargeSavedCard({ business: ctx.business, pay, saleId, cardId: d.paymentMethodId, amountCents: cents, actorUserId: ctx.user.id, ipAddress: await requestIp() });
     await setAppointmentStatus(ctx.business.id, d.appointmentId, "no_show", ctx.user.id, "No-show fee charged");
   } catch (e) {
     if (e instanceof SaleError || e instanceof BookingError) return { error: e.message };

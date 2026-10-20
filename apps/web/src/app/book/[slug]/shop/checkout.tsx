@@ -7,6 +7,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
 import { Checkbox, Field, Input, Notice, Radio, RadioGroup, Textarea } from "@/components/ui";
 import { finishOrderAction, startOrderAction, type StartOrderResult } from "./actions";
+import { openHelcimPay } from "@/lib/helcim-pay";
 
 export type CartProduct = { id: string; name: string; groupId?: string | null; groupName?: string | null; optionLabel?: string | null; priceCents: number; description: string | null; imageUrl: string | null; category: string | null; stockQty: number; trackStock: boolean };
 type Started = Exclude<StartOrderResult, { error: string }>;
@@ -38,7 +39,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
   const giftCents = isGift ? (giftCustom ? Math.round(Number(giftCustom) * 100) : giftAmount) : 0;
   const subtotal = items.reduce((s, i) => s + (props.products.find((p) => p.id === i.productId)?.priceCents ?? 0) * i.quantity, 0) + (isGift ? giftCents || 0 : 0);
   const shipping = method === "ship" ? props.shippingFlatCents : 0;
-  const stripePromise = useMemo(() => (started ? loadStripe(started.publishableKey ?? props.publishableKey, started.accountId ? { stripeAccount: started.accountId } : undefined) : null), [props.publishableKey, started]);
+  const stripePromise = useMemo(() => (started?.provider === "stripe" ? loadStripe(started.publishableKey ?? props.publishableKey, started.accountId ? { stripeAccount: started.accountId } : undefined) : null), [props.publishableKey, started]);
   const canShip = props.shippingFlatCents > 0 && !isGift;
   // A product with options is one entry with its options under it; anything else stands alone.
   const shelf = useMemo(() => {
@@ -117,10 +118,14 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
     return (
       <div className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
         <p className="text-sm">Total <b>{money(started.totalCents, props.currency)}</b> · <button type="button" className="underline" onClick={() => setStarted(null)}>Edit order</button></p>
-        {/* Cards only: Stripe's plain card field (the Payment Element also draws Link's bank and buy-now-pay-later offers). */}
-        <Elements stripe={stripePromise}>
-          <PayStep slug={props.slug} saleId={started.saleId} clientSecret={started.clientSecret} buyer={buyer} brand={props.brand} total={money(started.totalCents, props.currency)} />
-        </Elements>
+        {started.provider === "helcim" ? (
+          <HelcimPayStep slug={props.slug} saleId={started.saleId} checkoutId={started.checkoutId} checkoutToken={started.checkoutToken} brand={props.brand} total={money(started.totalCents, props.currency)} />
+        ) : (
+          // Cards only: Stripe's plain card field (the Payment Element also draws Link's bank and buy-now-pay-later offers).
+          <Elements stripe={stripePromise}>
+            <PayStep slug={props.slug} saleId={started.saleId} clientSecret={started.clientSecret} buyer={buyer} brand={props.brand} total={money(started.totalCents, props.currency)} />
+          </Elements>
+        )}
       </div>
     );
   }
@@ -202,6 +207,34 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
         </div>
       ) : null}
     </form>
+  );
+}
+
+/** Helcim: the card is authorised in Helcim's secure form; the server checks the stock again, then captures it (or releases it). */
+function HelcimPayStep({ slug, saleId, checkoutId, checkoutToken, brand, total }: { slug: string; saleId: string; checkoutId: string; checkoutToken: string; brand: string; total: string }) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function pay() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await openHelcimPay(checkoutToken, () => setError("Your card was declined. Try another card."));
+      if (r.status !== "SUCCESS") { setBusy(false); return; }
+      const out = await finishOrderAction(slug, saleId, checkoutId, r.message);
+      if (out.error) { setError(out.error); setBusy(false); return; }
+      router.push(`/book/${slug}/order/${saleId}?k=${encodeURIComponent(out.key ?? "")}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The card form could not open.");
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="space-y-3">
+      {error ? <Notice>{error}</Notice> : null}
+      <button type="button" onClick={pay} disabled={busy} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: brand }}>{busy ? "Paying…" : `Pay ${total}`}</button>
+      <p className="text-xs text-stone-500">Payments are processed by Helcim. Your card details never touch our servers.</p>
+    </div>
   );
 }
 

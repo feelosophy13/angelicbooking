@@ -13,7 +13,10 @@ const buyer = z.object({
   phone: z.string().trim().max(30).optional().transform((v) => v || null),
 });
 
-export type StartOrderResult = { saleId: string; clientSecret: string; accountId: string | null; publishableKey: string | null; totalCents: number } | { error: string };
+export type StartOrderResult =
+  | { provider: "stripe"; saleId: string; clientSecret: string; accountId: string | null; publishableKey: string | null; totalCents: number }
+  | { provider: "helcim"; saleId: string; checkoutToken: string; checkoutId: string; totalCents: number }
+  | { error: string };
 
 export async function startOrderAction(input: {
   slug: string;
@@ -43,18 +46,19 @@ export async function startOrderAction(input: {
     : null;
   try {
     const r = await startOrder(business, { items: items.data, giftCard: gift, buyer: { ...b.data, phone: b.data.phone ? normalizePhone(b.data.phone) : null }, fulfillment: { method: input.method, address: input.address.trim().slice(0, 300) || null } }, input.locationId || null);
-    return r;
+    if (r.provider === "helcim") return { provider: "helcim", saleId: r.saleId, checkoutToken: r.checkoutToken, checkoutId: r.checkoutId, totalCents: r.totalCents };
+    return { provider: "stripe", saleId: r.saleId, clientSecret: r.clientSecret, accountId: r.accountId, publishableKey: r.publishableKey, totalCents: r.totalCents };
   } catch (e) {
     if (e instanceof StoreError || e instanceof BookingError) return { error: e.message };
     throw e;
   }
 }
 
-export async function finishOrderAction(slug: string, saleId: string, paymentIntentId: string): Promise<{ error?: string; ok?: boolean; key?: string }> {
+export async function finishOrderAction(slug: string, saleId: string, paymentIntentId: string, /** Helcim: HelcimPay.js's answer (paymentIntentId is then the checkout id). */ helcimEvent?: unknown): Promise<{ error?: string; ok?: boolean; key?: string }> {
   const business = await getPublicBusiness(slug);
   if (!business) return { error: "Not available." };
   try {
-    await finishOrder(business, saleId, paymentIntentId);
+    await finishOrder(business, saleId, paymentIntentId, helcimEvent);
     return { ok: true, key: orderKey(business.id, saleId) };
   } catch (e) {
     if (e instanceof StoreError) return { error: e.message };

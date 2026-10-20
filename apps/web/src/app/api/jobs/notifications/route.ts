@@ -8,6 +8,8 @@ import { reconcileAllSubscriptions } from "@/server/billing";
 import { nudgeAbandonedSignups } from "@/server/onboarding-nudge";
 import { refreshPendingDomains } from "@/server/custom-domain";
 import { sweepOrphanDeposits } from "@/server/online-payments";
+import { sweepHelcimCheckouts } from "@/server/helcim/online";
+import { renewHelcimMemberships } from "@/server/membership-billing";
 import { sweepAuthorizedOrders } from "@/server/store";
 import { jobsAuthorized } from "@/lib/jobs-auth";
 import { sql } from "drizzle-orm";
@@ -41,6 +43,10 @@ export async function POST(req: Request) {
   const domains = await refreshPendingDomains().catch((e) => ({ checked: 0, active: 0, error: (e as Error).message }));
   // Deposits charged for a booking that was never saved (the client's page closed mid-way): refund them.
   const orphans = await sweepOrphanDeposits().catch((e) => ({ checked: 0, refunded: 0, failed: 1, error: (e as Error).message }));
+  // The same for Helcim: checkouts paid on the booking page or the store that never became a booking or an order.
+  const helcimOrphans = await sweepHelcimCheckouts().catch((e) => ({ checked: 0, refunded: 0, failed: 1, error: (e as Error).message }));
+  // Helcim memberships renew from here (Stripe ones renew by subscription): charge those whose period has ended.
+  const helcimRenewals = await renewHelcimMemberships().catch((e) => ({ due: 0, renewed: 0, failed: 1, error: (e as Error).message }));
   // Online orders whose card was authorized but the buyer's page never came back: capture if the stock is still there, else release it.
   // Before deliverDue, so the receipt and gift card emails of a captured order go out in this run.
   const orders = await sweepAuthorizedOrders().catch((e) => ({ checked: 0, captured: 0, released: 0, abandoned: 0, failed: 1, error: (e as Error).message }));
@@ -48,14 +54,14 @@ export async function POST(req: Request) {
   const v = await refreshPendingVerifications().catch((e) => ({ checked: 0, changed: 0, error: (e as Error).message }));
   const ms = Date.now() - started;
   // A step that failed is reported and makes the job answer 500, so the cron's `curl -f` notices instead of the job looking fine.
-  const failed = Object.entries({ workflows: a, workflowRuns: w, formsNudges: f, lowStock: inv, billing: bill, onboardingNudge: nudge, customDomains: domains, orphanDeposits: orphans, authorizedOrders: orders, verifications: v })
+  const failed = Object.entries({ workflows: a, workflowRuns: w, formsNudges: f, lowStock: inv, billing: bill, onboardingNudge: nudge, customDomains: domains, orphanDeposits: orphans, helcimCheckouts: helcimOrphans, helcimRenewals, authorizedOrders: orders, verifications: v })
     .filter(([, r]) => r && typeof r === "object" && "error" in r && (r as { error?: unknown }).error)
     .map(([k, r]) => `${k}: ${(r as { error: string }).error}`);
   if (failed.length) await reportError(`jobs/notifications: ${failed.length} step(s) failed`, undefined, { failed });
   // Heartbeat for /api/health: the cron reached the app and the run finished (with or without failed steps).
   await db.insert(schema.jobMarkers).values({ name: HEARTBEAT, lastRunOn: now.toISOString().slice(0, 10) }).onConflictDoUpdate({ target: schema.jobMarkers.name, set: { lastRunOn: now.toISOString().slice(0, 10), updatedAt: new Date() } }).catch(() => undefined);
   console.log(`[jobs/notifications] processed=${r.processed} sent=${r.sent} failed=${r.failed} skipped=${r.skipped} workflowsStarted=${a.started} workflowsResumed=${w.resumed} workflowsFailed=${a.failed + w.failed} formsNudges=${f.queued} lowStockEmails=${inv.sent} verifications=${v.checked}/${v.changed} in ${ms}ms`);
-  return NextResponse.json({ ...r, workflows: { ...a, ...w }, formsNudges: f, lowStock: inv, verifications: v, billing: bill, onboardingNudge: nudge, customDomains: domains, orphanDeposits: orphans, authorizedOrders: orders, failed, ms }, { status: failed.length ? 500 : 200 });
+  return NextResponse.json({ ...r, workflows: { ...a, ...w }, formsNudges: f, lowStock: inv, verifications: v, billing: bill, onboardingNudge: nudge, customDomains: domains, orphanDeposits: orphans, helcimCheckouts: helcimOrphans, helcimRenewals, authorizedOrders: orders, failed, ms }, { status: failed.length ? 500 : 200 });
 }
 
 /** The job_markers row /api/health reads to know the 5-minute cron is still calling. */

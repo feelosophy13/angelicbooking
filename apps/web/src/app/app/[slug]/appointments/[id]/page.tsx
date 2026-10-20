@@ -33,7 +33,7 @@ import { SuppliesCard } from "./supplies-card";
 import { LashMapEyes } from "@/components/lash-map";
 import { canWriteLashMaps, lashMapsFor } from "@/server/lash-maps";
 import { pairsForAppointment, photoTagsInUse } from "@/server/visit-photos";
-import { savedCardsFor } from "@/server/stripe-connect";
+import { savedCardsForClient } from "@/server/card-on-file";
 import { listLocations, paymentContextForAppointment, tzFor } from "@/server/locations";
 import { MapPin, CalendarPlus } from "lucide-react";
 
@@ -106,7 +106,7 @@ export default async function AppointmentPage({
   const pay = await paymentContextForAppointment(business, id);
   const multiLocation = (await listLocations(business.id)).length > 1;
   const stripeReady = pay.ready;
-  const savedCards = await savedCardsFor(business.id, pay, client?.id);
+  const savedCards = await savedCardsForClient(business, pay, client?.id);
   const tz = tzFor(business, pay.location);
   const addGroups = await serviceGroups(business); // searchable, by category, for "Add a service"
   // One group of photos per service-and-stylist on the visit.

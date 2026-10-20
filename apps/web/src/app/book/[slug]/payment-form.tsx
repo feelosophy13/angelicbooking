@@ -9,8 +9,11 @@ import { useHydrated } from "@/lib/use-hydrated";
 import { policyLine } from "@/lib/policy-text";
 import { abandonOnlinePaymentAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
 import { PHOTOS_FIELD } from "@/lib/booking-photos";
+import { openHelcimPay } from "@/lib/helcim-pay";
 
-type Intent = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null };
+type Intent =
+  | { provider: "stripe"; clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null }
+  | { provider: "helcim"; checkoutToken: string; intentId: string; kind: "deposit" | "card" };
 
 /**
  * Booking form for services that take a deposit or require a card on file.
@@ -54,7 +57,7 @@ export function PaidBookingForm(props: {
   const [intent, setIntent] = useState<Intent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  const stripePromise = useMemo(() => (intent ? loadStripe(intent.publishableKey ?? props.publishableKey, intent.accountId ? { stripeAccount: intent.accountId } : undefined) : null), [props.publishableKey, intent]);
+  const stripePromise = useMemo(() => (intent?.provider === "stripe" ? loadStripe(intent.publishableKey ?? props.publishableKey, intent.accountId ? { stripeAccount: intent.accountId } : undefined) : null), [props.publishableKey, intent]);
 
   if (!intent || !fields) {
     return (
@@ -110,15 +113,53 @@ export function PaidBookingForm(props: {
         <span className="font-medium">{fields.firstName} {fields.lastName}</span> · {fields.phone || fields.email}{photoFiles.length ? ` · ${photoFiles.length} photo${photoFiles.length === 1 ? "" : "s"}` : ""}{" "}
         <button type="button" className="underline" onClick={() => { void abandonOnlinePaymentAction(props.slug, props.locationId ?? null, { kind: intent.kind, id: intent.intentId }); setIntent(null); }}>Edit</button>
       </p>
-      {/* Cards only: Stripe's plain card field (the Payment Element also draws Link's bank and buy-now-pay-later offers). */}
-      <Elements stripe={stripePromise}>
-        <ConfirmStep fields={fields} photos={photoFiles} intent={intent} mode={props.mode} amountLabel={props.amountLabel} brand={props.brand} />
-      </Elements>
+      {intent.provider === "helcim" ? (
+        <HelcimConfirmStep fields={fields} photos={photoFiles} intent={intent} mode={props.mode} amountLabel={props.amountLabel} brand={props.brand} />
+      ) : (
+        // Cards only: Stripe's plain card field (the Payment Element also draws Link's bank and buy-now-pay-later offers).
+        <Elements stripe={stripePromise}>
+          <ConfirmStep fields={fields} photos={photoFiles} intent={intent} mode={props.mode} amountLabel={props.amountLabel} brand={props.brand} />
+        </Elements>
+      )}
     </div>
   );
 }
 
-function ConfirmStep({ fields, photos, intent, mode, amountLabel, brand }: { fields: Record<string, string>; photos: File[]; intent: Intent; mode: "deposit" | "card"; amountLabel: string; brand: string }) {
+/** Helcim: the card goes into Helcim's secure form (HelcimPay.js); its answer is verified on the server before the booking is made. */
+function HelcimConfirmStep({ fields, photos, intent, mode, amountLabel, brand }: { fields: Record<string, string>; photos: File[]; intent: Extract<Intent, { provider: "helcim" }>; mode: "deposit" | "card"; amountLabel: string; brand: string }) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function pay() {
+    setBusy(true);
+    setError(null);
+    try {
+      const out = await openHelcimPay(intent.checkoutToken, () => setError("Your card was declined. Try another card."));
+      if (out.status !== "SUCCESS") { setBusy(false); return; }
+      let attached: FormData | null = null;
+      if (photos.length) {
+        attached = new FormData();
+        for (const f of photos) attached.append(PHOTOS_FIELD, f);
+      }
+      const r = await finishOnlineBookingAction(fields, { kind: intent.kind, id: intent.intentId, helcim: out.message }, attached);
+      if (r?.error) { setError(r.error); setBusy(false); }
+      // On success the action redirects to the confirmation page.
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The card form could not open.");
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="space-y-3">
+      {error ? <Notice>{error}</Notice> : null}
+      <Button type="button" onClick={pay} disabled={busy} className="w-full" style={{ background: brand }}>
+        {busy ? "Confirming…" : mode === "deposit" ? `Pay ${amountLabel} and book` : "Add card and book"}
+      </Button>
+      <p className="text-xs text-stone-500">Payments are processed by Helcim. Your card details never touch our servers.</p>
+    </div>
+  );
+}
+
+function ConfirmStep({ fields, photos, intent, mode, amountLabel, brand }: { fields: Record<string, string>; photos: File[]; intent: Extract<Intent, { provider: "stripe" }>; mode: "deposit" | "card"; amountLabel: string; brand: string }) {
   const stripe = useStripe();
   const elements = useElements();
   const [error, setError] = useState<string | null>(null);

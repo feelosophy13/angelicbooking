@@ -91,7 +91,10 @@ export async function bookOnline(_prev: PublicState, formData: FormData): Promis
   redirect(confirmedPath(d, token, photos));
 }
 
-export type StartPaymentResult = { clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null } | { error: string };
+export type StartPaymentResult =
+  | { provider: "stripe"; clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null }
+  | { provider: "helcim"; checkoutToken: string; intentId: string; kind: "deposit" | "card" }
+  | { error: string };
 
 /**
  * Step 1 of a paid booking: validate the form and the slot, create the client,
@@ -139,8 +142,9 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
     else await assertSlotOpen(business, d.serviceId, d.staffId, startAt, new Date(), d.locationId);
     const clientId = await findOrCreateClient(business.id, { ...d, startAt });
     const r = await startOnlinePayment(business, pay, req.mode, { businessId: business.id, clientId, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" }, req.amountCents);
-    const browser = await browserStripe(r.accountId, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
-    return { clientSecret: r.clientSecret, intentId: r.id, kind: r.kind, accountId: browser.stripeAccount, publishableKey: browser.publishableKey };
+    if (r.provider === "helcim") return { provider: "helcim", checkoutToken: r.checkoutToken, intentId: r.id, kind: r.kind };
+    const browser = await browserStripe(r.accountId!, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+    return { provider: "stripe", clientSecret: r.clientSecret, intentId: r.id, kind: r.kind, accountId: browser.stripeAccount, publishableKey: browser.publishableKey };
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     throw e;
@@ -149,14 +153,15 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
 
 /** The client went back to edit their details before paying. */
 export async function abandonOnlinePaymentAction(slug: string, locationId: string | null, intent: { kind: "deposit" | "card"; id: string }): Promise<void> {
-  if (typeof slug !== "string" || !/^(pi|seti)_\w+$/.test(intent.id)) return;
+  // A Stripe intent (pi_ / seti_) or a Helcim checkout id (a uuid).
+  if (typeof slug !== "string" || !/^((pi|seti)_\w+|[0-9a-f-]{36})$/.test(intent.id)) return;
   const business = await getPublicBusiness(slug);
   if (!business) return;
   await cancelOnlineIntent(business, await paymentContextFor(business, locationId || null), intent.kind, intent.id);
 }
 
 /** Step 2: the browser confirmed the intent. Verify with Stripe, then book. `photos` carries the pictures the client attached in step 1, if any. */
-export async function finishOnlineBookingAction(raw: Record<string, string>, intent: { kind: "deposit" | "card"; id: string }, photos?: FormData | null): Promise<{ error?: string }> {
+export async function finishOnlineBookingAction(raw: Record<string, string>, intent: { kind: "deposit" | "card"; id: string; /** Helcim: HelcimPay.js's answer, verified on the server. */ helcim?: unknown }, photos?: FormData | null): Promise<{ error?: string }> {
   const p = parseBooking(raw);
   if ("error" in p) return { error: p.error };
   const d = p.d;
@@ -169,7 +174,7 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
   try {
     const startAt = new Date(d.startAt);
     const pay = await paymentContextFor(business, d.locationId);
-    const verified = await verifyOnlineIntent(business, pay, intent.kind, intent.id, { businessId: business.id, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" });
+    const verified = await verifyOnlineIntent(business, pay, intent.kind, intent.id, { businessId: business.id, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" }, intent.helcim);
     const r = await createOnlineBooking(business, { ...d, startAt, ip: formIp(await headers()), photos: bookingPhotosFrom(photos) }, new Date(), verified);
     token = r.token;
     result = r.photos;
