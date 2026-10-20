@@ -134,6 +134,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 </form>
               ) : null}
             </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <tbody className="divide-y divide-stone-100">
                 {goods.map((l) => (
@@ -199,6 +200,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 {open ? <tr className="font-semibold text-brand-700"><td>Due</td><td className="text-right">{money(due)}</td><td /></tr> : null}
               </tfoot>
             </table>
+            </div>
             {open && (goods.some((l) => l.taxable) || sale.taxExempt) ? (
               <form action={toggleTaxExempt} className="mt-3 border-t border-stone-100 pt-2">
                 <input type="hidden" name="slug" value={slug} /><input type="hidden" name="saleId" value={sale.id} />

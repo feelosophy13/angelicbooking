@@ -274,7 +274,7 @@ export default async function AppointmentPage({
           {moveItem && canChange && coversLine(access, staffId ?? null, moveItem.staffId) ? (
             <Card className="p-4 ring-2 ring-brand-200">
               <h2 className="mb-1 font-medium">Move {moveItem.serviceName.replace(" (finish)", "")}</h2>
-              <form className={`mb-3 grid items-end gap-2 ${ownStaff ? "grid-cols-[1fr_auto]" : "grid-cols-[1fr_1fr_auto]"}`}>
+              <form className={`mb-3 grid items-end gap-2 ${ownStaff ? "grid-cols-[1fr_auto]" : "sm:grid-cols-[1fr_1fr_auto]"}`}>
                 <input type="hidden" name="moveItemId" value={moveItem.id} />
                 {ownStaff ? <input type="hidden" name="moveStaffId" value={ownStaff} /> : (
                   <Field label="Staff">
@@ -299,7 +299,7 @@ export default async function AppointmentPage({
 
           {!locked && canChange ? (
             <Disclosure title="Add a service" hint="another service on this visit" open={!!addSvc}>
-              <form className={`mb-3 grid items-end gap-2 ${ownStaff ? "grid-cols-[2fr_1fr_auto]" : "grid-cols-[2fr_1fr_1fr_auto]"}`}>
+              <form className={`mb-3 grid items-end gap-2 ${ownStaff ? "sm:grid-cols-[2fr_1fr_auto]" : "sm:grid-cols-[2fr_1fr_1fr_auto]"}`}>
                 <Field label="Service">
                   <ServicePicker name="addServiceId" groups={addGroups} value={addSvc?.id ?? null} placeholder="Choose a service" />
                 </Field>

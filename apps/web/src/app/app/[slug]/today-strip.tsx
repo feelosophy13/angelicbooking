@@ -17,11 +17,11 @@ export function TodayStrip({ date, isToday, stats, tz, slug, formsHref, formsFil
     ...(stats.formsMissing || formsFilterOn ? [{ icon: ClipboardList, label: "Forms due", value: `${stats.formsMissing ?? 0} visit${stats.formsMissing === 1 ? "" : "s"}`, sub: formsFilterOn ? "showing only these · tap to clear" : "tap to show only these", href: formsHref }] : []),
   ];
   return (
-    <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 print:hidden">
+    <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4 print:hidden">
       {cells.map((c) => {
         const body = (
           <>
-            <c.icon className="h-4 w-4 shrink-0 text-stone-400" />
+            <c.icon className="hidden h-4 w-4 shrink-0 text-stone-400 sm:block" />
             <span className="min-w-0">
               <span className="block text-[11px] uppercase tracking-wide text-stone-500">{c.label}</span>
               <span className="block truncate text-sm font-semibold">{c.value}</span>

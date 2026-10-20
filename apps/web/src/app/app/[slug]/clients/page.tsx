@@ -63,7 +63,7 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500">
               <tr>
                 {sorts.map((s) => (
-                  <th key={s.key} className={cn("px-4 py-2 font-semibold", s.align === "right" && "text-right")}>
+                  <th key={s.key} className={cn("px-4 py-2 font-semibold", s.align === "right" && "text-right", s.key !== "name" && "hidden sm:table-cell")}>
                     <Link href={sortLink(s.key)} className={cn("inline-flex items-center gap-1 hover:text-stone-800", sort === s.key && "text-stone-900")}>
                       {s.label}
                       {sort === s.key ? dir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : null}
@@ -77,14 +77,17 @@ export default async function ClientsPage({ params, searchParams }: { params: Pr
             <tbody className="divide-y divide-stone-100">
               {r.rows.map((c) => (
                 <LinkRow key={c.id} href={`/app/${slug}/clients/${c.id}`}>
-                  <td className="px-4 py-2">
+                  {/* max-w-0 + w-full lets the contact line truncate instead of widening the table; on a phone the
+                      other columns hide and the last visit joins the grey line. */}
+                  <td className="w-full max-w-0 px-4 py-2">
                     <Link href={`/app/${slug}/clients/${c.id}`} className="font-medium hover:underline">{c.firstName} {c.lastName}</Link>
                     {contact || (locations.length > 1 && c.homeLocationName) ? <p className="truncate text-xs text-stone-500">{[contact ? [c.phone, c.email].filter(Boolean).join(" · ") || "no contact info" : null, locations.length > 1 && c.homeLocationName ? c.homeLocationName.replace(/^.*? - /, "") : null].filter(Boolean).join(" · ")}</p> : null}
+                    <p className="truncate text-xs text-stone-500 sm:hidden">{c.lastVisit ? `Last visit ${dateShort(c.lastVisit, business.timezone)}` : "No visits yet"}</p>
                   </td>
-                  <td className="px-4 py-2 text-stone-600">{c.lastVisit ? dateShort(c.lastVisit, business.timezone) : <span className="text-stone-400">—</span>}</td>
-                  {spend ? <td className="px-4 py-2 text-right">{money(Number(c.spend), business.currency)}</td> : null}
-                  <td className="px-4 py-2 text-stone-600">{dateShort(c.createdAt, business.timezone)}</td>
-                  <td className="px-4 py-2 text-right">{Number(c.visitCount)}{Number(c.noShows) ? <span className="ml-1 text-xs text-red-600" title="No-shows">({Number(c.noShows)} NS)</span> : null}</td>
+                  <td className="hidden whitespace-nowrap px-4 py-2 text-stone-600 sm:table-cell">{c.lastVisit ? dateShort(c.lastVisit, business.timezone) : <span className="text-stone-400">—</span>}</td>
+                  {spend ? <td className="hidden whitespace-nowrap px-4 py-2 text-right sm:table-cell">{money(Number(c.spend), business.currency)}</td> : null}
+                  <td className="hidden whitespace-nowrap px-4 py-2 text-stone-600 sm:table-cell">{dateShort(c.createdAt, business.timezone)}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right">{Number(c.visitCount)}{Number(c.noShows) ? <span className="ml-1 text-xs text-red-600" title="No-shows">({Number(c.noShows)} NS)</span> : null}</td>
                   <td className="px-2 py-2 text-right"><Link href={`/app/${slug}/clients/${c.id}`} aria-label="Open"><ChevronRight className="h-4 w-4 text-stone-300" /></Link></td>
                 </LinkRow>
               ))}

@@ -60,6 +60,7 @@ export default async function OrderPage({ params }: { params: Promise<{ slug: st
                 </div>
                 <Field label="Notes" name="notes"><Textarea name="notes" rows={2} defaultValue={po.notes ?? ""} /></Field>
                 {lines.length ? (
+                  <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="text-left text-xs text-stone-500"><tr><th className="py-1">Product</th><th className="w-24 py-1 pr-2">Ordered</th><th className="w-28 py-1 pr-2">Unit cost</th><th className="w-20 py-1 text-right">Received</th></tr></thead>
                     <tbody className="divide-y divide-stone-100">
@@ -73,6 +74,7 @@ export default async function OrderPage({ params }: { params: Promise<{ slug: st
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 ) : <p className="text-sm text-stone-500">No products yet. Add some below.</p>}
                 <div className="flex items-center justify-between gap-3">
                   <SubmitButton variant="secondary" pendingText="Saving…">Save changes</SubmitButton>

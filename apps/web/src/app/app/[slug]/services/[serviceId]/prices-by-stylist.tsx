@@ -29,6 +29,7 @@ export async function PricesByStylist({ slug, businessId, currency, service }: {
         <form action={saveServiceStylistTerms} className="space-y-3">
           <input type="hidden" name="slug" value={slug} />
           <input type="hidden" name="serviceId" value={service.id} />
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-stone-500"><tr><th className="py-1 pr-3">Stylist</th><th className="px-3 py-1">Price</th><th className="px-3 py-1">Minutes</th></tr></thead>
             <tbody className="divide-y divide-stone-100">
@@ -41,6 +42,7 @@ export async function PricesByStylist({ slug, businessId, currency, service }: {
               ))}
             </tbody>
           </table>
+          </div>
           <SubmitButton pendingText="Saving…">Save prices by stylist</SubmitButton>
         </form>
       )}

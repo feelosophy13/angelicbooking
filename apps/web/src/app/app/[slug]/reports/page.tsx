@@ -172,7 +172,7 @@ export default async function ReportsPage({
           {locationFilter ? <input type="hidden" name="location" value={locationFilter} /> : null}
           <ServicePicker name="service" groups={groups} value={scopeVal} noneLabel="Any service" compact />
         </AutoSubmitForm>
-        <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Period">
+        <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Period">
           {(
             [
               ["Today", today, today],
@@ -617,6 +617,7 @@ export default async function ReportsPage({
       {stock.items.length && !scoped ? (
         <Card className="mt-6">
           <div className="flex items-center justify-between border-b border-stone-200 px-4 py-2"><h2 className="text-sm font-semibold text-stone-600">Stock on hand</h2><span className="text-xs text-stone-500">{stock.lowCount ? `${stock.lowCount} low · ` : ""}value at cost {money(stock.totalValueCents)} · retail {money(stock.totalRetailCents)}</span></div>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-stone-500"><tr><th className="px-4 py-2">Product</th><th className="px-4 py-2 text-right">On hand</th><th className="px-4 py-2 text-right">Cost value</th><th className="px-4 py-2 text-right">Retail value</th></tr></thead>
             <tbody className="divide-y divide-stone-100">
@@ -630,6 +631,7 @@ export default async function ReportsPage({
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       ) : null}
     </>

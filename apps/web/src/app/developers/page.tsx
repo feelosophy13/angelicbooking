@@ -41,13 +41,16 @@ export default function DevelopersPage() {
         <li>Keys can expire and can be revoked at any time; revoking takes effect on the next request.</li>
         <li>A suspended business&apos;s keys stop working.</li>
       </ul>
+      <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left text-sm">
         <thead><tr className="border-b border-stone-300"><th className="py-1 pr-4">Scope</th><th className="py-1">Allows</th></tr></thead>
         <tbody>{API_SCOPES.map((s) => <tr key={s.scope} className="border-b border-stone-100"><td className="py-1 pr-4"><code>{s.scope}</code></td><td className="py-1">{s.label}</td></tr>)}</tbody>
       </table>
+      </div>
       <p>Scopes are exact: a key holds only what it was given. <code>x:write</code> does <em>not</em> let a key read <code>x</code> (a tool that only creates clients cannot list them), so give both when a tool needs both. Anything that deletes has its own <code>:delete</code> scope.</p>
       <h3>Fields that need an extra scope</h3>
       <p>A request that sends one of these fields needs the scope shown in addition to the endpoint&apos;s own, and gets <code>403 insufficient_scope</code> without it. A tool that leaves the field out never needs the scope.</p>
+      <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left text-sm">
         <thead><tr className="border-b border-stone-300"><th className="py-1 pr-4">Field</th><th className="py-1 pr-4">Needs</th><th className="py-1">Where</th></tr></thead>
         <tbody>
@@ -61,6 +64,7 @@ export default function DevelopersPage() {
           ].map(([a, b, c]) => <tr key={a} className="border-b border-stone-100"><td className="py-1 pr-4"><code>{a}</code></td><td className="py-1 pr-4"><code>{b}</code></td><td className="py-1">{c}</td></tr>)}
         </tbody>
       </table>
+      </div>
       <h3>Older keys</h3>
       <p>Keys made before these finer scopes keep working exactly as before: each old scope stands for everything it used to allow (for example the old <code>clients:write</code> still reads clients and changes consent and notes). The key list shows what each one really holds; use <strong>Replace</strong> to move to narrower scopes.</p>
       <h3>Limiting a key further</h3>
@@ -83,6 +87,7 @@ export default function DevelopersPage() {
       <p>Errors use the same shape and an HTTP status that matches:</p>
       <Code>{`{ "error": { "code": "validation_failed", "message": "Some fields are invalid.",
              "issues": [{ "path": "first_name", "message": "Too small" }] } }`}</Code>
+      <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left text-sm">
         <thead><tr className="border-b border-stone-300"><th className="py-1 pr-4">Status</th><th className="py-1 pr-4"><code>code</code></th><th className="py-1">Meaning</th></tr></thead>
         <tbody>
@@ -101,6 +106,7 @@ export default function DevelopersPage() {
           ].map(([a, b, c]) => <tr key={a} className="border-b border-stone-100"><td className="py-1 pr-4">{a}</td><td className="py-1 pr-4"><code>{b}</code></td><td className="py-1">{c}</td></tr>)}
         </tbody>
       </table>
+      </div>
       <p>The endpoints below let a key do what an admin can do in the app. Each section names the scope it needs. Scopes marked powerful in the key form can change prices or fees, consent, who may do what, pay settings, or reach many clients at once: give them only to software you trust, and prefer a separate key for each.</p>
 
       <Group title="Catalog and inventory" />

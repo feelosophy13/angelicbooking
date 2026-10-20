@@ -75,7 +75,7 @@ export default async function EditProductPage({ params }: { params: Promise<{ sl
           <ActionForm action={adjustStock}>
             <input type="hidden" name="slug" value={slug} />
             <input type="hidden" name="productId" value={product.id} />
-            <div className={`grid gap-2 ${multi ? "sm:grid-cols-[14rem_10rem_5rem_1fr]" : "sm:grid-cols-[14rem_5rem_1fr]"}`}>
+            <div className={`grid gap-2 sm:grid-cols-2 ${multi ? "lg:grid-cols-[14rem_10rem_5rem_1fr]" : "lg:grid-cols-[14rem_5rem_1fr]"}`}>
               <Field label="What happened" name="reason"><Select name="reason" defaultValue="received">{MANUAL_REASONS.map((r) => <option key={r} value={r}>{REASON_CHOICES[r]}</option>)}</Select></Field>
               {multi ? <Field label="Where" name="locationId"><Select name="locationId" defaultValue={locations.find((l) => l.isDefault)?.id}>{locations.map((l) => <option key={l.id} value={l.id}>{l.name.replace(`${business.name} - `, "")}</option>)}</Select></Field> : null}
               <Field label="How many" name="delta"><Input name="delta" inputMode="numeric" /></Field>

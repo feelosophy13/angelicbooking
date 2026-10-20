@@ -55,7 +55,7 @@ export default async function GalleryPage({ params, searchParams }: { params: Pr
       <Card className="mb-4 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <LocationFilter locations={locations} current={f.locationId} query={qs({ location: null, page: null })} allLabel="All" />
-          <AutoSubmitForm className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <AutoSubmitForm className="flex min-w-0 flex-1 basis-72 flex-wrap items-center gap-2">
             {f.locationId ? <input type="hidden" name="location" value={f.locationId} /> : null}
             {f.clientId ? <input type="hidden" name="client" value={f.clientId} /> : null}
             <ServicePicker name="service" groups={groups} value={f.categoryId ? `c:${f.categoryId}` : f.serviceId} noneLabel="Any service" compact />

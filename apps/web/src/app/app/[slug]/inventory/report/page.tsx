@@ -23,7 +23,7 @@ export default async function InventoryReportPage({ params, searchParams }: { pa
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-stone-600">How stock behaved over the last {days} days. Sales and back-bar use count as movement.</p>
-        <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Period">
+        <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Period">
           {WINDOWS.map((d) => <Link key={d} href={`?days=${d}`} aria-current={d === days ? "true" : undefined} className={`rounded-md px-3 py-0.5 ${d === days ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50"}`}>{d} days</Link>)}
         </div>
       </div>
@@ -140,7 +140,7 @@ function Section({ title, note, children }: { title: string; note?: string; chil
         <h2 className="text-sm font-semibold text-stone-600">{title}</h2>
         {note ? <p className="text-xs text-stone-500">{note}</p> : null}
       </div>
-      <div className="divide-y divide-stone-100">{children}</div>
+      <div className="divide-y divide-stone-100 overflow-x-auto">{children}</div>
     </Card>
   );
 }

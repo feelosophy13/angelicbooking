@@ -276,7 +276,7 @@ export default async function CalendarPage({
   return (
     <>
       <PageHeader title={title}>
-        <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm">
+        <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm">
           <a href={viewHref("day")} className={`rounded-md px-3 py-1 ${view === "day" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Day</a>
           <a href={viewHref("week")} className={`rounded-md px-3 py-1 ${view === "week" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Week</a>
           <a href={viewHref("month")} className={`rounded-md px-3 py-1 ${view === "month" ? "bg-stone-900 text-white" : "text-stone-700"}`}>Month</a>
@@ -327,7 +327,7 @@ export default async function CalendarPage({
             // The legend doubles as the show / hide chips: click a provider to leave them out of the overview.
             <>
               <ProviderChips businessId={business.id} providers={allStaff.map((s) => ({ id: s.id, name: s.displayName, color: s.color ?? "#6366f1" }))} hidden={hidden} />
-              <span className="text-stone-400">Hover an appointment for details, click to open it.</span>
+              <span className="hidden text-stone-400 md:inline">Hover an appointment for details, click to open it.</span>
             </>
           ) : null}
         </div>

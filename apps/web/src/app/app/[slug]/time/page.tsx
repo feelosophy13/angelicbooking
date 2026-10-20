@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { Button, Card, Input, LinkButton, PageHeader, Empty } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
+import { AutoSubmitForm } from "@/components/auto-submit-form";
 import { dateShort, hours as fmtHours } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Time clock" };
@@ -61,12 +62,11 @@ export default async function TimePage({ params, searchParams }: { params: Promi
   return (
     <>
       <PageHeader title="Time clock">
-        <form className="flex items-center gap-2">
-          <Input type="date" name="from" defaultValue={from} className="w-40" />
+        <AutoSubmitForm className="flex w-full items-center gap-2 sm:w-auto">
+          <Input type="date" name="from" defaultValue={from} className="min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label="From" />
           <span className="text-sm text-stone-500">to</span>
-          <Input type="date" name="to" defaultValue={to} className="w-40" />
-          <Button type="submit" variant="secondary" size="sm">Show</Button>
-        </form>
+          <Input type="date" name="to" defaultValue={to} className="min-w-0 flex-1 sm:w-40 sm:flex-none" aria-label="To" />
+        </AutoSubmitForm>
         {edit ? <LinkButton href={`/app/${slug}/time/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> Add hours</LinkButton> : null}
       </PageHeader>
       <div className="max-w-3xl">

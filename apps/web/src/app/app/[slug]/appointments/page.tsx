@@ -77,13 +77,13 @@ export default async function AppointmentsPage({ params, searchParams }: { param
 
       <Card className="mb-4 p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Which appointments">
+          <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Which appointments">
             {VIEWS.map((v) => (
               <Link key={v.key} href={href({ view: v.key, page: null })} className={cn("whitespace-nowrap rounded-md px-3 py-1", view === v.key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{v.label}</Link>
             ))}
           </div>
           <LocationFilter locations={locations} current={locationId} query={params_({ location: null, page: null })} allLabel="All" />
-          <AutoSubmitForm className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <AutoSubmitForm className="flex min-w-0 flex-1 basis-72 flex-wrap items-center gap-2">
             <input type="hidden" name="view" value={view} />
             {locationId ? <input type="hidden" name="location" value={locationId} /> : null}
             <Select name="source" defaultValue={source ?? ""} aria-label="How it was booked" className="h-9 w-auto">
@@ -111,15 +111,15 @@ export default async function AppointmentsPage({ params, searchParams }: { param
       ) : (
         <Card>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm max-sm:[&_td]:px-2 max-sm:[&_th]:px-2">
               <thead className="text-left text-xs uppercase tracking-wide text-stone-500">
                 <tr>
                   <th className="px-4 py-2">When</th>
                   <th className="px-4 py-2">Client</th>
-                  <th className="px-4 py-2">Service</th>
-                  <th className="px-4 py-2">Provider</th>
-                  {locations.length > 1 ? <th className="px-4 py-2">Location</th> : null}
-                  <th className="px-4 py-2">Booked</th>
+                  <th className="hidden px-4 py-2 sm:table-cell">Service</th>
+                  <th className="hidden px-4 py-2 sm:table-cell">Provider</th>
+                  {locations.length > 1 ? <th className="hidden px-4 py-2 sm:table-cell">Location</th> : null}
+                  <th className="hidden px-4 py-2 sm:table-cell">Booked</th>
                   <th className="px-4 py-2">Status</th>
                 </tr>
               </thead>
@@ -132,13 +132,17 @@ export default async function AppointmentsPage({ params, searchParams }: { param
                     <LinkRow key={r.id} href={`/app/${slug}/appointments/${r.id}`}>
                       <td className="whitespace-nowrap px-4 py-2">
                         <Link href={`/app/${slug}/appointments/${r.id}`} className="font-medium text-stone-900 hover:underline">{when.format(start)}</Link>
-                        <span className="block text-xs text-stone-500">{time.format(start)} – {time.format(end)}</span>
+                        <span className="block text-xs text-stone-500">{time.format(start)}<span className="hidden sm:inline"> – {time.format(end)}</span></span>
                       </td>
-                      <td className="px-4 py-2">{client || <span className="text-stone-500">Walk-in</span>}</td>
-                      <td className="max-w-[18rem] truncate px-4 py-2 text-stone-700" title={r.services ?? ""}>{r.services}</td>
-                      <td className="whitespace-nowrap px-4 py-2 text-stone-700">{r.staffName ?? ""}{Number(r.staffCount) > 1 ? <span className="text-stone-500"> +{Number(r.staffCount) - 1}</span> : null}</td>
-                      {locations.length > 1 ? <td className="whitespace-nowrap px-4 py-2 text-stone-600">{locName(r.locationId)}</td> : null}
-                      <td className="whitespace-nowrap px-4 py-2 text-stone-600">
+                      {/* On a phone the service and provider move under the client and the other columns hide, so the list fits without scrolling. */}
+                      <td className="px-4 py-2 max-sm:w-full max-sm:max-w-0">
+                        <span className="block truncate">{client || <span className="text-stone-500">Walk-in</span>}</span>
+                        <span className="block truncate text-xs text-stone-500 sm:hidden">{[r.services, r.staffName].filter(Boolean).join(" · ")}</span>
+                      </td>
+                      <td className="hidden max-w-[18rem] truncate px-4 py-2 text-stone-700 sm:table-cell" title={r.services ?? ""}>{r.services}</td>
+                      <td className="hidden whitespace-nowrap px-4 py-2 text-stone-700 sm:table-cell">{r.staffName ?? ""}{Number(r.staffCount) > 1 ? <span className="text-stone-500"> +{Number(r.staffCount) - 1}</span> : null}</td>
+                      {locations.length > 1 ? <td className="hidden whitespace-nowrap px-4 py-2 text-stone-600 sm:table-cell">{locName(r.locationId)}</td> : null}
+                      <td className="hidden whitespace-nowrap px-4 py-2 text-stone-600 sm:table-cell">
                         {r.source === "online" ? <span className="mr-1.5 inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 ring-1 ring-inset ring-brand-200">online</span> : <span className="mr-1.5 text-xs text-stone-500">{SOURCE_LABEL[r.source] ?? r.source}</span>}
                         <span className="text-xs" title={new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: tz }).format(r.createdAt)}>{relative(r.createdAt)}</span>
                       </td>
