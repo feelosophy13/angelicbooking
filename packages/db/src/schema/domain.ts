@@ -79,6 +79,8 @@ export const businesses = pgTable("businesses", {
   packageRedemptionBase: text("package_redemption_base").$type<"list" | "package_share">().notNull().default("package_share"),
   // Reports counts a client as lapsed (churned) once this many days pass after their last completed visit with nothing booked ahead.
   lapsedAfterDays: integer("lapsed_after_days").notNull().default(90),
+  // Online booking asks for a one-time code sent to the client's phone (or email) before it books (Settings → Booking rules).
+  verifyBookingContact: boolean("verify_booking_contact").notNull().default(true),
   // Tip choices offered at checkout (client tip screen and the staff tip form), percent of the goods after discount.
   tipPercents: integer("tip_percents").array().notNull().default(sql`'{18,20,25}'`),
   phone: text("phone"),
@@ -792,9 +794,10 @@ export const clientLoginCodes = pgTable(
   {
     id: id(),
     businessId: businessId(),
-    clientId: text("client_id")
-      .notNull()
-      .references(() => clients.id, { onDelete: "cascade" }),
+    // Null for a booking code: the person may not be a client yet.
+    clientId: text("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    /** login (client account sign-in) | booking (verifying the phone or email typed on the booking form). */
+    purpose: text("purpose").$type<"login" | "booking">().notNull().default("login"),
     channel: text("channel").notNull(), // email | sms
     destination: text("destination").notNull(),
     codeHash: text("code_hash").notNull(),

@@ -22,6 +22,7 @@ export type BookingValues = {
   requireCardOnline: boolean;
   clientAccountsEnabled: boolean;
   clientPhotosOnBooking: boolean;
+  verifyBookingContact: boolean;
   bookingPolicy: string | null;
   addressLine: string | null;
 };
@@ -64,6 +65,7 @@ export function BookingForm({ slug, v, stripeReady, paymentsHref, feeSummary, fe
               <option value="fewest_bookings">Give it to whoever has the fewest bookings that day</option>
             </Select>
           </Field>
+          <Checkbox name="verifyBookingContact" defaultChecked={v.verifyBookingContact} label="Confirm the client's mobile number with a code before they book" hint="A 6-digit code by text (or email when texting isn't set up). Stops bookings under someone else's number, and makes sure consent to marketing texts comes from the number's owner. Signed-in clients skip it." />
           <Checkbox name="clientPhotosOnBooking" defaultChecked={v.clientPhotosOnBooking} label="Let clients attach photos when booking" hint="Up to 5 pictures with their details: inspiration, a reference style, or their current lashes or brows. Shown on the appointment and kept private to your team." />
         </>
       ) : (
@@ -73,6 +75,7 @@ export function BookingForm({ slug, v, stripeReady, paymentsHref, feeSummary, fe
           <Keep name="bookingOrder" value={v.bookingOrder} />
           <Keep name="anyProviderMode" value={v.anyProviderMode} />
           <Keep name="clientPhotosOnBooking" value={v.clientPhotosOnBooking} />
+          <Keep name="verifyBookingContact" value={v.verifyBookingContact} />
         </>
       )}
       <div className="grid gap-3 sm:grid-cols-2">

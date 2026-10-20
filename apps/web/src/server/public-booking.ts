@@ -268,6 +268,10 @@ export interface OnlineBookingInput {
   referralCode?: string | null;
   /** Birthday from the booking form, YYYY-MM-DD. */
   birthday?: string | null;
+  /** How the client proved who they are (booking code by text or email, or a signed-in session); null when not verified. */
+  verifiedVia?: "session" | "sms" | "email" | null;
+  /** The business asks for a booking code: marketing-text consent then counts only from a phone proven by code. */
+  verificationOn?: boolean;
   /** Promo code typed on the booking form; validated against the service. */
   promoCode?: string | null;
   /** Location chosen on the booking page (businesses with several sites). */
@@ -310,10 +314,18 @@ export async function findOrCreateClient(businessId: string, input: OnlineBookin
     if (phone) conds.push(eq(schema.clients.phone, phone));
     if (input.email) conds.push(sql`lower(${schema.clients.email}) = ${input.email.toLowerCase()}`);
     const candidates = conds.length ? await tx.query.clients.findMany({ where: or(...conds), orderBy: [asc(schema.clients.createdAt), asc(schema.clients.id)], limit: 25 }) : [];
-    const existing = candidates.find((c) => sameClientName(c, input));
+    // A phone or email proven by a booking code belongs to whoever has it on file, whatever name was typed ("Jen" vs "Jennifer"); an
+    // unproven one only counts together with the same name, so a stranger's booking never lands on someone else's record.
+    const email = input.email?.toLowerCase() ?? null;
+    const existing =
+      input.verifiedVia === "sms" ? candidates.find((c) => c.phone === phone) ?? candidates.find((c) => sameClientName(c, input))
+      : input.verifiedVia === "email" ? candidates.find((c) => c.email?.toLowerCase() === email) ?? candidates.find((c) => sameClientName(c, input))
+      : candidates.find((c) => sameClientName(c, input));
     // A number that replied STOP stays off texts until it texts START, whatever is ticked here.
     const stopped = await isSmsSuppressed(tx, phone);
-    const marketing = input.smsMarketingConsent && !stopped ? smsMarketingConsent(true, "online booking form") : {};
+    // Marketing texts need consent from the number's owner: with booking codes on, only a phone proven by code (or a signed-in client) counts.
+    const consentCounts = !input.verificationOn || input.verifiedVia === "sms" || input.verifiedVia === "session";
+    const marketing = input.smsMarketingConsent && !stopped && consentCounts ? smsMarketingConsent(true, input.verifiedVia === "sms" ? "online booking form (phone verified by code)" : "online booking form") : {};
     if (existing) {
       // Fill in gaps without overwriting what the business already has.
       await tx

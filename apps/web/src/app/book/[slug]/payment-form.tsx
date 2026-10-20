@@ -1,6 +1,6 @@
 "use client";
 import { PublicBotCheck } from "@/components/turnstile";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
 import { Button, Notice } from "@/components/ui";
@@ -10,6 +10,7 @@ import { policyLine } from "@/lib/policy-text";
 import { abandonOnlinePaymentAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
 import { PHOTOS_FIELD } from "@/lib/booking-photos";
 import { openHelcimPay } from "@/lib/helcim-pay";
+import { useBookingVerification } from "./verify-contact";
 
 type Intent =
   | { provider: "stripe"; clientSecret: string; intentId: string; kind: "deposit" | "card"; accountId: string | null; publishableKey: string | null }
@@ -48,6 +49,8 @@ export function PaidBookingForm(props: {
   embed?: boolean;
   /** The business lets clients attach pictures (Settings → Online booking). */
   photos?: boolean;
+  /** Ask for a booking code before the card step (Settings → Booking rules; not for a signed-in client). */
+  verify?: boolean;
 }) {
   const d = props.defaults;
   const hydrated = useHydrated();
@@ -57,6 +60,24 @@ export function PaidBookingForm(props: {
   const [intent, setIntent] = useState<Intent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // Step 1 waits here while the booking code is checked, then carries on with the same details plus the proof.
+  const waitingFor = useRef<{ raw: Record<string, string>; files: File[] } | null>(null);
+  const begin = (raw: Record<string, string>, files: File[]) =>
+    start(async () => {
+      setError(null);
+      const r = await startOnlinePaymentAction(raw);
+      if ("error" in r) setError(r.error);
+      else {
+        setFields(raw);
+        setPhotoFiles(files);
+        setIntent(r);
+      }
+    });
+  const v = useBookingVerification(props.slug, !!props.verify, (token) => {
+    const w = waitingFor.current;
+    waitingFor.current = null;
+    if (w) begin({ ...w.raw, verifyToken: token }, w.files);
+  }, () => (document.querySelector<HTMLInputElement>('form [name="cf-turnstile-response"]')?.value || null));
   const stripePromise = useMemo(() => (intent?.provider === "stripe" ? loadStripe(intent.publishableKey ?? props.publishableKey, intent.accountId ? { stripeAccount: intent.accountId } : undefined) : null), [props.publishableKey, intent]);
 
   if (!intent || !fields) {
@@ -70,16 +91,13 @@ export function PaidBookingForm(props: {
           const raw: Record<string, string> = {};
           for (const [k, v] of fd.entries()) if (typeof v === "string") raw[k] = v;
           const files = fd.getAll(PHOTOS_FIELD).filter((f): f is File => f instanceof File && f.size > 0);
-          start(async () => {
-            setError(null);
-            const r = await startOnlinePaymentAction(raw);
-            if ("error" in r) setError(r.error);
-            else {
-              setFields(raw);
-              setPhotoFiles(files);
-              setIntent(r);
-            }
-          });
+          if (v.token) raw.verifyToken = v.token;
+          if (props.verify && !v.token) {
+            waitingFor.current = { raw, files };
+            void v.ensure(raw.phone ?? "", raw.email ?? "", raw["cf-turnstile-response"] || null).then((ok) => { if (ok) { waitingFor.current = null; begin(raw, files); } });
+            return;
+          }
+          begin(raw, files);
         }}
       >
         <input type="hidden" name="slug" value={props.slug} />
@@ -94,9 +112,10 @@ export function PaidBookingForm(props: {
         <p className="text-xs font-medium uppercase tracking-wide text-stone-400">Step 1 of 2 · Your details</p>
         <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} photos={props.photos} />
         {error ? <Notice>{error}</Notice> : null}
+        {v.panel}
         {props.priceLabel ? <p className="text-sm font-medium text-stone-800">Price of this visit: {props.priceLabel}</p> : null}
-        <PublicBotCheck resetKey={error} />
-        <Button type="submit" disabled={pending || !hydrated} className="w-full" style={{ background: props.brand }}>
+        <PublicBotCheck resetKey={`${error ?? ""}:${v.sends}`} />
+        <Button type="submit" disabled={pending || !hydrated || v.busy} className={v.waiting ? "hidden" : "w-full"} style={{ background: props.brand }}>
           {pending ? "One moment…" : props.mode === "deposit" ? props.full ? `Continue to pay ${props.amountLabel}` : `Continue to pay ${props.amountLabel} deposit` : "Continue to add a card"}
         </Button>
         <p className="text-xs text-stone-500">

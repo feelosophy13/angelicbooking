@@ -57,3 +57,30 @@ export async function getClientSessionId(businessId: string): Promise<string | n
   const jar = await cookies();
   return decodeClientSession(jar.get(clientCookieName(businessId))?.value, businessId);
 }
+
+// --- Verified contact (booking) ---------------------------------------------
+// Proving a phone or email with a booking code yields a short-lived signed token naming it. The booking form carries the token with the
+// booking (a hidden field), so it works inside an embedded booking iframe too, where the browser would drop a cookie.
+
+const VERIFIED_HOURS = 2;
+
+export function encodeVerifiedContact(businessId: string, destination: string, now = Date.now()): string {
+  const payload = Buffer.from(JSON.stringify({ b: businessId, d: destination, exp: now + VERIFIED_HOURS * 3_600_000 })).toString("base64url");
+  return `${payload}.${sign(payload)}`;
+}
+
+/** The phone (E.164) or email (lower case) a token proves for this business, or null when it is missing, forged or expired. */
+export function decodeVerifiedContact(value: string | null | undefined, businessId: string, now = Date.now()): string | null {
+  if (!value) return null;
+  const [payload, sig] = value.split(".");
+  if (!payload || !sig) return null;
+  const expected = sign(payload);
+  if (expected.length !== sig.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString()) as { b: string; d: string; exp: number };
+    if (data.b !== businessId || typeof data.d !== "string" || data.exp < now) return null;
+    return data.d;
+  } catch {
+    return null;
+  }
+}

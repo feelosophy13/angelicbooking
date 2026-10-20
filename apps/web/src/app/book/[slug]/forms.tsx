@@ -1,21 +1,42 @@
 "use client";
 import { PublicBotCheck } from "@/components/turnstile";
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { bookOnline, joinWaitlistAction, type PublicState } from "./actions";
 import { Field, Input, Notice, Textarea, Checkbox } from "@/components/ui";
 import { Disclosure } from "@/components/disclosure";
 import { SubmitButton } from "@/components/form";
 import { policyLine } from "@/lib/policy-text";
 import { PhotoPicker } from "./photo-picker";
+import { useBookingVerification } from "./verify-contact";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean; smsMarketingOptIn?: boolean } | null;
 
-export function BookingForm(props: { extraServiceIds?: string[]; /** The price being confirmed, shown on the button. */ priceLabel?: string; slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null; /** The business lets clients attach pictures (Settings → Online booking). */ photos?: boolean }) {
+export function BookingForm(props: { extraServiceIds?: string[]; /** The price being confirmed, shown on the button. */ priceLabel?: string; slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null; /** The business lets clients attach pictures (Settings → Online booking). */ photos?: boolean; /** Ask for a booking code first (Settings → Booking rules; not for a signed-in client). */ verify?: boolean }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
   const d = props.defaults;
+  const form = useRef<HTMLFormElement>(null);
+  // Once the code is right the form is sent again, now carrying the token (a render later, so the hidden field holds it).
+  const [resubmit, setResubmit] = useState(false);
+  // Set once the booking may go ahead (code right, or no code needed after all), so the second submit isn't stopped again.
+  const passed = useRef(false);
+  const v = useBookingVerification(props.slug, !!props.verify, () => { passed.current = true; setResubmit(true); }, () => (form.current?.querySelector<HTMLInputElement>('[name="cf-turnstile-response"]')?.value || null));
+  useEffect(() => {
+    if (resubmit) { setResubmit(false); form.current?.requestSubmit(); }
+  }, [resubmit]);
   return (
-    <form action={action} className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
+    <form
+      ref={form}
+      action={action}
+      className="space-y-3 rounded-xl border border-stone-200 bg-white p-4"
+      onSubmit={(e) => {
+        if (!props.verify || v.token || passed.current) return;
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        void v.ensure(String(fd.get("phone") ?? ""), String(fd.get("email") ?? ""), String(fd.get("cf-turnstile-response") ?? "") || null).then((ok) => { if (ok) { passed.current = true; setResubmit(true); } });
+      }}
+    >
       <input type="hidden" name="slug" value={props.slug} />
+      {v.token ? <input type="hidden" name="verifyToken" value={v.token} /> : null}
       {props.embed ? <input type="hidden" name="embed" value="1" /> : null}
       {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
       {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}
@@ -26,8 +47,9 @@ export function BookingForm(props: { extraServiceIds?: string[]; /** The price b
       {props.quotedPriceCents !== undefined ? <input type="hidden" name="quotedPriceCents" value={props.quotedPriceCents} /> : null}
       <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} photos={props.photos} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
-      <PublicBotCheck resetKey={state} />
-      <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Booking…">Confirm booking{props.priceLabel ? ` · ${props.priceLabel}` : ""}</SubmitButton>
+      {v.panel}
+      <PublicBotCheck resetKey={`${JSON.stringify(state ?? null)}:${v.sends}`} />
+      {v.waiting ? null : <SubmitButton className="w-full" style={{ background: "var(--brand)" }} pendingText="Booking…" disabled={v.busy}>{v.busy ? "Sending code…" : `Confirm booking${props.priceLabel ? ` · ${props.priceLabel}` : ""}`}</SubmitButton>}
       <p className="text-xs text-stone-500">{policyLine(props)} By booking, you agree to this policy.</p>
     </form>
   );

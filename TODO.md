@@ -1296,6 +1296,19 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### Booking codes: verify the client before an online booking (built 2026-10-20, migration 0131)
+- [x] Settings → Booking rules → "Confirm the client's mobile number with a code before they book" (on by default). The booking form
+      sends a 6-digit code by text, or by email when the business can't text yet or the client asks; signed-in clients skip it.
+      The code yields a signed 2-hour token the form carries (works in the embedded iframe, where a cookie wouldn't).
+- [x] Enforced on the server for free and paid bookings, before any card is charged or saved. The bot check moved to sending the code
+      (each code is a text we pay for), and a booking proven by code skips it (its token may expire while the client fetches the code).
+- [x] A proven phone (or email) attaches the booking to the client who has it on file, whatever name was typed; an unproven one only
+      matches with the same name (otherwise a new client, as before). Marketing-text consent counts only from a phone proven by code.
+- [x] After a proven booking the client is signed in on that device (only where client accounts are on).
+- [ ] Not tried end to end in a browser: the in-app browser never gets a Cloudflare bot-check answer. Covered by tests
+      (`booking-verification*.test.ts`, 8 tests) including the server action; try one real booking on production.
+- [ ] Texting a code needs the business's toll-free number verified; until then codes go by email.
+
 ### Helcim as a second card processor (built 2026-10-20, migrations 0128–0130; plan in `HELCIM-PLAN-2026-10-20.md`)
 - [x] Settings → Payments → Card processor: connect the business's own Helcim account (API token, tested before saving; webhook
       verifier), switch back to Stripe any time. Tokens are encrypted (`lib/secrets.ts`, `APP_ENCRYPTION_KEY`).
