@@ -1316,7 +1316,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Not run against a real Helcim account yet: tested against a fake Helcim API (`helcim.test.ts`, 11 tests) and endpoint paths
       checked against devdocs.helcim.com. Needs a Helcim developer test account (tier2support@helcim.com) and a Smart Terminal
       for an end-to-end pass, especially the HelcimPay.js hash format and the webhook payloads.
-- [ ] Set `APP_ENCRYPTION_KEY` on Render before the first business connects Helcim (connecting fails in production without it).
+- [x] `APP_ENCRYPTION_KEY` generated 2026-10-20: in local `.env` and on Render (same value), redeployed.
 - [ ] Join the Integration Partner Program and set `HELCIM_PARTNER_TOKEN` (revenue share is only credited on tagged requests).
 - [ ] Ask Helcim: how to flag merchant-initiated charges on saved cards; dispute webhooks (none today: Helcim emails the merchant);
       tips on the terminal; Apple Pay in HelcimPay.js; importing saved cards from Stripe.
