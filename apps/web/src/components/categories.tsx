@@ -47,11 +47,11 @@ export function CategoryList(props: {
               <form action={props.actions.rename} className="flex min-w-0 flex-1 basis-48 items-center gap-1">
                 {hidden({ id: c.id })}
                 <Input name="name" defaultValue={c.name} className="h-8 min-w-0 max-w-sm flex-1" aria-label={`Name of ${c.name}`} />
-                <button className="rounded px-2 py-1 text-xs text-stone-600 hover:bg-stone-100">Rename</button>
+                <button className="rounded px-2 py-2.5 text-xs text-stone-600 hover:bg-stone-100 lg:pointer-fine:py-1">Rename</button>
               </form>
               {/* Edit, count and Delete stay together and drop to their own line on a phone. */}
               <div className="ml-auto flex shrink-0 items-center gap-2">
-              <Link href={`/app/${props.slug}/${props.kind === "service" ? "services" : "products"}/categories/${c.id}/edit`} className="rounded px-2 py-1 text-xs text-brand-700 hover:bg-brand-50">Edit</Link>
+              <Link href={`/app/${props.slug}/${props.kind === "service" ? "services" : "products"}/categories/${c.id}/edit`} className="rounded px-2 py-2.5 text-xs text-brand-700 hover:bg-brand-50 lg:pointer-fine:py-1">Edit</Link>
               <span className="w-16 text-right text-xs text-stone-400">{n} item{n === 1 ? "" : "s"}</span>
               <form action={props.actions.remove}>
                 {hidden({ id: c.id })}

@@ -18,8 +18,9 @@ const variants = {
   ghost: "text-stone-700 hover:bg-stone-100",
   danger: "bg-red-600 text-white hover:bg-red-700",
 };
-// Small buttons are 40px tall on phones (a finger-sized target) and 32px from md up.
-const sizes = { sm: "h-10 px-3 text-sm md:h-8", md: "h-10 px-4 text-sm" };
+// Small buttons are 40px tall (a finger-sized target) on phones, tablets and any touch screen; 32px only with a mouse
+// on a large screen.
+const sizes = { sm: "h-10 px-3 text-sm lg:pointer-fine:h-8", md: "h-10 px-4 text-sm" };
 
 export function Button({ className, variant = "primary", size = "md", ...props }: ButtonProps) {
   return (

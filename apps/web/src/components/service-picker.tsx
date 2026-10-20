@@ -89,7 +89,7 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
         }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={cn("flex w-full items-center justify-between gap-2 h-10 rounded-lg border border-stone-300 bg-white px-3 text-left text-sm text-stone-900 max-md:text-base focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-brand-500", compact && "!h-9")}
+        className={cn("flex w-full items-center justify-between gap-2 h-10 rounded-lg border border-stone-300 bg-white px-3 text-left text-sm text-stone-900 max-lg:text-base pointer-coarse:text-base focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-brand-500", compact && "!h-9")}
       >
         <span className={cn("min-w-0 truncate", !current && !noneLabel && "text-stone-400")}>
           {current ? <>{current.name}{current.meta ? <span className="text-stone-500"> · {current.meta}</span> : null}</> : noneLabel ?? placeholder}

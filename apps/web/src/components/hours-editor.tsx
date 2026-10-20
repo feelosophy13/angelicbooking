@@ -17,9 +17,9 @@ export function HoursEditor({ initial }: { initial: WeeklyHours | null }) {
           <div key={d} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 px-3 py-2 text-sm sm:grid-cols-[6rem_1fr_auto_1fr_6rem] sm:py-1.5">
             <span className="font-medium">{WEEKDAYS[d]}</span>
             <div className="order-2 col-span-2 flex items-center gap-1.5 sm:order-none sm:contents">
-              <input type="time" name={`h${d}_open`} defaultValue={h?.open ?? "10:00"} disabled={closed[d]} className="h-10 min-w-0 flex-1 rounded border border-stone-300 px-1.5 text-sm disabled:opacity-40 sm:h-8 sm:px-2" />
+              <input type="time" name={`h${d}_open`} defaultValue={h?.open ?? "10:00"} disabled={closed[d]} className="h-10 min-w-0 flex-1 rounded border border-stone-300 px-1.5 text-sm disabled:opacity-40 sm:px-2 lg:pointer-fine:h-8" />
               <span className="text-stone-400">to</span>
-              <input type="time" name={`h${d}_close`} defaultValue={h?.close ?? "18:00"} disabled={closed[d]} className="h-10 min-w-0 flex-1 rounded border border-stone-300 px-1.5 text-sm disabled:opacity-40 sm:h-8 sm:px-2" />
+              <input type="time" name={`h${d}_close`} defaultValue={h?.close ?? "18:00"} disabled={closed[d]} className="h-10 min-w-0 flex-1 rounded border border-stone-300 px-1.5 text-sm disabled:opacity-40 sm:px-2 lg:pointer-fine:h-8" />
             </div>
             <Checkbox name={`h${d}_closed`} checked={closed[d]} onChange={(e) => setClosed((c) => c.map((v, i) => (i === d ? e.target.checked : v)))} label="Closed" className="order-1 text-xs !items-center sm:order-none [&>input]:mt-0" />
           </div>

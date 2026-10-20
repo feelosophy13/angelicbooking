@@ -82,7 +82,7 @@ export default async function AppLayout({ children, params }: { children: React.
     <div className="flex min-h-screen">
       {appColorStyle}
       <NavHistory />
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white md:flex print:hidden">
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-stone-200 bg-white lg:flex print:hidden">
         <div className="px-4 pb-3 pt-4">
           <Link href={base} className="flex items-center gap-2.5" title={business.name}>
             <BusinessMark name={business.name} logoUrl={business.logoUrl} />
@@ -129,7 +129,7 @@ export default async function AppLayout({ children, params }: { children: React.
         <MobileNav sections={sections as NavSection[]} businessName={business.name} businessLogo={business.logoUrl} homeHref={base} userName={`${user.name} · ${roleName}`} tabs={tabs} bookingUrl={bookingUrl} quick={quickActions}>
           <UserMenu user={user} businesses={mine} currentSlug={slug} />
         </MobileNav>
-        <main className="flex-1 p-4 pb-24 md:p-8 md:pb-8">
+        <main className="flex-1 p-4 pb-24 md:p-8 md:pb-24 lg:pb-8">
           {isDelinquent(business.subscriptionStatus) ? (
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
               Your last payment failed.{" "}

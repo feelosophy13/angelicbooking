@@ -11,7 +11,8 @@ export type NavSection = { title: string; items: { href: string; label: string; 
 /**
  * Phone navigation: a top bar with the wordmark and a menu button that opens a
  * slide-in drawer with the full grouped menu, plus a bottom tab bar with the
- * four most-used destinations. Hidden at md and up (the sidebar takes over).
+ * four most-used destinations. Phones and portrait tablets use it; from lg (1024px) the sidebar takes over, so a
+ * tablet held upright gets the full width instead of a 240px sidebar beside a 500px page.
  */
 export function MobileNav({ sections, businessName, businessLogo, homeHref, userName, tabs, bookingUrl, quick, children }: { sections: NavSection[]; businessName: string; businessLogo?: string | null; homeHref: string; userName: string; tabs: { href: string; label: string; exact?: boolean; iconName: string }[]; bookingUrl?: string; quick?: React.ReactNode; children?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -27,7 +28,7 @@ export function MobileNav({ sections, businessName, businessLogo, homeHref, user
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-stone-200 bg-white/95 px-3 py-2 backdrop-blur md:hidden">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-stone-200 bg-white/95 px-3 py-2 backdrop-blur lg:hidden">
         <Link href={homeHref} className="flex min-w-0 items-center gap-2"><BusinessMark name={businessName} logoUrl={businessLogo} className="h-7 w-7" /><span className="truncate font-semibold tracking-tight">{businessName}</span></Link>
         <button onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open} className="rounded-lg p-2 text-stone-700 hover:bg-stone-100">
           <Menu className="h-5 w-5" />
@@ -35,7 +36,7 @@ export function MobileNav({ sections, businessName, businessLogo, homeHref, user
       </header>
 
       {open ? (
-        <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
           <button className="absolute inset-0 bg-stone-900/40" aria-label="Close menu" onClick={() => setOpen(false)} />
           <div className="absolute inset-y-0 right-0 flex w-[min(86vw,20rem)] flex-col bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3">
@@ -71,7 +72,7 @@ export function MobileNav({ sections, businessName, businessLogo, homeHref, user
         </div>
       ) : null}
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-stone-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden" aria-label="Quick navigation">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-stone-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="Quick navigation">
         {tabs.map((t) => (
           <Link key={t.href} href={t.href} className={cn("flex flex-col items-center gap-0.5 py-2 text-[11px]", isActive(t.href, t.exact) ? "text-brand-700" : "text-stone-500")}>
             <Icon name={t.iconName} className="h-5 w-5" />

@@ -171,7 +171,8 @@ export function WorkflowForm({ slug, workflow, trigger, pickers, lapsedDays = 60
         </details>
       </Section>
 
-      <div className="sticky bottom-0 -mx-5 -mb-5 flex items-center justify-between gap-3 border-t border-stone-200 bg-white/95 px-5 py-3 backdrop-blur">
+      {/* Above the bottom tab bar on phones and portrait tablets; at the bottom edge once the sidebar replaces it. */}
+      <div className="sticky bottom-14 -mx-5 -mb-5 flex items-center justify-between gap-3 border-t border-stone-200 bg-white/95 px-5 py-3 backdrop-blur lg:bottom-0">
         <p className="text-xs text-stone-500">{workflow ? "Changes apply to new runs; runs already in progress keep their current steps." : "You can turn it on now or after a look at the steps."}</p>
         <SubmitButton pendingText="Saving…">{workflow ? "Save workflow" : "Create workflow"}</SubmitButton>
       </div>

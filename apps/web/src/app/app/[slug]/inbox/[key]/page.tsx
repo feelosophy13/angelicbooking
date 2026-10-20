@@ -125,7 +125,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ s
             </div>
           ))}
         </div>
-        <div className="sticky bottom-16 shrink-0 rounded-b-xl border-t border-stone-100 bg-white px-4 py-3 md:bottom-0 lg:static">
+        <div className="sticky bottom-16 shrink-0 rounded-b-xl border-t border-stone-100 bg-white px-4 py-3 lg:static">
           {!client ? (write ? <AddClient slug={slug} number={key.slice(4)} /> : <p className="text-sm text-stone-500">This number is not on a client record.</p>)
             : why ? <p className="text-sm text-stone-500">{why}{why.startsWith("Replies need") && can(permissions, "settings.business") ? <> <Link href={`/app/${slug}/settings/messaging`} className="underline">Settings → Text number</Link></> : null}</p>
             : <ReplyBox slug={slug} clientId={client.id} quickReplies={quickRepliesFor(business)} context={{ firstName: client.firstName, business: business.name, next }} />}

@@ -147,7 +147,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
 
       <Card className="mb-4 p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm md:h-8" role="group" aria-label="Week or month">
+          <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm lg:pointer-fine:h-8" role="group" aria-label="Week or month">
             {(["week", "month"] as const).map((key) => (
               <Link key={key} href={`?${periodHref(key)}`} aria-current={period === key ? "true" : undefined} className={cn("inline-flex items-center rounded-md px-3", period === key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{key === "week" ? "Week" : "Month"}</Link>
             ))}
@@ -231,7 +231,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
         </p>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="min-w-0">
           <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-2">
             <h2 className="text-sm font-semibold text-stone-600">Time off in the next 90 days{peopleFilter ? <span className="font-normal text-stone-500"> · {peopleLabel}</span> : null}</h2>

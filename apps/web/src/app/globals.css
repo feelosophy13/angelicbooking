@@ -48,16 +48,17 @@ body {
 }
 
 /* Segmented controls (the bordered rows of choices: Day / Week / Month, Upcoming / Today / Past, period pickers) carry
-   data-segmented. They never push the page sideways (a long one scrolls inside itself), and on a phone each choice is a
-   40px-tall, finger-sized target. */
+   data-segmented. They never push the page sideways (a long one scrolls inside itself), and on phones, tablets and any
+   touch screen each choice is a 40px-tall, finger-sized target. */
 [data-segmented] { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
-@media (max-width: 767px) {
+@media (max-width: 1023px), (pointer: coarse) {
   [data-segmented] > :is(a, button) { display: inline-flex; min-height: 2.5rem; align-items: center; justify-content: center; white-space: nowrap; }
 }
 
-/* iOS Safari zooms the page into any field whose text is under 16px, and stays zoomed. On phone widths every field
-   is 16px (larger sizes are left alone); this sits outside the layers so it beats the text-sm on Input / Select. */
-@media (max-width: 767px) {
+/* iOS Safari zooms the page into any field whose text is under 16px, and stays zoomed. On phones, tablets and touch
+   screens every field is 16px (larger sizes are left alone); this sits outside the layers so it beats the text-sm on
+   Input / Select. */
+@media (max-width: 1023px), (pointer: coarse) {
   input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [class*="text-lg"], [class*="text-xl"], [class*="text-2xl"], [class*="text-3xl"]),
   select:not([class*="text-lg"], [class*="text-xl"]),
   textarea:not([class*="text-lg"], [class*="text-xl"]) {
