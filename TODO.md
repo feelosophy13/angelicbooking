@@ -1320,15 +1320,12 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       action keep a 300px side at `lg`); touch sizes follow the pointer (`lg:pointer-fine:`, coarse-pointer CSS), so an
       iPad keeps 40px buttons and 16px fields; Appointments folds columns until `lg`; Weekly hours with two locations is
       two lines per day until `xl`; the inbox composer and automation save bar sit above the tab bar.
-- [ ] Check the touch-only sizes on a real iPad (the emulator can't report a coarse pointer at 1024px).
-- [ ] Inline text links ("Back", "Change", "+1 week", booking-page phone / website links) are 16–20px tall; give `BackLink` and
-      text links a 40px hit area.
-- [ ] Appointments' four-way switcher scrolls inside itself at 375px ("Past" half shown); a shorter phone label for
-      "Recently booked" would fit it.
-- [ ] Reports, Payroll, Audit log, Messages log, Gift cards and Time clock entries still scroll sideways inside their cards on a
-      phone; stacked rows like Clients would read better.
-- [ ] Phone numbers show unformatted (`+17035551024`) in the clients list and the appointment sheet.
-- [ ] Sign-in / sign-up were checked by code only (they redirect while signed in); measure them signed out.
+- [x] Third pass (§5 of the review): text links and small controls get a 40px hit box on touch (`hit`, and underlined links
+      automatically); "Recently booked" reads "New" on phones; Reports, Payroll, Audit, Messages, Gift cards, Time clock
+      entries, Form submissions and Inventory report tables stack on phones (`StackTable`); calendar card buttons are 32px in
+      the bottom corner on touch; phone numbers print as "(703) 555-1024" (`phone()` in lib/format.ts); sign-in / sign-up
+      measured signed out; the automation save bar sticks again; the Reports "Custom" popover stays on screen.
+- [ ] Check on a real iPad and iPhone (everything so far is browser emulation, touch sizes included).
 
 ### Vagaro parity gaps (added 2026-10-10; all built 2026-10-10 — Stripe-dependent ones are untested until keys exist)
 

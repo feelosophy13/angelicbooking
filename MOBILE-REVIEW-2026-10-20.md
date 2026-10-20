@@ -74,27 +74,36 @@ reports pages in one column, the inbox thread, and the menu drawer at 768. After
 scrolls sideways; wide tables (Reports, Payroll, Audit, Messages, Products bulk edit, the Staff hours week grid) scroll
 inside their cards.
 
-Left over on tablets: the Check in / Complete icons on calendar cards are 22px. They are a shortcut on top of the card
-(on touch they are always visible, and a tap on the card opens the panel with full-size buttons), so they were left
-small rather than covering the card's text. The emulator can't report a coarse pointer, so the touch-only sizes at
-1024px were checked in the CSS rather than on a device; a pass on a real iPad is worth doing.
+Tablet leftovers, fixed in §5: the calendar card buttons, and the touch-only sizes, which were later checked with a touch
+pointer (a frame inside the mobile-emulated tab reports `pointer: coarse` at 1024px): small buttons and segmented choices
+are 40px there and the card buttons 32px. A pass on a real iPad is still worth doing.
 
 ## 4. Left over
 
-- **Small text links.** Inline links such as "Back", "Change", "View", "+1 week", "New client" and the booking page's
-  phone and website links are 16–20px tall. They sit in running text with space around them, so a miss lands on nothing,
-  but a 40px hit area would be better. A `BackLink` / `TextLink` padding pass is a follow-up.
-- **Segmented control with four long labels** (Appointments: Upcoming / Today / Recently booked / Past) scrolls inside
-  itself at 375px rather than wrapping; "Past" is half visible. Shorter labels on phones ("New" for "Recently booked") would
-  fit them.
-- **Tables that scroll sideways on purpose** (Reports, Payroll, Audit, Messages, Gift cards, Time clock entries) are usable
-  but read better as stacked rows on a phone. Clients and Appointments were converted because the desk uses them daily;
-  the others are mostly owner-at-a-desk pages.
-- **Phone numbers show raw** (`+17035551024`) in the clients list and the appointment sheet. Not a layout issue; a
-  formatting pass belongs with the client list.
-- **Sign-in and sign-up** redirect while signed in, so they were checked by code and the shared auth layout (`max-w-sm`
-  column, `Input` fields that the 16px rule covers) rather than measured signed out.
-- The automation editor's save bar is meant to stick to the bottom of the screen but doesn't on the edit page (an ancestor
-  clips it); it shows at the end of the form instead.
+Everything the first two passes left over is fixed (§5) except:
+
+- **A pass on a real iPad and iPhone.** Everything here was measured in the built-in browser's emulation. Touch-only sizes
+  were checked with an emulated coarse pointer, not on a device, and iOS Safari's own toolbars were not part of the test.
+- **Intentional sideways scrolling** inside a box: the developer docs' code samples, the Inventory and Staff sub-tab
+  strips, Products → Bulk edit (a spreadsheet editor), and the Staff hours week grid.
+- **Tiny links that are hidden until hover** (the developer docs' heading anchors). They are invisible on touch, so they
+  were left alone.
 - The Next.js dev indicator (the round "N" bottom-left in development) overlaps the first bottom tab. It does not exist in
   production builds.
+
+## 5. Leftovers fixed (same day, third pass)
+
+| # | Where | Problem | Fix |
+|---|---|---|---|
+| L1 | Text links everywhere: BackLink, "Change", "View", "+1 week", "New client", the booking page's phone / website / Instagram / Gift cards / Privacy / Powered by links, "Start over", the Hours toggle, the booking header pills, the phone top bar's business name, public site header and footer links, the developer docs' Copy buttons, list arrow buttons (services, categories, cancellation and refund reasons, form builder), the picture × button, inbox "Remove picture" | 14–24px tall on a touch screen. | `globals.css`: below `lg` or on a coarse pointer, underlined links and buttons (and anything with the `hit` class) get an invisible hit box 12px above and below and 6px to the sides, so 16px text is a 40px target and nothing moves. Full-row links (`after:inset-0`) and already-positioned elements are left alone. BackLink and the other small controls carry `hit`. Two stacked links that would have overlapped (Time clock QR "Download" / "Open page") now sit side by side. |
+| L2 | Appointments switcher | Upcoming / Today / Recently booked / Past scrolled inside itself at 375px. | "Recently booked" reads "New" below `sm` (full label as the tooltip); all four fit. |
+| L3 | Reports (11 tables and the category table), Payroll (summary and each person's lines), Audit log, Messages log, Gift cards, Time clock entries, Form submissions, Inventory report (3), Prices by stylist | Scrolled sideways inside their cards on a phone (Reports staff table 869px of content in 341px). | New shared `StackTable` (`components/stack-table.tsx`): below `sm` each row is a small card, the first cell as the title and the rest as "LABEL value" in two columns, with labels taken from the table's own header; from `sm` up it is the same table. The payroll export buttons wrap. |
+| L4 | Calendar card Check in / Complete buttons | 22px, in the top corner over the card text. | On a touch screen they are 32px, always shown, in the bottom corner below the title, client and time lines, and only on cards at least 88px tall; shorter cards on touch leave them to the panel (a tap opens it, with full-size buttons). With a mouse nothing changed. |
+| L5 | Clients list, appointment panel, calendar hover card | Phone numbers showed as stored (`+17035551024`). | `phone()` in `lib/format.ts` prints US / Canada numbers as "(703) 555-1024" and leaves others alone (unit test `format-phone.test.ts`); `tel:` links keep the stored number. The role-matrix test looks for the printed form. |
+| L6 | Sign-in and sign-up | Only checked in code. | Measured signed out (their HTML fetched without cookies and rendered at each width): no sideways scroll, 16px fields and no small targets at 375, 768 and 1024. |
+| L7 | Automation editor save bar | Never stuck to the bottom: the card around the form had `overflow-hidden`, which makes it a scroll container. | The card no longer clips; the bar rounds its own corners and sticks above the tab bar until `lg`. |
+| L8 | Automation steps (found while checking L7) | At 375px a step's type label ("SEND THE APPOINTMENT REMINDER") ran underneath its move / delete buttons. | Below `sm` the label and the step's summary are two truncated lines; the step's icon buttons are 28px on touch. |
+| L9 | Reports "Custom" dates (found while checking L3) | The popover sits inside the period switcher, which scrolls sideways since §1 #6, so the popover would have been clipped; at 375px it also ran off the left edge, and "Custom" wasn't 40px. | Segmented controls that hold a popover don't scroll; the popover wraps and stays on screen; the summary gets the 40px rule. |
+
+After this pass the 151-page scan at 375×812, 768×1024 and 1024×768 still finds no page that scrolls sideways and no field
+under 16px on phones and tablets, and the changed pages were re-checked by hand.

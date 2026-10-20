@@ -59,6 +59,12 @@ wrong: fix the page.
   block, then the value in a fixed right-aligned column (`w-28 shrink-0 text-right tabular-nums`) so prices line up
   down the list, then quiet actions. Actions are ghost buttons; the destructive one is last and uses `ConfirmSubmit`.
 - Keep one per-row action visible at most two; anything else goes on the detail page.
+- A data table with more than three or four columns is a `StackTable` (`components/stack-table.tsx`) inside an
+  `overflow-x-auto` box: on a phone each row becomes a small card labelled from the table's own header, so nothing
+  scrolls sideways. A list the desk uses all day (Clients, Appointments) can instead hide columns below `sm` and fold
+  their facts into the grey line under the name.
+- Small text controls (a "Change" link, an icon-only arrow, a toggle in running text) carry the `hit` class, or are
+  underlined, so a touch screen gets a 40px target without the control looking any bigger.
 - Long lists get search, filters and paging (see Clients). Caps like "newest 50" are bugs.
 - Empty states use `Empty` with a one-line title, a short why/how line, and the primary action when there is one.
 
