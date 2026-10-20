@@ -34,8 +34,8 @@ export function BusinessMark({ name, logoUrl, className }: { name: string; logoU
 /** "Powered by Angelic Booking" at the foot of client-facing pages, linking to the marketing site. */
 export function PoweredBy({ className }: { className?: string }) {
   return (
-    <a href="https://angelicbooking.com" target="_blank" rel="noreferrer" className={cn("inline-flex items-center gap-1.5 text-xs text-stone-500 hover:text-stone-700", className)}>
-      Powered by <LogoMark className="h-4 w-4" /><span className="font-semibold text-stone-700">Angelic Booking</span>
+    <a href="https://angelicbooking.com" target="_blank" rel="noreferrer" className={cn("text-xs text-stone-500 hover:text-stone-700", className)}>
+      Powered by <span className="font-semibold text-stone-700">Angelic Booking</span>
     </a>
   );
 }
