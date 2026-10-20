@@ -2,6 +2,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Camera, Loader2, X } from "lucide-react";
 import { MAX_BOOKING_PHOTOS, PHOTOS_FIELD } from "@/lib/booking-photos";
+import { useFileDrop } from "@/lib/use-file-drop";
+import { cn } from "@/lib/utils";
 
 type Picked = { key: string; file: File; url: string };
 
@@ -93,6 +95,8 @@ export function PhotoPicker() {
 
   const remove = (key: string) => setPicked((cur) => { cur.find((p) => p.key === key)?.url && URL.revokeObjectURL(cur.find((p) => p.key === key)!.url); return cur.filter((p) => p.key !== key); });
   const full = picked.length >= MAX_BOOKING_PHOTOS;
+  // Dropping pictures anywhere on the photo strip adds them, through the same checks as choosing them.
+  const { dragging, handlers } = useFileDrop((files) => void add(files), { disabled: busy > 0 });
 
   return (
     <div>
@@ -115,7 +119,7 @@ export function PhotoPicker() {
           void add(copy);
         }}
       />
-      <ul className="flex flex-wrap gap-2" aria-label="Photos to send with your booking">
+      <ul {...handlers} className={cn("-m-1 flex flex-wrap gap-2 rounded-2xl p-1 transition", dragging && "bg-white ring-2 ring-[var(--brand)]")} aria-label="Photos to send with your booking">
         {picked.map((p, i) => (
           <li key={p.key} className="relative">
             {/* eslint-disable-next-line @next/next/no-img-element */}

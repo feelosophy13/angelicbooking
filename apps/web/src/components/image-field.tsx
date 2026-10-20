@@ -2,10 +2,11 @@
 import { useRef, useState } from "react";
 import { Camera, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { setInputFiles, useFileDrop } from "@/lib/use-file-drop";
 
 /**
  * One way to add, change or remove a picture: the picture itself is the
- * control. Click (or press Enter on) the image area to pick a file; the new
+ * control. Click (or press Enter on) the image area to pick a file, or drop one on it; the new
  * file previews in place; the (x) on the picture's corner clears it. Everything posts with the
  * surrounding form: the file under `name`, and `removeName`="on" when the
  * current picture should go. Nothing is saved until the form is.
@@ -39,6 +40,11 @@ export function ImageField({ name, removeName, current, shape = "square", placeh
     setFileName(file.name);
     setRemoved(false);
   }
+  // A dropped picture goes into the file input, so it posts with the form exactly like a chosen one.
+  const { dragging, handlers } = useFileDrop((files) => {
+    const file = files.find((f) => f.type.startsWith("image/"));
+    if (file && setInputFiles(input.current, [file])) pick(file);
+  });
   function remove() {
     if (preview) {
       pick(null);
@@ -52,11 +58,11 @@ export function ImageField({ name, removeName, current, shape = "square", placeh
     <div className={cn("flex flex-wrap items-center gap-4", className)}>
       <input ref={input} type="file" name={name} accept="image/*" className="sr-only" tabIndex={-1} onChange={(e) => pick(e.target.files?.[0] ?? null)} />
       {removeName ? <input type="hidden" name={removeName} value={removed ? "on" : ""} /> : null}
-      <div className="relative shrink-0">
+      <div className="relative shrink-0" {...handlers}>
       <button
         type="button"
         onClick={() => input.current?.click()}
-        className={cn("group relative overflow-hidden border-2 border-dashed border-stone-300 bg-stone-50 text-stone-500 transition hover:border-brand-400 hover:bg-brand-50/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500", box, shown && "border-solid border-stone-200")}
+        className={cn("group relative overflow-hidden border-2 border-dashed border-stone-300 bg-stone-50 text-stone-500 transition hover:border-brand-400 hover:bg-brand-50/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500", box, shown && "border-solid border-stone-200", dragging && "border-solid border-brand-500 bg-brand-50 ring-2 ring-brand-200")}
         aria-label={shown ? "Change picture" : "Add picture"}
       >
         {shown ? (
@@ -86,7 +92,7 @@ export function ImageField({ name, removeName, current, shape = "square", placeh
       ) : null}
       </div>
       <div className="space-y-1 text-xs text-stone-500">
-        {fileName ? <p className="text-stone-800">{fileName} <span className="text-stone-500">· saved when you save the form</span></p> : removed ? <p className="text-stone-800">Picture will be removed when you save. <button type="button" onClick={() => setRemoved(false)} className="text-brand-700 underline">Undo</button></p> : shown ? null : <p>Click to choose a picture.</p>}
+        {fileName ? <p className="text-stone-800">{fileName} <span className="text-stone-500">· saved when you save the form</span></p> : removed ? <p className="text-stone-800">Picture will be removed when you save. <button type="button" onClick={() => setRemoved(false)} className="text-brand-700 underline">Undo</button></p> : shown ? null : <p>Click or drop a picture here.</p>}
         <p>PNG, JPEG or WebP up to 2 MB.</p>
       </div>
     </div>
