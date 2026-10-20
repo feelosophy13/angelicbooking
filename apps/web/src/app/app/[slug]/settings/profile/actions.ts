@@ -64,6 +64,6 @@ export const saveAppColor = formAction(
     const ctx = await requireAction(d.slug, "settings.business");
     await db.update(schema.businesses).set({ appColor: d.appColor === DEFAULT_APP_COLOR ? null : d.appColor }).where(eq(schema.businesses.id, ctx.business.id));
     revalidatePath(`/app/${d.slug}`, "layout");
-    return "App color saved";
+    // No flash: the picker raises its own toast, with Undo.
   },
 );

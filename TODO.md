@@ -1298,7 +1298,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 
 ### App color (built 2026-10-19, migration 0126)
 - [x] Owners and managers (`settings.business`) pick the staff app's primary color under Settings → Business profile → App color:
-      eight presets, the booking page's brand color when it differs, or any custom color, with a live preview. Stored as
+      eight presets, the booking page's brand color when it differs, or any custom color. The whole app recolors as you pick and the
+      pick saves itself after a 0.5 s pause (toast with Undo); too-light picks are not saved. Stored as
       `businesses.app_color` (null = default violet), separate from `brand_color`, which still colors only the booking page and emails.
       Every `brand-*` utility now reads `--brand-50…900`; the app layout writes them on `:root` (`appColorCss` in `lib/brand.ts`, shades
       mixed toward white/black) so portaled dialogs follow. Colors too light for white button text (contrast under 3:1) are refused.

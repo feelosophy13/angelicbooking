@@ -6,7 +6,7 @@ import { BackLink, Card, Input, PageHeader, Select, Textarea, Checkbox } from "@
 import { TIMEZONES } from "@/lib/utils";
 import { updateBusiness } from "../actions";
 import { ActionForm, Field, SubmitButton } from "@/components/form";
-import { saveAppColor, saveProfile } from "./actions";
+import { saveProfile } from "./actions";
 import { AppColorPicker } from "./app-color-picker";
 import { DEFAULT_APP_COLOR } from "@/lib/brand";
 
@@ -82,11 +82,7 @@ export default async function ProfilePage({ params }: { params: Promise<{ slug: 
         <Card className="p-5">
           <h2 className="font-medium">App color</h2>
           <p className="mb-3 mt-0.5 text-sm text-stone-500">Buttons, links and highlights in this app, for everyone on your team. Clients see your brand color instead.</p>
-          <ActionForm action={saveAppColor}>
-            <input type="hidden" name="slug" value={slug} />
-            <AppColorPicker initial={business.appColor ?? DEFAULT_APP_COLOR} brandColor={business.brandColor} />
-            <SubmitButton pendingText="Saving…">Save app color</SubmitButton>
-          </ActionForm>
+          <AppColorPicker slug={slug} initial={business.appColor ?? DEFAULT_APP_COLOR} brandColor={business.brandColor} />
         </Card>
         </div>
         <Card className="p-4 text-sm">

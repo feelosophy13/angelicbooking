@@ -61,3 +61,12 @@ export function appColorCss(hex: string | null | undefined): string | null {
   if (!hex || !hexToRgb(hex) || hex.toLowerCase() === DEFAULT) return null;
   return `:root{${Object.entries(appColorVars(hex)).map(([k, v]) => `${k}:${v}`).join(";")}}`;
 }
+
+/** Tailwind's violet, the default --brand-50…900 (the same values as :root in globals.css). */
+const DEFAULT_APP_VARS: Record<string, string> = { "--brand-50": "#f5f3ff", "--brand-100": "#ede9fe", "--brand-200": "#ddd6fe", "--brand-300": "#c4b5fd", "--brand-400": "#a78bfa", "--brand-500": "#7c3aed", "--brand-600": "#6d28d9", "--brand-700": "#5b21b6", "--brand-800": "#4c1d95", "--brand-900": "#3b0764" };
+
+/** While the App color picker is open: a rule that outranks the saved one (:root:root), default violet included, so the whole app follows the pick. */
+export function appColorPreviewCss(hex: string): string {
+  const vars = !hexToRgb(hex) || hex.toLowerCase() === DEFAULT ? DEFAULT_APP_VARS : appColorVars(hex);
+  return `:root:root{${Object.entries(vars).map(([k, v]) => `${k}:${v}`).join(";")}}`;
+}
