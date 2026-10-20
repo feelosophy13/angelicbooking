@@ -34,7 +34,7 @@ export function CategoryList(props: {
           const i = sibs.findIndex((s) => s.id === c.id);
           const n = props.counts[c.id] ?? 0;
           return (
-            <li key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm" style={{ paddingLeft: `${12 + c.depth * 24}px` }}>
+            <li key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm" style={{ paddingLeft: `${12 + c.depth * 24}px` }}>
               <form action={props.actions.move} className="flex">
                 {hidden({ id: c.id, dir: "up" })}
                 <button className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-30" disabled={i === 0} aria-label={`Move ${c.name} up`}><ArrowUp className="h-4 w-4" /></button>
@@ -44,17 +44,20 @@ export function CategoryList(props: {
                 <button className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-30" disabled={i === sibs.length - 1} aria-label={`Move ${c.name} down`}><ArrowDown className="h-4 w-4" /></button>
               </form>
               <CategoryThumb imageUrl={c.imageUrl} name={c.name} className="h-8 w-8 rounded-md text-xs" />
-              <form action={props.actions.rename} className="flex flex-1 items-center gap-1">
+              <form action={props.actions.rename} className="flex min-w-0 flex-1 basis-48 items-center gap-1">
                 {hidden({ id: c.id })}
-                <Input name="name" defaultValue={c.name} className="h-8 max-w-sm flex-1" aria-label={`Name of ${c.name}`} />
+                <Input name="name" defaultValue={c.name} className="h-8 min-w-0 max-w-sm flex-1" aria-label={`Name of ${c.name}`} />
                 <button className="rounded px-2 py-1 text-xs text-stone-600 hover:bg-stone-100">Rename</button>
               </form>
+              {/* Edit, count and Delete stay together and drop to their own line on a phone. */}
+              <div className="ml-auto flex shrink-0 items-center gap-2">
               <Link href={`/app/${props.slug}/${props.kind === "service" ? "services" : "products"}/categories/${c.id}/edit`} className="rounded px-2 py-1 text-xs text-brand-700 hover:bg-brand-50">Edit</Link>
               <span className="w-16 text-right text-xs text-stone-400">{n} item{n === 1 ? "" : "s"}</span>
               <form action={props.actions.remove}>
                 {hidden({ id: c.id })}
-                <ConfirmSubmit title={`Delete “${c.name}”?`} body={`${n} item(s) will become uncategorised${c.children.length ? ` and ${c.children.length} sub-categor${c.children.length === 1 ? "y moves" : "ies move"} up a level` : ""}. This can't be undone.`} confirmLabel="Delete" variant="ghost" className="text-stone-500 hover:text-red-600">Delete</ConfirmSubmit>
+                <ConfirmSubmit title={`Delete “${c.name}”?`} body={`${n} item(s) will become uncategorized${c.children.length ? ` and ${c.children.length} sub-categor${c.children.length === 1 ? "y moves" : "ies move"} up a level` : ""}. This can't be undone.`} confirmLabel="Delete" variant="ghost" className="text-stone-500 hover:text-red-600">Delete</ConfirmSubmit>
               </form>
+              </div>
             </li>
           );
         })}

@@ -37,6 +37,34 @@ body {
   @apply bg-stone-50 text-stone-900 antialiased;
 }
 
+/* A grid with no column template is one column that stays inside its container: without this a long unbroken line
+   (a truncated blurb, a wide select) widens the implicit column and the whole page scrolls sideways on a phone.
+   Any grid-cols-* utility (including sm:/lg: ones) still wins, because utilities come after base. */
+@layer base {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  /* A sideways scroller (a wide table) must contain its absolutely positioned children: an sr-only label in a far-right
+     column otherwise escapes the scroll box and stretches the whole page. A position utility on the element still wins. */
+  .overflow-x-auto, .overflow-auto { position: relative; }
+}
+
+/* Segmented controls (the bordered rows of choices: Day / Week / Month, Upcoming / Today / Past, period pickers) carry
+   data-segmented. They never push the page sideways (a long one scrolls inside itself), and on a phone each choice is a
+   40px-tall, finger-sized target. */
+[data-segmented] { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+@media (max-width: 767px) {
+  [data-segmented] > :is(a, button) { display: inline-flex; min-height: 2.5rem; align-items: center; justify-content: center; white-space: nowrap; }
+}
+
+/* iOS Safari zooms the page into any field whose text is under 16px, and stays zoomed. On phone widths every field
+   is 16px (larger sizes are left alone); this sits outside the layers so it beats the text-sm on Input / Select. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [class*="text-lg"], [class*="text-xl"], [class*="text-2xl"], [class*="text-3xl"]),
+  select:not([class*="text-lg"], [class*="text-xl"]),
+  textarea:not([class*="text-lg"], [class*="text-xl"]) {
+    font-size: 16px;
+  }
+}
+
 h1, h2, h3 { letter-spacing: -0.01em; }
 input[type="time"]::-webkit-calendar-picker-indicator, input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.6; }
 @media print { aside, header, nav, .print\:hidden { display: none !important; } main { padding: 0 !important; } }

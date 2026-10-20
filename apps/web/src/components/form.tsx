@@ -155,7 +155,7 @@ export function SubmitButton({ children, variant = "primary", size = "md", class
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500",
         variants[variant],
-        size === "sm" ? "h-8 px-3 text-sm" : "h-10 px-4 text-sm",
+        size === "sm" ? "h-10 px-3 text-sm md:h-8" : "h-10 px-4 text-sm",
         className,
       )}
       {...rest}
@@ -180,7 +180,7 @@ export function ConfirmSubmit({ children, title, body, confirmLabel = "Confirm",
   }, [open]);
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className={cn("inline-flex items-center justify-center gap-1 rounded-lg font-medium transition-colors", variants[variant], size === "sm" ? "h-8 px-3 text-sm" : "h-10 px-4 text-sm", className)}>
+      <button type="button" onClick={() => setOpen(true)} className={cn("inline-flex items-center justify-center gap-1 rounded-lg font-medium transition-colors", variants[variant], size === "sm" ? "h-10 px-3 text-sm md:h-8" : "h-10 px-4 text-sm", className)}>
         {children}
       </button>
       {/* hidden real submit so the enclosing form posts with this button's name/value */}

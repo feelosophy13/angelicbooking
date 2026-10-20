@@ -18,7 +18,8 @@ const variants = {
   ghost: "text-stone-700 hover:bg-stone-100",
   danger: "bg-red-600 text-white hover:bg-red-700",
 };
-const sizes = { sm: "h-8 px-3 text-sm", md: "h-10 px-4 text-sm" };
+// Small buttons are 40px tall on phones (a finger-sized target) and 32px from md up.
+const sizes = { sm: "h-10 px-3 text-sm md:h-8", md: "h-10 px-4 text-sm" };
 
 export function Button({ className, variant = "primary", size = "md", ...props }: ButtonProps) {
   return (
@@ -118,7 +119,7 @@ export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLS
     <select
       id={props.id ?? fieldId}
       className={cn(
-        "h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-900 focus:outline-2 focus:outline-offset-0 focus:outline-brand-500",
+        "h-10 w-full max-w-full rounded-lg border border-stone-300 bg-white px-3 text-sm text-stone-900 focus:outline-2 focus:outline-offset-0 focus:outline-brand-500",
         className,
       )}
       {...props}

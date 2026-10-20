@@ -216,7 +216,7 @@ export function ScanSession({ slug, mode, products: initial, categories = [], lo
             <p className="text-sm text-amber-950">The app doesn't know <b className="font-mono">{unknown}</b> yet.</p>
             <button type="button" onClick={closeUnknown} aria-label="Skip this scan" className="rounded p-1 text-amber-900 hover:bg-amber-100"><X className="h-4 w-4" /></button>
           </div>
-          <div className="flex gap-1 rounded-lg bg-amber-100 p-0.5 text-sm" role="tablist">
+          <div data-segmented className="flex gap-1 rounded-lg bg-amber-100 p-0.5 text-sm" role="tablist">
             {([["existing", "A product I have"], ["option", "A new size or shade"], ["new", "A new product"]] as const).filter(([k]) => k !== "option" || hasGroups).map(([k, label]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => { setTab(k); setProblem(null); setPick(""); setOptionOf(null); }} className={cn("flex-1 rounded-md px-3 py-1.5", tab === k ? "bg-white font-medium shadow-sm" : "text-amber-900")}>{label}</button>
             ))}

@@ -21,7 +21,7 @@ export default async function OrdersPage({ params, searchParams }: { params: Pro
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Which orders">
+        <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Which orders">
           <Link href={base} aria-current={!closed ? "true" : undefined} className={`rounded-md px-3 py-0.5 ${!closed ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50"}`}>Open</Link>
           <Link href={`${base}?show=closed`} aria-current={closed ? "true" : undefined} className={`rounded-md px-3 py-0.5 ${closed ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50"}`}>Received &amp; cancelled</Link>
         </div>

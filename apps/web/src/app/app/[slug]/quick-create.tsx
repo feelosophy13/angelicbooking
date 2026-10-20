@@ -78,7 +78,7 @@ export function QuickCreate({ data, at, fmt, onClose, onBooked }: { data: QuickC
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         {data.canBook && data.canBlock ? (
-          <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="tablist">
+          <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="tablist">
             {(["appointment", "block"] as const).map((t) => (
               <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={cn("rounded-md px-3 py-1", tab === t ? "bg-stone-900 text-white" : "text-stone-700")}>{t === "appointment" ? "Appointment" : "Block time"}</button>
             ))}

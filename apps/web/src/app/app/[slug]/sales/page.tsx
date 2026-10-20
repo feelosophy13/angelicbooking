@@ -45,7 +45,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
       <div className={`mb-4 grid gap-4 ${canSell ? "lg:grid-cols-[1fr_360px]" : ""}`}>
         <Card className="p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm">
+            <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm">
               {([["open", "Open"], ["today", "Today"], ["all", "All"]] as const).map(([k, l]) => (
                 <Link key={k} href={href(k)} className={cn("rounded-md px-3 py-1", tab === k ? "bg-stone-900 text-white" : "text-stone-700")}>{l}</Link>
               ))}

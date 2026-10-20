@@ -51,7 +51,7 @@ export function DateJump({ date, today, hrefTemplate, weekStart = 1 }: { date: s
         title="Pick a date (g)"
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="inline-flex h-8 items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-2.5 text-sm font-medium text-stone-800 shadow-sm transition-colors hover:bg-stone-50"
+        className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-2.5 md:h-8 text-sm font-medium text-stone-800 shadow-sm transition-colors hover:bg-stone-50"
       >
         <CalendarDays className="h-4 w-4" />
       </button>

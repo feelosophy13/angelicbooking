@@ -10,7 +10,7 @@ type Action = (prev: SaleActionState, fd: FormData) => Promise<SaleActionState>;
 /** A row of choices where exactly one is picked (payment method, what to add). Buttons, not tabs: nothing navigates. */
 export function Segmented<T extends string>({ options, value, onChange, label, className }: { options: { value: T; label: React.ReactNode }[]; value: T; onChange: (v: T) => void; label: string; className?: string }) {
   return (
-    <div className={`flex flex-wrap gap-1 rounded-lg border border-stone-300 bg-white p-0.5 text-sm ${className ?? ""}`} role="group" aria-label={label}>
+    <div data-segmented className={`flex flex-wrap gap-1 rounded-lg border border-stone-300 bg-white p-0.5 text-sm ${className ?? ""}`} role="group" aria-label={label}>
       {options.map((o) => (
         <button key={o.value} type="button" onClick={() => onChange(o.value)} aria-pressed={value === o.value} className={`flex-1 whitespace-nowrap rounded-md px-3 py-1 ${value === o.value ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-100"}`}>{o.label}</button>
       ))}

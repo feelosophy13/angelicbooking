@@ -32,6 +32,8 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
 }) {
   const fieldId = useFieldId();
   const [open, setOpen] = useState(false);
+  // The compact list is wider than its button; near the right edge of a phone it opens leftward so it stays on screen.
+  const [alignRight, setAlignRight] = useState(false);
   const [q, setQ] = useState("");
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -75,15 +77,19 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
   };
 
   return (
-    <div ref={box} className={cn("relative", compact && "w-auto min-w-[13rem] max-w-[20rem]")}>
+    <div ref={box} className={cn("relative", compact && "w-auto min-w-[13rem] max-w-full sm:max-w-[20rem]")}>
       <input ref={input} type="hidden" name={name} value={picked ?? ""} readOnly />
       <button
         type="button"
         id={fieldId}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const r = box.current?.getBoundingClientRect();
+          if (r) setAlignRight(r.left + Math.min(352, window.innerWidth * 0.9) > window.innerWidth - 8);
+          setOpen((o) => !o);
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={cn("flex w-full items-center justify-between gap-2 h-10 rounded-lg border border-stone-300 bg-white px-3 text-left text-sm text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-brand-500", compact && "!h-9")}
+        className={cn("flex w-full items-center justify-between gap-2 h-10 rounded-lg border border-stone-300 bg-white px-3 text-left text-sm text-stone-900 max-md:text-base focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-brand-500", compact && "!h-9")}
       >
         <span className={cn("min-w-0 truncate", !current && !noneLabel && "text-stone-400")}>
           {current ? <>{current.name}{current.meta ? <span className="text-stone-500"> · {current.meta}</span> : null}</> : noneLabel ?? placeholder}
@@ -91,7 +97,7 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
         <ChevronDown className="h-4 w-4 shrink-0 text-stone-400" aria-hidden />
       </button>
       {open ? (
-        <div className={cn("absolute left-0 z-30 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg", compact ? "w-[min(22rem,90vw)]" : "right-0")}>
+        <div className={cn("absolute z-30 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg", compact ? cn("w-[min(22rem,90vw)]", alignRight ? "right-0" : "left-0") : "left-0 right-0")}>
           <div className="relative border-b border-stone-100 p-2">
             <Search className="pointer-events-none absolute left-4.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" aria-hidden />
             <input ref={search} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a service…" aria-label="Find a service" className="h-9 w-full rounded-lg border border-stone-300 bg-white pl-8 pr-3 text-sm text-stone-900 placeholder:text-stone-400 focus:outline-2 focus:outline-offset-0 focus:outline-brand-500" />

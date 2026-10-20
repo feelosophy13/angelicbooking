@@ -80,7 +80,7 @@ export function BookForm(props: {
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-medium">{props.dateLabel}</h2>
         {props.anyMode && props.perStaff ? (
-          <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="How to list open times">
+          <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="How to list open times">
             {([[false, "Any available"], [true, "By stylist"]] as const).map(([v, l]) => (
               <button key={l} type="button" onClick={() => setByStylist(v)} aria-pressed={byStylist === v} className={cn("rounded-md px-3 py-1", byStylist === v ? "bg-stone-900 text-white" : "text-stone-700")}>{l}</button>
             ))}

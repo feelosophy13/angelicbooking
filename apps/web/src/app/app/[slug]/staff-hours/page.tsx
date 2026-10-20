@@ -147,7 +147,7 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
 
       <Card className="mb-4 p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex h-8 rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Week or month">
+          <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm md:h-8" role="group" aria-label="Week or month">
             {(["week", "month"] as const).map((key) => (
               <Link key={key} href={`?${periodHref(key)}`} aria-current={period === key ? "true" : undefined} className={cn("inline-flex items-center rounded-md px-3", period === key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{key === "week" ? "Week" : "Month"}</Link>
             ))}
@@ -190,13 +190,13 @@ export default async function StaffHoursPage({ params, searchParams }: { params:
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 px-4 py-2 text-sm">
           <h2 className="font-semibold text-stone-600">{period === "month" ? "Who is in each day" : "Who covers what"}{multi ? ` · ${shortLoc(locationId)}` : ""}</h2>
           {period === "week" ? (
-            <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="What to show">
+            <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="What to show">
               {([["people", "People"], ["coverage", "Coverage"]] as const).map(([key, label]) => (
                 <Link key={key} href={`?${qs({ view: key === "coverage" ? "coverage" : null })}`} aria-current={view === key ? "true" : undefined} className={cn("rounded-md px-3 py-0.5", view === key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{label}</Link>
               ))}
             </div>
           ) : (
-            <div className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Who to list on each day">
+            <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Who to list on each day">
               {([[true, "Only working"], [false, "Everyone"]] as const).map(([hide, label]) => (
                 <Link key={label} href={`?${qs({ off: hide ? null : "show" })}`} aria-current={hideOff === hide ? "true" : undefined} className={cn("rounded-md px-3 py-0.5", hideOff === hide ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{label}</Link>
               ))}
