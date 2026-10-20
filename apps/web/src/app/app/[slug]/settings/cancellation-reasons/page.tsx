@@ -34,8 +34,8 @@ export default async function CancellationReasonsPage({ params }: { params: Prom
                 {r.active ? (
                   <form action={moveCancellationReasonAction} className="flex gap-0.5">
                     <input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={r.id} />
-                    <button name="dir" value="up" disabled={i === 0} aria-label={`Move ${r.name} up`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↑</button>
-                    <button name="dir" value="down" disabled={i === reasons.length - 1} aria-label={`Move ${r.name} down`} className="rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↓</button>
+                    <button name="dir" value="up" disabled={i === 0} aria-label={`Move ${r.name} up`} className="hit rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↑</button>
+                    <button name="dir" value="down" disabled={i === reasons.length - 1} aria-label={`Move ${r.name} down`} className="hit rounded px-1.5 text-stone-500 hover:bg-stone-100 disabled:opacity-30">↓</button>
                   </form>
                 ) : null}
                 {r.active ? (

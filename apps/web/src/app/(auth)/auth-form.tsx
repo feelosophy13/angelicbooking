@@ -108,7 +108,7 @@ export function AuthForm({ mode, googleEnabled = false }: { mode: "sign-in" | "s
         )}
       </p>
       <p className="mt-6 text-center text-xs text-stone-400">
-        <Link href="/help" className="hover:text-stone-600">Help</Link> · <Link href="/privacy" className="hover:text-stone-600">Privacy</Link> · <Link href="/terms" className="hover:text-stone-600">Terms</Link>
+        <Link href="/help" className="hit hover:text-stone-600">Help</Link> · <Link href="/privacy" className="hit hover:text-stone-600">Privacy</Link> · <Link href="/terms" className="hit hover:text-stone-600">Terms</Link>
       </p>
     </main>
   );

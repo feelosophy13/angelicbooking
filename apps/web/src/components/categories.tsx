@@ -37,11 +37,11 @@ export function CategoryList(props: {
             <li key={c.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-sm" style={{ paddingLeft: `${12 + c.depth * 24}px` }}>
               <form action={props.actions.move} className="flex">
                 {hidden({ id: c.id, dir: "up" })}
-                <button className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-30" disabled={i === 0} aria-label={`Move ${c.name} up`}><ArrowUp className="h-4 w-4" /></button>
+                <button className="hit rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-30" disabled={i === 0} aria-label={`Move ${c.name} up`}><ArrowUp className="h-4 w-4" /></button>
               </form>
               <form action={props.actions.move} className="flex">
                 {hidden({ id: c.id, dir: "down" })}
-                <button className="rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-30" disabled={i === sibs.length - 1} aria-label={`Move ${c.name} down`}><ArrowDown className="h-4 w-4" /></button>
+                <button className="hit rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-800 disabled:opacity-30" disabled={i === sibs.length - 1} aria-label={`Move ${c.name} down`}><ArrowDown className="h-4 w-4" /></button>
               </form>
               <CategoryThumb imageUrl={c.imageUrl} name={c.name} className="h-8 w-8 rounded-md text-xs" />
               <form action={props.actions.rename} className="flex min-w-0 flex-1 basis-48 items-center gap-1">

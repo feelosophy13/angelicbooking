@@ -85,14 +85,14 @@ export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; tri
               <span className={cn("absolute -left-[31px] top-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white shadow-sm", TONE[s.type])} aria-hidden><I className="h-4 w-4" /></span>
               <div className={cn("rounded-xl border bg-white transition", isOpen ? "border-brand-300 shadow-sm" : "border-stone-200 hover:border-stone-300")}>
                 <div className="flex items-center gap-2 px-3 py-2">
-                  <button type="button" onClick={() => setOpen(isOpen ? null : s.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left" aria-expanded={isOpen}>
-                    <span className="shrink-0 text-xs font-semibold uppercase tracking-wide text-stone-400">{STEP_LABELS[s.type]}</span>
-                    <span className="truncate text-sm text-stone-800">{headline(s)}</span>
+                  <button type="button" onClick={() => setOpen(isOpen ? null : s.id)} className="flex min-w-0 flex-1 flex-col items-start text-left sm:flex-row sm:items-center sm:gap-2" aria-expanded={isOpen}>
+                    <span className="max-w-full shrink-0 truncate text-xs font-semibold uppercase tracking-wide text-stone-400">{STEP_LABELS[s.type]}</span>
+                    <span className="max-w-full truncate text-sm text-stone-800">{headline(s)}</span>
                   </button>
-                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up" className="rounded p-1 text-stone-400 hover:text-stone-800 disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
-                  <button type="button" onClick={() => move(i, 1)} disabled={i === steps.length - 1} aria-label="Move down" className="rounded p-1 text-stone-400 hover:text-stone-800 disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
-                  <button type="button" onClick={() => remove(i)} aria-label="Remove step" className="rounded p-1 text-stone-400 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
-                  <button type="button" onClick={() => setOpen(isOpen ? null : s.id)} aria-label={isOpen ? "Collapse" : "Edit"} className="rounded p-1 text-stone-400 hover:text-stone-800"><ChevronDown className={cn("h-4 w-4 transition", isOpen && "rotate-180")} /></button>
+                  <button type="button" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up" className="rounded p-1.5 text-stone-400 lg:pointer-fine:p-1 hover:text-stone-800 disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => move(i, 1)} disabled={i === steps.length - 1} aria-label="Move down" className="rounded p-1.5 text-stone-400 lg:pointer-fine:p-1 hover:text-stone-800 disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => remove(i)} aria-label="Remove step" className="rounded p-1.5 text-stone-400 lg:pointer-fine:p-1 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setOpen(isOpen ? null : s.id)} aria-label={isOpen ? "Collapse" : "Edit"} className="rounded p-1.5 text-stone-400 lg:pointer-fine:p-1 hover:text-stone-800"><ChevronDown className={cn("h-4 w-4 transition", isOpen && "rotate-180")} /></button>
                 </div>
                 {isOpen ? (
                   <div className="space-y-2 border-t border-stone-100 px-3 py-3">

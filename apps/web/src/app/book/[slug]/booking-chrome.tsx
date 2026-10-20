@@ -42,7 +42,7 @@ function Home({ base }: { base: string }) {
   const onBase = pathname === base;
   if (onBase && !STEP_PARAMS.some((k) => params.has(k)) && !params.has("location")) return null;
   return (
-    <Link href={base} className="mb-3 flex w-fit items-center gap-1.5 text-xs font-medium text-stone-500 hover:text-stone-800">
+    <Link href={base} className="hit mb-3 flex w-fit items-center gap-1.5 text-xs font-medium text-stone-500 hover:text-stone-800">
       <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> {onBase ? "Start over" : "Book an appointment"}
     </Link>
   );

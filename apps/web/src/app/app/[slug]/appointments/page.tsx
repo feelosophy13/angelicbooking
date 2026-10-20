@@ -21,10 +21,11 @@ import { parseScope, scopeValue } from "@/lib/service-scope";
 export const metadata: Metadata = { title: "Appointments" };
 
 type SP = { view?: string; source?: string; status?: string; staff?: string; location?: string; service?: string; q?: string; page?: string };
-const VIEWS: { key: AppointmentsView; label: string }[] = [
+// `short` is the phone label, so all four fit at 375px without the switcher scrolling.
+const VIEWS: { key: AppointmentsView; label: string; short?: string }[] = [
   { key: "upcoming", label: "Upcoming" },
   { key: "today", label: "Today" },
-  { key: "recent", label: "Recently booked" },
+  { key: "recent", label: "Recently booked", short: "New" },
   { key: "past", label: "Past" },
 ];
 const SOURCES = [["", "Booked anyhow"], ["online", "Booked online"], ["staff", "Booked by staff"], ["import", "Imported"]] as const;
@@ -79,7 +80,7 @@ export default async function AppointmentsPage({ params, searchParams }: { param
         <div className="flex flex-wrap items-center gap-2">
           <div data-segmented className="flex rounded-lg border border-stone-300 bg-white p-0.5 text-sm" role="group" aria-label="Which appointments">
             {VIEWS.map((v) => (
-              <Link key={v.key} href={href({ view: v.key, page: null })} className={cn("whitespace-nowrap rounded-md px-3 py-1", view === v.key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")}>{v.label}</Link>
+              <Link key={v.key} href={href({ view: v.key, page: null })} className={cn("whitespace-nowrap rounded-md px-3 py-1", view === v.key ? "bg-stone-900 text-white" : "text-stone-700 hover:bg-stone-50")} title={v.short ? v.label : undefined}>{v.short ? <><span className="sm:hidden">{v.short}</span><span className="hidden sm:inline">{v.label}</span></> : v.label}</Link>
             ))}
           </div>
           <LocationFilter locations={locations} current={locationId} query={params_({ location: null, page: null })} allLabel="All" />

@@ -705,7 +705,10 @@ export function CalendarGrid(props: {
                         </div>
                       ))}
                       {props.canEdit && !props.overview && height > 30 && (card.first.status === "booked" || card.first.status === "confirmed" || card.first.status === "checked_in") ? (
-                        <div className="absolute right-1 top-1 hidden gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 @min-[6rem]:flex [@media(pointer:coarse)]:opacity-100">
+                        // With a mouse they sit small in the top corner and show on hover. On a touch screen they are always shown, 32px,
+                        // in the bottom corner below the title, client and time lines, and only on cards tall enough to keep those clear;
+                        // on shorter cards a tap opens the panel, which has the same actions full size.
+                        <div className={cn("absolute right-1 top-1 hidden gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 @min-[6rem]:flex [@media(pointer:coarse)]:top-auto [@media(pointer:coarse)]:bottom-1 [@media(pointer:coarse)]:gap-1.5 [@media(pointer:coarse)]:opacity-100", height < 88 && "[@media(pointer:coarse)]:hidden!")}>
                           {card.first.status !== "checked_in" ? (
                             <button
                               type="button"
@@ -718,9 +721,9 @@ export function CalendarGrid(props: {
                                   router.refresh();
                                 });
                               }}
-                              className="rounded bg-white/90 p-1 text-stone-700 shadow hover:bg-white"
+                              className="rounded bg-white/90 p-1 text-stone-700 shadow hover:bg-white [@media(pointer:coarse)]:p-2"
                             >
-                              <LogIn className="h-3.5 w-3.5" />
+                              <LogIn className="h-3.5 w-3.5 [@media(pointer:coarse)]:h-4 [@media(pointer:coarse)]:w-4" />
                             </button>
                           ) : null}
                           <button
@@ -734,9 +737,9 @@ export function CalendarGrid(props: {
                                 router.refresh();
                               });
                             }}
-                            className="rounded bg-white/90 p-1 text-emerald-700 shadow hover:bg-white"
+                            className="rounded bg-white/90 p-1 text-emerald-700 shadow hover:bg-white [@media(pointer:coarse)]:p-2"
                           >
-                            <Check className="h-3.5 w-3.5" />
+                            <Check className="h-3.5 w-3.5 [@media(pointer:coarse)]:h-4 [@media(pointer:coarse)]:w-4" />
                           </button>
                         </div>
                       ) : null}

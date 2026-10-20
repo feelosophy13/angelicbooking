@@ -29,7 +29,7 @@ export function MobileNav({ sections, businessName, businessLogo, homeHref, user
   return (
     <>
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-stone-200 bg-white/95 px-3 py-2 backdrop-blur lg:hidden">
-        <Link href={homeHref} className="flex min-w-0 items-center gap-2"><BusinessMark name={businessName} logoUrl={businessLogo} className="h-7 w-7" /><span className="truncate font-semibold tracking-tight">{businessName}</span></Link>
+        <Link href={homeHref} className="hit flex min-w-0 items-center gap-2"><BusinessMark name={businessName} logoUrl={businessLogo} className="h-7 w-7" /><span className="truncate font-semibold tracking-tight">{businessName}</span></Link>
         <button onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open} className="rounded-lg p-2 text-stone-700 hover:bg-stone-100">
           <Menu className="h-5 w-5" />
         </button>

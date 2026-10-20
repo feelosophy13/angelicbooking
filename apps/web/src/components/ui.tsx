@@ -243,7 +243,7 @@ export function BackLink({ href, children }: { href: string; children: React.Rea
         e.preventDefault();
         router.back();
       }}
-      className="inline-flex items-center gap-1 text-sm text-stone-600 hover:text-stone-900"
+      className="hit inline-flex items-center gap-1 text-sm text-stone-600 hover:text-stone-900"
     >
       <ArrowLeft className="h-4 w-4" aria-hidden /> {history ? "Back" : children}
     </Link>

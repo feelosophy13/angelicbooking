@@ -85,7 +85,7 @@ export function ImageField({ name, removeName, current, shape = "square", placeh
           onClick={remove}
           aria-label="Remove picture"
           title="Remove picture"
-          className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-600 shadow-sm transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+          className="hit absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-600 shadow-sm transition hover:border-red-300 hover:bg-red-50 hover:text-red-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
         >
           <X className="h-3.5 w-3.5" aria-hidden />
         </button>

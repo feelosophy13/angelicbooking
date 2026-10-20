@@ -105,12 +105,12 @@ export function DocsShell({ children, updated }: { children: React.ReactNode; up
       <header className="sticky top-0 z-20 border-b border-stone-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
-            <Link href="/"><Wordmark /></Link>
+            <Link href="/" className="hit"><Wordmark /></Link>
             <span className="hidden rounded-full bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-600 sm:inline">API reference</span>
           </div>
           <nav className="flex gap-4 text-sm text-stone-600">
-            <Link href="/help" className="hover:text-stone-900">Help</Link>
-            <Link href="/sign-in" className="hover:text-stone-900">Sign in</Link>
+            <Link href="/help" className="hit hover:text-stone-900">Help</Link>
+            <Link href="/sign-in" className="hit hover:text-stone-900">Sign in</Link>
           </nav>
         </div>
       </header>

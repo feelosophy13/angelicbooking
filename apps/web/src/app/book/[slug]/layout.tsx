@@ -37,7 +37,7 @@ export default async function BookLayout({ children, params }: { children: React
   const base = `/book/${business.slug}`;
   // Logo: half over the cover (lifted above it), smaller once the cover collapses.
   const logoBox = "relative z-10 -mt-12 h-24 w-24 shrink-0 rounded-2xl border-4 border-stone-50 shadow-lg sm:-mt-14 sm:h-28 sm:w-28 group-data-[compact=true]/hdr:-mt-7 group-data-[compact=true]/hdr:h-14 group-data-[compact=true]/hdr:w-14 sm:group-data-[compact=true]/hdr:-mt-8 sm:group-data-[compact=true]/hdr:h-16 sm:group-data-[compact=true]/hdr:w-16";
-  const navLink = "inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-1.5 text-sm text-stone-700 shadow-sm backdrop-blur hover:bg-white";
+  const navLink = "hit inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white/90 px-3 py-1.5 text-sm text-stone-700 shadow-sm backdrop-blur hover:bg-white";
   return (
     <div className="min-h-screen bg-stone-50 text-stone-900" style={brandVars(business.brandColor)}>
       {/* Hero: cover photo (or a brand gradient), logo, name, tagline, rating */}
@@ -90,7 +90,7 @@ export default async function BookLayout({ children, params }: { children: React
           <div className="grid gap-5 sm:grid-cols-2">
             {withHours.length ? (
               <details className="group">
-                <summary className="mb-1.5 flex cursor-pointer list-none items-center gap-1 text-xs font-semibold uppercase tracking-wide text-stone-500 [&::-webkit-details-marker]:hidden">Hours <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" aria-hidden /></summary>
+                <summary className="hit mb-1.5 flex cursor-pointer list-none items-center gap-1 text-xs font-semibold uppercase tracking-wide text-stone-500 [&::-webkit-details-marker]:hidden">Hours <ChevronDown className="h-3.5 w-3.5 transition group-open:rotate-180" aria-hidden /></summary>
                 <div className={withHours.length > 1 ? "grid gap-3 sm:grid-cols-2" : ""}>
                   {withHours.map((l) => (
                     <div key={l.id} className="text-xs leading-5">{withHours.length > 1 ? <p className="font-medium text-stone-800">{l.name}</p> : null}{describeHours(l.hours).map((line) => <p key={line}>{line}</p>)}</div>
@@ -112,7 +112,7 @@ export default async function BookLayout({ children, params }: { children: React
         </div>
         <div className="flex flex-col items-center gap-1 pt-5 text-center">
           <PoweredBy />
-          <a href={appUrl("/privacy")} className="text-xs text-stone-400 hover:text-stone-600">Privacy</a>
+          <a href={appUrl("/privacy")} className="hit text-xs text-stone-400 hover:text-stone-600">Privacy</a>
         </div>
       </footer>
     </div>

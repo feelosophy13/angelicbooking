@@ -74,7 +74,7 @@ export function ReplyBox({ slug, clientId, quickReplies, context }: { slug: stri
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={picture.url} alt="" className="h-8 w-8 rounded object-cover" />
             <span className="max-w-32 truncate">{picture.name}</span>
-            <button type="button" onClick={clearPicture} aria-label="Remove picture" className="rounded p-0.5 text-stone-500 hover:bg-stone-100"><X className="h-3.5 w-3.5" /></button>
+            <button type="button" onClick={clearPicture} aria-label="Remove picture" className="hit rounded p-0.5 text-stone-500 hover:bg-stone-100"><X className="h-3.5 w-3.5" /></button>
           </span>
         ) : (
           <button type="button" onClick={() => file.current?.click()} className="inline-flex items-center gap-1 py-2.5 text-xs text-stone-500 hover:text-stone-800 lg:pointer-fine:py-0"><Paperclip className="h-3.5 w-3.5" /> Picture</button>

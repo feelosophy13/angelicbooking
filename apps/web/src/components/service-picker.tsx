@@ -122,7 +122,7 @@ export function ServicePicker({ name, groups, value, placeholder = "Choose a ser
                   <span className="font-semibold text-stone-900">{last}</span>
                 </span>
               );
-              const headerCls = "sticky top-0 z-10 flex w-full items-center justify-between gap-3 border-y border-stone-200 bg-stone-100 py-1.5 pr-3 text-left text-[13px]";
+              const headerCls = "sticky top-0 z-10 flex w-full items-center justify-between gap-3 border-y border-stone-200 bg-stone-100 py-2.5 pr-3 text-left text-[13px] lg:pointer-fine:py-1.5";
               return (
                 <li key={g.id}>
                   {g.whole ? (

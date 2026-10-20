@@ -65,9 +65,9 @@ export function FieldBuilder({ initial, description, requireSignature }: { initi
                 {FIELD_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}
               </Select>
               <div className="flex gap-1">
-                <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)} className="rounded-lg border border-stone-300 bg-white px-2 text-stone-500 disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
-                <button type="button" aria-label="Move down" disabled={i === rows.length - 1} onClick={() => move(i, 1)} className="rounded-lg border border-stone-300 bg-white px-2 text-stone-500 disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
-                <button type="button" aria-label="Remove question" onClick={() => remove(i)} className="rounded-lg border border-stone-300 bg-white px-2 text-stone-500 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+                <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => move(i, -1)} className="hit rounded-lg border border-stone-300 bg-white px-2 text-stone-500 disabled:opacity-30"><ArrowUp className="h-4 w-4" /></button>
+                <button type="button" aria-label="Move down" disabled={i === rows.length - 1} onClick={() => move(i, 1)} className="hit rounded-lg border border-stone-300 bg-white px-2 text-stone-500 disabled:opacity-30"><ArrowDown className="h-4 w-4" /></button>
+                <button type="button" aria-label="Remove question" onClick={() => remove(i)} className="hit rounded-lg border border-stone-300 bg-white px-2 text-stone-500 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
               </div>
             </div>
             {r.type === "select" || r.type === "multiselect" ? <Textarea name={`f${i}_options`} rows={4} className="mt-2" placeholder={"One option per line"} value={(r.options ?? []).join("\n")} onChange={(e) => update(i, { options: e.target.value.split("\n") })} /> : null}
@@ -78,12 +78,12 @@ export function FieldBuilder({ initial, description, requireSignature }: { initi
                 {drivers.length ? (
                   <span className="flex flex-wrap items-center gap-2">
                     Only show when
-                    <select name={`f${i}_showif_field`} value={r.showIf?.fieldId ?? ""} onChange={(e) => update(i, { showIf: e.target.value ? { fieldId: e.target.value, equals: "" } : null })} className="h-7 rounded border border-stone-300 bg-white px-1 text-xs">
+                    <select name={`f${i}_showif_field`} value={r.showIf?.fieldId ?? ""} onChange={(e) => update(i, { showIf: e.target.value ? { fieldId: e.target.value, equals: "" } : null })} className="h-10 rounded border border-stone-300 bg-white px-1 text-xs lg:pointer-fine:h-7">
                       <option value="">(always)</option>
                       {drivers.map((d) => <option key={d.id} value={d.id}>{d.label || "(untitled)"}</option>)}
                     </select>
                     {driver ? (
-                      <select name={`f${i}_showif_value`} value={r.showIf?.equals ?? ""} onChange={(e) => update(i, { showIf: { fieldId: driver.id, equals: e.target.value } })} className="h-7 rounded border border-stone-300 bg-white px-1 text-xs">
+                      <select name={`f${i}_showif_value`} value={r.showIf?.equals ?? ""} onChange={(e) => update(i, { showIf: { fieldId: driver.id, equals: e.target.value } })} className="h-10 rounded border border-stone-300 bg-white px-1 text-xs lg:pointer-fine:h-7">
                         <option value="">is…</option>
                         {driver.type === "checkbox" ? (<><option value="true">is ticked</option><option value="false">is not ticked</option></>) : driver.type === "yesno" ? (<><option value="Yes">is Yes</option><option value="No">is No</option></>) : (driver.options ?? []).filter(Boolean).map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
@@ -93,7 +93,7 @@ export function FieldBuilder({ initial, description, requireSignature }: { initi
                 {targets.length ? (
                   <span className="flex flex-wrap items-center gap-2">
                     Saves to
-                    <select name={`f${i}_mapto`} value={r.mapTo ?? ""} onChange={(e) => update(i, { mapTo: (e.target.value || null) as FormFieldDef["mapTo"] })} className="h-7 rounded border border-stone-300 bg-white px-1 text-xs">
+                    <select name={`f${i}_mapto`} value={r.mapTo ?? ""} onChange={(e) => update(i, { mapTo: (e.target.value || null) as FormFieldDef["mapTo"] })} className="h-10 rounded border border-stone-300 bg-white px-1 text-xs lg:pointer-fine:h-7">
                       <option value="">(nothing)</option>
                       {targets.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>

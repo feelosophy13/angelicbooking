@@ -15,7 +15,7 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
           setTimeout(() => setDone(false), 1500);
         });
       }}
-      className="inline-flex h-7 items-center gap-1 rounded-md bg-white/10 px-2 text-xs text-stone-200 hover:bg-white/20"
+      className="hit inline-flex h-7 items-center gap-1 rounded-md bg-white/10 px-2 text-xs text-stone-200 hover:bg-white/20"
     >
       {done ? <Check className="h-3.5 w-3.5" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />}
       {done ? "Copied" : label}

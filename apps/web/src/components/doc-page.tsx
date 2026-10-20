@@ -7,10 +7,10 @@ export function DocPage({ title, updated, children }: { title: string; updated?:
     <div className="min-h-screen bg-stone-50">
       <header className="border-b border-stone-200 bg-white">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <Link href="/"><Wordmark /></Link>
+          <Link href="/" className="hit"><Wordmark /></Link>
           <nav className="flex gap-4 text-sm text-stone-600">
-            <Link href="/help" className="hover:text-stone-900">Help</Link>
-            <Link href="/sign-in" className="hover:text-stone-900">Sign in</Link>
+            <Link href="/help" className="hit hover:text-stone-900">Help</Link>
+            <Link href="/sign-in" className="hit hover:text-stone-900">Sign in</Link>
           </nav>
         </div>
       </header>
@@ -28,11 +28,11 @@ export function LegalFooter({ className = "" }: { className?: string }) {
   return (
     <footer className={`mx-auto flex max-w-3xl flex-wrap justify-center gap-x-4 gap-y-1 px-4 py-8 text-xs text-stone-400 ${className}`}>
       <span>© {new Date().getFullYear()} Angelic Booking</span>
-      <Link href="/help" className="hover:text-stone-600">Help</Link>
-      <Link href="/developers" className="hover:text-stone-600">API</Link>
-      <Link href="/privacy" className="hover:text-stone-600">Privacy</Link>
-      <Link href="/terms" className="hover:text-stone-600">Terms</Link>
-      {process.env.SUPPORT_EMAIL ? <a href={`mailto:${process.env.SUPPORT_EMAIL}`} className="hover:text-stone-600">Contact</a> : null}
+      <Link href="/help" className="hit hover:text-stone-600">Help</Link>
+      <Link href="/developers" className="hit hover:text-stone-600">API</Link>
+      <Link href="/privacy" className="hit hover:text-stone-600">Privacy</Link>
+      <Link href="/terms" className="hit hover:text-stone-600">Terms</Link>
+      {process.env.SUPPORT_EMAIL ? <a href={`mailto:${process.env.SUPPORT_EMAIL}`} className="hit hover:text-stone-600">Contact</a> : null}
     </footer>
   );
 }

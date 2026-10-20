@@ -28,10 +28,10 @@ export async function Landing() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
           <Link href="/" aria-label="Angelic Booking"><Wordmark /></Link>
           <nav className="hidden items-center gap-6 text-sm text-stone-600 md:flex">
-            <a href="#features" className="hover:text-stone-900">Features</a>
-            <a href="#how" className="hover:text-stone-900">How it works</a>
-            <a href="#pricing" className="hover:text-stone-900">Pricing</a>
-            <Link href="/help" className="hover:text-stone-900">Help</Link>
+            <a href="#features" className="hit hover:text-stone-900">Features</a>
+            <a href="#how" className="hit hover:text-stone-900">How it works</a>
+            <a href="#pricing" className="hit hover:text-stone-900">Pricing</a>
+            <Link href="/help" className="hit hover:text-stone-900">Help</Link>
           </nav>
           <div className="flex items-center gap-2">
             <LinkButton href="/sign-in" variant="ghost" size="sm">Sign in</LinkButton>
@@ -128,9 +128,9 @@ export async function Landing() {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-5 py-6 text-sm text-stone-500">
           <Wordmark />
           <nav className="flex gap-5">
-            <Link href="/help" className="hover:text-stone-900">Help</Link>
-            <Link href="/privacy" className="hover:text-stone-900">Privacy</Link>
-            <Link href="/terms" className="hover:text-stone-900">Terms</Link>
+            <Link href="/help" className="hit hover:text-stone-900">Help</Link>
+            <Link href="/privacy" className="hit hover:text-stone-900">Privacy</Link>
+            <Link href="/terms" className="hit hover:text-stone-900">Terms</Link>
           </nav>
           <span>© {new Date().getFullYear()} Angelic Booking</span>
         </div>

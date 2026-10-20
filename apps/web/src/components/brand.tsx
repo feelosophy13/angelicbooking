@@ -30,7 +30,7 @@ export function BusinessMark({ name, logoUrl, className }: { name: string; logoU
 /** "Powered by Angelic Booking" at the foot of client-facing pages, linking to the marketing site. */
 export function PoweredBy({ className }: { className?: string }) {
   return (
-    <a href="https://angelicbooking.com" target="_blank" rel="noreferrer" className={cn("text-xs text-stone-500 hover:text-stone-700", className)}>
+    <a href="https://angelicbooking.com" target="_blank" rel="noreferrer" className={cn("hit text-xs text-stone-500 hover:text-stone-700", className)}>
       Powered by <span className="font-semibold text-stone-700">Angelic Booking</span>
     </a>
   );

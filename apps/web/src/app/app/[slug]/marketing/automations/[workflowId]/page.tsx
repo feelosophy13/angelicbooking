@@ -33,7 +33,7 @@ export default async function EditWorkflowPage({ params }: { params: Promise<{ s
         ) : null}
       </PageHeader>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <Card className="overflow-hidden p-5"><WorkflowForm slug={slug} workflow={w} trigger={w.trigger} pickers={pickers} /></Card>
+        <Card className="p-5"><WorkflowForm slug={slug} workflow={w} trigger={w.trigger} pickers={pickers} /></Card>
         <Card className="h-fit p-4 text-sm">
           {reach !== null ? (
             <p className="mb-3 rounded-lg bg-stone-50 p-2 text-xs text-stone-600">
