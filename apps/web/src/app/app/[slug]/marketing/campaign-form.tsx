@@ -9,9 +9,11 @@ import { Disclosure } from "@/components/disclosure";
 
 type Action = Parameters<typeof ActionForm>[0]["action"];
 
-export function CampaignForm({ action, slug, campaign, services, staff, locations = [], submitLabel, sms }: { action: Action; slug: string; campaign: { id?: string; name: string; channel: "email" | "sms"; subject: string | null; body: string; audience: CampaignAudience } | null; services: ServiceGroup[]; staff: { id: string; displayName: string }[]; locations?: { id: string; name: string }[]; submitLabel: string; sms: boolean }) {
+export function CampaignForm({ action, slug, campaign, services, staff, locations = [], designs = [], submitLabel, sms }: { action: Action; slug: string; campaign: { id?: string; name: string; channel: "email" | "sms"; subject: string | null; body: string; templateId?: string | null; audience: CampaignAudience } | null; services: ServiceGroup[]; staff: { id: string; displayName: string }[]; locations?: { id: string; name: string }[]; /** Saved email designs (Marketing → Email designs). */ designs?: { id: string; name: string }[]; submitLabel: string; sms: boolean }) {
   const a = campaign?.audience ?? {};
   const [channel, setChannel] = useState<"email" | "sms">(sms ? (campaign?.channel ?? "email") : "email");
+  const [templateId, setTemplateId] = useState(campaign?.templateId && designs.some((d) => d.id === campaign.templateId) ? campaign.templateId : "");
+  const designed = channel === "email" && !!templateId;
   const filtered = !!(a.visitedWithinDays || a.lapsedDays || a.serviceId || a.staffId || a.tag || a.locationId || a.neverVisited);
   return (
     <ActionForm action={action}>
@@ -32,7 +34,19 @@ export function CampaignForm({ action, slug, campaign, services, staff, location
       </div>
       {!sms ? <p className="-mt-2 text-xs text-stone-500">Sent by email. To send texts, verify a number under <Link href={`/app/${slug}/settings/messaging`} className="underline">Settings → Text messaging</Link>.</p> : null}
       {channel === "email" ? <Field label="Subject" name="subject" required><Input name="subject" defaultValue={campaign?.subject ?? ""} required placeholder="20% off lash fills this month" /></Field> : null}
-      <Field label="Message" name="body" hint={channel === "sms" ? "Placeholders: {first_name} {business} {booking_url}. Keep it under 320 characters; the business name and STOP notice are added automatically." : "Placeholders: {first_name} {business} {booking_url}."}><Textarea name="body" rows={6} defaultValue={campaign?.body ?? ""} required placeholder={"Hi {first_name}, …"} /></Field>
+      {channel === "email" && designs.length ? (
+        <Field label="Layout" name="templateId" hint={designed ? "The design is the email. Your address and the unsubscribe link are added at the bottom." : undefined}>
+          <Select name="templateId" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+            <option value="">Plain message</option>
+            {designs.map((d) => <option key={d.id} value={d.id}>Design: {d.name}</option>)}
+          </Select>
+        </Field>
+      ) : null}
+      {designed ? (
+        <p className="-mt-2 text-xs text-stone-500"><Link href={`/app/${slug}/marketing/designs/${templateId}`} className="underline">Open the design</Link> to change what it says or send yourself a test.</p>
+      ) : (
+        <Field label="Message" name="body" hint={channel === "sms" ? "Placeholders: {first_name} {business} {booking_url}. Keep it under 320 characters; the business name and STOP notice are added automatically." : `Placeholders: {first_name} {business} {booking_url}.${designs.length ? "" : " For pictures and buttons, make a design under Email designs."}`}><Textarea name="body" rows={6} defaultValue={campaign?.body ?? ""} required placeholder={"Hi {first_name}, …"} /></Field>
+      )}
       <Disclosure title="Audience" hint={filtered ? "filtered" : "every client opted in on this channel"} open={filtered || undefined}>
         <p className="mb-3 text-xs text-stone-500">Leave everything blank to reach every client who has opted in on that channel.</p>
         <div className="grid gap-3 sm:grid-cols-2">

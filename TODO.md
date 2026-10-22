@@ -1296,6 +1296,26 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### Email designs (built 2026-10-22, migration 0132)
+- [x] Marketing → Email designs: saved designs built from blocks (heading, text with **bold** / *italic* / links, image, two images,
+      button, divider, space, footer note), with the logo and brand color applied, merge fields ("Insert field"), a live desktop / phone
+      preview and "Send me a test" (sample details, 20 an hour). Campaigns and workflow email steps pick one as their layout.
+- [x] Settings → Email designs: the business's own design of confirmation, reminder, moved, cancelled, forms due, review request,
+      receipt, gift card and store order. Each keeps its own content as a required "Message details" block; an empty subject keeps the
+      usual one; "Reset to the standard design" removes it. With no design every email goes out exactly as before.
+- [x] Rendering (`lib/email-design`): tables and inline styles at 600px with an Outlook (MSO) wrapper, a phone media query, bulletproof
+      buttons, a hidden preview line; marketing emails always carry the postal address and the unsubscribe link. Pictures placed in a
+      design are stored as JPEG / PNG / GIF (Outlook for Windows can't show WebP). Tests: `render.test.ts`, `email-designs.test.ts`.
+- [ ] Not yet opened in real Gmail, Apple Mail and Outlook: demo businesses never send. Send a test from a real business with Resend on
+      and check all three (Outlook desktop especially: rounded corners and the phone layout don't apply there, by design).
+- [ ] Business logos are stored as WebP, so Outlook for Windows shows no logo in any email (designed or standard). Keep a PNG copy of
+      the logo for email.
+- [ ] The standard (undesigned) emails still use the old div-based wrapper (`shell` in `lib/notify/templates.ts`), which Outlook lays
+      out full width. Move it onto the table renderer.
+- [ ] Not designable yet: staff alerts, team invites, form copies, referral-code emails and workflow "notify staff" emails.
+- [ ] The campaign form's Layout picker was checked by the send-path test, not clicked through in the browser (the hidden in-app
+      browser pane can't drive native dropdowns).
+
 ### Add-ons at online booking (built 2026-10-22, migration 0133)
 - [x] Service page → Add-ons: up to 3 services suggested with this one, each at its usual price, a fixed add-on price, or an amount off
       the stylist's own price, and optionally a shorter add-on time (`service_addons`, `server/addons.ts`).

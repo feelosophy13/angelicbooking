@@ -151,6 +151,7 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
       entries: [
         { href: `${sb}/messaging`, title: "Text number", blurb: "Your own toll-free number for confirmations and reminders." },
         { href: `${sb}/notifications`, title: "Text wording", blurb: "What confirmations and reminders say, and quick replies for the Inbox." },
+        { href: `${sb}/emails`, title: "Email designs", blurb: "The look of confirmations, reminders, receipts and other automatic emails." },
       ],
     },
     {
@@ -188,7 +189,7 @@ export function searchPages(base: string, permissions: Perms, staffId: string | 
     ...(perms && blockingAccess(perms, staffId) ? [{ title: "Block time", href: `${base}/appointments/block`, keywords: "schedule time off" }] : []),
     ...(ok("clients.write") ? [{ title: "New client", href: `${base}/clients/new` }] : []),
     ...(ok("inventory.manage") ? [{ title: "Receive stock", href: `${base}/inventory/receive`, keywords: "inventory delivery" }, { title: "Count stock", href: `${base}/inventory/count`, keywords: "inventory stocktake" }, { title: "Reorder", href: `${base}/inventory/reorder`, keywords: "inventory low stock purchase order" }, { title: "Purchase orders", href: `${base}/inventory/orders`, keywords: "inventory suppliers" }, { title: "Stock history", href: `${base}/inventory/history`, keywords: "inventory movements ledger log audit" }] : []),
-    ...(ok("marketing.send") ? [{ title: "Campaigns", href: `${base}/marketing`, keywords: "marketing email text" }, { title: "Promo codes", href: `${base}/marketing/promos`, keywords: "marketing discount" }] : []),
+    ...(ok("marketing.send") ? [{ title: "Campaigns", href: `${base}/marketing`, keywords: "marketing email text" }, { title: "Promo codes", href: `${base}/marketing/promos`, keywords: "marketing discount" }, { title: "Campaign email designs", href: `${base}/marketing/designs`, keywords: "marketing email template newsletter layout" }] : []),
   ];
   const settings = settingsGroups(base, permissions).flatMap((g) => g.entries.filter((e) => !e.readOnly).map((e) => ({ title: e.title === "Forms" || e.title === "Reviews" ? `${e.title} settings` : e.title, href: e.href, keywords: `settings ${g.title} ${e.blurb}` })));
   const seen = new Set<string>();

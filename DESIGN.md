@@ -298,6 +298,16 @@ Every uploaded picture is optimized before it is stored. This is a rule, not a p
   or a fixed aspect box so the page does not jump, and `loading="lazy"` below the fold.
 - **Pickers.** Use `ImageField` (see Forms). It already restricts the file type; the server enforces the rest.
 
+## Email designs
+
+- Emails are laid out in `EmailDesigner` (`components/email-designer.tsx`): blocks on the left, one open at a time (like a workflow's
+  steps), the email as it arrives on the right with a Desktop / Phone switch. The preview and the sent email come from the same renderer
+  (`lib/email-design`), so never hand-build email HTML for something a design can hold.
+- Pictures in a design upload the moment they are picked (the design keeps the picture's address), so the designer has its own picture
+  control; it looks and behaves like `ImageField` (click the picture, × on its corner).
+- Required parts are never blocks the owner can delete: a marketing email's address and unsubscribe link are added under every design,
+  and an automatic email's own content is the "Message details" block, which moves but can't be removed.
+
 ## Before and after photos, and the Gallery
 
 - **Tied to the appointment.** A before/after pair describes one visit, one service and one stylist, so photos hang

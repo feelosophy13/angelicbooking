@@ -4,7 +4,8 @@
  */
 import { and, asc, desc, eq } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
-import { normalizeBlocks, renderEmail, type EmailBrand, type EmailDesign, type MergeVars } from "@/lib/email-design";
+import { normalizeBlocks, renderEmail, SAMPLE_VARS, type EmailBrand, type EmailDesign, type MergeVars } from "@/lib/email-design";
+import { postalAddress } from "@/server/locations";
 import type { SystemEmailKey } from "@/lib/email-design/system";
 import { giftCardEmail, orderEmail, receiptEmail, reviewRequestTemplate, templates, type ApptContext, type BrandCtx } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
@@ -114,4 +115,12 @@ export function sampleSystemEmail(business: Business, key: SystemEmailKey, brand
     case "gift_card": return { ...giftCardEmail(brand, { code: "GIFT-7K2P-M9QD", amount: money(100), from: "Jess", message: "Happy birthday! Treat yourself.", bookingUrl: siteUrl(business) }), vars };
     case "order": return { ...orderEmail(brand, { number: 1043, lines: [{ name: "Lash cleanser", quantity: 2, amount: money(36) }], total: money(38.16), method: "pickup", address: null }), vars };
   }
+}
+
+/** What the designer needs to preview a business's emails: its brand, postal address and sample field values. */
+export async function designerContext(business: Business) {
+  const address = await withTenant(business.id, (tx) => postalAddress(tx, business));
+  const brandCtx = businessBrand(business, address);
+  const vars: Record<string, string> = { ...SAMPLE_VARS, business: business.name, business_phone: business.phone ?? "", business_address: address ?? "", booking_url: siteUrl(business), unsubscribe_url: appUrl(`/unsubscribe/${business.slug}/sample`) };
+  return { brandCtx, brand: brandOf(brandCtx), address, vars };
 }

@@ -45,7 +45,7 @@ function headline(s: WorkflowStep): string {
  * Ordered steps for a workflow, shown as a timeline. One step is open for editing at a time;
  * the rest collapse to a single line. Posts the list as JSON in a hidden `steps` field.
  */
-export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; trigger: WorkflowTrigger }) {
+export function StepsEditor({ initial, trigger, designs = [], slug }: { initial: WorkflowStep[]; trigger: WorkflowTrigger; /** Saved email designs an email step can be laid out with. */ designs?: { id: string; name: string }[]; slug: string }) {
   const [steps, setSteps] = useState<WorkflowStep[]>(initial);
   const [open, setOpen] = useState<string | null>(initial.length === 1 ? initial[0]!.id : null);
   const [menu, setMenu] = useState(false);
@@ -120,8 +120,22 @@ export function StepsEditor({ initial, trigger }: { initial: WorkflowStep[]; tri
                     {s.type === "email" ? (
                       <>
                         <Field label="Subject"><Input value={s.subject} onChange={(e) => update(i, { subject: e.target.value })} maxLength={150} /></Field>
-                        <Field label="Message" hint="Blank lines make paragraphs; your logo and colors are added."><Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} /></Field>
-                        <Field label="Button label (optional)" className="max-w-xs"><Input value={s.ctaLabel ?? ""} onChange={(e) => update(i, { ctaLabel: e.target.value || null })} maxLength={40} /></Field>
+                        {designs.length ? (
+                          <Field label="Layout" hint={s.templateId ? "The design's blocks are the email; placeholders in it are filled in." : undefined}>
+                            <Select value={s.templateId && designs.some((d) => d.id === s.templateId) ? s.templateId : ""} onChange={(e) => update(i, { templateId: e.target.value || null })}>
+                              <option value="">Plain message</option>
+                              {designs.map((d) => <option key={d.id} value={d.id}>Design: {d.name}</option>)}
+                            </Select>
+                          </Field>
+                        ) : null}
+                        {s.templateId && designs.some((d) => d.id === s.templateId) ? (
+                          <p className="text-xs text-stone-500"><a href={`/app/${slug}/marketing/designs/${s.templateId}`} target="_blank" rel="noreferrer" className="underline">Open the design</a> to change what it says.</p>
+                        ) : (
+                          <>
+                            <Field label="Message" hint="Blank lines make paragraphs; your logo and colors are added."><Textarea rows={5} value={s.body} onChange={(e) => update(i, { body: e.target.value })} /></Field>
+                            <Field label="Button label (optional)" className="max-w-xs"><Input value={s.ctaLabel ?? ""} onChange={(e) => update(i, { ctaLabel: e.target.value || null })} maxLength={40} /></Field>
+                          </>
+                        )}
                         <Placeholders />
                         <p className="text-xs text-stone-500">{consentLine(s, trigger, steps, i)}</p>
                       </>

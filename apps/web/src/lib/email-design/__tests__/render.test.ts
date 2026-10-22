@@ -57,7 +57,7 @@ describe("normalizeBlocks", () => {
   it("gives every block an id and keeps two images in a row", () => {
     const [b] = normalizeBlocks([{ id: "bad id!", type: "images", images: [{ url: "https://a/1.png", alt: "one" }] }], { core: false });
     expect(b!.id).toMatch(/^[\w-]+$/);
-    expect(b!.type === "images" && b.images).toEqual([{ url: "https://a/1.png", alt: "one" }, { url: "", alt: "" }]);
+    expect(b?.type === "images" ? b.images : null).toEqual([{ url: "https://a/1.png", alt: "one" }, { url: "", alt: "" }]);
   });
 });
 
@@ -92,6 +92,7 @@ describe("renderEmail", () => {
     expect(html).toContain("Angelic Beauty · 123 Main St, Fairfax, VA · (703) 555-0142");
     const noLogo = renderEmail(design([]), { brand: { ...brand, logoUrl: null }, vars }).html;
     expect(noLogo).toContain(">Angelic Beauty</span>");
+    expect(noLogo).toMatch(/bgcolor="#be185d" style="background:#be185d;padding:16px 32px/);
   });
 
   it("renders every block kind", () => {

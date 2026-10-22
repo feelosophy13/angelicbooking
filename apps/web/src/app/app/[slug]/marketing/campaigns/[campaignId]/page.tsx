@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
@@ -8,6 +9,7 @@ import { campaignStats, previewCampaign } from "@/server/marketing";
 import { Card } from "@/components/ui";
 import { ConfirmSubmit } from "@/components/form";
 import { serviceGroups } from "@/server/service-groups";
+import { listSavedDesigns } from "@/server/email-designs";
 import { CampaignForm } from "../../campaign-form";
 import { deleteCampaign, sendCampaignAction, updateCampaign } from "../../actions";
 
@@ -20,6 +22,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   if (!p) notFound();
   const { campaign } = p;
   const sms = await smsAvailableFor(business.id);
+  const designs = (await listSavedDesigns(business.id)).map((d) => ({ id: d.id, name: d.name }));
   const [services, staff, locations] = await withTenant(business.id, async (tx) => [
     await serviceGroups(business, { meta: "none" }),
     await tx.select({ id: schema.staff.id, displayName: schema.staff.displayName }).from(schema.staff).where(eq(schema.staff.active, true)).orderBy(asc(schema.staff.displayName)),
@@ -34,10 +37,12 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             <p className="font-medium">{campaign.name}</p>
             <p className="text-stone-600">{campaign.channel.toUpperCase()} · sent to {campaign.recipientCount} client{campaign.recipientCount === 1 ? "" : "s"}</p>
             {campaign.subject ? <p><b>Subject:</b> {campaign.subject}</p> : null}
-            <p className="whitespace-pre-line rounded-lg bg-stone-50 p-3">{campaign.body}</p>
+            {campaign.templateId ? (
+              <p>Laid out with the design <Link href={`/app/${slug}/marketing/designs/${campaign.templateId}`} className="underline">{designs.find((d) => d.id === campaign.templateId)?.name ?? "design"}</Link>.</p>
+            ) : <p className="whitespace-pre-line rounded-lg bg-stone-50 p-3">{campaign.body}</p>}
           </div>
         ) : (
-          <CampaignForm action={updateCampaign} slug={slug} campaign={campaign} services={services} staff={staff} locations={locations} submitLabel="Save" sms={sms} />
+          <CampaignForm action={updateCampaign} slug={slug} campaign={campaign} services={services} staff={staff} locations={locations} designs={designs} submitLabel="Save" sms={sms} />
         )}
       </Card>
       <div className="space-y-4">

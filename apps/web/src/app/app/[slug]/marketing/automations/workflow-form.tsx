@@ -10,6 +10,8 @@ import { saveWorkflowAction } from "./actions";
 
 export type Pickers = {
   services: { id: string; name: string }[];
+  /** Saved email designs (Marketing → Email designs) an email step can use. */
+  designs?: { id: string; name: string }[];
   categories: AnyCategory[];
   locations: { id: string; name: string }[];
   staff: { id: string; name: string }[];
@@ -155,7 +157,7 @@ export function WorkflowForm({ slug, workflow, trigger, pickers, lapsedDays = 60
       </Section>
 
       <Section n={4} title="Then, in order" aside="click a step to edit it">
-        <StepsEditor initial={workflow?.steps ?? []} trigger={trigger} />
+        <StepsEditor initial={workflow?.steps ?? []} trigger={trigger} designs={pickers.designs} slug={slug} />
       </Section>
 
       <Section n={5} title="Options">

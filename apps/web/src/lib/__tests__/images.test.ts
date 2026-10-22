@@ -19,6 +19,15 @@ describe("prepareImage", () => {
     expect((await sharp((await prepareImage("cover", big, "image/png")).data).metadata()).width).toBe(2000);
     expect((await sharp((await prepareImage("logo", big, "image/png")).data).metadata()).width).toBe(800);
   });
+  it("keeps email pictures in formats every mail app shows (Outlook can't show WebP)", async () => {
+    const photo = await prepareImage("email", await raster(3000, 2000).jpeg().toBuffer(), "image/jpeg");
+    expect([photo.contentType, (await sharp(photo.data).metadata()).width]).toEqual(["image/jpeg", 1200]);
+    expect((await prepareImage("email", await raster(300, 200).png().toBuffer(), "image/png")).contentType).toBe("image/png");
+    const frames = Buffer.concat([0, 1].map((i) => Buffer.alloc(40 * 40 * 3, i ? 255 : 0)));
+    const gif = await sharp(frames, { raw: { width: 40, height: 40 * 2, channels: 3, pageHeight: 40 } }).gif().toBuffer();
+    const out = await prepareImage("email", gif, "image/gif");
+    expect([out.contentType, (await sharp(out.data, { animated: true }).metadata()).pages]).toEqual(["image/gif", 2]);
+  });
   it("never enlarges a small picture", async () => {
     const small = await raster(300, 200).png().toBuffer();
     const meta = await sharp((await prepareImage("service", small, "image/png")).data).metadata();

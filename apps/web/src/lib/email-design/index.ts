@@ -246,7 +246,7 @@ function blockHtml(b: EmailBlock, o: RenderOptions, color: string): string {
   }
 }
 
-/** A design → { subject, html }. The header carries the logo (or the name) on the brand color; the footer the business's details. */
+/** A design → { subject, html }. The header carries the logo under a band of the brand color (or the name on it); the footer the business's details. */
 export function renderEmail(design: EmailDesign, o: RenderOptions): { subject: string; html: string } {
   const color = brandColor(o.brand.color);
   const onBrand = textOn(color);
@@ -281,7 +281,11 @@ ${preheader ? `<div style="display:none;max-height:0;max-width:0;overflow:hidden
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f5f5f4" style="background:#f5f5f4"><tr><td align="center" style="padding:24px 12px">
 <!--[if mso]><table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
 <table role="presentation" class="ab-card" width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="width:600px;max-width:600px;background:#ffffff;border:1px solid #e7e5e4;border-radius:12px">
-<tr><td class="ab-pad" bgcolor="${color}" style="background:${color};padding:16px 32px;border-radius:12px 12px 0 0">${header}</td></tr>
+${logo
+  ? // A logo sits on white (most logos are drawn for a light background) under a band of the brand color.
+    `<tr><td bgcolor="${color}" style="background:${color};height:6px;font-size:0;line-height:0;border-radius:12px 12px 0 0">&nbsp;</td></tr>
+<tr><td class="ab-pad" style="padding:20px 32px 4px">${header}</td></tr>`
+  : `<tr><td class="ab-pad" bgcolor="${color}" style="background:${color};padding:16px 32px;border-radius:12px 12px 0 0">${header}</td></tr>`}
 <tr><td class="ab-pad" style="padding:28px 32px 4px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${body}</table></td></tr>
 <tr><td class="ab-pad" style="padding:8px 32px 24px;border-top:1px solid #f5f5f4">${legal}</td></tr>
 </table>

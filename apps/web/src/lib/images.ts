@@ -1,6 +1,6 @@
 /**
  * Every upload passes through `optimizeUpload` before it is stored, with no exceptions:
- *   - photos and graphics (JPEG, PNG, WebP, GIF) are resized to web size and re-encoded as WebP, and their
+ *   - photos and graphics (JPEG, PNG, WebP, GIF) are resized to web size and re-encoded as WebP (JPEG or PNG for texts and emails), and their
  *     EXIF data (camera, GPS location) is dropped; animated GIFs become animated WebP,
  *   - drawn signatures are recompressed as a small palette PNG,
  *   - only types that cannot be shrunk here are stored as sent: SVG (already text, capped in size), PDF, and
@@ -12,7 +12,7 @@ import sharp from "sharp";
 export class ImageError extends Error {}
 
 /** Longest side, in pixels, by what the picture is for. */
-export const MAX_SIDE: Record<string, number> = { cover: 2000, logo: 800, staff: 800, client: 800, form: 2000, visit: 2000, thumb: 640, mms: 1200 };
+export const MAX_SIDE: Record<string, number> = { cover: 2000, logo: 800, staff: 800, client: 800, form: 2000, visit: 2000, thumb: 640, mms: 1200, email: 1200 };
 export const DEFAULT_MAX_SIDE = 1600;
 export const MAX_SVG_BYTES = 512 * 1024;
 
@@ -37,6 +37,12 @@ export async function prepareImage(kind: string, input: Buffer, contentType: str
       .resize({ width: max, height: max, fit: "inside", withoutEnlargement: true });
     // A picture texted to a client goes as JPEG: every phone and carrier shows it, which is not true of WebP over MMS.
     if (kind === "mms") return { data: await pipeline.flatten({ background: "#fff" }).jpeg({ quality: 82 }).toBuffer(), contentType: "image/jpeg", ext: "jpg", resized: true };
+    // A picture in an email design: Outlook for Windows can't show WebP, so graphics stay PNG (transparency kept), animations GIF and photos become JPEG.
+    if (kind === "email") {
+      if (contentType === "image/gif") return { data: await pipeline.gif().toBuffer(), contentType: "image/gif", ext: "gif", resized: true };
+      if (contentType === "image/png" || svg) return { data: await pipeline.png({ compressionLevel: 9 }).toBuffer(), contentType: "image/png", ext: "png", resized: true };
+      return { data: await pipeline.flatten({ background: "#fff" }).jpeg({ quality: 85 }).toBuffer(), contentType: "image/jpeg", ext: "jpg", resized: true };
+    }
     // Screenshots, logos and graphics (PNG) stay crisp as lossless WebP; photos and animations use lossy.
     const data = await (contentType === "image/png" || svg ? pipeline.webp({ lossless: true }) : pipeline.webp({ quality: 82 })).toBuffer();
     return { data, contentType: "image/webp", ext: "webp", resized: true };
