@@ -11,6 +11,7 @@ import { setFlash } from "@/lib/flash";
 import { setServiceLocations } from "@/server/locations";
 import { deleteFileByUrl, FileError, uploadedImageFrom } from "@/lib/files";
 import { applyServiceTerms, parseMinutesField, parsePriceField, TermError } from "@/server/stylist-pricing";
+import { AddonError, saveAddons } from "@/server/addons";
 
 const fields = z.object({
   slug: z.string(),
@@ -179,5 +180,31 @@ export async function saveServiceStylistTerms(formData: FormData) {
     throw e;
   }
   await setFlash("Prices by stylist saved");
+  revalidatePath(`/app/${slug}/services/${serviceId}`);
+}
+
+/** From the service's own page: the add-ons suggested with it at online booking, each with an optional add-on price and time. */
+export async function saveServiceAddons(formData: FormData) {
+  const slug = String(formData.get("slug"));
+  const serviceId = String(formData.get("serviceId"));
+  const ctx = await requireAction(slug, "services.manage");
+  try {
+    const rows = [0, 1, 2, 3, 4].flatMap((i) => {
+      const addonServiceId = String(formData.get(`addon_${i}`) ?? "");
+      if (!addonServiceId) return [];
+      const mode = String(formData.get(`mode_${i}`) ?? "regular");
+      const amount = mode === "regular" ? null : (parsePriceField(formData.get(`amount_${i}`)) ?? null);
+      if (mode !== "regular" && amount == null) throw new AddonError(mode === "fixed" ? "Enter the add-on price, or choose Usual price." : "Enter the amount off, or choose Usual price.");
+      return [{ addonServiceId, priceCents: mode === "fixed" ? amount : null, discountCents: mode === "off" ? amount : null, durationMin: parseMinutesField(formData.get(`minutes_${i}`)) ?? null }];
+    });
+    await saveAddons(ctx.business.id, serviceId, rows);
+  } catch (e) {
+    if (e instanceof AddonError || e instanceof TermError) {
+      await setFlash(e.message, "error");
+      return;
+    }
+    throw e;
+  }
+  await setFlash("Add-ons saved");
   revalidatePath(`/app/${slug}/services/${serviceId}`);
 }

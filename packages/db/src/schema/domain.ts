@@ -428,6 +428,28 @@ export const staffServices = pgTable(
   (t) => [primaryKey({ columns: [t.staffId, t.serviceId] }), index("staff_services_business_idx").on(t.businessId)],
 );
 
+/**
+ * Add-ons: services suggested with another at online booking ("Add to your visit?"). Each pairing may set an add-on price, either a
+ * fixed price or an amount off the stylist's own price (never both), and an add-on time; blank means the service's usual terms.
+ */
+export const serviceAddons = pgTable(
+  "service_addons",
+  {
+    businessId: businessId(),
+    serviceId: text("service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "cascade" }),
+    addonServiceId: text("addon_service_id")
+      .notNull()
+      .references(() => services.id, { onDelete: "cascade" }),
+    priceCents: integer("price_cents"),
+    discountCents: integer("discount_cents"),
+    durationMin: smallint("duration_min"),
+    sortOrder: smallint("sort_order").notNull().default(0),
+  },
+  (t) => [primaryKey({ name: "service_addons_pk", columns: [t.serviceId, t.addonServiceId] }), index("service_addons_business_idx").on(t.businessId)],
+);
+
 // Where a service is offered. No rows for a service = offered at every location.
 export const serviceLocations = pgTable(
   "service_locations",

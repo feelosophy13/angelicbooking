@@ -22,6 +22,7 @@ import { paymentContextFor, serviceOfferedAt, servicesHiddenAt, staffIdsAt, tzFo
 import { addClientPhotos, clientPhotoCounts } from "./visit-photos";
 import type { DroppedPhoto } from "@/lib/booking-photos";
 import { markHelcimCheckoutUsed, refundUnusedCheckout } from "./helcim/online";
+import { addonsForService, addonTerms } from "./addons";
 
 export type PublicBusiness = typeof schema.businesses.$inferSelect;
 
@@ -373,7 +374,16 @@ export async function assertQuotedPrice(business: PublicBusiness, input: { servi
 }
 
 
-export interface PlannedExtra { serviceId: string; name: string; startAt: Date; endAt: Date; priceCents: number; durationMin: number }
+export interface PlannedExtra {
+  serviceId: string;
+  name: string;
+  startAt: Date;
+  endAt: Date;
+  priceCents: number;
+  durationMin: number;
+  /** Suggested with the first service: booked at its add-on terms (price and time) with the "(add-on)" label. */
+  addon: { priceCents: number; durationMin: number | null; regularPriceCents: number } | null;
+}
 
 /**
  * Start times that day when the whole visit fits with this provider: the first service and every added one back to back. Offered when
@@ -412,6 +422,7 @@ export async function planExtras(
   const window = onlineBookingWindow(now, business);
   const endOf = (start: Date, timing: ReturnType<typeof timingFor>) => buildBookingSegments(start, timing).at(-1)!.end;
   const firstOv = (await withTenant(business.id, (tx) => overridesForService(tx, first.id))).get(input.staffId);
+  const pairings = new Map((await withTenant(business.id, (tx) => addonsForService(tx, first.id))).map((p) => [p.addonServiceId, p]));
   let cursor = endOf(input.startAt, timingFor({ ...first, durationMin: firstOv?.duration ?? first.durationMin }));
   const out: PlannedExtra[] = [];
   for (const id of ids) {
@@ -419,8 +430,12 @@ export async function planExtras(
     if (!svc || svc.capacity > 1) throw new BookingError("One of the added services is no longer available.");
     if (!(await publicProvidersFor(business, id, input.locationId)).some((s) => s.id === input.staffId)) throw new BookingError(`This provider doesn't perform ${svc.name}.`);
     const ov = (await withTenant(business.id, (tx) => overridesForService(tx, id))).get(input.staffId);
-    const terms = termsOf(svc, ov);
-    const timing = timingFor({ ...svc, durationMin: terms.durationMin });
+    const usual = termsOf(svc, ov);
+    const pairing = pairings.get(id);
+    const add = pairing ? addonTerms(pairing, usual) : null;
+    const terms = add ?? usual;
+    // An add-on with its own time is one plain block (the same rule bookAppointment applies when it saves it).
+    const timing = pairing?.durationMin != null ? timingFor({ durationMin: pairing.durationMin, gapMin: 0, finishMin: 0, bufferAfterMin: svc.bufferAfterMin }) : timingFor({ ...svc, durationMin: terms.durationMin });
     // A 5-minute grid, because the previous service can end between the salon's usual start times.
     const open = await getStaffAvailability({ businessId: business.id, timeZone: business.timezone, slotIntervalMin: 5, staffId: input.staffId, date: isoDateIn(cursor, tz), service: timing, notBefore: window.notBefore, locationId: input.locationId });
     if (cursor > window.notAfter || !open.some((at) => at.getTime() === cursor.getTime())) {
@@ -428,7 +443,7 @@ export async function planExtras(
     }
     const startedAt = cursor;
     cursor = endOf(cursor, timing);
-    out.push({ serviceId: id, name: svc.name, startAt: startedAt, endAt: cursor, priceCents: terms.priceCents, durationMin: terms.durationMin });
+    out.push({ serviceId: id, name: svc.name, startAt: startedAt, endAt: cursor, priceCents: terms.priceCents, durationMin: terms.durationMin, addon: add && pairing ? { priceCents: add.priceCents, durationMin: pairing.durationMin, regularPriceCents: add.regularPriceCents } : null });
   }
   return out;
 }
@@ -501,7 +516,7 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
       classSessionId: input.classSessionId ?? null,
       promoCodeId,
       locationId: input.locationId ?? null,
-      extras: extras.map((x) => ({ serviceId: x.serviceId, startAt: x.startAt })),
+      extras: extras.map((x) => ({ serviceId: x.serviceId, startAt: x.startAt, addon: x.addon ? { priceCents: x.addon.priceCents, durationMin: x.addon.durationMin } : null })),
       // Booking online is agreeing to the cancellation policy shown on the form: keep exactly that text, when, and from where.
       policy: { text: policySnapshot(business), ip: input.ip ?? null },
     }));

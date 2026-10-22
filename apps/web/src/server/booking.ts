@@ -14,7 +14,7 @@ type Tx = TenantDb;
 /** Insert the time segments for one service into an existing appointment. */
 async function insertServiceItems(
   tx: Tx,
-  input: { businessId: string; appointmentId: string; serviceId: string; staffId: string; startAt: Date; sortOrderBase: number; allowOverlap?: boolean },
+  input: { businessId: string; appointmentId: string; serviceId: string; staffId: string; startAt: Date; sortOrderBase: number; allowOverlap?: boolean; /** Booked as an add-on to the visit's first service: its add-on price and time, and the "(add-on)" label. */ addon?: { priceCents: number; durationMin: number | null } | null },
 ) {
   const service = await tx.query.services.findFirst({ where: eq(schema.services.id, input.serviceId) });
   if (!service || !service.active) throw new BookingError("That service is no longer available.");
@@ -24,8 +24,10 @@ async function insertServiceItems(
   const override = await tx.query.staffServices.findFirst({
     where: and(eq(schema.staffServices.staffId, input.staffId), eq(schema.staffServices.serviceId, input.serviceId)),
   });
-  const timing = timingFor({ ...service, durationMin: override?.durationMinOverride ?? service.durationMin });
-  const priceCents = override?.priceCentsOverride ?? service.priceCents;
+  // An add-on with its own time is one plain block of that length (no processing gap or finish of its own).
+  const timing = input.addon?.durationMin != null ? timingFor({ durationMin: input.addon.durationMin, gapMin: 0, finishMin: 0, bufferAfterMin: service.bufferAfterMin }) : timingFor({ ...service, durationMin: override?.durationMinOverride ?? service.durationMin });
+  const priceCents = input.addon ? input.addon.priceCents : override?.priceCentsOverride ?? service.priceCents;
+  const label = input.addon ? `${service.name} (add-on)` : service.name;
   const segments = buildBookingSegments(input.startAt, timing);
   // A deliberate double-booking skips the clash checks (other visits and classes) but never lands on blocked time.
   if (input.allowOverlap) await assertNoBlock(tx, input.staffId, segments);
@@ -36,7 +38,7 @@ async function insertServiceItems(
       appointmentId: input.appointmentId,
       staffId: input.staffId,
       serviceId: service.id,
-      serviceName: i === 0 ? service.name : `${service.name} (finish)`,
+      serviceName: i === 0 ? label : `${service.name} (finish)`,
       startAt: seg.start,
       endAt: seg.end,
       priceCents: i === 0 ? priceCents : 0,
@@ -139,7 +141,7 @@ export interface BookAppointmentInput {
   /** Where the visit happens. Defaults to where the provider works that weekday, else their primary site, else the default. */
   locationId?: string | null;
   /** More services booked in the same visit, with the same provider, each starting where the last one ends. */
-  extras?: { serviceId: string; startAt: Date }[];
+  extras?: { serviceId: string; startAt: Date; /** Booked as an add-on of the first service (online "Add to your visit?"). */ addon?: { priceCents: number; durationMin: number | null } | null }[];
   /**
    * Double-book on purpose: the new services may overlap the provider's other visits and classes (a quick add-on while colour
    * processes), but not blocked time. Desk only, for someone who can manage any appointment; always ignored online. Working hours
@@ -202,7 +204,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
       let order = firstItems.segments.length;
       for (const x of input.extras ?? []) {
         if (!(await serviceOfferedAt(tx, x.serviceId, locationId))) throw new BookingError("One of the added services isn't offered at this location.");
-        const r = await insertServiceItems(tx, { businessId: input.businessId, appointmentId: appt!.id, serviceId: x.serviceId, staffId: input.staffId, startAt: x.startAt, sortOrderBase: order, allowOverlap });
+        const r = await insertServiceItems(tx, { businessId: input.businessId, appointmentId: appt!.id, serviceId: x.serviceId, staffId: input.staffId, startAt: x.startAt, sortOrderBase: order, allowOverlap, addon: x.addon ?? null });
         order += r.segments.length;
       }
       await refreshHomeLocation(tx, input.clientId);
@@ -493,9 +495,32 @@ export async function removeServiceFromAppointment(input: { businessId: string; 
         .set({ status: "cancelled", cancelledAt: new Date() })
         .where(eq(schema.appointments.id, item.appointmentId));
     }
-    await audit(tx, input.businessId, input.actorUserId, "appointment.remove_service", item.appointmentId, { itemId: item.id });
+    // Add-ons were priced for going with this service: with it gone they go back to the stylist's usual price and lose the label.
+    const repriced = cancelled || !item.serviceId ? [] : await repriceOrphanedAddons(tx, item.appointmentId, item.serviceId);
+    await audit(tx, input.businessId, input.actorUserId, "appointment.remove_service", item.appointmentId, { itemId: item.id, ...(repriced.length ? { addonsRepriced: repriced } : {}) });
     return { appointmentId: item.appointmentId, cancelled };
   });
+}
+
+/**
+ * The appointment's add-ons whose service they were suggested with is no longer on it: each goes back to the stylist's usual price for
+ * it, without the "(add-on)" label. Returns what changed, for the activity log.
+ */
+async function repriceOrphanedAddons(tx: Tx, appointmentId: string, removedServiceId: string) {
+  const pairings = await tx.select().from(schema.serviceAddons).where(eq(schema.serviceAddons.serviceId, removedServiceId));
+  if (!pairings.length) return [];
+  const items = await tx.select().from(schema.appointmentItems).where(and(eq(schema.appointmentItems.appointmentId, appointmentId), sql`${schema.appointmentItems.status} <> 'cancelled'`));
+  const out: { service: string; fromCents: number; toCents: number }[] = [];
+  for (const it of items) {
+    if (!it.serviceId || !it.serviceName.endsWith(" (add-on)") || !pairings.some((p) => p.addonServiceId === it.serviceId)) continue;
+    const service = await tx.query.services.findFirst({ where: eq(schema.services.id, it.serviceId) });
+    if (!service) continue;
+    const override = await tx.query.staffServices.findFirst({ where: and(eq(schema.staffServices.staffId, it.staffId), eq(schema.staffServices.serviceId, it.serviceId)) });
+    const usual = override?.priceCentsOverride ?? service.priceCents;
+    await tx.update(schema.appointmentItems).set({ priceCents: it.priceCents > 0 ? usual : it.priceCents, serviceName: service.name }).where(eq(schema.appointmentItems.id, it.id));
+    out.push({ service: service.name, fromCents: it.priceCents, toCents: usual });
+  }
+  return out;
 }
 
 /**

@@ -23,6 +23,7 @@ import { CategoryTile, Crumbs, ServiceCard, Stars, StepBack, Steps, StepTitle, S
 import { WorkPhotos } from "./work-photos";
 import { ServiceSearch } from "./service-search";
 import { MonthCalendar } from "./calendar";
+import { addonsForService, addonTerms } from "@/server/addons";
 
 type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string; extra?: string; add?: string; sort?: string; who?: string };
 
@@ -505,6 +506,27 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const visitMinutes = visitEnd ? Math.round((visitEnd.getTime() - startAt.getTime()) / 60_000) : null;
   const req = onlinePaymentRequirement(business, service, pay, visitPrice);
   const extrasParam = extras.map((x) => x.serviceId);
+  // "Add to your visit?": the add-ons the salon suggests with this service that this stylist performs and that fit right after it.
+  // Ticked ones are already in the visit; an add-on that wouldn't fit after this time isn't offered at all.
+  const pairings = await withTenant(business.id, (tx) => addonsForService(tx, service.id));
+  const suggestions: { id: string; name: string; on: boolean; priceCents: number; regularPriceCents: number; minutes: number }[] = [];
+  if (!extraError) {
+    for (const p of pairings) {
+      const s = services.find((x) => x.id === p.addonServiceId);
+      if (!s || s.capacity !== 1 || (restricted.has(s.id) && !performs.has(s.id))) continue;
+      const t = addonTerms(p, termsOf(s, mine.get(s.id)));
+      const minutes = p.durationMin ?? t.durationMin + s.gapMin + s.finishMin;
+      if (extraIds.includes(s.id)) {
+        suggestions.push({ id: s.id, name: s.name, on: true, priceCents: t.priceCents, regularPriceCents: t.regularPriceCents, minutes });
+        continue;
+      }
+      if (extraIds.length >= 4) continue;
+      const fits = await planExtras(business, { serviceId: service.id, staffId: slot.staffId, startAt, extraServiceIds: [...extraIds, s.id], locationId: locId }).then(() => true, (e) => { if (e instanceof BookingError) return false; throw e; });
+      if (fits) suggestions.push({ id: s.id, name: s.name, on: false, priceCents: t.priceCents, regularPriceCents: t.regularPriceCents, minutes });
+    }
+  }
+  const addonIds = new Set(pairings.map((p) => p.addonServiceId));
+  const moreOptions = options.filter((s) => !addonIds.has(s.id));
   return (
     <>
       <StepBack href={timeFirst ? q({ staff: undefined }) : q({ time: undefined })} />
@@ -517,7 +539,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         rows={[
           { label: "When", value: `${formatDateLong(date)} at ${formatTime(startAt, tz)}`, href: timeFirst ? q({ time: undefined, staff: undefined }) : q({ time: undefined }) },
           { label: "With", value: withTitle(slot.staffId, slot.staffName), href: timeFirst ? q({ staff: undefined }) : q({ staff: undefined, date: undefined, time: undefined }) },
-          ...extras.map((x) => ({ label: "Plus", value: `${x.name} · ${money(x.priceCents)}`, href: q({ time: sp.time, extra: extrasParam.filter((id) => id !== x.serviceId).join(",") || undefined }) })),
+          ...extras.map((x) => ({ label: "Plus", value: `${x.name}${x.addon ? " (add-on)" : ""} · ${money(x.priceCents)}`, href: q({ time: sp.time, extra: extrasParam.filter((id) => id !== x.serviceId).join(",") || undefined }) })),
           { label: "Duration", value: visitMinutes ? duration(visitMinutes) : spanOf(termsFor(slot.staffId).durationMin) },
           { label: extras.length ? "Total" : "Price", value: money(visitPrice) },
         ]}
@@ -537,7 +559,30 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         </div>
       ) : (
         <>
-          {options.length ? <p className="mb-3 text-sm"><Link href={q({ time: sp.time, staff: slot.staffId, add: "1" })} className="underline" style={{ color: "var(--brand-dark)" }}>+ Add another service with {slot.staffName.split(" ")[0]}</Link></p> : null}
+          {suggestions.length ? (
+            <section className="mb-4 rounded-2xl border border-stone-200 bg-white p-4" aria-labelledby="addons-title">
+              <h2 id="addons-title" className="font-medium">Add to your visit?</h2>
+              <p className="mb-2 text-xs text-stone-500">Popular with {service.name}, done right after it by {slot.staffName.split(" ")[0]}.</p>
+              <ul className="divide-y divide-stone-100">
+                {suggestions.map((a) => (
+                  <li key={a.id}>
+                    <Link
+                      href={q({ time: sp.time, staff: slot.staffId, extra: (a.on ? extraIds.filter((id) => id !== a.id) : [...extraIds, a.id]).join(",") || undefined })}
+                      scroll={false}
+                      role="checkbox"
+                      aria-checked={a.on}
+                      className="flex min-h-12 items-center gap-3 py-2"
+                    >
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${a.on ? "border-transparent text-white" : "border-stone-300 bg-white"}`} style={a.on ? { background: "var(--brand)" } : undefined} aria-hidden>{a.on ? "✓" : null}</span>
+                      <span className="min-w-0 flex-1 text-sm">{a.name} <span className="text-stone-500">· +{duration(a.minutes)}</span></span>
+                      <span className="whitespace-nowrap text-sm font-medium">+{money(a.priceCents)}{a.priceCents < a.regularPriceCents ? <s className="ml-1.5 font-normal text-stone-400">{money(a.regularPriceCents)}</s> : null}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {moreOptions.length ? <p className="mb-3 text-sm"><Link href={q({ time: sp.time, staff: slot.staffId, add: "1" })} className="underline" style={{ color: "var(--brand-dark)" }}>+ Add another service with {slot.staffName.split(" ")[0]}</Link></p> : null}
           {req.mode === "none" && depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
           {req.mode === "none" ? (
             <BookingForm verify={verifyCode} priceLabel={money(visitPrice)} extraServiceIds={extrasParam} slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={ownPrice} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} photos={business.clientPhotosOnBooking} />

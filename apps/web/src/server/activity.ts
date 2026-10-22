@@ -49,7 +49,11 @@ function describe(action: string, diff: Record<string, unknown>, currency: strin
   if (action === "appointment.block") return { what: "blocked the time", detail: reason };
   if (action === "class.enrol") return { what: source === "online" ? "enrolled online" : "enrolled the client", detail: null };
   if (action === "appointment.add_service") return { what: "added a service", detail: null };
-  if (action === "appointment.remove_service") return { what: "removed a service", detail: null };
+  if (action === "appointment.remove_service") {
+    // Add-ons priced for going with the removed service go back to their usual price; say so, since the bill changes.
+    const r = Array.isArray(diff.addonsRepriced) ? (diff.addonsRepriced as { service: string; toCents: number }[]) : [];
+    return { what: "removed a service", detail: r.length ? `${r.map((x) => `${x.service} is now ${money(x.toCents)}`).join(", ")} (no longer an add-on)` : null };
+  }
   if (action === "appointment.reschedule") return { what: "moved the appointment", detail: null };
   if (action === "appointment.notes") return { what: "edited the notes", detail: null };
   if (action === "appointment.late_fee") return { what: "charged a late cancellation fee", detail: [money(diff.chargeCents), typeof diff.depositCoversCents === "number" && diff.depositCoversCents > 0 ? `deposit covered ${money(diff.depositCoversCents)}` : null].filter(Boolean).join(" · ") || null };

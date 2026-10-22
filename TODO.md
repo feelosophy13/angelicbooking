@@ -1296,6 +1296,16 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### Add-ons at online booking (built 2026-10-22, migration 0133)
+- [x] Service page → Add-ons: up to 3 services suggested with this one, each at its usual price, a fixed add-on price, or an amount off
+      the stylist's own price, and optionally a shorter add-on time (`service_addons`, `server/addons.ts`).
+- [x] Booking page details step: "Add to your visit?" with the suggestions this stylist performs that fit right after the first
+      service (others hidden), unticked by default, a cheaper add-on showing its usual price crossed out; ticking updates the total.
+- [x] Booked at the add-on price and time with the "(add-on)" label, which carries through to the ticket, deposit (visit total),
+      payroll (commission on what was charged) and reports (grouped under the service). Booking the service on its own uses its usual terms.
+- [x] Removing the service an add-on came with puts the add-on back to the stylist's usual price; the activity log says so.
+- [ ] Not offered when staff book at the desk (they add services as usual); no per-salon switch for the crossed-out price.
+
 ### Booking codes: verify the client before an online booking (built 2026-10-20, migration 0131)
 - [x] Settings → Booking rules → "Confirm the client's mobile number with a code before they book" (on by default). The booking form
       sends a 6-digit code by text, or by email when the business can't text yet or the client asks; signed-in clients skip it.
