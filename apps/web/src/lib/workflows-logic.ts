@@ -185,7 +185,7 @@ export function validateSteps(steps: WorkflowStep[], trigger: WorkflowTrigger): 
       if (s.mode === "before_appointment" && trigger !== "appointment_booked") errors.push(`${n}: "before the appointment" only works with the Appointment booked trigger.`);
     }
     if (s.type === "sms" && !s.body.trim()) errors.push(`${n}: the text message is empty.`);
-    if (s.type === "email" && (!s.subject.trim() || !s.body.trim())) errors.push(`${n}: the email needs a subject and a message.`);
+    if (s.type === "email" && (!s.subject.trim() || (!s.body.trim() && !s.templateId))) errors.push(`${n}: the email needs a subject and a message.`);
     if (s.type === "review_request" && trigger !== "appointment_completed") errors.push(`${n}: a rating request needs the Visit completed trigger.`);
     if (s.type === "reminder" && trigger !== "appointment_booked") errors.push(`${n}: the appointment reminder needs the Appointment booked trigger.`);
     if (s.type === "tag" && !s.tag.trim()) errors.push(`${n}: enter a tag.`);

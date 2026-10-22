@@ -11,6 +11,8 @@ import { schema, withTenant, type CampaignAudience, type TenantDb } from "@angel
 import { normalizePhone } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
 import { marketingEmail } from "@/lib/notify/templates";
+import { renderEmail } from "@/lib/email-design";
+import { baseVars, brandOf, markUrl, savedDesign } from "@/server/email-designs";
 import { deliverMany } from "@/lib/notify";
 import { smsWithStopNotice } from "@/lib/notify/sms";
 import { deferToDaytime } from "@/lib/workflows-logic";
@@ -119,6 +121,9 @@ export async function sendCampaign(business: Business, id: string, actorUserId: 
     const address = await postalAddress(tx, business);
     if (c.channel === "email" && !address) throw new MarketingError(NO_POSTAL_ADDRESS);
     const brand = { businessName: business.name, logoUrl: business.logoUrl, brandColor: business.brandColor, businessPhone: business.phone, address };
+    // Laid out in the designer when the campaign picked a saved design; its plain message otherwise.
+    const design = c.channel === "email" ? await savedDesign(tx, c.templateId) : null;
+    if (c.channel === "email" && !design && !c.body.trim()) throw new MarketingError(c.templateId ? "The design this campaign used was deleted. Pick another design or write a message." : "Write a message or pick a design first.");
     const rows: (typeof schema.notifications.$inferInsert)[] = [];
     // Texts wait for daytime where the client is (their usual location's time zone); emails go now.
     const zoneOf = await locationTimeZones(tx, business);
@@ -132,7 +137,10 @@ export async function sendCampaign(business: Business, id: string, actorUserId: 
       seen.add(key);
       const vars = { first_name: cl.firstName, business: business.name, booking_url: bookingUrl };
       if (c.channel === "email") {
-        const t = marketingEmail(brand, { subject: renderText(c.subject ?? c.name, vars), text: renderText(c.body, vars), ctaUrl: bookingUrl, unsubscribeUrl: unsubscribeUrl(business, cl.id) });
+        const unsub = unsubscribeUrl(business, cl.id);
+        const t = design
+          ? renderEmail({ ...design, subject: c.subject || design.subject || c.name }, { brand: brandOf(brand), vars: { ...baseVars(business, brand, cl), unsubscribe_url: unsub }, marketing: { unsubscribeUrl: unsub, address: address! }, markUrl: markUrl() })
+          : marketingEmail(brand, { subject: renderText(c.subject ?? c.name, vars), text: renderText(c.body, vars), ctaUrl: bookingUrl, unsubscribeUrl: unsub });
         rows.push({ businessId: business.id, clientId: cl.id, channel: "email", template: "campaign", recipient: cl.email!, subject: t.subject, body: t.html, campaignId: c.id, marketing: true, scheduledAt: at(cl) });
       } else {
         const phone = normalizePhone(cl.phone);

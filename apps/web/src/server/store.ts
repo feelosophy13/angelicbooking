@@ -30,6 +30,7 @@ import { onlineAvailability } from "./inventory";
 import { productLabel } from "@/lib/inventory";
 import { queueOneOff } from "@/lib/notify";
 import { giftCardEmail, orderEmail } from "@/lib/notify/templates";
+import { baseVars, designedEmail } from "@/server/email-designs";
 import { siteUrl } from "@/lib/site-url";
 import { formatMoney } from "@/lib/utils";
 
@@ -477,13 +478,15 @@ async function sendOrderEmails(business: PublicBusiness, saleId: string) {
   const money = (c: number) => formatMoney(c, business.currency);
   if (f.email) {
     const t = orderEmail(brand, { number: o.sale.number, lines: o.lines.map((l) => ({ name: l.name, quantity: l.quantity, amount: money(l.amountCents) })), total: money(o.sale.totalCents), method: f.method ?? "pickup", address: f.address ?? null });
-    await queueOneOff(business.id, { channel: "email", template: "order", recipient: f.email, subject: t.subject, body: t.html, clientId: o.sale.clientId });
+    const mail = await withTenant(business.id, (tx) => designedEmail(tx, "order", t, brand, baseVars(business, brand, { firstName: f.name?.split(" ")[0] })));
+    await queueOneOff(business.id, { channel: "email", template: "order", recipient: f.email, subject: mail.subject, body: mail.html, clientId: o.sale.clientId });
   }
   for (const g of o.giftCards) {
     const to = f.giftRecipientEmail ?? f.email;
     if (!to) continue;
     const t = giftCardEmail(brand, { code: g.code, amount: money(g.initialCents), from: f.name ?? null, message: f.message ?? null, bookingUrl: siteUrl(business) });
-    await queueOneOff(business.id, { channel: "email", template: "gift_card", recipient: to, subject: t.subject, body: t.html, clientId: o.sale.clientId });
+    const mail = await withTenant(business.id, (tx) => designedEmail(tx, "gift_card", t, brand, baseVars(business, brand, { firstName: f.giftRecipientName?.split(" ")[0] })));
+    await queueOneOff(business.id, { channel: "email", template: "gift_card", recipient: to, subject: mail.subject, body: mail.html, clientId: o.sale.clientId });
   }
 }
 

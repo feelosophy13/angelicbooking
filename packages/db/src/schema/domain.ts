@@ -1242,6 +1242,29 @@ export interface CampaignAudience {
   locationId?: string | null;
 }
 
+/**
+ * Email designs (migration 0132): block layouts made in the designer. `saved` ones are picked by campaigns and workflow emails; a
+ * `system` one replaces the look of an automatic email (`key`: confirmation, reminder, receipt, …) until it is reset to the default.
+ * Blocks are the designer's JSON (apps/web lib/email-design), normalized on every read and write.
+ */
+export const emailTemplates = pgTable(
+  "email_templates",
+  {
+    id: id(),
+    businessId: businessId(),
+    kind: text("kind").$type<"saved" | "system">().notNull().default("saved"),
+    key: text("key"),
+    name: text("name").notNull(),
+    subject: text("subject").notNull().default(""),
+    preheader: text("preheader").notNull().default(""),
+    blocks: jsonb("blocks").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+    updatedByUserId: text("updated_by_user_id"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("email_templates_business_idx").on(t.businessId, t.kind, t.updatedAt), uniqueIndex("email_templates_key_uq").on(t.businessId, t.key).where(sql`key is not null`)],
+);
+
 export const campaigns = pgTable(
   "campaigns",
   {
@@ -1251,6 +1274,8 @@ export const campaigns = pgTable(
     channel: notificationChannel("channel").notNull(),
     subject: text("subject"),
     body: text("body").notNull(),
+    // An email campaign laid out in the designer (Marketing → Email designs); null sends `body` as plain paragraphs.
+    templateId: text("template_id").references(() => emailTemplates.id, { onDelete: "set null" }),
     audience: jsonb("audience").$type<CampaignAudience>().notNull().default(sql`'{}'::jsonb`),
     status: text("status").notNull().default("draft"), // draft | sent
     recipientCount: integer("recipient_count").notNull().default(0),
@@ -1401,7 +1426,8 @@ export interface WorkflowFilters {
 export type WorkflowStep =
   | { id: string; type: "wait"; mode: "delay" | "before_appointment" | "after_appointment"; hours: number }
   | { id: string; type: "sms"; body: string }
-  | { id: string; type: "email"; subject: string; body: string; ctaLabel?: string | null }
+  // templateId: a saved email design (email_templates) to lay the email out with; the body is then not used.
+  | { id: string; type: "email"; subject: string; body: string; ctaLabel?: string | null; templateId?: string | null }
   | { id: string; type: "review_request" }
   // The standard appointment reminder (details, manage link, forms, prep) on every channel the client allows.
   | { id: string; type: "reminder" }

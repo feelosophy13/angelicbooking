@@ -29,15 +29,24 @@ function parseAudience(d: { visitedWithinDays?: string; lapsedDays?: string; ser
   return { visitedWithinDays: vw, lapsedDays: ld, serviceId: d.serviceId || null, staffId: d.staffId || null, tag: d.tag, neverVisited: d.neverVisited, locationId: d.locationId || null };
 }
 
-const campaignFields = z.object({ slug: z.string(), campaignId: z.string().optional(), name: f.text(1, 100), channel: z.enum(["email", "sms"]), subject: f.optional(150), body: f.text(1, 2000), ...audienceFields });
+const campaignFields = z.object({ slug: z.string(), campaignId: z.string().optional(), name: f.text(1, 100), channel: z.enum(["email", "sms"]), subject: f.optional(150), body: z.string().trim().max(2000).optional(), templateId: z.string().max(40).optional(), ...audienceFields });
+
+/** An email may use a saved design instead of a message; a text always needs its message. */
+function contentOf(d: z.infer<typeof campaignFields>) {
+  const templateId = d.channel === "email" && d.templateId ? d.templateId : null;
+  const body = d.body ?? "";
+  if (!templateId && !body) throw new FormError(d.channel === "email" ? "Write a message or pick a design" : "Write the text message", "body");
+  return { templateId, body };
+}
 
 export const createCampaign = formAction(campaignFields, async (d) => {
   const ctx = await requireAction(d.slug, "marketing.send");
   if (d.channel === "sms" && !(await smsAvailableFor(ctx.business.id))) throw new FormError("Texting needs a verified text number (Settings → Text messaging).", "channel");
   if (d.channel === "email" && !d.subject) throw new FormError("Add a subject line", "subject");
-  if (d.channel === "sms" && d.body.length > 320) throw new FormError("Keep texts under 320 characters (2 segments)", "body");
+  const content = contentOf(d);
+  if (d.channel === "sms" && content.body.length > 320) throw new FormError("Keep texts under 320 characters (2 segments)", "body");
   const audience = parseAudience(d);
-  const [row] = await withTenant(ctx.business.id, (tx) => tx.insert(schema.campaigns).values({ businessId: ctx.business.id, name: d.name, channel: d.channel, subject: d.subject, body: d.body, audience, createdByUserId: ctx.user.id }).returning({ id: schema.campaigns.id }));
+  const [row] = await withTenant(ctx.business.id, (tx) => tx.insert(schema.campaigns).values({ businessId: ctx.business.id, name: d.name, channel: d.channel, subject: d.subject, ...content, audience, createdByUserId: ctx.user.id }).returning({ id: schema.campaigns.id }));
   revalidatePath(`/app/${d.slug}/marketing`);
   redirect(`/app/${d.slug}/marketing/campaigns/${row!.id}`);
 });
@@ -46,8 +55,10 @@ export const updateCampaign = formAction(campaignFields, async (d) => {
   const ctx = await requireAction(d.slug, "marketing.send");
   if (d.channel === "sms" && !(await smsAvailableFor(ctx.business.id))) throw new FormError("Texting needs a verified text number (Settings → Text messaging).", "channel");
   if (d.channel === "email" && !d.subject) throw new FormError("Add a subject line", "subject");
+  const content = contentOf(d);
+  if (d.channel === "sms" && content.body.length > 320) throw new FormError("Keep texts under 320 characters (2 segments)", "body");
   const audience = parseAudience(d);
-  await withTenant(ctx.business.id, (tx) => tx.update(schema.campaigns).set({ name: d.name, channel: d.channel, subject: d.subject, body: d.body, audience }).where(eq(schema.campaigns.id, d.campaignId ?? "")));
+  await withTenant(ctx.business.id, (tx) => tx.update(schema.campaigns).set({ name: d.name, channel: d.channel, subject: d.subject, ...content, audience }).where(eq(schema.campaigns.id, d.campaignId ?? "")));
   revalidatePath(`/app/${d.slug}/marketing/campaigns/${d.campaignId}`);
   return "Campaign saved";
 });

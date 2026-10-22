@@ -21,6 +21,7 @@ import { priceBookIn } from "@/server/price-book";
 import { templates, type ApptContext, type TemplateName } from "./templates";
 import { siteUrl } from "@/lib/site-url";
 import { smsBody, smsWithStopNotice } from "./sms";
+import { apptVars, designedEmail } from "@/server/email-designs";
 
 type Row = typeof schema.notifications.$inferSelect;
 
@@ -101,7 +102,8 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
     const rows: (typeof schema.notifications.$inferInsert)[] = [];
     const phone = normalizePhone(client.phone);
     if (client.emailOptIn && client.email) {
-      rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, locationId: appt.locationId, channel: "email", template, recipient: client.email, subject: t.subject, body: t.html });
+      const mail = await designedEmail(tx, template === "formsNudge" ? "forms_nudge" : template, t, ctx, apptVars(business, ctx, { last_name: client.lastName }));
+      rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, locationId: appt.locationId, channel: "email", template, recipient: client.email, subject: mail.subject, body: mail.html });
     }
     if (client.smsOptIn && phone) {
       rows.push({ businessId: business.id, clientId: client.id, appointmentId: appt.id, locationId: appt.locationId, channel: "sms", template, recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, template === "formsNudge" ? "forms_nudge" : template, ctx)) });

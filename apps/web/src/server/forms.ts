@@ -318,7 +318,9 @@ export async function queueFormsNudges(now = new Date()): Promise<{ businesses: 
         // Queued, not sent here: the jobs run delivers due rows right after this step.
         const base = { businessId, clientId: client.id, appointmentId: id, locationId: built.appt.locationId, template: "forms_nudge" as const };
         if (client.emailOptIn && client.email) {
-          await tx.insert(schema.notifications).values({ ...base, channel: "email", recipient: client.email, subject: t.subject, body: t.html });
+          const { apptVars, designedEmail } = await import("@/server/email-designs");
+          const mail = await designedEmail(tx, "forms_nudge", t, ctx, apptVars(business, ctx, { last_name: client.lastName }));
+          await tx.insert(schema.notifications).values({ ...base, channel: "email", recipient: client.email, subject: mail.subject, body: mail.html });
           out.push({ id });
         }
         if (client.smsOptIn && phone) {

@@ -29,6 +29,8 @@ import { appointmentContext, deliverMany } from "@/lib/notify";
 import { brandedEmail, marketingEmail, reviewRequestTemplate, templates as messageTemplates, textToHtml, transactionalEmail, clientPhotosLine } from "@/lib/notify/templates";
 const reminderTemplate = messageTemplates.reminder;
 import { smsBody, smsWithStopNotice } from "@/lib/notify/sms";
+import { apptVars, baseVars, brandOf, designedEmail, markUrl, savedDesign } from "@/server/email-designs";
+import { renderEmail } from "@/lib/email-design";
 import { appointmentVars, renderText, unsubscribeUrl } from "@/server/marketing";
 import { pathTo } from "@/server/categories";
 import { ensureReferralCode, referralsEnabled } from "./loyalty";
@@ -563,7 +565,17 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
         const address = v.brand.address || (marketing ? await postalAddress(tx, business) : null);
         if (marketing && !address) { note(i, "skipped", NO_POSTAL_ADDRESS); continue; }
         const content = { subject: renderText(step.subject, v.vars), text: renderText(step.body, v.vars), ctaLabel: step.ctaLabel ?? v.ctaLabel, ctaUrl: v.ctaUrl };
-        const t = marketing ? marketingEmail({ ...v.brand, address }, { ...content, unsubscribeUrl: unsubscribeUrl(business, client.id) }) : transactionalEmail(v.brand, content);
+        // A step laid out with a saved design (Marketing → Email designs): same consent and footer rules, the design's blocks for the body.
+        const design = await savedDesign(tx, step.templateId);
+        const unsub = marketing ? unsubscribeUrl(business, client.id) : null;
+        const t = design
+          ? renderEmail({ ...design, subject: step.subject.trim() || design.subject }, {
+              brand: brandOf({ ...v.brand, address }),
+              vars: { ...(v.apptCtx ? apptVars(business, v.apptCtx.ctx, { last_name: client.lastName }) : baseVars(business, v.brand, client)), ...v.vars, unsubscribe_url: unsub ?? "" },
+              marketing: unsub && address ? { unsubscribeUrl: unsub, address } : null,
+              markUrl: markUrl(),
+            })
+          : marketing ? marketingEmail({ ...v.brand, address }, { ...content, unsubscribeUrl: unsub! }) : transactionalEmail(v.brand, content);
         const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: `workflow_${w.templateKey ?? "custom"}`, recipient: client.email, subject: t.subject, body: t.html, scheduledAt, workflowRunId: run.id, marketing }).returning({ id: schema.notifications.id });
         out.push(row!.id);
         note(i, "queued", `Email queued to ${client.email}${deferred}`);
@@ -575,7 +587,8 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       if (!run.appointmentId) { note(i, "skipped", "No appointment to remind about"); continue; }
       const v = await getVars();
       if (!v.apptCtx) { note(i, "skipped", "Appointment no longer exists"); continue; }
-      const t = reminderTemplate(v.apptCtx.ctx);
+      const plain = reminderTemplate(v.apptCtx.ctx);
+      const t = client.emailOptIn && client.email ? await designedEmail(tx, "reminder", plain, v.apptCtx.ctx, apptVars(business, v.apptCtx.ctx, { last_name: client.lastName })) : plain;
       const phone = normalizePhone(client.phone);
       let any = false;
       if (client.emailOptIn && client.email) {
@@ -598,7 +611,8 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       if (!v.apptCtx) { note(i, "skipped", "Appointment no longer exists"); continue; }
       const [review] = await tx.insert(schema.reviews).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, staffId: run.context.staffId ?? null, locationId: run.context.locationId ?? null }).returning();
       const url = siteUrl(business, `/review/${review!.token}`);
-      const t = reviewRequestTemplate(v.apptCtx.ctx, url);
+      const plain = reviewRequestTemplate(v.apptCtx.ctx, url);
+      const t = client.emailOptIn && client.email ? await designedEmail(tx, "review_request", plain, v.apptCtx.ctx, apptVars(business, v.apptCtx.ctx, { review_url: url, last_name: client.lastName })) : plain;
       const phone = normalizePhone(client.phone);
       if (client.emailOptIn && client.email) {
         const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: "review_request", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });

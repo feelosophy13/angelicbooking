@@ -35,6 +35,7 @@ import { schema as dbSchema, withTenant } from "@angelic/db";
 import { eq } from "drizzle-orm";
 import { queueOneOff } from "@/lib/notify";
 import { receiptEmail } from "@/lib/notify/templates";
+import { baseVars, designedEmail } from "@/server/email-designs";
 import { setFlash } from "@/lib/flash";
 import { formatMoney } from "@/lib/utils";
 import { discardEmptySale, getSale, isOwnSale, openWalkInSale } from "@/server/sales";
@@ -569,7 +570,9 @@ export async function sendReceipt(formData: FormData) {
     footer: b.receiptFooter,
     referral: client && referralsEnabled(b) && client.referralCode ? referralPitch(b, client.referralCode) : null,
   });
-  await queueOneOff(b.id, { channel: "email", template: "receipt", recipient: d.to, subject: t.subject, body: t.html, clientId: client?.id ?? null, locationId: sale.locationId });
+  const brand = { businessName: pay.name, logoUrl: b.logoUrl, brandColor: b.brandColor, businessPhone: pay.phone, address: pay.addressLine };
+  const mail = await withTenant(b.id, (tx) => designedEmail(tx, "receipt", t, brand, baseVars(b, brand, client)));
+  await queueOneOff(b.id, { channel: "email", template: "receipt", recipient: d.to, subject: mail.subject, body: mail.html, clientId: client?.id ?? null, locationId: sale.locationId });
   await setFlash(`Receipt emailed to ${d.to}`);
   back();
 }

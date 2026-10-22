@@ -32,7 +32,7 @@ const fields = z.object({
 const stepSchema: z.ZodType<WorkflowStep> = z.discriminatedUnion("type", [
   z.object({ id: z.string().min(1), type: z.literal("wait"), mode: z.enum(["delay", "before_appointment", "after_appointment"]), hours: z.coerce.number().min(0).max(24 * 365) }),
   z.object({ id: z.string().min(1), type: z.literal("sms"), body: z.string().max(1000) }),
-  z.object({ id: z.string().min(1), type: z.literal("email"), subject: z.string().max(150), body: z.string().max(5000), ctaLabel: z.string().max(40).nullable().optional() }),
+  z.object({ id: z.string().min(1), type: z.literal("email"), subject: z.string().max(150), body: z.string().max(5000), ctaLabel: z.string().max(40).nullable().optional(), templateId: z.string().max(40).nullable().optional() }),
   z.object({ id: z.string().min(1), type: z.literal("review_request") }),
   z.object({ id: z.string().min(1), type: z.literal("reminder") }),
   z.object({ id: z.string().min(1), type: z.literal("tag"), tag: z.string().max(40) }),

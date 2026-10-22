@@ -81,30 +81,30 @@ function manage(ctx: ApptContext) {
 <p style="font-size:13px;color:#78716c">You can cancel or reschedule online up to ${ctx.cancelWindowHours} hours before your appointment.${ctx.lateCancelFee ? ` Cancellations inside that window carry a fee of ${esc(ctx.lateCancelFee)}.` : ""}${ctx.policy ? ` ${esc(ctx.policy)}` : ""}</p>`;
 }
 
+/** A message's parts: `title` and `content` are what a custom email design (lib/email-design) wraps; `html` is the default look. */
+function parts(ctx: BrandCtx, subject: string, title: string, content: string) {
+  return { subject, title, content, html: shell(ctx, title, content) };
+}
+
 export const templates = {
   confirmation: (ctx: ApptContext) => ({
-    subject: `Confirmed: ${ctx.services} at ${ctx.businessName}`,
-    html: shell(ctx, `You're booked, ${ctx.clientFirstName}!`, details(ctx) + manage(ctx)),
+    ...parts(ctx, `Confirmed: ${ctx.services} at ${ctx.businessName}`, `You're booked, ${ctx.clientFirstName}!`, details(ctx) + manage(ctx)),
     sms: `${ctx.businessName}: you're booked for ${ctx.services} with ${ctx.staffName} on ${when(ctx)}.${ctx.depositPaid ? ` Deposit paid: ${ctx.depositPaid}.` : ""}${ctx.formsUrl ? ` Please complete your forms: ${ctx.formsUrl}` : ""} Manage: ${ctx.manageUrl}`,
   }),
   reminder: (ctx: ApptContext) => ({
-    subject: `Reminder: ${ctx.services} ${when(ctx)}`,
-    html: shell(ctx, `See you soon, ${ctx.clientFirstName}`, details(ctx) + manage(ctx)),
+    ...parts(ctx, `Reminder: ${ctx.services} ${when(ctx)}`, `See you soon, ${ctx.clientFirstName}`, details(ctx) + manage(ctx)),
     sms: `${ctx.businessName} reminder: ${ctx.services} with ${ctx.staffName} ${when(ctx)}.${ctx.formsUrl ? ` Forms: ${ctx.formsUrl}` : ""} Manage: ${ctx.manageUrl}`,
   }),
   rescheduled: (ctx: ApptContext) => ({
-    subject: `Updated: ${ctx.services} at ${ctx.businessName}`,
-    html: shell(ctx, `Your appointment was moved`, details(ctx) + manage(ctx)),
+    ...parts(ctx, `Updated: ${ctx.services} at ${ctx.businessName}`, `Your appointment was moved`, details(ctx) + manage(ctx)),
     sms: `${ctx.businessName}: your ${ctx.services} appointment is now ${when(ctx)} with ${ctx.staffName}. Manage: ${ctx.manageUrl}`,
   }),
   formsNudge: (ctx: ApptContext) => ({
-    subject: `Before your visit today: a form to complete`,
-    html: shell(ctx, `See you ${esc(when(ctx)).replace(/^.*? at /, "at ")}, ${ctx.clientFirstName}`, `<p>Your ${esc(ctx.services)} with ${esc(ctx.staffName)} is coming up. One quick thing first:</p>${formsNote(ctx)}<p style="font-size:13px;color:#78716c">It takes a minute on your phone and saves time at the front desk.</p>`),
+    ...parts(ctx, `Before your visit today: a form to complete`, `See you ${esc(when(ctx)).replace(/^.*? at /, "at ")}, ${ctx.clientFirstName}`, `<p>Your ${esc(ctx.services)} with ${esc(ctx.staffName)} is coming up. One quick thing first:</p>${formsNote(ctx)}<p style="font-size:13px;color:#78716c">It takes a minute on your phone and saves time at the front desk.</p>`),
     sms: `${ctx.businessName}: see you today for ${ctx.services}. Please complete your form first: ${ctx.formsUrl}`,
   }),
   cancellation: (ctx: ApptContext) => ({
-    subject: `Cancelled: ${ctx.services} at ${ctx.businessName}`,
-    html: shell(ctx, `Your appointment was cancelled`, `<p>${esc(ctx.services)} on ${esc(when(ctx))} has been cancelled.</p><p>Book again any time${ctx.businessPhone ? ` or call ${esc(ctx.businessPhone)}` : ""}.</p>`),
+    ...parts(ctx, `Cancelled: ${ctx.services} at ${ctx.businessName}`, `Your appointment was cancelled`, `<p>${esc(ctx.services)} on ${esc(when(ctx))} has been cancelled.</p><p>Book again any time${ctx.businessPhone ? ` or call ${esc(ctx.businessPhone)}` : ""}.</p>`),
     sms: `${ctx.businessName}: your ${ctx.services} appointment on ${when(ctx)} was cancelled.`,
   }),
 };
@@ -114,8 +114,7 @@ export type TemplateName = keyof typeof templates;
 export function reviewRequestTemplate(ctx: ApptContext, reviewUrl: string) {
   const stars = [1, 2, 3, 4, 5].map((n) => `<a href="${reviewUrl}?rating=${n}" style="display:inline-block;width:40px;height:40px;line-height:40px;text-align:center;font-size:24px;text-decoration:none;color:#f59e0b" title="${n} star${n === 1 ? "" : "s"}">★</a>`).join("");
   return {
-    subject: `How was your visit to ${ctx.businessName}?`,
-    html: shell(ctx, `Thanks for coming in, ${ctx.clientFirstName}!`, `<p>How was your ${esc(ctx.services)} with ${esc(ctx.staffName)}? Tap a star:</p><p style="margin:12px 0">${stars}</p><p style="font-size:13px;color:#78716c">It takes ten seconds and helps ${esc(ctx.businessName)} a lot.</p><p style="font-size:12px;color:#a8a29e;margin-top:16px"><a href="${reviewUrl}?optout=1" style="color:#a8a29e">Don't ask me again</a></p>`),
+    ...parts(ctx, `How was your visit to ${ctx.businessName}?`, `Thanks for coming in, ${ctx.clientFirstName}!`, `<p>How was your ${esc(ctx.services)} with ${esc(ctx.staffName)}? Tap a star:</p><p style="margin:12px 0">${stars}</p><p style="font-size:13px;color:#78716c">It takes ten seconds and helps ${esc(ctx.businessName)} a lot.</p><p style="font-size:12px;color:#a8a29e;margin-top:16px"><a href="${reviewUrl}?optout=1" style="color:#a8a29e">Don't ask me again</a></p>`),
     sms: `${ctx.businessName}: thanks for coming in! How was your visit? Rate us in 10 seconds: ${reviewUrl}`,
   };
 }
@@ -175,7 +174,7 @@ export function giftCardEmail(ctx: BrandCtx, input: { code: string; amount: stri
 ${input.message ? `<p style="font-style:italic;color:#44403c">“${esc(input.message)}”</p>` : ""}
 <p style="font-size:14px">Give the code at checkout, or mention it when you book. It never expires unless the salon says otherwise.</p>
 <p style="margin-top:16px"><a href="${input.bookingUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">Book an appointment</a></p>`;
-  return { subject: `A ${input.amount} gift card for ${ctx.businessName}`, html: shell(ctx, "You've got a gift card!", body) };
+  return parts(ctx, `A ${input.amount} gift card for ${ctx.businessName}`, "You've got a gift card!", body);
 }
 
 /** Order confirmation for an online store purchase. */
@@ -183,7 +182,7 @@ export function orderEmail(ctx: BrandCtx, input: { number: number; lines: { name
   const rows = input.lines.map((l) => `<tr><td style="padding:3px 0">${esc(l.quantity > 1 ? `${l.name} × ${l.quantity}` : l.name)}</td><td style="padding:3px 0;text-align:right">${esc(l.amount)}</td></tr>`).join("");
   const body = `<p style="color:#78716c;margin:0 0 12px">Order #${input.number}</p><table style="width:100%;font-size:15px;border-collapse:collapse">${rows}<tr><td style="padding-top:8px;border-top:1px solid #e7e5e4;font-weight:600">Total</td><td style="padding-top:8px;border-top:1px solid #e7e5e4;text-align:right;font-weight:600">${esc(input.total)}</td></tr></table>
 <p style="margin-top:16px;font-size:14px">${input.method === "pickup" ? `We'll have it ready for pickup${ctx.address ? ` at ${esc(ctx.address)}` : ""}. We'll let you know when it's ready.` : `We'll ship it to:<br>${esc(input.address ?? "")}`}</p>`;
-  return { subject: `Thanks for your order from ${ctx.businessName} (#${input.number})`, html: shell(ctx, "Order received", body) };
+  return parts(ctx, `Thanks for your order from ${ctx.businessName} (#${input.number})`, "Order received", body);
 }
 
 /** Daily note to whoever manages inventory: what is out, low, or has a count that is off. */
@@ -228,5 +227,5 @@ ${row("Total", r.total, true)}
 ${r.payments.map((p) => row(p.label, p.amount)).join("")}${r.refunded ? row("Refunded", `-${r.refunded}`) : ""}
 </table>
 <p style="margin-top:20px">Thank you for visiting!</p>${r.footer ? `<p style="margin-top:8px;color:#78716c;font-size:13px;white-space:pre-line">${esc(r.footer)}</p>` : ""}${r.referral ? `<p style="margin-top:12px;padding:12px;background:#f5f5f4;border-radius:8px">${esc(r.referral)}</p>` : ""}`;
-  return { subject: `Your receipt from ${r.businessName} (#${r.number})`, html: shell(r, r.businessName, body) };
+  return parts(r, `Your receipt from ${r.businessName} (#${r.number})`, r.businessName, body);
 }
