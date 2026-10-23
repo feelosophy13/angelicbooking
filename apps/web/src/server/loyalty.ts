@@ -40,7 +40,7 @@ export function pointsForSale(business: Business, sale: { subtotalCents: number;
  */
 async function earnableSpend(tx: TenantDb, sale: typeof schema.sales.$inferSelect): Promise<{ cents: number; visit: boolean }> {
   const lines = await tx.select({ kind: schema.saleLines.kind, amount: schema.saleLines.amountCents }).from(schema.saleLines).where(eq(schema.saleLines.saleId, sale.id));
-  const goods = lines.filter((l) => l.kind !== "tip");
+  const goods = lines.filter((l) => l.kind !== "tip" && l.kind !== "card_fee");
   const goodsTotal = goods.reduce((n, l) => n + l.amount, 0);
   const earning = goods.filter((l) => l.kind === "service" || l.kind === "product").reduce((n, l) => n + l.amount, 0);
   const discount = goodsTotal > 0 ? Math.round((sale.discountCents * earning) / goodsTotal) : 0;

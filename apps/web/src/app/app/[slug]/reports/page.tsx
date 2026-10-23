@@ -74,7 +74,7 @@ export default async function ReportsPage({
   ] as const);
   // Pay is not split by service, so it is left out while a service filter is on.
   const canPayroll = can(permissions, "payroll.manage") && !scoped;
-  const [{ sales, byStaff, byMethod, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, linesByLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation, refundsByStaff, refundStaffNames }, prev, cohorts, cohortsBefore, lapsed, categories, pay, payBefore, payByLoc, catPay, catPayBefore] = await Promise.all([
+  const [{ sales, byStaff, byMethod, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, linesByLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation, refundsByStaff, refundStaffNames, cardFeeRefundedCents }, prev, cohorts, cohortsBefore, lapsed, categories, pay, payBefore, payByLoc, catPay, catPayBefore] = await Promise.all([
     salesReport(business.id, zonedToInstant(from, "00:00", tz), zonedToInstant(shiftISODate(to, 1), "00:00", tz), locationFilter, serviceIds),
     salesReport(business.id, zonedToInstant(prevFrom, "00:00", tz), zonedToInstant(from, "00:00", tz), locationFilter, serviceIds),
     // Who came: new, returning and lapsed clients. Visits are not split by service, so the card is left out while a service filter is on.
@@ -149,7 +149,7 @@ export default async function ReportsPage({
     };
   };
   const money = (c: number) => formatMoney(Number(c), business.currency);
-  type K = "subtotalCents" | "discountCents" | "taxCents" | "tipCents" | "totalCents" | "refundedCents";
+  type K = "subtotalCents" | "discountCents" | "taxCents" | "tipCents" | "cardFeeCents" | "totalCents" | "refundedCents";
   const sum = (k: K, rows = sales) => rows.reduce((s, r) => s + r[k], 0);
   const delta = (cur: number, before: number) => {
     if (before === 0) return cur === 0 ? null : { pct: null, up: cur > 0 };
@@ -220,7 +220,8 @@ export default async function ReportsPage({
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {(
           [
-            ["Sales", sum("totalCents") - sum("tipCents"), sum("totalCents", prev.sales) - sum("tipCents", prev.sales), true],
+            // Card surcharges / convenience fees are not sales: they have a card of their own (when there were any).
+            ["Sales", sum("totalCents") - sum("tipCents") - sum("cardFeeCents"), sum("totalCents", prev.sales) - sum("tipCents", prev.sales) - sum("cardFeeCents", prev.sales), true],
             ["Tips", sum("tipCents"), sum("tipCents", prev.sales), true],
             ["Discounts", sum("discountCents"), sum("discountCents", prev.sales), false],
             ["Tax collected", sum("taxCents"), sum("taxCents", prev.sales), true],
@@ -229,8 +230,9 @@ export default async function ReportsPage({
             // Prepaid: money taken for packages and membership periods (part of Sales), and the value of the sessions used in the range.
             ["Prepaid sold", prepaidSold.packagesCents + prepaidSold.membershipCents, prev.prepaidSold.packagesCents + prev.prepaidSold.membershipCents, true],
             ["Prepaid used", prepaidUsedCents, prev.prepaidUsedCents, true],
+            ["Card fees", sum("cardFeeCents") - cardFeeRefundedCents, sum("cardFeeCents", prev.sales) - prev.cardFeeRefundedCents, true],
           ] as [string, number, number, boolean][]
-        ).filter(([label]) => !(scoped && label === "Store credit issued")).map(([label, v, before, goodUp]) => {
+        ).filter(([label, v, before]) => !(scoped && label === "Store credit issued") && !(label === "Card fees" && v === 0 && before === 0)).map(([label, v, before, goodUp]) => {
           const d = delta(v, before);
           const positive = d ? d.up === goodUp : null;
           return (
@@ -240,6 +242,7 @@ export default async function ReportsPage({
               {label === "Tips" && v > 0 ? <p className="text-xs text-stone-500">cash {money(tipCashCents)} · card {money(tipCardCents)}</p> : null}
               {label === "Prepaid sold" && v > 0 ? <p className="text-xs text-stone-500">packages {money(prepaidSold.packagesCents)} · membership fees {money(prepaidSold.membershipCents)}</p> : null}
               {label === "Prepaid used" && v > 0 ? <p className="text-xs text-stone-500">sessions used, at their value</p> : null}
+              {label === "Card fees" ? <p className="text-xs text-stone-500">surcharges and convenience fees{cardFeeRefundedCents ? `, less ${money(cardFeeRefundedCents)} refunded` : ""}; not in Sales or pay</p> : null}
               {d ? (
                 <p className={`mt-1 text-xs ${positive ? "text-emerald-700" : "text-stone-500"}`} title={`${money(before)} in the ${periodLabel}`}>
                   {d.pct === null ? "new" : `${d.pct > 0 ? "+" : ""}${d.pct}%`} vs {periodLabel}

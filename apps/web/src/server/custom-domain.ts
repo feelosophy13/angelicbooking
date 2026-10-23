@@ -3,6 +3,7 @@
  * watch until the owner's DNS points at us. Render calls are made only when running on Render, so a laptop can never
  * change the live service by accident.
  */
+import { registerWalletDomainsLater } from "./payment-domains";
 import { promises as dns } from "node:dns";
 import { createHmac } from "node:crypto";
 import { and, eq, inArray, isNull, lt, ne, or } from "drizzle-orm";
@@ -111,6 +112,7 @@ export async function connectDomain(b: Business, raw: string): Promise<DomainSta
     error = "Automatic setup isn't available on this server; the platform team will connect it.";
   }
   await set(b.id, { customDomain: host, customDomainStatus: status, customDomainRenderId: renderId, customDomainError: error, customDomainCheckedAt: new Date() });
+  if (status === "active") registerWalletDomainsLater(b.id);
   return status;
 }
 
@@ -153,6 +155,8 @@ export async function checkDomain(b: Business): Promise<DomainStatus> {
   }
   if (status === "active") error = null;
   await set(b.id, { customDomainStatus: status, customDomainError: error, customDomainCheckedAt: new Date() });
+  // Live now: Apple Pay / Google Pay need this domain registered on the business's Stripe accounts.
+  if (status === "active" && b.customDomainStatus !== "active") registerWalletDomainsLater(b.id);
   return status;
 }
 

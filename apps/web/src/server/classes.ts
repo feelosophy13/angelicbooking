@@ -120,7 +120,7 @@ export async function createSession(input: { businessId: string; timeZone: strin
  * Lock the session, check a seat is free, and insert the appointment + item.
  * Runs inside the caller's tenant transaction so it composes with deposits.
  */
-export async function insertSeat(tx: TenantDb, input: { businessId: string; sessionId: string; clientId: string | null; notes: string | null; source: "staff" | "online"; createdByUserId: string | null; deposit?: { paymentIntentId: string; cents: number; cardLabel: string | null; accountId?: string | null; provider?: "stripe" | "helcim"; providerPaymentId?: string | null } | null; cardSetupIntentId?: string | null; promoCodeId?: string | null }) {
+export async function insertSeat(tx: TenantDb, input: { businessId: string; sessionId: string; clientId: string | null; notes: string | null; source: "staff" | "online"; createdByUserId: string | null; deposit?: { paymentIntentId: string; cents: number; /** A card fee charged on top of the deposit. */ surchargeCents?: number; cardLabel: string | null; accountId?: string | null; provider?: "stripe" | "helcim"; providerPaymentId?: string | null } | null; cardSetupIntentId?: string | null; promoCodeId?: string | null }) {
   const [session] = await tx.select().from(schema.classSessions).where(eq(schema.classSessions.id, input.sessionId)).for("update");
   if (!session || session.status !== "scheduled") throw new BookingError("That class is no longer scheduled.");
   if (session.startAt <= new Date()) throw new BookingError("That class has already started.");
@@ -147,7 +147,7 @@ export async function insertSeat(tx: TenantDb, input: { businessId: string; sess
       notes: input.notes,
       source: input.source,
       createdByUserId: input.createdByUserId,
-      ...(input.deposit ? { depositCents: input.deposit.cents, depositStatus: "paid" as const, depositPaymentIntentId: input.deposit.paymentIntentId, depositStripeAccountId: input.deposit.accountId || null, depositCardLabel: input.deposit.cardLabel, depositProvider: input.deposit.provider ?? "stripe", depositProviderPaymentId: input.deposit.providerPaymentId ?? null } : {}),
+      ...(input.deposit ? { depositCents: input.deposit.cents, depositSurchargeCents: input.deposit.surchargeCents ?? 0, depositStatus: "paid" as const, depositPaymentIntentId: input.deposit.paymentIntentId, depositStripeAccountId: input.deposit.accountId || null, depositCardLabel: input.deposit.cardLabel, depositProvider: input.deposit.provider ?? "stripe", depositProviderPaymentId: input.deposit.providerPaymentId ?? null } : {}),
       cardSetupIntentId: input.cardSetupIntentId ?? null,
       promoCodeId: input.promoCodeId ?? null,
     })

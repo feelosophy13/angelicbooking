@@ -19,7 +19,7 @@ export async function storeCreditBalance(tx: TenantDb, clientId: string): Promis
 /** Add (positive) or spend (negative) credit inside a transaction. Throws if it would go below zero. */
 export async function changeStoreCredit(
   tx: TenantDb,
-  input: { businessId: string; clientId: string; deltaCents: number; reason: StoreCreditReason; saleId?: string | null; paymentId?: string | null; appointmentId?: string | null; refundReasonId?: string | null; note?: string | null; actorUserId: string | null },
+  input: { businessId: string; clientId: string; deltaCents: number; /** A refund of a card payment: the part of deltaCents that is its card fee. */ surchargeCents?: number; reason: StoreCreditReason; saleId?: string | null; paymentId?: string | null; appointmentId?: string | null; refundReasonId?: string | null; note?: string | null; actorUserId: string | null },
 ): Promise<number> {
   if (!Number.isInteger(input.deltaCents) || input.deltaCents === 0) throw new StoreCreditError("Enter an amount.");
   const balance = await storeCreditBalance(tx, input.clientId);
@@ -34,6 +34,7 @@ export async function changeStoreCredit(
     paymentId: input.paymentId ?? null,
     appointmentId: input.appointmentId ?? null,
     refundReasonId: input.refundReasonId ?? null,
+    surchargeCents: input.surchargeCents ?? 0,
     note: input.note ?? null,
     createdByUserId: input.actorUserId,
   });

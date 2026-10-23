@@ -46,6 +46,9 @@ wrong: fix the page.
   buttons up to three sites, one dropdown from four, a search box in it from eight. Never lay out one button per
   site by hand; it stops fitting around the fourth.
 - Money is typed in `MoneyInput` (currency symbol, decimal keypad, `0.00` placeholder), never a bare `Input`.
+- A card is taken in the browser with `StripeCardPay` (`components/stripe-card-pay.tsx`): Apple Pay / Google Pay on top where the device has
+  them (online pages only), the card field below, and one server step before the confirm (card fee, attaching the card). Never mount
+  `CardElement` by hand. A card fee is shown before the client pays, as the notice plus the amount, and is its own line wherever totals are.
 - Validation errors appear under the field, worded for a person. The red banner at the top is only for errors no
   field on the page can show. Leaving a form with unsaved edits asks first (`ActionForm` does this).
 

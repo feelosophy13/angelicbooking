@@ -127,7 +127,7 @@ type CardWay = "saved" | "reader" | "typed" | "own";
  * Taking payment: pick how, then see only that method's fields. Methods the client can't use (no store credit,
  * too few points) are not offered. Card is always there: without a connected processor it is the salon's own card machine.
  */
-export function TakePayment({ slug, saleId, dueCents, currency, hasClient, savedCards, stripe, helcim, storeCredit, points, actions }: {
+export function TakePayment({ slug, saleId, dueCents, currency, hasClient, savedCards, stripe, helcim, storeCredit, points, actions, cardFee }: {
   slug: string;
   saleId: string;
   dueCents: number;
@@ -143,6 +143,8 @@ export function TakePayment({ slug, saleId, dueCents, currency, hasClient, saved
   /** Null when loyalty is off, the client has too few points, or there is no client. */
   points: { balance: number; pointValueCents: number; minPoints: number } | null;
   actions: { payManual: StateAction; payWithGiftCard: StateAction; payWithSavedCard: StateAction; payWithStoreCredit: StateAction; payWithPoints: StateAction };
+  /** A card fee at the desk (Settings → Checkout & tips): what to tell the client before a card is charged. */
+  cardFee?: { notice: string; cardTotal: string } | null;
 }) {
   const methods: { value: PayMethod; label: string }[] = [
     { value: "card", label: "Card" },
@@ -173,6 +175,7 @@ export function TakePayment({ slug, saleId, dueCents, currency, hasClient, saved
       ) : method === "card" ? (
         <div className="space-y-3">
           {ways.length > 1 ? <Segmented label="Which card" value={way} onChange={setWay} options={ways} /> : null}
+          {cardFee && way !== "own" ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">{cardFee.notice} By credit card: {cardFee.cardTotal}.</p> : null}
           {way === "saved" && processor ? (
             <SavedCardForm key={dueCents} action={actions.payWithSavedCard} slug={slug} saleId={saleId} dueCents={dueCents} cards={savedCards} />
           ) : way === "reader" && helcim ? (
@@ -182,7 +185,7 @@ export function TakePayment({ slug, saleId, dueCents, currency, hasClient, saved
           ) : way === "reader" && stripe ? (
             <TerminalPayment key={`tp${dueCents}`} slug={slug} saleId={saleId} dueCents={dueCents} hasClient={hasClient} test={stripe.test} />
           ) : way === "typed" && stripe ? (
-            <CardPayment key={`cp${dueCents}`} slug={slug} saleId={saleId} dueCents={dueCents} publishableKey={stripe.publishableKey} hasClient={hasClient} />
+            <CardPayment key={`cp${dueCents}`} slug={slug} saleId={saleId} dueCents={dueCents} currency={currency} publishableKey={stripe.publishableKey} hasClient={hasClient} />
           ) : (
             <ExternalCardForm key={`ex${dueCents}`} action={actions.payManual} slug={slug} saleId={saleId} dueCents={dueCents} />
           )}

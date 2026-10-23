@@ -89,5 +89,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
     return csvResponse(`clients-${from}-${to}.csv`, ["Metric", `${from} to ${to}`, "Previous period"], rows);
   }
   const { sales } = await salesReport(business.id, start, end, locationId, serviceIds);
-  return csvResponse(`sales-${from}-${to}.csv`, ["Sale #", "Closed", "Location", "Client", "Status", "Subtotal", "Discount", "Tax", "Tips", "Total", "Refunded"], sales.map((s) => [s.number, fmt(s.closedAt), s.locationName, s.clientFirst ? `${s.clientFirst} ${s.clientLast ?? ""}`.trim() : "Walk-in", s.status, $(s.subtotalCents), $(s.discountCents), $(s.taxCents), $(s.tipCents), $(s.totalCents), $(s.refundedCents)]));
+  return csvResponse(`sales-${from}-${to}.csv`, ["Sale #", "Closed", "Location", "Client", "Status", "Subtotal", "Discount", "Tax", "Tips", "Card fee", "Total", "Refunded"], sales.map((s) => [s.number, fmt(s.closedAt), s.locationName, s.clientFirst ? `${s.clientFirst} ${s.clientLast ?? ""}`.trim() : "Walk-in", s.status, $(s.subtotalCents), $(s.discountCents), $(s.taxCents), $(s.tipCents), $(s.cardFeeCents), $(s.totalCents), $(s.refundedCents)]));
 }

@@ -9,6 +9,8 @@ import { isStripeConfigured, StripeNotConfigured } from "@/lib/stripe";
 import {
   addProductLine,
   addTipAfterPayment,
+  applyCardFeeToIntent,
+  captureReaderPayment,
   chargeCardOnFile,
   completeNoCharge,
   setSaleNotes,
@@ -294,7 +296,7 @@ export async function payWithSavedCard(_prev: SaleActionState, formData: FormDat
 }
 
 /** Step 1 of a new-card payment: create the PaymentIntent and hand the client secret to the browser. */
-export async function startCardPayment(input: { slug: string; saleId: string; amount: string; saveCard: boolean }): Promise<{ clientSecret: string; accountId: string | null; publishableKey: string | null; amount: number } | { error: string }> {
+export async function startCardPayment(input: { slug: string; saleId: string; amount: string; saveCard: boolean }): Promise<{ clientSecret: string; paymentIntentId: string; accountId: string | null; publishableKey: string | null; amount: number } | { error: string }> {
   const d = base.extend({ amount: z.string(), saveCard: z.boolean() }).parse(input);
   const ctx = await ctxFor(d.slug, d.saleId);
   const cents = parseMoney(d.amount);
@@ -305,10 +307,24 @@ export async function startCardPayment(input: { slug: string; saleId: string; am
   try {
     const r = await createCardPaymentIntent({ businessId: ctx.business.id, accountId: pay.accountId, saleId: d.saleId, amountCents: cents, saveCard: d.saveCard, actorUserId: ctx.user.id });
     const browser = await browserStripe(pay.accountId, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
-    return { clientSecret: r.clientSecret, accountId: browser.stripeAccount, publishableKey: browser.publishableKey, amount: r.amount };
+    return { clientSecret: r.clientSecret, paymentIntentId: r.clientSecret.split("_secret_")[0]!, accountId: browser.stripeAccount, publishableKey: browser.publishableKey, amount: r.amount };
   } catch (e) {
     const f = friendly(e);
     return { error: f?.error ?? "Could not start payment" };
+  }
+}
+
+/** Step 1b: the card is typed in. With a card fee on, Stripe says whether it is debit, and the fee (if any) is added before the charge. */
+export async function applyDeskCardFee(input: { slug: string; saleId: string; paymentIntentId: string; paymentMethodId: string }): Promise<{ error?: string }> {
+  const d = base.extend({ paymentIntentId: z.string().regex(/^pi_\w+$/), paymentMethodId: z.string().regex(/^pm_\w+$/) }).parse(input);
+  const ctx = await ctxFor(d.slug, d.saleId);
+  const pay = await paymentContextForSale(ctx.business, d.saleId);
+  if (!pay.accountId) return { error: "Stripe not connected." };
+  try {
+    await applyCardFeeToIntent({ businessId: ctx.business.id, accountId: pay.accountId, saleId: d.saleId, paymentIntentId: d.paymentIntentId, paymentMethodId: d.paymentMethodId, channel: "desk" });
+    return {};
+  } catch (e) {
+    return friendly(e) ?? { error: "Could not start the payment" };
   }
 }
 
@@ -363,8 +379,10 @@ export async function finishCardPayment(input: { slug: string; saleId: string; p
   const ctx = await ctxFor(d.slug, d.saleId);
   const pay = await paymentContextForSale(ctx.business, d.saleId);
   if (!pay.accountId) return { error: "Stripe not connected." };
-  const pi = await stripe().paymentIntents.retrieve(d.paymentIntentId, { expand: ["latest_charge"] }, { stripeAccount: pay.accountId });
+  let pi = await stripe().paymentIntents.retrieve(d.paymentIntentId, { expand: ["latest_charge"] }, { stripeAccount: pay.accountId });
   if (pi.metadata.saleId !== d.saleId) return { error: "Payment does not belong to this sale." };
+  // A reader payment with a card fee was only authorized: capture it now, without the fee for a debit card.
+  if (pi.status === "requires_capture") pi = await captureReaderPayment({ businessId: ctx.business.id, accountId: pay.accountId, paymentIntent: pi });
   if (pi.status !== "succeeded") return { error: `Payment status: ${pi.status}` };
   const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
   await markCardPaymentSucceeded({

@@ -1,4 +1,5 @@
 import { eq, and } from "drizzle-orm";
+import { registerWalletDomainsLater } from "./payment-domains";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
 import { appUrl, stripe } from "@/lib/stripe";
 
@@ -66,6 +67,8 @@ export async function syncConnectAccount(businessId: string, accountId: string) 
     .set({ stripeChargesEnabled: chargesEnabled, stripeDetailsSubmitted: detailsSubmitted })
     .where(and(eq(schema.businesses.id, businessId), eq(schema.businesses.stripeAccountId, accountId)));
   await withTenant(businessId, (tx) => tx.update(schema.locations).set({ stripeChargesEnabled: chargesEnabled, stripeDetailsSubmitted: detailsSubmitted }).where(eq(schema.locations.stripeAccountId, accountId)));
+  // Apple Pay / Google Pay need the booking site's domains registered on the account that takes the money.
+  if (chargesEnabled) registerWalletDomainsLater(businessId);
   return { chargesEnabled, detailsSubmitted };
 }
 

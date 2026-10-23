@@ -272,7 +272,7 @@ export type ReasonOption = { id: string; name: string };
 
 export type RefundLineOption = { id: string; name: string; kind: string; productId?: string | null; quantity: number; remainingCents: number };
 
-export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons, goods = [], items = [], external = false }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[]; /** Paid on the salon's own card machine: the refund is only recorded here. */ external?: boolean; /** Products this sale took off the shelf that haven't come back, so a returned item can go back on it. */ goods?: { productId: string; name: string; left: number }[]; /** Ticket lines with money left to refund: choosing them refunds exactly those (and takes exactly them back from the stylist's pay). */ items?: RefundLineOption[] }) {
+export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAllowed, reasons, goods = [], items = [], external = false, cardFee = false }: { action: Action; slug: string; saleId: string; paymentId: string; maxCents: number; creditAllowed: boolean; reasons: ReasonOption[]; /** Paid on the salon's own card machine: the refund is only recorded here. */ external?: boolean; /** The payment carried a card fee: its share goes back with the refund. */ cardFee?: boolean; /** Products this sale took off the shelf that haven't come back, so a returned item can go back on it. */ goods?: { productId: string; name: string; left: number }[]; /** Ticket lines with money left to refund: choosing them refunds exactly those (and takes exactly them back from the stylist's pay). */ items?: RefundLineOption[] }) {
   const [state, act, pending] = useActionState(action, undefined);
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState<"original" | "store_credit">("original");
@@ -296,6 +296,7 @@ export function RefundForm({ action, slug, saleId, paymentId, maxCents, creditAl
   if (!open) return <Button type="button" size="sm" variant="ghost" className="mt-1" onClick={() => setOpen(true)}>Refund…</Button>;
   return (
     <form action={act} className="mt-2 flex flex-wrap items-end gap-2">
+      {cardFee ? <p className="basis-full text-xs text-stone-500">Enter what the client paid for. The same share of the card fee goes back with it.</p> : null}
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="saleId" value={saleId} />
       <input type="hidden" name="paymentId" value={paymentId} />

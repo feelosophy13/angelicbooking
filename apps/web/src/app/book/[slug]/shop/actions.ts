@@ -1,9 +1,11 @@
 "use server";
 import { publicBotCheck } from "@/lib/turnstile";
 import { z } from "zod";
-import { normalizePhone } from "@angelic/core";
+import { cardFeeSettingsOf, normalizePhone } from "@angelic/core";
+import { cardFeeQuote, type CardFeeQuote } from "@/lib/card-fee";
+import { SaleError } from "@/server/sales";
 import { getPublicBusiness } from "@/server/public-booking";
-import { finishOrder, orderKey, startOrder, StoreError } from "@/server/store";
+import { applyOrderCardFee, finishOrder, orderKey, startOrder, StoreError } from "@/server/store";
 import { BookingError } from "@/server/booking";
 
 const buyer = z.object({
@@ -14,8 +16,8 @@ const buyer = z.object({
 });
 
 export type StartOrderResult =
-  | { provider: "stripe"; saleId: string; clientSecret: string; accountId: string | null; publishableKey: string | null; totalCents: number }
-  | { provider: "helcim"; saleId: string; checkoutToken: string; checkoutId: string; totalCents: number }
+  | { provider: "stripe"; saleId: string; clientSecret: string; accountId: string | null; publishableKey: string | null; totalCents: number; cardFee: CardFeeQuote | null }
+  | { provider: "helcim"; saleId: string; checkoutToken: string; checkoutId: string; totalCents: number; cardFee: CardFeeQuote | null }
   | { error: string };
 
 export async function startOrderAction(input: {
@@ -46,8 +48,10 @@ export async function startOrderAction(input: {
     : null;
   try {
     const r = await startOrder(business, { items: items.data, giftCard: gift, buyer: { ...b.data, phone: b.data.phone ? normalizePhone(b.data.phone) : null }, fulfillment: { method: input.method, address: input.address.trim().slice(0, 300) || null } }, input.locationId || null);
-    if (r.provider === "helcim") return { provider: "helcim", saleId: r.saleId, checkoutToken: r.checkoutToken, checkoutId: r.checkoutId, totalCents: r.totalCents };
-    return { provider: "stripe", saleId: r.saleId, clientSecret: r.clientSecret, accountId: r.accountId, publishableKey: r.publishableKey, totalCents: r.totalCents };
+    // The order total before any card fee; the fee is shown on its own line before paying.
+    const cardFee = cardFeeQuote(cardFeeSettingsOf(business), r.provider, "store", r.totalCents, business.currency, { cashOption: false });
+    if (r.provider === "helcim") return { provider: "helcim", saleId: r.saleId, checkoutToken: r.checkoutToken, checkoutId: r.checkoutId, totalCents: r.totalCents, cardFee };
+    return { provider: "stripe", saleId: r.saleId, clientSecret: r.clientSecret, accountId: r.accountId, publishableKey: r.publishableKey, totalCents: r.totalCents, cardFee };
   } catch (e) {
     if (e instanceof StoreError || e instanceof BookingError) return { error: e.message };
     throw e;
@@ -62,6 +66,20 @@ export async function finishOrderAction(slug: string, saleId: string, paymentInt
     return { ok: true, key: orderKey(business.id, saleId) };
   } catch (e) {
     if (e instanceof StoreError) return { error: e.message };
+    throw e;
+  }
+}
+
+/** Stripe: the card is in; the store's card fee (if any) is added for it before the browser confirms. */
+export async function applyOrderFeeAction(slug: string, saleId: string, paymentIntentId: string, paymentMethodId: string): Promise<{ error?: string }> {
+  if (typeof saleId !== "string" || !/^pi_\w+$/.test(paymentIntentId) || !/^pm_\w+$/.test(paymentMethodId)) return { error: "That payment doesn't match this order." };
+  const business = await getPublicBusiness(slug);
+  if (!business) return { error: "Not available." };
+  try {
+    await applyOrderCardFee(business, saleId, paymentIntentId, paymentMethodId);
+    return {};
+  } catch (e) {
+    if (e instanceof StoreError || e instanceof SaleError) return { error: e.message };
     throw e;
   }
 }

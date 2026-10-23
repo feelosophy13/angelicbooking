@@ -16,13 +16,13 @@ import { browserStripe } from "@/lib/stripe-demo";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { and, asc, eq, gt, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
-import { normalizePhone } from "@angelic/core";
+import { cardFeeFor, cardFeeSettingsOf, normalizePhone } from "@angelic/core";
 import { stripe, appUrl, isStripeConfigured } from "@/lib/stripe";
 import { platformFeeBpsFor } from "./price-book";
 import { paymentContextFor, paymentContextForSale } from "./locations";
 import { ensureStripeCustomer } from "./stripe-connect";
 import { findOrCreateClient, type PublicBusiness } from "./public-booking";
-import { markCardPaymentSucceeded, settleHelcimPayment } from "./sales";
+import { applyCardFeeToIntent, markCardPaymentSucceeded, settleHelcimPayment } from "./sales";
 import { helcimTokenOf } from "./helcim/account";
 import { helcim } from "./helcim/client";
 import { getHelcimCheckout, HelcimCheckoutError, markHelcimCheckoutUsed, openHelcimCheckout, verifyHelcimCheckout, voidHelcimCheckout } from "./helcim/online";
@@ -134,14 +134,17 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
       await tx.update(schema.sales).set({ discountNote: null, fulfillment: { ...sale!.fulfillment!, giftRecipientEmail: input.giftCard.recipientEmail, giftRecipientName: input.giftCard.recipientName ?? undefined } as never }).where(eq(schema.sales.id, sale!.id));
     }
     const client = await tx.query.clients.findFirst({ where: eq(schema.clients.id, clientId) });
-    const [pending] = await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card", status: "pending", amountCents: total, tipCents: 0, ...(onHelcim ? { provider: "helcim" as const } : { stripeAccountId: accountId }) }).returning();
+    // Helcim can't tell debit from credit before charging, so its fee (none with debit exempt) is set now; Stripe's waits for the card
+    // (applyOrderCardFee).
+    const helcimFee = onHelcim ? cardFeeFor(cardFeeSettingsOf(business), "store", total, "unknown") : 0;
+    const [pending] = await tx.insert(schema.payments).values({ businessId: business.id, saleId: sale!.id, method: "card", status: "pending", amountCents: total + helcimFee, surchargeCents: helcimFee, tipCents: 0, ...(onHelcim ? { provider: "helcim" as const } : { stripeAccountId: accountId }) }).returning();
     const fee = Math.round((total * (await platformFeeBpsFor(business.id, tx))) / 10_000);
     return { sale: sale!, pending: pending!, total, client, fee };
   });
   // Helcim: a HelcimPay.js preauth checkout; its id rides on the pending payment (provider_invoice) so the sweep can find it.
   if (onHelcim) {
     try {
-      const c = await openHelcimCheckout(business, { purpose: "order", meta: { saleId: sale.id, paymentId: pending.id }, amountCents: total, client: client ?? null });
+      const c = await openHelcimCheckout(business, { purpose: "order", meta: { saleId: sale.id, paymentId: pending.id }, amountCents: pending.amountCents, client: client ?? null });
       await withTenant(business.id, (tx) => tx.update(schema.payments).set({ providerInvoice: c.id }).where(eq(schema.payments.id, pending.id)));
       return { provider: "helcim" as const, saleId: sale.id, checkoutToken: c.checkoutToken, checkoutId: c.id, totalCents: total, clientSecret: "", accountId: null, publishableKey: null };
     } catch (e) {
@@ -171,6 +174,13 @@ export async function startOrder(business: PublicBusiness, input: OrderInput, lo
     });
     throw e;
   }
+}
+
+/** Stripe: the buyer entered a card (or picked one in Apple Pay / Google Pay); add the store's card fee for it before the browser confirms. */
+export async function applyOrderCardFee(business: PublicBusiness, saleId: string, paymentIntentId: string, paymentMethodId: string) {
+  const pay = await paymentContextForSale(business, saleId);
+  if (pay.provider === "helcim" || !pay.accountId) throw new StoreError("Payments aren't set up.");
+  return applyCardFeeToIntent({ businessId: business.id, accountId: pay.accountId, saleId, paymentIntentId, paymentMethodId, channel: "store" });
 }
 
 /**

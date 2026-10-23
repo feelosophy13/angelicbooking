@@ -1,27 +1,22 @@
 "use client";
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { loadStripe } from "@stripe/stripe-js";
-import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
 import { Button, Field, Input, Notice, Checkbox } from "@/components/ui";
-import { finishCardPayment, startCardPayment } from "./actions";
+import { StripeCardPay } from "@/components/stripe-card-pay";
+import { applyDeskCardFee, finishCardPayment, startCardPayment } from "./actions";
 
 /**
- * New-card payment on the BUSINESS's connected account. The publishable key is
- * the platform's; `stripeAccount` scopes Elements to the connected account so
- * the PaymentIntent created there can be confirmed.
+ * New-card payment on the BUSINESS's connected account. The publishable key is the platform's; `stripeAccount` scopes Stripe.js to the
+ * connected account so the PaymentIntent created there can be confirmed. Card only: the desk types the client's card (a wallet on the
+ * desk's own browser would be the desk's, not the client's). With a card fee on, the server looks at the card before it is charged.
  */
-export function CardPayment(props: { slug: string; saleId: string; dueCents: number; publishableKey: string | null; hasClient: boolean }) {
+export function CardPayment(props: { slug: string; saleId: string; dueCents: number; currency?: string; publishableKey: string | null; hasClient: boolean; feeNotice?: string | null }) {
+  const router = useRouter();
   const [amount, setAmount] = useState((props.dueCents / 100).toFixed(2));
   const [saveCard, setSaveCard] = useState(false);
-  const [intent, setIntent] = useState<{ clientSecret: string; accountId: string | null; publishableKey: string | null } | null>(null);
+  const [intent, setIntent] = useState<{ clientSecret: string; paymentIntentId: string; accountId: string | null; publishableKey: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
-
-  const stripePromise = useMemo(
-    () => ((intent?.publishableKey ?? props.publishableKey) && intent ? loadStripe((intent.publishableKey ?? props.publishableKey)!, intent.accountId ? { stripeAccount: intent.accountId } : undefined) : null),
-    [props.publishableKey, intent],
-  );
 
   if (!props.publishableKey) {
     return <p className="text-sm text-stone-500">Set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY to accept cards in the browser.</p>;
@@ -42,7 +37,7 @@ export function CardPayment(props: { slug: string; saleId: string; dueCents: num
               setError(null);
               const r = await startCardPayment({ slug: props.slug, saleId: props.saleId, amount, saveCard });
               if ("error" in r) setError(r.error);
-              else setIntent({ clientSecret: r.clientSecret, accountId: r.accountId, publishableKey: r.publishableKey });
+              else setIntent({ clientSecret: r.clientSecret, paymentIntentId: r.paymentIntentId, accountId: r.accountId, publishableKey: r.publishableKey });
             })
           }
         >
@@ -53,53 +48,26 @@ export function CardPayment(props: { slug: string; saleId: string; dueCents: num
   }
 
   return (
-    // The desk takes cards only, so Stripe's plain card field rather than the Payment Element (which also draws Link's bank and buy-now-pay-later offers).
-    <Elements stripe={stripePromise}>
-      <ConfirmForm slug={props.slug} saleId={props.saleId} clientSecret={intent.clientSecret} onCancel={() => setIntent(null)} />
-    </Elements>
-  );
-}
-
-function ConfirmForm({ slug, saleId, clientSecret, onCancel }: { slug: string; saleId: string; clientSecret: string; onCancel: () => void }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!stripe || !elements) return;
-    setBusy(true);
-    setError(null);
-    const card = elements.getElement(CardElement);
-    if (!card) return;
-    const { error: err, paymentIntent } = await stripe.confirmCardPayment(clientSecret, { payment_method: { card } });
-    if (err) {
-      setError(err.message ?? "Payment failed");
-      setBusy(false);
-      return;
-    }
-    if (paymentIntent?.status === "succeeded") {
-      const r = await finishCardPayment({ slug, saleId, paymentIntentId: paymentIntent.id });
-      if (r?.error) setError(r.error);
-      router.refresh();
-    } else {
-      setError(`Payment ${paymentIntent?.status ?? "incomplete"}`);
-    }
-    setBusy(false);
-  }
-
-  return (
-    <form onSubmit={submit} className="space-y-3">
-      <div className="rounded-lg border border-stone-300 bg-white px-3 py-3">
-        <CardElement options={{ style: { base: { fontSize: "16px", color: "#1c1917", "::placeholder": { color: "#a8a29e" } } } }} />
-      </div>
-      {error ? <Notice>{error}</Notice> : null}
-      <div className="flex gap-2">
-        <Button type="submit" disabled={!stripe || busy}>{busy ? "Charging…" : "Charge card"}</Button>
-        <Button type="button" variant="ghost" onClick={onCancel}>Back</Button>
-      </div>
-    </form>
+    <div className="space-y-2">
+      {props.feeNotice ? <p className="text-xs text-stone-600">{props.feeNotice}</p> : null}
+      <StripeCardPay
+        publishableKey={(intent.publishableKey ?? props.publishableKey)!}
+        stripeAccount={intent.accountId}
+        clientSecret={intent.clientSecret}
+        mode="payment"
+        amountCents={props.dueCents}
+        currency={props.currency ?? "usd"}
+        wallets={false}
+        submitLabel="Charge card"
+        busyLabel="Charging…"
+        prepare={async (pm) => applyDeskCardFee({ slug: props.slug, saleId: props.saleId, paymentIntentId: intent.paymentIntentId, paymentMethodId: pm })}
+        done={async (id) => {
+          const r = await finishCardPayment({ slug: props.slug, saleId: props.saleId, paymentIntentId: id });
+          router.refresh();
+          return r?.error ?? null;
+        }}
+      />
+      <Button type="button" variant="ghost" size="sm" onClick={() => setIntent(null)}>Back</Button>
+    </div>
   );
 }

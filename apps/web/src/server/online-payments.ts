@@ -19,6 +19,8 @@ import type { PublicBusiness } from "./public-booking";
 import type { PaymentContext } from "./locations";
 import { helcimTokenOf } from "./helcim/account";
 import { HelcimCheckoutError, openHelcimCheckout, refundHelcimTransaction, verifyHelcimCheckout, voidHelcimCheckout } from "./helcim/online";
+import { cardFeeFor, cardFeeSettingsOf } from "@angelic/core";
+import { stripeCardFunding } from "./sales";
 
 export type PaymentMode = "deposit" | "card" | "none";
 
@@ -63,8 +65,10 @@ export async function startOnlinePayment(business: PublicBusiness, pay: PaymentC
   if (pay.provider === "helcim") {
     const client = await withTenant(business.id, (tx) => tx.query.clients.findFirst({ where: eq(schema.clients.id, meta.clientId) }));
     if (!client) throw new BookingError("Client not found.");
+    // Helcim can't say whether the card is debit before charging, so with debit exempt no card fee is added ("unknown").
+    const cardFee = mode === "deposit" ? cardFeeFor(cardFeeSettingsOf(business), "online", amountCents, "unknown") : 0;
     try {
-      const r = await openHelcimCheckout(business, { purpose: mode, meta: { ...meta, kind: mode }, amountCents, client });
+      const r = await openHelcimCheckout(business, { purpose: mode, meta: { ...meta, kind: mode, ...(cardFee ? { cardFeeCents: String(cardFee) } : {}) }, amountCents: amountCents + cardFee, client });
       return { provider: "helcim" as const, kind: mode, id: r.id, checkoutToken: r.checkoutToken, clientSecret: "", accountId: null };
     } catch (e) {
       throw new BookingError(e instanceof HelcimCheckoutError ? e.message : "Online payments are unavailable right now. Please try again.");
@@ -97,6 +101,27 @@ export async function startOnlinePayment(business: PublicBusiness, pay: PaymentC
   return { provider: "stripe" as const, kind: "card" as const, id: si.id, checkoutToken: null, clientSecret: si.client_secret!, accountId };
 }
 
+/**
+ * Stripe deposit, once the client has entered a card (or picked one in Apple Pay / Google Pay): with a card fee on for online deposits, Stripe
+ * says whether the card is debit, and the PaymentIntent becomes deposit + fee with that card attached, ready for the browser to confirm.
+ * The fee rides in the metadata, so the booking records the deposit and the fee apart. Returns what the card will be charged.
+ */
+export async function applyOnlineDepositFee(business: PublicBusiness, pay: PaymentContext, intentId: string, paymentMethodId: string): Promise<{ cardFeeCents: number; totalCents: number }> {
+  const accountId = pay.accountId;
+  if (pay.provider === "helcim" || !accountId) throw new BookingError("Online payments are not set up.");
+  const opts = { stripeAccount: accountId };
+  const pi = await stripe().paymentIntents.retrieve(intentId, undefined, opts);
+  if (pi.metadata.businessId !== business.id || pi.metadata.kind !== "deposit") throw new BookingError("That payment doesn't match this booking. Please start again.");
+  if (!["requires_payment_method", "requires_confirmation"].includes(pi.status)) throw new BookingError("This payment has already been started. Please refresh the page.");
+  const deposit = pi.amount - Number(pi.metadata.cardFeeCents ?? 0);
+  const settings = cardFeeSettingsOf(business);
+  const cardFee = cardFeeFor(settings, "online", deposit, await stripeCardFunding(accountId, paymentMethodId));
+  const total = deposit + cardFee;
+  const fee = Math.round((total * (await platformFeeBpsFor(business.id))) / 10_000);
+  await stripe().paymentIntents.update(intentId, { amount: total, payment_method: paymentMethodId, metadata: { cardFeeCents: String(cardFee) }, ...(fee > 0 ? { application_fee_amount: fee } : {}) }, opts);
+  return { cardFeeCents: cardFee, totalCents: total };
+}
+
 /** The client went back to edit their details: drop the unpaid intent so abandoned ones don't pile up. Best effort; only ours and only if nothing was paid. */
 export async function cancelOnlineIntent(business: PublicBusiness, pay: PaymentContext, kind: "deposit" | "card", intentId: string): Promise<void> {
   if (pay.provider === "helcim") return voidHelcimCheckout(business.id, intentId);
@@ -117,7 +142,7 @@ export async function cancelOnlineIntent(business: PublicBusiness, pay: PaymentC
 }
 
 export type VerifiedIntent =
-  | { kind: "deposit"; paymentIntentId: string; cents: number; cardLabel: string | null; meta: IntentMeta; accountId: string; provider?: "stripe" | "helcim"; providerPaymentId?: string | null }
+  | { kind: "deposit"; paymentIntentId: string; /** The deposit, without any card fee. */ cents: number; /** The card fee charged with it. */ surchargeCents: number; cardLabel: string | null; meta: IntentMeta; accountId: string; provider?: "stripe" | "helcim"; providerPaymentId?: string | null }
   | { kind: "card"; setupIntentId: string; meta: IntentMeta; provider?: "stripe" | "helcim" };
 
 /** Fetch the intent from Stripe and make sure it is ours, succeeded, and for the booking being made. */
@@ -138,7 +163,8 @@ export async function verifyOnlineIntent(business: PublicBusiness, pay: PaymentC
     }
     const meta = check(row.meta);
     if (row.purpose !== kind) throw new BookingError("That payment doesn't match this booking. Please start again.");
-    if (kind === "deposit") return { kind, provider: "helcim", accountId: "", paymentIntentId: row.id, providerPaymentId: row.transactionId, cents: row.amountCents, cardLabel: row.cardLabel, meta };
+    const helcimFee = Number((row.meta as Record<string, string>).cardFeeCents ?? 0) || 0;
+    if (kind === "deposit") return { kind, provider: "helcim", accountId: "", paymentIntentId: row.id, providerPaymentId: row.transactionId, cents: row.amountCents - helcimFee, surchargeCents: helcimFee, cardLabel: row.cardLabel, meta };
     return { kind, provider: "helcim", setupIntentId: row.id, meta };
   }
   const accountId = pay.accountId;
@@ -151,7 +177,8 @@ export async function verifyOnlineIntent(business: PublicBusiness, pay: PaymentC
     // The sweep refunds a deposit whose booking never finished; a page that comes back after that must not book on refunded money.
     if (charge && (charge.refunded || charge.amount_refunded > 0)) throw new BookingError("This deposit was refunded because the booking wasn't finished in time. Please book again.");
     const card = charge?.payment_method_details?.card;
-    return { kind, accountId, paymentIntentId: pi.id, cents: pi.amount, cardLabel: card ? `${card.brand?.toUpperCase() ?? "CARD"} •••• ${card.last4 ?? ""}` : null, meta };
+    const cardFee = Math.min(pi.amount, Number(pi.metadata.cardFeeCents ?? 0) || 0);
+    return { kind, accountId, paymentIntentId: pi.id, cents: pi.amount - cardFee, surchargeCents: cardFee, cardLabel: card ? `${card.brand?.toUpperCase() ?? "CARD"} •••• ${card.last4 ?? ""}` : null, meta };
   }
   const si = await stripe().setupIntents.retrieve(intentId, {}, { stripeAccount: accountId });
   const meta = check(si.metadata ?? {});
@@ -176,11 +203,14 @@ export async function refundDeposit(input: { businessId: string; accountId: stri
     const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { depositRefundAs: true } });
     const refundCents = Math.min(appt.depositCents, Math.max(1, Math.round(input.amountCents ?? appt.depositCents)));
     const partial = refundCents < appt.depositCents;
+    // A card fee charged with the deposit goes back in proportion (all of it with the whole deposit).
+    const feeBack = partial ? Math.min(appt.depositSurchargeCents, Math.round((appt.depositSurchargeCents * refundCents) / appt.depositCents)) : appt.depositSurchargeCents;
+    const after = partial ? { depositCents: appt.depositCents - refundCents, depositSurchargeCents: appt.depositSurchargeCents - feeBack } : { depositStatus: "refunded" as const };
     const as = input.as ?? (biz?.depositRefundAs === "store_credit" ? "store_credit" : "original");
     // Under a store-credit policy the money stays on the account and the client gets a balance instead.
     if (as === "store_credit" && appt.clientId) {
-      await changeStoreCredit(tx, { businessId: input.businessId, clientId: appt.clientId, deltaCents: refundCents, reason: "deposit_refund", appointmentId: appt.id, note: input.reason, actorUserId: input.actorUserId });
-      await tx.update(schema.appointments).set(partial ? { depositCents: appt.depositCents - refundCents } : { depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
+      await changeStoreCredit(tx, { businessId: input.businessId, clientId: appt.clientId, deltaCents: refundCents + feeBack, surchargeCents: feeBack, reason: "deposit_refund", appointmentId: appt.id, note: input.reason, actorUserId: input.actorUserId });
+      await tx.update(schema.appointments).set(after).where(eq(schema.appointments.id, appt.id));
       await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.store_credit", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: refundCents, kept: appt.depositCents - refundCents, reason: input.reason }) });
       return true;
     }
@@ -188,27 +218,27 @@ export async function refundDeposit(input: { businessId: string; accountId: stri
       const business = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId) });
       const token = business ? helcimTokenOf({ ...business, paymentProvider: "helcim" }) : null;
       if (!token || !appt.depositProviderPaymentId) throw new BookingError("Helcim isn't connected. Refund the deposit in your Helcim dashboard.");
-      return { appt, refundCents, partial, account: "", helcimToken: token };
+      return { appt, refundCents, feeBack, after, partial, account: "", helcimToken: token };
     }
     // Back through the account that took the deposit (the location may have switched accounts since).
     const account = appt.depositStripeAccountId ?? input.accountId;
     if (!account) throw new BookingError("Stripe account not connected.");
-    return { appt, refundCents, partial, account, helcimToken: null as string | null };
+    return { appt, refundCents, feeBack, after, partial, account, helcimToken: null as string | null };
   });
   if (typeof prep === "boolean") return prep;
-  const { appt, refundCents, partial, account, helcimToken } = prep;
+  const { appt, refundCents, feeBack, after, partial, account, helcimToken } = prep;
   if (helcimToken) {
-    await refundHelcimTransaction(helcimToken, { key: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}`, transactionId: appt.depositProviderPaymentId!, amountCents: refundCents, full: !partial });
+    await refundHelcimTransaction(helcimToken, { key: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}`, transactionId: appt.depositProviderPaymentId!, amountCents: refundCents + feeBack, full: !partial });
   } else
   // Stripe is called with no transaction open. A partial refund names its amount; a full one lets Stripe refund what is left. The key
   // carries the deposit as it stood, so a double click is one refund but a second, equal partial refund later is a refund of its own.
-  await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId!, ...(partial ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: account, idempotencyKey: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}` });
+  await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId!, ...(partial ? { amount: refundCents + feeBack } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: account, idempotencyKey: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}` });
   return withTenant(input.businessId, async (tx) => {
     // Only if nothing recorded it meanwhile (a double click, or the webhook for this very refund): then the deposit has already moved on.
     const updated = await tx
       .update(schema.appointments)
       // After a partial refund the deposit is what the salon kept; it stays "paid" so it can still be applied to the visit's bill or the fee.
-      .set(partial ? { depositCents: appt.depositCents - refundCents } : { depositStatus: "refunded" })
+      .set(after)
       .where(and(eq(schema.appointments.id, appt.id), eq(schema.appointments.depositStatus, "paid"), eq(schema.appointments.depositCents, appt.depositCents)))
       .returning({ id: schema.appointments.id });
     if (updated.length) await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: input.actorUserId, action: "deposit.refund", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ cents: refundCents, kept: appt.depositCents - refundCents, reason: input.reason }) });

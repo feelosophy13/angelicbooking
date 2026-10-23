@@ -401,6 +401,51 @@ and "Remove" are on the page; the hostname must be unique, may not be an IP, a l
 - A custom domain's DNS must not be proxied by Cloudflare ("DNS only") until it is Active; the booking page itself works the same on the custom host.
 - Claiming a hostname first blocks anyone else from saving it. If a real owner finds theirs taken, remove the old claim in the database (`businesses.custom_domain`).
 
+## Apple Pay and Google Pay (added 2026-10-23, migration 0135)
+The booking page's deposits and card holds and the online store show Apple Pay and Google Pay buttons (Stripe's Express Checkout Element)
+above the card field, when the device has a wallet. The desk's "Type it in" stays card only. Salons take money on their own connected
+accounts (direct charges), so Stripe.js loads for the salon's account and **every domain that shows the buttons must be registered on that
+account** (Stripe's payment method domains API with the `Stripe-Account` header; the platform's own registration does not count).
+- **Automatic:** `src/server/payment-domains.ts` registers the app's host (from `NEXT_PUBLIC_APP_URL`, e.g. app.angelicbooking.com) and the
+  business's custom domain once it is Active, on the business's main account and on every location's own account. It runs when an account
+  becomes able to take charges (`syncConnectAccount`: the onboarding return page, the Connect button and the `account.updated` webhook) and
+  when a custom domain turns Active. Results (Apple Pay / Google Pay status, any error) are in the `stripe_payment_domains` table.
+- **Backfill** for accounts connected before this: from apps/web,
+  `../../packages/db/node_modules/.bin/tsx --env-file=../../.env scripts/register-wallet-domains.ts [business-slug]` (on Render, from the
+  web service's shell without `--env-file`). Safe to re-run; it prints Stripe's answer per account and domain. Run it once after deploying 0135.
+- **Apple's file:** `public/.well-known/apple-developer-merchantid-domain-association` is Stripe's domain association file, served on every
+  host (the proxy leaves `/.well-known/` alone on custom domains). If Stripe ever publishes a new one, replace it from
+  https://stripe.com/files/apple-pay/apple-developer-merchantid-domain-association and re-run the backfill (it re-validates inactive domains).
+- **Key permissions:** the restricted live key also needs **Payment method domains: write** and **PaymentMethods: read** (the card fee reads
+  whether a card is debit). Without them registration fails (logged, recorded in the table) and payments still work, just without wallets.
+- **Not covered:** localhost and `*.test` hosts can't be registered, so wallets don't show in local development (test with a tunnel such as
+  ngrok and register that host with the script). In a salon's own website (the embed), Google Pay works; Apple Pay in a cross-origin iframe
+  needs Safari 17+ (the embed already sets `allow="payment"`) and may need the salon's own domain registered, which the app does not do.
+- **Helcim:** HelcimPay.js offers Google Pay in its card form; `initializeCheckout` turns it on (`digitalWallet: {"google-pay": 1}`) for
+  payments, not for card holds. Helcim doesn't document Apple Pay for HelcimPay.js, so Helcim businesses get no Apple Pay. Not yet tried
+  against a real Helcim account.
+
+## Card surcharge / convenience fee (added 2026-10-23, migration 0135)
+Settings → Checkout & tips → Card fee: off (default), a surcharge (percent, at most 3%) or a flat convenience fee, for desk card payments,
+online deposits and/or the store, with "No fee on debit and prepaid cards" on by default. Turning it on asks the owner to confirm they have
+checked their state's rules and told their processor; the page lists the rules (state bans and caps, 30 days' notice to the card brands,
+the 3% / cost-of-acceptance cap, no fee on debit, signage and receipt line, convenience fee rules, sales tax). It is not legal advice and the
+app does not claim the fee is allowed everywhere.
+- **How the fee is worked out:** on the part paid by card, added on top, stored on the payment (`payments.surcharge_cents`) and as its own
+  ticket line (`sale_lines.kind = 'card_fee'`, one per payment), outside the subtotal, discount and tax (`sales.card_fee_cents`).
+- **Debit:** Stripe tells debit from credit once the card is entered: a typed card or an online card / wallet is attached to the
+  PaymentIntent and the amount set before the browser confirms; a saved card is looked up before it is charged; a reader authorizes card +
+  fee (manual capture) and captures the base alone for a debit card. Helcim can't tell before charging, so with debit exempt **Helcim payments
+  carry no fee**; with it off they always do.
+- **Refunds:** the desk refunds what the client paid for; the same share of the fee goes back with it (all that is left with the last of it),
+  to the card or as store credit, and is recorded on `refunds.surcharge_cents` / `store_credit_ledger.surcharge_cents`. Deposits refunded
+  before checkout give back their share of `appointments.deposit_surcharge_cents`.
+- **Pay and reports:** the fee is never commission and never in the tip split; payroll counts payments and refunds without it. Reports shows
+  "Card fees" (less fees refunded) as its own figure and leaves it out of Sales and Refunds; the sales CSV has a Card fee column.
+- **Not covered:** tips added after the sale was paid, the salon's own card machine ("external card") and membership auto-renewals carry no
+  fee. The fee isn't taxed. Card holds (no charge) have nothing to add to; a no-show fee later charged to the saved card is a desk card-on-file
+  charge and gets the desk fee if the desk is on.
+
 ## Demo tenant
 
 Two fake businesses for walkthroughs and screenshots, built by `apps/web/scripts/seed-demo.ts` (it never touches any other

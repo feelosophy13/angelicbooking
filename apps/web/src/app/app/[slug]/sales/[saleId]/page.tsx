@@ -4,7 +4,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { ConfirmSubmit, Field } from "@/components/form";
 import { dateTime } from "@/lib/format";
 import { notFound } from "next/navigation";
-import { can, isMembershipInterval, periodNoun } from "@angelic/core";
+import { can, cardFeeSettingsOf, isMembershipInterval, periodNoun } from "@angelic/core";
+import { cardFeeQuote } from "@/lib/card-fee";
 import { requireAnyAction } from "@/lib/tenant";
 import { salesScope } from "@/lib/visibility";
 import { getSale, isOwnSale, refundableLines } from "@/server/sales";
@@ -83,7 +84,9 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
     // Several tip lines for one person (a cash and a card tip) show as "same as the payment" when they differ; saving merges them.
     currentTipMethods[l.staffId!] = l.staffId! in currentTipMethods && currentTipMethods[l.staffId!] !== m ? "" : m;
   }
-  const goods = lines.filter((l) => l.kind !== "tip");
+  // The card fee is its own line under the totals, never edited or removed by hand (it belongs to the payment that carried it).
+  const goods = lines.filter((l) => l.kind !== "tip" && l.kind !== "card_fee");
+  const cardFeeLines = lines.filter((l) => l.kind === "card_fee");
   const catalog = open ? await getOffersCatalog(business.id) : null;
   const credits = open && client ? await withTenant(business.id, (tx) => getClientCredits(tx, client.id)) : { packages: [], memberships: [] };
   const points = open && client && business.loyaltyEnabled ? await withTenant(business.id, (tx) => pointsBalance(tx, client.id)) : 0;
@@ -200,6 +203,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                 {sale.taxCents > 0 ? <tr><td className="text-stone-500">Tax ({(pay.taxRateBps / 100).toFixed(2)}%)</td><td className="text-right">{money(sale.taxCents)}</td><td /></tr> : null}
                 {sale.taxExempt ? <tr><td className="text-stone-500">Tax exempt</td><td className="text-right text-stone-500">no tax charged</td><td /></tr> : null}
                 {sale.tipCents > 0 ? <tr><td className="text-stone-500">Tips</td><td className="text-right">{money(sale.tipCents)}</td><td /></tr> : null}
+                {cardFeeLines.map((l) => <tr key={l.id}><td className="text-stone-500">{l.name}</td><td className="text-right">{money(l.amountCents)}</td><td /></tr>)}
                 <tr className="text-base font-semibold"><td className="pt-2">Total</td><td className="pt-2 text-right">{money(sale.totalCents)}</td><td /></tr>
                 {sale.paidCents > 0 ? <tr><td className="text-stone-500">Paid</td><td className="text-right">{money(sale.paidCents)}</td><td /></tr> : null}
                 {sale.refundedCents > 0 ? <tr><td className="text-stone-500">Refunded</td><td className="text-right">−{money(sale.refundedCents)}</td><td /></tr> : null}
@@ -267,7 +271,8 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
               <ul className="divide-y divide-stone-100 text-sm">
                 {payments.map((p) => {
                   const credited = creditedFor(p.id);
-                  const refundable = p.amountCents - p.refundedCents - credited;
+                  // What the desk can still refund, without the card fee (its share goes back on its own, in proportion).
+                  const refundable = p.amountCents - p.refundedCents - credited - Math.max(0, p.surchargeCents - p.surchargeRefundedCents);
                   return (
                     <li key={p.id} className="py-2">
                       <div className="flex items-center justify-between">
@@ -280,7 +285,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       </div>
                       {refunds.filter((r) => r.paymentId === p.id).map((r) => (
                         <div key={r.id} className="text-xs text-stone-500">
-                          Refunded {money(r.amountCents)}{reasonText(r.reasonId, r.reason) ? ` · ${reasonText(r.reasonId, r.reason)}` : ""}
+                          Refunded {money(r.amountCents)}{r.surchargeCents ? ` (incl. ${money(r.surchargeCents)} card fee)` : ""}{reasonText(r.reasonId, r.reason) ? ` · ${reasonText(r.reasonId, r.reason)}` : ""}
                           {canRefund ? <RefundReasonEditor key={`${r.reasonId}:${r.reason}`} action={changeRefundReason} slug={slug} saleId={sale.id} kind="refund" id={r.id} reasonId={r.reasonId} note={r.reason} reasons={reasonOptions} /> : null}
                         </div>
                       ))}
@@ -291,7 +296,7 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                         </div>
                       ))}
                       {p.status !== "pending" && p.status !== "failed" && refundable > 0 && canRefund ? (
-                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} external={p.method === "external_card"} reasons={reasonOptions} items={refundLines} goods={[...stockState.entries()].filter(([, v]) => v.sold - v.returned > 0).map(([productId, v]) => ({ productId, name: lines.find((l) => l.productId === productId)?.name ?? "Product", left: v.sold - v.returned }))} />
+                        <RefundForm key={`${p.id}:${refundable}`} action={refund} slug={slug} saleId={sale.id} paymentId={p.id} maxCents={refundable} creditAllowed={!!client && p.method !== "store_credit"} external={p.method === "external_card"} cardFee={p.surchargeCents > p.surchargeRefundedCents} reasons={reasonOptions} items={refundLines} goods={[...stockState.entries()].filter(([, v]) => v.sold - v.returned > 0).map(([productId, v]) => ({ productId, name: lines.find((l) => l.productId === productId)?.name ?? "Product", left: v.sold - v.returned }))} />
                       ) : null}
                     </li>
                   );
@@ -325,6 +330,10 @@ export default async function SalePage({ params }: { params: Promise<{ slug: str
                       saleId={sale.id}
                       dueCents={due}
                       currency={cur}
+                      cardFee={(() => {
+                        const q = cardFeeQuote(cardFeeSettingsOf(business), pay.provider, "desk", due, business.currency, { cashOption: true });
+                        return q ? { notice: q.notice, cardTotal: money(due + q.estimateCents) } : null;
+                      })()}
                       hasClient={!!client}
                       savedCards={savedCards.map((c) => ({ id: c.id, brand: c.brand, last4: c.last4, expMonth: c.expMonth, expYear: c.expYear }))}
                       helcim={helcimToken ? { devices: helcimDevices } : null}

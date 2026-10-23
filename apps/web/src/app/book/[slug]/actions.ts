@@ -10,7 +10,7 @@ import { BookingError } from "@/server/booking";
 import { PromoError, validatePromo } from "@/server/promos";
 import { priceForStaff } from "@/server/stylist-pricing";
 import { assertClassSeatOpen, assertQuotedPrice, assertSlotOpen, planExtras, type PublicBusiness, cancelOnline, createOnlineBooking, findOrCreateClient, getPublicBusiness, joinWaitlist, rescheduleOnline } from "@/server/public-booking";
-import { appointmentForIntent, cancelOnlineIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
+import { appointmentForIntent, applyOnlineDepositFee, cancelOnlineIntent, onlinePaymentRequirement, startOnlinePayment, verifyOnlineIntent } from "@/server/online-payments";
 import { getSession } from "@/server/classes";
 import { paymentContextFor } from "@/server/locations";
 import { schema, withTenant } from "@angelic/db";
@@ -215,6 +215,22 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
     if (r.provider === "helcim") return { provider: "helcim", checkoutToken: r.checkoutToken, intentId: r.id, kind: r.kind };
     const browser = await browserStripe(r.accountId!, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
     return { provider: "stripe", clientSecret: r.clientSecret, intentId: r.id, kind: r.kind, accountId: browser.stripeAccount, publishableKey: browser.publishableKey };
+  } catch (e) {
+    if (e instanceof BookingError) return { error: e.message };
+    throw e;
+  }
+}
+
+/**
+ * Stripe deposit, step 2a: the client entered a card (or picked one in Apple Pay / Google Pay). The server looks at the card, adds the
+ * card fee if there is one, and attaches the card to the PaymentIntent; the browser then confirms it. Card holds have nothing to add.
+ */
+export async function applyDepositFeeAction(slug: string, locationId: string | null, intentId: string, paymentMethodId: string): Promise<{ cardFeeCents: number; totalCents: number } | { error: string }> {
+  if (typeof slug !== "string" || !/^pi_\w+$/.test(intentId) || !/^pm_\w+$/.test(paymentMethodId)) return { error: "That payment doesn't match this booking. Please start again." };
+  const business = await getPublicBusiness(slug);
+  if (!business) return { error: "Online booking is not available." };
+  try {
+    return await applyOnlineDepositFee(business, await paymentContextFor(business, locationId || null), intentId, paymentMethodId);
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     throw e;
