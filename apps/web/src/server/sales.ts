@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from "drizzle-orm";
 import { schema, withTenant, type TenantDb } from "@angelic/db";
-import { CARD_FEE_METHODS, allocateProportionally, computeTotals, isMembershipInterval, splitTips, subtractMembershipPeriod, tipsPerPayment, type Discount } from "@angelic/core";
+import { CARD_FEE_METHODS, NO_CARD_FEE, allocateProportionally, cardFeeFor, cardFeeLineName, cardFeeOn, cardFeeRefundPart, cardFeeSettingsOf, computeTotals, fundingOf, isMembershipInterval, splitGrossRefund, splitTips, subtractMembershipPeriod, tipsPerPayment, type CardFeeChannel, type CardFeeSettings, type CardFunding, type Discount } from "@angelic/core";
+import { formatMoney } from "@/lib/utils";
 import { after } from "next/server";
 import { db } from "@angelic/db";
 import { stripe } from "@/lib/stripe";
@@ -69,6 +70,7 @@ async function recompute(tx: TenantDb, saleId: string, taxRateBps: number, disco
       discountCents: t.discountCents,
       taxCents: t.taxCents,
       tipCents: t.tipCents,
+      cardFeeCents: t.cardFeeCents,
       totalCents: t.totalCents,
       paidCents,
       refundedCents,
@@ -158,12 +160,14 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
     // A deposit paid at online booking becomes the first payment on the ticket.
     if (appt.depositStatus === "paid" && appt.depositCents > 0) {
       const m = /^([A-Z]+) •••• (\d{4})$/.exec(appt.depositCardLabel ?? "");
-      await tx.insert(schema.payments).values({
+      // A card fee charged with the deposit comes along as the payment's fee and its own line on the ticket.
+      const [deposit] = await tx.insert(schema.payments).values({
         businessId: input.businessId,
         saleId: sale!.id,
         method: "card",
         status: "succeeded",
-        amountCents: appt.depositCents,
+        amountCents: appt.depositCents + appt.depositSurchargeCents,
+        surchargeCents: appt.depositSurchargeCents,
         tipCents: 0,
         // A Helcim deposit is refunded against its Helcim transaction; a Stripe one against its PaymentIntent.
         ...(appt.depositProvider === "helcim"
@@ -173,7 +177,8 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
         cardLast4: m?.[2] ?? null,
         note: "Deposit paid online",
         createdByUserId: input.actorUserId,
-      });
+      }).returning({ id: schema.payments.id });
+      await addCardFeeLine(tx, deposit!.id);
       await tx.update(schema.appointments).set({ depositStatus: "applied" }).where(eq(schema.appointments.id, appt.id));
     }
     // A promo code typed at online booking becomes the ticket's discount (if it still applies).
@@ -712,6 +717,93 @@ function balance(sale: Sale) {
   return sale.totalCents - sale.paidCents;
 }
 
+/** The business's card surcharge / convenience fee settings (Settings → Checkout & tips). */
+export async function cardFeeSettingsFor(tx: TenantDb, businessId: string): Promise<CardFeeSettings> {
+  const b = await tx.query.businesses.findFirst({
+    where: eq(schema.businesses.id, businessId),
+    columns: { cardFeeType: true, cardFeeBps: true, cardFeeCents: true, cardFeeDesk: true, cardFeeOnline: true, cardFeeStore: true, cardFeeDebitExempt: true },
+  });
+  return b ? cardFeeSettingsOf(b) : NO_CARD_FEE;
+}
+
+/** What Stripe says the card behind a PaymentMethod is (credit, debit, prepaid), asked of the account that holds it; "unknown" if it can't say. */
+export async function stripeCardFunding(accountId: string, paymentMethodId: string): Promise<CardFunding> {
+  try {
+    const pm = await stripe().paymentMethods.retrieve(paymentMethodId, {}, { stripeAccount: accountId });
+    return fundingOf(pm.card?.funding ?? pm.card_present?.funding);
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
+ * A card payment that carried a card fee has gone through: the fee goes on the ticket as its own line, tied to the payment (once, however
+ * often this runs). Call before closeIfPaid so the total includes it. Nothing happens for a payment without a fee.
+ */
+async function addCardFeeLine(tx: TenantDb, paymentId: string) {
+  const [p] = await tx.select().from(schema.payments).where(eq(schema.payments.id, paymentId));
+  if (!p || p.surchargeCents <= 0) return;
+  const s = await cardFeeSettingsFor(tx, p.businessId);
+  const [sale] = await tx.select({ currency: schema.sales.currency }).from(schema.sales).where(eq(schema.sales.id, p.saleId));
+  const name = s.type === "off" ? "Card fee" : cardFeeLineName(s, (c) => formatMoney(c, sale?.currency ?? "usd"));
+  await tx
+    .insert(schema.saleLines)
+    .values({ businessId: p.businessId, saleId: p.saleId, kind: "card_fee", paymentId: p.id, name, quantity: 1, unitCents: p.surchargeCents, amountCents: p.surchargeCents, taxable: false, sortOrder: 950 })
+    .onConflictDoNothing();
+}
+
+/**
+ * Typed card at the desk, an online order: the client entered the card, so Stripe can say whether it is debit. The card fee for `channel`
+ * is worked out on the payment's base, and the PaymentIntent (and its pending row) is set to base + fee with that card attached, before
+ * the browser confirms it. Returns the fee and the amount the card will be charged.
+ */
+export async function applyCardFeeToIntent(input: { businessId: string; accountId: string; saleId: string; paymentIntentId: string; paymentMethodId: string; channel: CardFeeChannel }): Promise<{ cardFeeCents: number; totalCents: number; funding: CardFunding }> {
+  const { p, settings } = await withTenant(input.businessId, async (tx) => {
+    const [p] = await tx.select().from(schema.payments).where(and(eq(schema.payments.stripePaymentIntentId, input.paymentIntentId), eq(schema.payments.saleId, input.saleId)));
+    if (!p || p.status !== "pending") throw new SaleError("This payment is no longer waiting for a card. Start again.");
+    return { p, settings: await cardFeeSettingsFor(tx, input.businessId) };
+  });
+  const base = p.amountCents - p.surchargeCents;
+  const funding = cardFeeOn(settings, input.channel) ? await stripeCardFunding(input.accountId, input.paymentMethodId) : "unknown";
+  const cardFee = cardFeeFor(settings, input.channel, base, funding);
+  const total = base + cardFee;
+  const platformFee = Math.round((total * (await platformFeeBpsFor(input.businessId))) / 10_000);
+  await stripe().paymentIntents.update(
+    input.paymentIntentId,
+    { amount: total, payment_method: input.paymentMethodId, metadata: { cardFeeCents: String(cardFee) }, ...(platformFee > 0 ? { application_fee_amount: platformFee } : {}) },
+    { stripeAccount: input.accountId },
+  );
+  await withTenant(input.businessId, (tx) => tx.update(schema.payments).set({ amountCents: total, surchargeCents: cardFee }).where(and(eq(schema.payments.id, p.id), eq(schema.payments.status, "pending"))));
+  return { cardFeeCents: cardFee, totalCents: total, funding };
+}
+
+/**
+ * Card reader with a card fee and debit exempt: the reader authorized base + fee (capture_method manual), and only now does Stripe say what
+ * the card was. A debit or prepaid card is captured for the base alone; anything else for the full amount. Returns the captured PaymentIntent.
+ */
+export async function captureReaderPayment(input: { businessId: string; accountId: string; paymentIntent: import("stripe").Stripe.PaymentIntent }) {
+  const pi = input.paymentIntent;
+  const { p, settings } = await withTenant(input.businessId, async (tx) => ({
+    p: (await tx.select().from(schema.payments).where(eq(schema.payments.stripePaymentIntentId, pi.id)))[0],
+    settings: await cardFeeSettingsFor(tx, input.businessId),
+  }));
+  const charge = typeof pi.latest_charge === "object" && pi.latest_charge ? pi.latest_charge : null;
+  const funding = fundingOf(charge?.payment_method_details?.card_present?.funding ?? charge?.payment_method_details?.card?.funding);
+  const surcharge = p?.surchargeCents ?? 0;
+  const base = pi.amount - surcharge;
+  const keepFee = surcharge > 0 && cardFeeFor(settings, "desk", base, funding) > 0;
+  const capture = keepFee || surcharge === 0 ? pi.amount : base;
+  const platformFee = Math.round((capture * (await platformFeeBpsFor(input.businessId))) / 10_000);
+  if (p && capture !== p.amountCents) {
+    await withTenant(input.businessId, (tx) => tx.update(schema.payments).set({ amountCents: capture, surchargeCents: 0 }).where(and(eq(schema.payments.id, p.id), eq(schema.payments.status, "pending"))));
+  }
+  return stripe().paymentIntents.capture(
+    pi.id,
+    { amount_to_capture: capture, ...(platformFee > 0 ? { application_fee_amount: platformFee } : {}), expand: ["latest_charge"] },
+    { stripeAccount: input.accountId, idempotencyKey: `capture_${pi.id}` },
+  );
+}
+
 /** Tip portion of a payment: proportional share of the sale's tip. */
 function tipShare(sale: Sale, amountCents: number) {
   if (sale.totalCents <= 0 || sale.tipCents <= 0) return 0;
@@ -817,12 +909,14 @@ async function refundableLinesIn(tx: TenantDb, sale: Sale): Promise<RefundableLi
   const lines = await tx.select().from(schema.saleLines).where(eq(schema.saleLines.saleId, sale.id)).orderBy(asc(schema.saleLines.sortOrder));
   const done = await tx.select({ lineId: schema.refundItems.saleLineId, cents: sql<number>`sum(${schema.refundItems.amountCents})::int` }).from(schema.refundItems).where(eq(schema.refundItems.saleId, sale.id)).groupBy(schema.refundItems.saleLineId);
   const refunded = new Map(done.map((d) => [d.lineId, Number(d.cents)]));
-  const goods = lines.filter((l) => l.kind !== "tip");
+  // A card fee is never refunded on its own: it goes back in proportion with the payment that carried it.
+  const goods = lines.filter((l) => l.kind !== "tip" && l.kind !== "card_fee");
   const goodsTotal = goods.reduce((n, l) => n + l.amountCents, 0);
   const taxableTotal = goods.filter((l) => l.taxable).reduce((n, l) => n + l.amountCents, 0);
   const cards = await tx.select().from(schema.giftCards).where(eq(schema.giftCards.saleId, sale.id));
   const out: RefundableLine[] = [];
   for (const l of lines) {
+    if (l.kind === "card_fee") continue;
     const disc = l.kind === "tip" || goodsTotal <= 0 ? 0 : Math.round((sale.discountCents * l.amountCents) / goodsTotal);
     const tax = l.kind !== "tip" && l.taxable && taxableTotal > 0 ? Math.round((sale.taxCents * l.amountCents) / taxableTotal) : 0;
     const paid = l.amountCents - disc + tax;
@@ -959,6 +1053,22 @@ async function stopMembershipBilling(businessId: string, membershipIds: string[]
 }
 
 /**
+ * What a refund of `wanted` (what the client paid for, without the card fee) gives back from payment `p`: that, plus the same share of the
+ * payment's card fee, capped at what is left on the payment. Items must fit; an amount is trimmed to what is left. `amount` includes the fee.
+ */
+function refundAmounts(p: typeof schema.payments.$inferSelect, credited: number, wanted: number, items: boolean): { amount: number; cardFee: number } {
+  const refundable = p.amountCents - p.refundedCents - credited;
+  const fp = { amountCents: p.amountCents, surchargeCents: p.surchargeCents, returnedCents: p.refundedCents + credited, surchargeReturnedCents: p.surchargeRefundedCents };
+  const feeLeft = Math.max(0, p.surchargeCents - p.surchargeRefundedCents);
+  const baseLeft = refundable - feeLeft;
+  if (items && wanted > baseLeft) throw new SaleError(`That's ${(wanted / 100).toFixed(2)}, more than the ${(baseLeft / 100).toFixed(2)} left on this payment. Refund some of it from another payment.`);
+  const base = Math.min(wanted, baseLeft);
+  if (base <= 0) throw new SaleError("Nothing left to refund.");
+  const cardFee = cardFeeRefundPart(fp, base);
+  return { amount: base + cardFee, cardFee };
+}
+
+/**
  * Refund as store credit: the money stays in the till and the client gets a balance to spend later.
  * The payment is left as is (it really was collected); the ledger row points at it so a later card
  * refund cannot double up.
@@ -972,12 +1082,11 @@ export async function refundToStoreCredit(input: { businessId: string; paymentId
     const [sale] = await tx.select().from(schema.sales).where(eq(schema.sales.id, p.saleId)).for("update");
     if (!sale!.clientId) throw new SaleError("Store credit needs a client on the ticket.");
     const planned = input.items?.length ? await planRefundItems(tx, sale!, input.items) : null;
-    const refundable = p.amountCents - p.refundedCents - (await creditedAgainstPayment(tx, p.id));
+    const credited = await creditedAgainstPayment(tx, p.id);
     const wanted = planned ? planned.reduce((n, x) => n + x.amountCents, 0) : input.amountCents;
-    if (planned && wanted > refundable) throw new SaleError(`That's ${(wanted / 100).toFixed(2)}, more than the ${(refundable / 100).toFixed(2)} left on this payment. Refund some of it from another payment.`);
-    const amount = Math.min(wanted, refundable);
-    if (amount <= 0) throw new SaleError("Nothing left to refund.");
-    await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale!.clientId!, deltaCents: amount, reason: "refund", saleId: sale!.id, paymentId: p.id, refundReasonId: input.reasonId ?? null, note: input.reason, actorUserId: input.actorUserId });
+    const { amount, cardFee } = refundAmounts(p, credited, wanted, !!planned);
+    await changeStoreCredit(tx, { businessId: input.businessId, clientId: sale!.clientId!, deltaCents: amount, surchargeCents: cardFee, reason: "refund", saleId: sale!.id, paymentId: p.id, refundReasonId: input.reasonId ?? null, note: input.reason, actorUserId: input.actorUserId });
+    if (cardFee > 0) await tx.update(schema.payments).set({ surchargeRefundedCents: p.surchargeRefundedCents + cardFee }).where(eq(schema.payments.id, p.id));
     if (planned) {
       const [ledger] = await tx.select({ id: schema.storeCreditLedger.id }).from(schema.storeCreditLedger).where(and(eq(schema.storeCreditLedger.paymentId, p.id), eq(schema.storeCreditLedger.reason, "refund"))).orderBy(desc(schema.storeCreditLedger.createdAt)).limit(1);
       stopBilling.push(...(await recordRefundItems(tx, input.businessId, sale!, planned, { creditLedgerId: ledger!.id }, input.actorUserId)));
@@ -1026,6 +1135,9 @@ export async function chargeCardOnFile(input: {
   actorUserId: string;
   taxRateBps: number;
 }) {
+  // A card fee needs to know whether the saved card is debit: asked of Stripe before anything is locked.
+  const settings = await withTenant(input.businessId, (tx) => cardFeeSettingsFor(tx, input.businessId));
+  const funding = cardFeeOn(settings, "desk") ? await stripeCardFunding(input.accountId, input.paymentMethodId) : "unknown";
   const prep = await withTenant(input.businessId, async (tx) => {
     const [sale] = await tx.select().from(schema.sales).where(eq(schema.sales.id, input.saleId)).for("update");
     if (!sale) throw new SaleError("Sale not found.");
@@ -1037,13 +1149,15 @@ export async function chargeCardOnFile(input: {
       .select({ cents: sql<number>`coalesce(sum(${schema.payments.amountCents}), 0)::int` })
       .from(schema.payments)
       .where(and(eq(schema.payments.saleId, sale.id), eq(schema.payments.status, "pending"), eq(schema.payments.method, "card_on_file"), sql`${schema.payments.createdAt} > now() - interval '10 minutes'`));
-    const amount = Math.min(input.amountCents, balance(sale) - (inflight?.cents ?? 0));
-    if ((inflight?.cents ?? 0) > 0 && amount < 50) throw new SaleError("A card payment for this ticket is already being charged. Wait a moment and reload.");
-    if (amount < 50) throw new SaleError("Amount must be at least $0.50.");
+    const base = Math.min(input.amountCents, balance(sale) - (inflight?.cents ?? 0));
+    if ((inflight?.cents ?? 0) > 0 && base < 50) throw new SaleError("A card payment for this ticket is already being charged. Wait a moment and reload.");
+    if (base < 50) throw new SaleError("Amount must be at least $0.50.");
+    const cardFee = cardFeeFor(settings, "desk", base, funding);
+    const amount = base + cardFee;
     const fee = Math.round((amount * (await platformFeeBpsFor(input.businessId, tx))) / 10_000);
     const [pending] = await tx
       .insert(schema.payments)
-      .values({ businessId: input.businessId, saleId: sale.id, method: "card_on_file", status: "pending", amountCents: amount, tipCents: tipShare(sale, amount), stripeAccountId: input.accountId, createdByUserId: input.actorUserId })
+      .values({ businessId: input.businessId, saleId: sale.id, method: "card_on_file", status: "pending", amountCents: amount, surchargeCents: cardFee, tipCents: tipShare(sale, base), stripeAccountId: input.accountId, createdByUserId: input.actorUserId })
       .returning({ id: schema.payments.id });
     return { sale, client, amount, fee, paymentId: pending!.id };
   });
@@ -1083,7 +1197,10 @@ export async function chargeCardOnFile(input: {
       })
       .where(and(eq(schema.payments.id, paymentId), eq(schema.payments.status, "pending")));
     await audit(tx, input.businessId, input.actorUserId, "payment.card_on_file", sale.id, { amount, pi: pi.id });
-    if (pi.status === "succeeded") await closeIfPaid(tx, sale.id, input.taxRateBps, input.actorUserId, input.businessId);
+    if (pi.status === "succeeded") {
+      await addCardFeeLine(tx, paymentId);
+      await closeIfPaid(tx, sale.id, input.taxRateBps, input.actorUserId, input.businessId);
+    }
     return pi.status;
   });
 }
@@ -1117,12 +1234,17 @@ export async function createCardPaymentIntent(input: {
     }
     await withTenant(input.businessId, (tx) => tx.delete(schema.payments).where(and(eq(schema.payments.id, old.id), eq(schema.payments.status, "pending"))));
   }
-  const { sale, pending, amount, client, fee } = await withTenant(input.businessId, async (tx) => {
+  const { sale, pending, amount, client, fee, manualCapture } = await withTenant(input.businessId, async (tx) => {
     const [sale] = await tx.select().from(schema.sales).where(eq(schema.sales.id, input.saleId)).for("update");
     if (!sale) throw new SaleError("Sale not found.");
     assertOpen(sale);
-    const amount = Math.min(input.amountCents, balance(sale));
-    if (amount < 50) throw new SaleError("Amount must be at least $0.50.");
+    const base = Math.min(input.amountCents, balance(sale));
+    if (base < 50) throw new SaleError("Amount must be at least $0.50.");
+    // A typed card gets its fee once the card is entered (applyCardFeeToIntent). A reader can't say what the card is until it has
+    // authorized it, so it authorizes base + fee and, with debit exempt, captures the base alone for a debit card (captureReaderPayment).
+    const settings = await cardFeeSettingsFor(tx, input.businessId);
+    const cardFee = input.terminal ? cardFeeFor(settings, "desk", base, "credit") : 0;
+    const amount = base + cardFee;
     const client = sale.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) }) : undefined;
     const [pending] = await tx
       .insert(schema.payments)
@@ -1132,13 +1254,14 @@ export async function createCardPaymentIntent(input: {
         method: input.terminal ? "terminal" : "card",
         status: "pending",
         amountCents: amount,
-        tipCents: tipShare(sale, amount),
+        surchargeCents: cardFee,
+        tipCents: tipShare(sale, base),
         stripeAccountId: input.accountId,
         createdByUserId: input.actorUserId,
       })
       .returning();
     const fee = Math.round((amount * (await platformFeeBpsFor(input.businessId, tx))) / 10_000);
-    return { sale, pending: pending!, amount, client, fee };
+    return { sale, pending: pending!, amount, client, fee, manualCapture: cardFee > 0 && settings.debitExempt };
   });
   try {
     const customerId = client ? await ensureStripeCustomer({ accountId: input.accountId, businessId: input.businessId, client }) : undefined;
@@ -1150,7 +1273,7 @@ export async function createCardPaymentIntent(input: {
         description: `Sale #${sale.number}`,
         // The desk takes cards only: a typed card or a reader. (Klarna, Affirm, Cash App Pay and the like are for online checkout, not a client standing at the counter.)
         allowed_payment_method_types: input.terminal ? ["card_present"] : ["card"],
-        ...(input.terminal ? { capture_method: "automatic" as const } : {}),
+        ...(input.terminal ? { capture_method: manualCapture ? ("manual" as const) : ("automatic" as const) } : {}),
         ...(input.saveCard && customerId ? { setup_future_usage: "off_session" as const } : {}),
         metadata: { businessId: input.businessId, saleId: sale.id, paymentId: pending.id },
         ...(fee > 0 ? { application_fee_amount: fee } : {}),
@@ -1158,7 +1281,7 @@ export async function createCardPaymentIntent(input: {
       { stripeAccount: input.accountId, idempotencyKey: `pi_${pending.id}` },
     );
     await withTenant(input.businessId, (tx) => tx.update(schema.payments).set({ stripePaymentIntentId: pi.id }).where(eq(schema.payments.id, pending.id)));
-    return { clientSecret: pi.client_secret!, paymentId: pending.id, amount };
+    return { clientSecret: pi.client_secret!, paymentId: pending.id, amount, cardFeeCents: pending.surchargeCents };
   } catch (e) {
     // Nothing was charged: don't leave a "Pending" row behind.
     await withTenant(input.businessId, (tx) => tx.delete(schema.payments).where(and(eq(schema.payments.id, pending.id), eq(schema.payments.status, "pending"), sql`${schema.payments.stripePaymentIntentId} is null`)));
@@ -1189,6 +1312,7 @@ export async function markCardPaymentSucceeded(input: {
       return;
     }
     await tx.update(schema.payments).set({ status: "succeeded", ...card }).where(eq(schema.payments.id, p.id));
+    await addCardFeeLine(tx, p.id);
     await closeIfPaid(tx, p.saleId, input.taxRateBps, p.createdByUserId ?? "system", input.businessId);
   });
 }
@@ -1216,13 +1340,16 @@ export async function openHelcimPayment(input: {
       .select({ cents: sql<number>`coalesce(sum(${schema.payments.amountCents}), 0)::int` })
       .from(schema.payments)
       .where(and(eq(schema.payments.saleId, sale.id), eq(schema.payments.status, "pending"), eq(schema.payments.provider, "helcim"), sql`${schema.payments.createdAt} > now() - interval '3 minutes'`));
-    const amount = Math.min(input.amountCents, balance(sale) - (inflight?.cents ?? 0));
-    if ((inflight?.cents ?? 0) > 0 && amount < 50) throw new SaleError("A card payment for this ticket is already in progress. Finish or cancel it on the terminal, then try again.");
-    if (amount < 50) throw new SaleError("Amount must be at least $0.50.");
+    const base = Math.min(input.amountCents, balance(sale) - (inflight?.cents ?? 0));
+    if ((inflight?.cents ?? 0) > 0 && base < 50) throw new SaleError("A card payment for this ticket is already in progress. Finish or cancel it on the terminal, then try again.");
+    if (base < 50) throw new SaleError("Amount must be at least $0.50.");
+    // Helcim doesn't say whether a card is debit before charging it, so with debit exempt there is no fee (cardFeeFor, "unknown").
+    const cardFee = cardFeeFor(await cardFeeSettingsFor(tx, input.businessId), "desk", base, "unknown");
+    const amount = base + cardFee;
     const client = sale.clientId ? await tx.query.clients.findFirst({ where: eq(schema.clients.id, sale.clientId) }) : undefined;
     const [row] = await tx
       .insert(schema.payments)
-      .values({ businessId: input.businessId, saleId: sale.id, method: input.method, status: "pending", amountCents: amount, tipCents: tipShare(sale, amount), provider: "helcim", providerInvoice: input.invoice ?? null, providerSession: input.session ?? null, createdByUserId: input.actorUserId })
+      .values({ businessId: input.businessId, saleId: sale.id, method: input.method, status: "pending", amountCents: amount, surchargeCents: cardFee, tipCents: tipShare(sale, base), provider: "helcim", providerInvoice: input.invoice ?? null, providerSession: input.session ?? null, createdByUserId: input.actorUserId })
       .returning({ id: schema.payments.id });
     return { sale, client, amount, paymentId: row!.id };
   });
@@ -1259,6 +1386,7 @@ export async function settleHelcimPayment(input: { businessId: string; paymentId
     const card = { status: "succeeded" as const, providerPaymentId: String(t.transactionId), cardBrand: brandOf(t.cardType), cardLast4: last4Of(t.cardNumber), providerSession: null };
     await tx.update(schema.payments).set(card).where(eq(schema.payments.id, p.id));
     await audit(tx, input.businessId, p.createdByUserId ?? "system", `payment.${p.method}`, p.saleId, { amount: charged, helcim: t.transactionId });
+    await addCardFeeLine(tx, p.id);
     await closeIfPaid(tx, p.saleId, input.taxRateBps, p.createdByUserId ?? "system", input.businessId);
     return charged === p.amountCents ? "paid" : "mismatch";
   });
@@ -1357,22 +1485,31 @@ export async function refundPayment(input: {
     } else if (["card", "card_on_file", "terminal"].includes(p.method) && !p.stripePaymentIntentId) throw new SaleError("This card payment has no Stripe reference, so it can't be refunded here. Refund it in your Stripe dashboard.");
     // With items, the ticket is locked too (two refunds from different payments must not both refund the same line) and checked first.
     const planned = input.items?.length ? await planRefundItems(tx, (await tx.select().from(schema.sales).where(eq(schema.sales.id, p.saleId)).for("update"))[0]!, input.items) : null;
-    const refundable = p.amountCents - p.refundedCents - (await creditedAgainstPayment(tx, p.id));
+    const credited = await creditedAgainstPayment(tx, p.id);
+    const refundable = p.amountCents - p.refundedCents - credited;
     // A Stripe-side refund we may have just recorded ourselves (our own refund's webhook can arrive while we commit): book only the gap.
     if (input.externalRefundId && input.externalTotalCents !== undefined && input.externalTotalCents - p.refundedCents <= 0) return null;
-    const wanted = planned ? planned.reduce((n, x) => n + x.amountCents, 0) : input.externalRefundId && input.externalTotalCents !== undefined ? input.externalTotalCents - p.refundedCents : input.amountCents;
-    if (planned && wanted > refundable) throw new SaleError(`That's ${(wanted / 100).toFixed(2)}, more than the ${(refundable / 100).toFixed(2)} left on this payment. Refund some of it from another payment.`);
-    const amount = Math.min(wanted, refundable);
-    if (amount <= 0) throw new SaleError("Nothing left to refund.");
+    let amount: number;
+    let cardFee: number;
+    if (input.externalRefundId) {
+      // Refunded outside the app: Stripe's figure includes the card fee, split back out in proportion.
+      const gross = Math.min(refundable, input.externalTotalCents !== undefined ? input.externalTotalCents - p.refundedCents : input.amountCents);
+      if (gross <= 0) throw new SaleError("Nothing left to refund.");
+      cardFee = splitGrossRefund({ amountCents: p.amountCents, surchargeCents: p.surchargeCents, returnedCents: p.refundedCents + credited, surchargeReturnedCents: p.surchargeRefundedCents }, gross).feeCents;
+      amount = gross;
+    } else {
+      // The desk refunds what the client paid for; the same share of the card fee goes back with it.
+      ({ amount, cardFee } = refundAmounts(p, credited, planned ? planned.reduce((n, x) => n + x.amountCents, 0) : input.amountCents, !!planned));
+    }
     const viaHelcim = p.provider === "helcim" && !!p.providerPaymentId && !input.externalRefundId;
-    if (viaHelcim) return { helcim: { p, amount, planned } };
+    if (viaHelcim) return { helcim: { p, amount, planned, cardFee } };
     const viaStripe = !!p.stripePaymentIntentId && !input.externalRefundId;
     // No Stripe call (cash, gift card, points, store credit, or a refund Stripe already made): record it in this same transaction.
-    if (!viaStripe) return { done: await recordRefund(tx, input, p, amount, planned, input.externalRefundId ?? null) };
+    if (!viaStripe) return { done: await recordRefund(tx, input, p, amount, planned, input.externalRefundId ?? null, null, cardFee) };
     // Back through the account that took it, even if the location now uses another one.
     const account = p.stripeAccountId ?? input.accountId;
     if (!account) throw new SaleError("Stripe account not connected.");
-    return { stripe: { p, amount, account } };
+    return { stripe: { p, amount, account, cardFee } };
   });
   if (!prep) return;
   if ("done" in prep) {
@@ -1380,7 +1517,7 @@ export async function refundPayment(input: {
     return;
   }
   if ("helcim" in prep && prep.helcim) {
-    const { p: before, amount } = prep.helcim;
+    const { p: before, amount, cardFee } = prep.helcim;
     if (!input.helcimToken) throw new SaleError("Helcim isn't connected, so this card payment can't be refunded here. Refund it in your Helcim dashboard.");
     const txId = Number(before.providerPaymentId);
     const key = `${before.id}_${before.refundedCents + amount}`;
@@ -1398,12 +1535,12 @@ export async function refundPayment(input: {
       const [known] = await tx.select().from(schema.refunds).where(eq(schema.refunds.providerRefundId, String(r.transactionId)));
       if (known) return [];
       const planned = input.items?.length ? await planRefundItems(tx, (await tx.select().from(schema.sales).where(eq(schema.sales.id, p!.saleId)).for("update"))[0]!, input.items).catch(() => null) : null;
-      return recordRefund(tx, input, p!, amount, planned, null, String(r.transactionId));
+      return recordRefund(tx, input, p!, amount, planned, null, String(r.transactionId), cardFee);
     });
     await stopMembershipBilling(input.businessId, stop, input.actorUserId);
     return;
   }
-  const { p: before, amount, account } = prep.stripe;
+  const { p: before, amount, account, cardFee } = prep.stripe;
   // Keyed on the running total, so a double click (or a retry) is one refund in Stripe.
   const r = await stripe().refunds.create(
     { payment_intent: before.stripePaymentIntentId!, amount, reason: "requested_by_customer", metadata: { paymentId: before.id } },
@@ -1423,7 +1560,7 @@ export async function refundPayment(input: {
     // The money has gone back: record it even if the lines changed meanwhile (then without the item breakdown).
     const sale = (await tx.select().from(schema.sales).where(eq(schema.sales.id, p!.saleId)).for("update"))[0]!;
     const planned = input.items?.length ? await planRefundItems(tx, sale, input.items).catch(() => null) : null;
-    return recordRefund(tx, input, p!, amount, planned, r.id);
+    return recordRefund(tx, input, p!, amount, planned, r.id, null, cardFee);
   });
   await stopMembershipBilling(input.businessId, stopBilling, input.actorUserId);
 }
@@ -1437,6 +1574,8 @@ async function recordRefund(
   planned: PlannedItem[] | null,
   stripeRefundId: string | null,
   providerRefundId: string | null = null,
+  /** The part of `amount` that is the payment's card fee going back. */
+  cardFee = 0,
 ): Promise<string[]> {
   const stopBilling: string[] = [];
   const [refundRow] = await tx
@@ -1445,6 +1584,7 @@ async function recordRefund(
       businessId: input.businessId,
       paymentId: p.id,
       amountCents: amount,
+      surchargeCents: cardFee,
       reason: input.reason,
       reasonId: input.reasonId ?? null,
       stripeRefundId,
@@ -1457,7 +1597,7 @@ async function recordRefund(
   const tipRefund = p.amountCents > 0 ? Math.min(p.tipCents, Math.round((p.tipCents * amount) / p.amountCents)) : 0;
   await tx
     .update(schema.payments)
-    .set({ refundedCents: newRefunded, tipCents: p.tipCents - tipRefund, status: newRefunded >= p.amountCents ? "refunded" : "partially_refunded" })
+    .set({ refundedCents: newRefunded, surchargeRefundedCents: p.surchargeRefundedCents + cardFee, tipCents: p.tipCents - tipRefund, status: newRefunded >= p.amountCents ? "refunded" : "partially_refunded" })
     .where(eq(schema.payments.id, p.id));
   const sale = (await tx.query.sales.findFirst({ where: eq(schema.sales.id, p.saleId) }))!;
   if (planned) stopBilling.push(...(await recordRefundItems(tx, input.businessId, sale, planned, { refundId: refundRow!.id }, input.actorUserId)));
@@ -1500,8 +1640,11 @@ export async function recordStripeSideRefund(input: { businessId: string; paymen
   return withTenant(input.businessId, async (tx) => {
     const [appt] = await tx.select().from(schema.appointments).where(eq(schema.appointments.depositPaymentIntentId, input.paymentIntentId)).for("update");
     if (!appt || appt.depositStatus !== "paid") return 0;
-    const kept = Math.max(0, appt.depositCents - input.refundedTotalCents);
-    await tx.update(schema.appointments).set(kept > 0 ? { depositCents: kept } : { depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
+    // Stripe's figure includes any card fee charged with the deposit; what is kept keeps its share of the fee.
+    const gross = appt.depositCents + appt.depositSurchargeCents;
+    const keptGross = Math.max(0, gross - input.refundedTotalCents);
+    const keptFee = gross > 0 ? Math.round((appt.depositSurchargeCents * keptGross) / gross) : 0;
+    await tx.update(schema.appointments).set(keptGross > 0 ? { depositCents: keptGross - keptFee, depositSurchargeCents: keptFee } : { depositStatus: "refunded" }).where(eq(schema.appointments.id, appt.id));
     await tx.insert(schema.auditLog).values({ businessId: input.businessId, actorUserId: null, action: "deposit.refund_in_stripe", entity: "appointment", entityId: appt.id, diff: JSON.stringify({ refundedCents: input.refundedTotalCents }) });
     return Math.min(appt.depositCents, input.refundedTotalCents);
   });
@@ -1588,6 +1731,7 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
           discountCents: schema.sales.discountCents,
           taxCents: schema.sales.taxCents,
           tipCents: schema.sales.tipCents,
+          cardFeeCents: schema.sales.cardFeeCents,
           totalCents: schema.sales.totalCents,
           refundedCents: schema.sales.refundedCents,
         })
@@ -1679,7 +1823,7 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
           locationId: schema.sales.locationId,
           locationName: schema.locations.name,
           count: sql<number>`count(*)`,
-          sales: sql<number>`coalesce(sum(${schema.sales.totalCents} - ${schema.sales.tipCents}), 0)`,
+          sales: sql<number>`coalesce(sum(${schema.sales.totalCents} - ${schema.sales.tipCents} - ${schema.sales.cardFeeCents}), 0)`,
           tips: sql<number>`coalesce(sum(${schema.sales.tipCents}), 0)`,
           tax: sql<number>`coalesce(sum(${schema.sales.taxCents}), 0)`,
           refunded: sql<number>`coalesce(sum(${schema.sales.refundedCents}), 0)`,
@@ -1747,8 +1891,9 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
     }
     const byMethodReal = byMethod.map((m) => ({ ...m, tips: tipByMethod.get(m.method) ?? 0 }));
     // Refunds by the day they were made (whenever the sale was), so a month that has closed doesn't change when an old sale is refunded.
+    // Card fees given back with a refund are reported with the card fees, not as refunds of sales.
     const refundRows = await tx
-      .select({ locationId: schema.sales.locationId, cents: sql<number>`coalesce(sum(${schema.refunds.amountCents}), 0)::int` })
+      .select({ locationId: schema.sales.locationId, cents: sql<number>`coalesce(sum(${schema.refunds.amountCents} - ${schema.refunds.surchargeCents}), 0)::int`, cardFee: sql<number>`coalesce(sum(${schema.refunds.surchargeCents}), 0)::int` })
       .from(schema.refunds)
       .innerJoin(schema.payments, eq(schema.payments.id, schema.refunds.paymentId))
       .innerJoin(schema.sales, eq(schema.sales.id, schema.payments.saleId))
@@ -1770,7 +1915,7 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
     // Refunds by the staff member credited on what was refunded, on the day of the refund: itemized refunds take back exactly their
     // lines; a refund of an amount (no items) is split across the ticket's service and product lines by their share, like payroll.
     const refundLines = await tx
-      .select({ refundId: schema.refunds.id, saleId: schema.sales.id, cents: schema.refunds.amountCents, lineId: schema.refundItems.saleLineId, itemCents: schema.refundItems.amountCents })
+      .select({ refundId: schema.refunds.id, saleId: schema.sales.id, cents: sql<number>`(${schema.refunds.amountCents} - ${schema.refunds.surchargeCents})::int`, lineId: schema.refundItems.saleLineId, itemCents: schema.refundItems.amountCents })
       .from(schema.refunds)
       .innerJoin(schema.payments, eq(schema.payments.id, schema.refunds.paymentId))
       .innerJoin(schema.sales, eq(schema.sales.id, schema.payments.saleId))
@@ -1803,6 +1948,7 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
       });
     }
     const refundsCents = refundRows.filter((r) => !locationId || r.locationId === locationId).reduce((n, r) => n + Number(r.cents), 0);
+    const cardFeeRefundedCents = refundRows.filter((r) => !locationId || r.locationId === locationId).reduce((n, r) => n + Number(r.cardFee), 0);
     const p = prepaid[0];
     const prepaidSold = { packagesCents: Number(p?.packagesCents ?? 0), packagesCount: Number(p?.packagesCount ?? 0), membershipCents: Number(p?.membershipCents ?? 0), membershipCount: Number(p?.membershipCount ?? 0) };
     // The fees line is always among the top items when there were any, however small next to a busy month's services.
@@ -1812,7 +1958,7 @@ export async function salesReport(businessId: string, from: Date, to: Date, loca
     }
     // Sessions used in the range, at their value, whatever the client paid for them and whenever.
     const prepaidUsedCents = byCategory.reduce((n, r) => n + Number(r.credit), 0);
-    return { sales, byStaff, byMethod: byMethodReal, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, linesByLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation, refundsByStaff, refundStaffNames };
+    return { sales, byStaff, byMethod: byMethodReal, byService, byCategory, prepaidSold, prepaidUsedCents, appts, byLocation, linesByLocation, crossLocation, tipCashCents, tipCardCents, refundsCents, refundsByLocation, refundsByStaff, refundStaffNames, cardFeeRefundedCents };
   });
 }
 

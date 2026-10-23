@@ -1322,6 +1322,24 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       (pair once, cookie per tablet, list of paired tablets) would let one lost tablet be removed without touching the others.
 - [ ] Not built: a rebooking prompt after check-in, or "we texted you a link" to fill forms on the client's own phone.
 - [ ] Classes aren't checked in at the kiosk (visits only); class attendance stays on the class session page.
+### Apple Pay / Google Pay and the card fee (built 2026-10-23, migration 0135; ops detail in `docs-ops.md`)
+- [x] Apple Pay and Google Pay (Stripe Express Checkout Element) on booking deposits and card holds and the online store, card field kept
+      as the fallback; the desk stays card only. Domains registered per connected account on connect and when a custom domain turns Active;
+      Apple's association file under `/.well-known/`. Helcim: Google Pay turned on in HelcimPay.js (no Apple Pay for Helcim).
+- [x] Card fee (Settings → Checkout & tips): off / surcharge up to 3% / flat convenience fee; desk, online deposits, store; debit exempt
+      where Stripe can tell. Shown before payment, its own line on the ticket and receipt, out of commission and tips, its own figure in
+      Reports, refunded in proportion. Tests: `packages/core/src/__tests__/card-fee.test.ts`, `apps/web/src/server/__tests__/card-fee.test.ts`.
+- [ ] After deploying: run `scripts/register-wallet-domains.ts` on Render once, and give the live restricted key **Payment method domains:
+      write** and **PaymentMethods: read**.
+- [ ] Try Apple Pay and Google Pay for real on app.angelicbooking.com with a test-mode account (wallets can't show on localhost), and on a
+      custom domain; check `stripe_payment_domains` says Apple Pay active.
+- [ ] Try the card fee against live Stripe: a debit card typed at the desk (no fee), a credit card (fee), a reader payment with a debit card
+      (captured without the fee), a wallet deposit online, and a partial refund. The Stripe card paths were built against the docs and are
+      not covered by automated tests (the Helcim path is, with a fake API).
+- [ ] Helcim: confirm `digitalWallet` turns on Google Pay in a real HelcimPay.js checkout. Helcim can't tell debit from credit, so with debit
+      exempt Helcim payments get no fee; if the first customer wants a fee on Helcim, look at Helcim's own surcharge program instead.
+- [ ] Not covered yet: no fee on tips added after payment, membership renewals or the salon's own card machine; the fee isn't taxed (some
+      states tax it); Apple Pay inside a salon's own website (embed) may need the salon's domain registered.
 
 ### Email designs (built 2026-10-22, migration 0132)
 - [x] Marketing → Email designs: saved designs built from blocks (heading, text with **bold** / *italic* / links, image, two images,

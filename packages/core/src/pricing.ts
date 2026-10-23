@@ -1,7 +1,7 @@
 /** Pure money math for checkout. All amounts are integer cents. */
 
 export interface PricingLine {
-  kind: "service" | "product" | "tip" | "fee" | "adjustment" | "gift_card" | "package" | "membership";
+  kind: "service" | "product" | "tip" | "fee" | "adjustment" | "gift_card" | "package" | "membership" | "card_fee";
   amountCents: number;
   taxable: boolean;
   staffId?: string | null;
@@ -20,7 +20,7 @@ const STORED_VALUE: ReadonlySet<PricingLine["kind"]> = new Set(["gift_card", "pa
 
 /** Whether a discount reaches this line. */
 export function discountApplies(line: PricingLine, discount: Discount): boolean {
-  if (line.kind === "tip" || STORED_VALUE.has(line.kind)) return false;
+  if (line.kind === "tip" || line.kind === "card_fee" || STORED_VALUE.has(line.kind)) return false;
   if (discount.serviceIds?.length) return line.kind === "service" && !!line.serviceId && discount.serviceIds.includes(line.serviceId);
   return true;
 }
@@ -30,6 +30,8 @@ export interface Totals {
   discountCents: number;
   taxCents: number;
   tipCents: number;
+  /** Card surcharge / convenience fees (card_fee lines): outside the subtotal, never discounted or taxed. */
+  cardFeeCents: number;
   totalCents: number;
 }
 
@@ -42,10 +44,11 @@ export function clampCents(n: number): number {
  * Totals for a sale. The discount is computed on the lines it reaches (never
  * stored value; only the named services for a restricted promo) and applies
  * proportionally to the taxable and non-taxable part of that base, so tax is
- * charged on the discounted taxable amount.
+ * charged on the discounted taxable amount. Card fees sit outside all of that and are added at the end.
  */
 export function computeTotals(lines: PricingLine[], discount: Discount | null, taxRateBps: number): Totals {
-  const goods = lines.filter((l) => l.kind !== "tip");
+  const goods = lines.filter((l) => l.kind !== "tip" && l.kind !== "card_fee");
+  const cardFeeCents = lines.filter((l) => l.kind === "card_fee").reduce((s, l) => s + clampCents(l.amountCents), 0);
   const subtotal = goods.reduce((s, l) => s + clampCents(l.amountCents), 0);
   const taxableBase = goods.filter((l) => l.taxable).reduce((s, l) => s + clampCents(l.amountCents), 0);
   const tipCents = lines.filter((l) => l.kind === "tip").reduce((s, l) => s + clampCents(l.amountCents), 0);
@@ -66,8 +69,8 @@ export function computeTotals(lines: PricingLine[], discount: Discount | null, t
   }
   const discountedTaxable = Math.max(0, taxableBase - taxableDiscount);
   const taxCents = Math.round((discountedTaxable * Math.max(0, taxRateBps)) / 10_000);
-  const totalCents = subtotal - discountCents + taxCents + tipCents;
-  return { subtotalCents: subtotal, discountCents, taxCents, tipCents, totalCents };
+  const totalCents = subtotal - discountCents + taxCents + tipCents + cardFeeCents;
+  return { subtotalCents: subtotal, discountCents, taxCents, tipCents, cardFeeCents, totalCents };
 }
 
 /**

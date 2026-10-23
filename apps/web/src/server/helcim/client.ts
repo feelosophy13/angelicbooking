@@ -85,6 +85,9 @@ export const helcim = {
       amount: dollars(p.amountCents),
       currency: p.currency.toUpperCase(),
       paymentMethod: "cc",
+      // Google Pay in Helcim's card form (their only wallet so far; Apple Pay isn't documented for HelcimPay.js). Not for a card hold
+      // ("verify"), which saves a card for later charges rather than paying now.
+      ...(p.paymentType !== "verify" ? { digitalWallet: { "google-pay": 1 } } : {}),
       ...(p.customerCode ? { customerCode: p.customerCode } : {}),
       ...(p.brandColor ? { customStyling: { brandColor: p.brandColor.replace("#", "") } } : {}),
     }),

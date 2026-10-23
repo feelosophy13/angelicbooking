@@ -9,7 +9,7 @@ describe("computeTotals", () => {
   ];
   it("taxes only taxable goods and excludes tips from subtotal", () => {
     const t = computeTotals(lines, null, 825);
-    expect(t).toEqual({ subtotalCents: 8500, discountCents: 0, taxCents: 165, tipCents: 1000, totalCents: 9665 });
+    expect(t).toEqual({ subtotalCents: 8500, discountCents: 0, taxCents: 165, tipCents: 1000, cardFeeCents: 0, totalCents: 9665 });
   });
   it("applies a percent discount proportionally before tax", () => {
     const t = computeTotals(lines, { type: "percent", value: 10 }, 1000);

@@ -31,7 +31,7 @@ export function proxy(request: NextRequest) {
   const host = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "").toLowerCase().split(":")[0]!;
   const { pathname } = request.nextUrl;
   const isAppHost = !host || APP_HOSTS.has(host) || [...APP_HOSTS].some((h) => h.split(":")[0] === host);
-  if (!isAppHost && !pathname.startsWith("/book/") && !pathname.startsWith("/embed/") && !pathname.startsWith("/clock/") && !pathname.startsWith("/checkin/") && !pathname.startsWith("/api/") && !pathname.startsWith("/_next/") && pathname !== "/embed.js") {
+  if (!isAppHost && !pathname.startsWith("/book/") && !pathname.startsWith("/embed/") && !pathname.startsWith("/clock/") && !pathname.startsWith("/checkin/") && !pathname.startsWith("/api/") && !pathname.startsWith("/_next/") && !pathname.startsWith("/.well-known/") && pathname !== "/embed.js") {
     const url = request.nextUrl.clone();
     url.pathname = `/book/_host/${host}${pathname === "/" ? "" : pathname}`;
     return NextResponse.rewrite(url);

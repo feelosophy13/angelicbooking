@@ -26,7 +26,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ slug: 
         {client ? <p className="mt-1">{client.firstName} {client.lastName}</p> : null}
       </div>
       <hr className="my-3 border-dashed" />
-      {lines.filter((l) => l.kind !== "tip").map((l) => (
+      {lines.filter((l) => l.kind !== "tip" && l.kind !== "card_fee").map((l) => (
         <div key={l.id}>
           <div className="flex justify-between"><span>{l.name}{l.quantity > 1 ? ` x${l.quantity}` : ""}</span><span>{money(l.amountCents)}</span></div>
           {l.staffId && staff.find((x) => x.id === l.staffId) ? <p className="text-xs text-stone-500">with {staff.find((x) => x.id === l.staffId)!.displayName}</p> : null}
@@ -37,6 +37,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ slug: 
       {sale.discountCents ? <div className="flex justify-between"><span>Discount</span><span>-{money(sale.discountCents)}</span></div> : null}
       {sale.taxCents ? <div className="flex justify-between"><span>Tax ({taxPct})</span><span>{money(sale.taxCents)}</span></div> : sale.taxExempt ? <div className="flex justify-between"><span>Tax</span><span>exempt</span></div> : null}
       {sale.tipCents ? <div className="flex justify-between"><span>Tip</span><span>{money(sale.tipCents)}</span></div> : null}
+      {lines.filter((l) => l.kind === "card_fee").map((l) => <div key={l.id} className="flex justify-between"><span>{l.name}</span><span>{money(l.amountCents)}</span></div>)}
       <div className="mt-1 flex justify-between font-bold"><span>Total</span><span>{money(sale.totalCents)}</span></div>
       <hr className="my-3 border-dashed" />
       {payments.filter((p) => p.status !== "failed" && p.status !== "pending").map((p) => (

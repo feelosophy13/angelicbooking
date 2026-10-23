@@ -1,6 +1,6 @@
 // Point-of-sale: sales, lines, payments, products, Stripe webhook ledger.
 import { sql } from "drizzle-orm";
-import { pgTable, pgEnum, text, integer, boolean, timestamp, index, uniqueIndex, check, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, integer, boolean, timestamp, index, uniqueIndex, check, jsonb, primaryKey } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 import { appointments, businesses, clients, locations, staff } from "./domain";
 
@@ -18,7 +18,7 @@ const businessId = () =>
     .references(() => businesses.id, { onDelete: "cascade" });
 
 export const saleStatus = pgEnum("sale_status", ["open", "paid", "refunded", "void"]);
-export const saleLineKind = pgEnum("sale_line_kind", ["service", "product", "tip", "fee", "adjustment", "gift_card", "package", "membership"]);
+export const saleLineKind = pgEnum("sale_line_kind", ["service", "product", "tip", "fee", "adjustment", "gift_card", "package", "membership", "card_fee"]);
 export const paymentMethod = pgEnum("payment_method", ["cash", "card", "card_on_file", "terminal", "other", "gift_card", "loyalty", "store_credit", "external_card"]);
 export const paymentStatus = pgEnum("payment_status", ["pending", "succeeded", "failed", "refunded", "partially_refunded"]);
 
@@ -254,7 +254,9 @@ export const sales = pgTable(
     discountCents: integer("discount_cents").notNull().default(0),
     taxCents: integer("tax_cents").notNull().default(0),
     tipCents: integer("tip_cents").notNull().default(0),
-    totalCents: integer("total_cents").notNull().default(0), // subtotal - discount + tax + tip
+    totalCents: integer("total_cents").notNull().default(0), // subtotal - discount + tax + tip + card fee
+    /** Card surcharge / convenience fees on the ticket (its card_fee lines); not in the subtotal, never discounted or commissioned. */
+    cardFeeCents: integer("card_fee_cents").notNull().default(0),
     paidCents: integer("paid_cents").notNull().default(0),
     refundedCents: integer("refunded_cents").notNull().default(0),
     discountNote: text("discount_note"),
@@ -314,10 +316,12 @@ export const saleLines = pgTable(
     preMemberUnitCents: integer("pre_member_unit_cents"),
     // A tip line only: how it was handed over, "cash" or "card". Null = same as the payment (older tips, or the desk did not say); payroll splits those by the payment mix.
     tipMethod: text("tip_method"),
+    // A card_fee line only: the card payment that carried the fee (one fee line per payment).
+    paymentId: text("payment_id"),
     // When the line was added (a tip added after the sale closed is paid in the period it was added).
     createdAt: createdAt(),
   },
-  (t) => [index("sale_lines_sale_idx").on(t.saleId), index("sale_lines_business_staff_idx").on(t.businessId, t.staffId)],
+  (t) => [index("sale_lines_sale_idx").on(t.saleId), index("sale_lines_business_staff_idx").on(t.businessId, t.staffId), uniqueIndex("sale_lines_payment_uq").on(t.paymentId).where(sql`${t.paymentId} is not null`)],
 );
 
 export const payments = pgTable(
@@ -333,6 +337,9 @@ export const payments = pgTable(
     amountCents: integer("amount_cents").notNull(), // includes tipCents
     tipCents: integer("tip_cents").notNull().default(0),
     refundedCents: integer("refunded_cents").notNull().default(0),
+    /** The card fee carried by this payment (included in amountCents), and how much of it has gone back with refunds or store credit. */
+    surchargeCents: integer("surcharge_cents").notNull().default(0),
+    surchargeRefundedCents: integer("surcharge_refunded_cents").notNull().default(0),
     stripePaymentIntentId: text("stripe_payment_intent_id"),
     /** The Stripe account that took it (a location's own or the main one): refunds go back through this account. */
     stripeAccountId: text("stripe_account_id"),
@@ -428,6 +435,8 @@ export const refunds = pgTable(
       .notNull()
       .references(() => payments.id, { onDelete: "cascade" }),
     amountCents: integer("amount_cents").notNull(),
+    /** The part of amountCents that is the payment's card fee going back (refunded in proportion). */
+    surchargeCents: integer("surcharge_cents").notNull().default(0),
     /** Free-text note (the "reason" column predates the managed list). */
     reason: text("reason"),
     reasonId: text("reason_id").references(() => refundReasons.id, { onDelete: "set null" }),
@@ -457,6 +466,25 @@ export const webhookEvents = pgTable(
     followedUpAt: timestamp("followed_up_at", { withTimezone: true }),
   },
   (t) => [index("webhook_events_type_idx").on(t.type, t.receivedAt)],
+);
+
+/**
+ * Apple Pay / Google Pay: a domain registered with Stripe's payment method domains API on one Stripe account (direct charges need the
+ * domain on the connected account that takes the money). Platform data, no RLS; written by server/payment-domains.ts.
+ */
+export const stripePaymentDomains = pgTable(
+  "stripe_payment_domains",
+  {
+    accountId: text("account_id").notNull(),
+    domain: text("domain").notNull(),
+    stripeDomainId: text("stripe_domain_id"),
+    applePayStatus: text("apple_pay_status"),
+    googlePayStatus: text("google_pay_status"),
+    error: text("error"),
+    livemode: boolean("livemode").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.domain, t.livemode] })],
 );
 
 export const SALES_TENANT_TABLES = ["products", "sales", "sale_lines", "payments", "refunds"] as const;

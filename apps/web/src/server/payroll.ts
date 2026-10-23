@@ -52,12 +52,13 @@ export async function buildPayrollLinesDetailed(business: Business, period: Payr
     const itemizedCredit = sql`exists (select 1 from refund_items ri where ri.credit_ledger_id = ${schema.storeCreditLedger.id})`;
     const [cardRefunds, creditRefunds, refundedItems, runs] = await Promise.all([
       tx
-        .select({ saleId: schema.payments.saleId, cents: schema.refunds.amountCents, at: schema.refunds.createdAt })
+        // A card fee given back with a refund was never anyone's pay: only what the client paid for is clawed back.
+        .select({ saleId: schema.payments.saleId, cents: sql<number>`(${schema.refunds.amountCents} - ${schema.refunds.surchargeCents})::int`, at: schema.refunds.createdAt })
         .from(schema.refunds)
         .innerJoin(schema.payments, eq(schema.payments.id, schema.refunds.paymentId))
         .where(and(gte(schema.refunds.createdAt, refundFrom), lte(schema.refunds.createdAt, refundTo), sql`not ${itemized}`)),
       tx
-        .select({ saleId: schema.storeCreditLedger.saleId, cents: schema.storeCreditLedger.deltaCents, at: schema.storeCreditLedger.createdAt })
+        .select({ saleId: schema.storeCreditLedger.saleId, cents: sql<number>`(${schema.storeCreditLedger.deltaCents} - ${schema.storeCreditLedger.surchargeCents})::int`, at: schema.storeCreditLedger.createdAt })
         .from(schema.storeCreditLedger)
         .where(and(eq(schema.storeCreditLedger.reason, "refund"), sql`${schema.storeCreditLedger.saleId} is not null`, gte(schema.storeCreditLedger.createdAt, refundFrom), lte(schema.storeCreditLedger.createdAt, refundTo), sql`not ${itemizedCredit}`)),
       tx
@@ -159,7 +160,8 @@ export async function buildPayrollLinesDetailed(business: Business, period: Payr
     const omitted: OmittedLine[] = [];
     for (const sale of sales) {
       const sl = lines.filter((l) => l.saleId === sale.id);
-      const goods = sl.filter((l) => l.kind !== "tip");
+      // A card surcharge / convenience fee is the house's, never commission or tips: it is not a good, and it is left out of what was paid.
+      const goods = sl.filter((l) => l.kind !== "tip" && l.kind !== "card_fee");
       const checkoutDay = localDate(sale.closedAt ?? sale.createdAt, tz);
       const closedInPeriod = inPeriod(checkoutDay);
       const isLate = (t: (typeof sl)[number]) => localDate(t.createdAt, tz) > checkoutDay;
@@ -168,10 +170,10 @@ export async function buildPayrollLinesDetailed(business: Business, period: Payr
       const goodsTotal = goods.reduce((s, l) => s + l.amountCents, 0);
       const taxableTotal = goods.filter((l) => l.taxable).reduce((s, l) => s + l.amountCents, 0);
       const sp = pays.filter((p) => p.saleId === sale.id);
-      const paidTotal = sp.reduce((s, p) => s + p.amountCents, 0);
+      const paidTotal = sp.reduce((s, p) => s + p.amountCents - p.surchargeCents, 0);
       // "Cash" on the sheet is money that did not go through a card (cash, other, a gift card, store credit, loyalty points); only a real card payment is "Credit Card"
       // and bears the card fee on tips.
-      const cardPaid = sp.filter((p) => CARD_FEE_METHODS.has(p.method)).reduce((s, p) => s + p.amountCents, 0);
+      const cardPaid = sp.filter((p) => CARD_FEE_METHODS.has(p.method)).reduce((s, p) => s + p.amountCents - p.surchargeCents, 0);
       const cashShare = paidTotal > 0 ? 1 - cardPaid / paidTotal : 0;
       const tipNoFeeShare = cashShare;
       const checkoutBy = sale.createdByUserId ? (userName.get(sale.createdByUserId) ?? null) : null;

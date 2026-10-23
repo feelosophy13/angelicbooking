@@ -3,10 +3,9 @@ import { PublicBotCheck } from "@/components/turnstile";
 import { useHydrated } from "@/lib/use-hydrated";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { loadStripe } from "@stripe/stripe-js";
-import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
 import { Checkbox, Field, Input, Notice, Radio, RadioGroup, Textarea } from "@/components/ui";
-import { finishOrderAction, startOrderAction, type StartOrderResult } from "./actions";
+import { StripeCardPay } from "@/components/stripe-card-pay";
+import { applyOrderFeeAction, finishOrderAction, startOrderAction, type StartOrderResult } from "./actions";
 import { openHelcimPay } from "@/lib/helcim-pay";
 
 export type CartProduct = { id: string; name: string; groupId?: string | null; groupName?: string | null; optionLabel?: string | null; priceCents: number; description: string | null; imageUrl: string | null; category: string | null; stockQty: number; trackStock: boolean };
@@ -31,6 +30,7 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
   const [address, setAddress] = useState("");
   const [buyer, setBuyer] = useState({ firstName: props.defaults?.firstName ?? "", lastName: props.defaults?.lastName ?? "", email: props.defaults?.email ?? "", phone: props.defaults?.phone ?? "" });
   const hydrated = useHydrated();
+  const router = useRouter();
   const [started, setStarted] = useState<Started | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -39,7 +39,6 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
   const giftCents = isGift ? (giftCustom ? Math.round(Number(giftCustom) * 100) : giftAmount) : 0;
   const subtotal = items.reduce((s, i) => s + (props.products.find((p) => p.id === i.productId)?.priceCents ?? 0) * i.quantity, 0) + (isGift ? giftCents || 0 : 0);
   const shipping = method === "ship" ? props.shippingFlatCents : 0;
-  const stripePromise = useMemo(() => (started?.provider === "stripe" ? loadStripe(started.publishableKey ?? props.publishableKey, started.accountId ? { stripeAccount: started.accountId } : undefined) : null), [props.publishableKey, started]);
   const canShip = props.shippingFlatCents > 0 && !isGift;
   // A product with options is one entry with its options under it; anything else stands alone.
   const shelf = useMemo(() => {
@@ -115,16 +114,43 @@ export function StoreCheckout(props: { slug: string; currency: string; products:
   };
 
   if (started) {
+    const fee = started.cardFee;
+    const withFee = started.totalCents + (fee?.estimateCents ?? 0);
     return (
       <div className="space-y-3 rounded-xl border border-stone-200 bg-white p-4">
-        <p className="text-sm">Total <b>{money(started.totalCents, props.currency)}</b> · <button type="button" className="underline" onClick={() => setStarted(null)}>Edit order</button></p>
+        {fee ? (
+          <dl className="space-y-0.5 text-sm">
+            <div className="flex justify-between gap-4"><dt className="text-stone-500">Order</dt><dd>{money(started.totalCents, props.currency)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-stone-500">Card fee{fee.debitExempt ? " (credit cards)" : ""}</dt><dd>{money(fee.estimateCents, props.currency)}</dd></div>
+            <div className="flex justify-between gap-4 font-medium"><dt>Total</dt><dd>{money(withFee, props.currency)}</dd></div>
+            <p className="text-xs text-stone-500">{fee.notice}</p>
+          </dl>
+        ) : null}
+        <p className="text-sm">{fee ? null : <>Total <b>{money(started.totalCents, props.currency)}</b> · </>}<button type="button" className="underline" onClick={() => setStarted(null)}>Edit order</button></p>
         {started.provider === "helcim" ? (
-          <HelcimPayStep slug={props.slug} saleId={started.saleId} checkoutId={started.checkoutId} checkoutToken={started.checkoutToken} brand={props.brand} total={money(started.totalCents, props.currency)} />
+          <HelcimPayStep slug={props.slug} saleId={started.saleId} checkoutId={started.checkoutId} checkoutToken={started.checkoutToken} brand={props.brand} total={money(withFee, props.currency)} />
         ) : (
-          // Cards only: Stripe's plain card field (the Payment Element also draws Link's bank and buy-now-pay-later offers).
-          <Elements stripe={stripePromise}>
-            <PayStep slug={props.slug} saleId={started.saleId} clientSecret={started.clientSecret} buyer={buyer} brand={props.brand} total={money(started.totalCents, props.currency)} />
-          </Elements>
+          <StripeCardPay
+            publishableKey={started.publishableKey ?? props.publishableKey}
+            stripeAccount={started.accountId}
+            clientSecret={started.clientSecret}
+            mode="payment"
+            amountCents={withFee}
+            currency={props.currency}
+            wallets
+            billing={{ name: `${buyer.firstName} ${buyer.lastName}`.trim() || undefined, email: buyer.email || undefined, phone: buyer.phone || undefined }}
+            brand={props.brand}
+            submitLabel={`Pay ${money(withFee, props.currency)}`}
+            busyLabel="Paying…"
+            prepare={async (pm) => applyOrderFeeAction(props.slug, started.saleId, started.clientSecret.split("_secret_")[0]!, pm)}
+            done={async (intentId) => {
+              // The card is authorized ("requires_capture"); the server captures it once the stock is checked again.
+              const out = await finishOrderAction(props.slug, started.saleId, intentId);
+              if (out.error) return out.error;
+              router.push(`/book/${props.slug}/order/${started.saleId}?k=${encodeURIComponent(out.key ?? "")}`);
+              return null;
+            }}
+          />
         )}
       </div>
     );
@@ -235,44 +261,5 @@ function HelcimPayStep({ slug, saleId, checkoutId, checkoutToken, brand, total }
       <button type="button" onClick={pay} disabled={busy} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: brand }}>{busy ? "Paying…" : `Pay ${total}`}</button>
       <p className="text-xs text-stone-500">Payments are processed by Helcim. Your card details never touch our servers.</p>
     </div>
-  );
-}
-
-function PayStep({ slug, saleId, clientSecret, buyer, brand, total }: { slug: string; saleId: string; clientSecret: string; buyer: { firstName: string; lastName: string; email: string; phone: string }; brand: string; total: string }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!stripe || !elements) return;
-    setBusy(true);
-    setError(null);
-    const card = elements.getElement(CardElement);
-    if (!card) return;
-    const r = await stripe.confirmCardPayment(clientSecret, { payment_method: { card, billing_details: { name: `${buyer.firstName} ${buyer.lastName}`.trim() || undefined, email: buyer.email || undefined, phone: buyer.phone || undefined } } });
-    // The card is authorized here ("requires_capture"); the server captures it once the stock is checked again.
-    if (r.error || (r.paymentIntent?.status !== "requires_capture" && r.paymentIntent?.status !== "succeeded")) {
-      setError(r.error?.message ?? `Payment ${r.paymentIntent?.status ?? "incomplete"}.`);
-      setBusy(false);
-      return;
-    }
-    const out = await finishOrderAction(slug, saleId, r.paymentIntent.id);
-    if (out.error) {
-      setError(out.error);
-      setBusy(false);
-      return;
-    }
-    router.push(`/book/${slug}/order/${saleId}?k=${encodeURIComponent(out.key ?? "")}`);
-  }
-  return (
-    <form onSubmit={submit} className="space-y-3">
-      <div className="rounded-lg border border-stone-300 bg-white px-3 py-3">
-        <CardElement options={{ style: { base: { fontSize: "16px", color: "#1c1917", "::placeholder": { color: "#a8a29e" } } } }} />
-      </div>
-      {error ? <Notice>{error}</Notice> : null}
-      <button type="submit" disabled={!stripe || busy} className="inline-flex h-10 w-full items-center justify-center rounded-lg px-4 text-sm font-medium text-white disabled:opacity-60" style={{ background: brand }}>{busy ? "Paying…" : `Pay ${total}`}</button>
-    </form>
   );
 }

@@ -85,6 +85,15 @@ export const businesses = pgTable("businesses", {
   checkinEarlyMinutes: smallint("checkin_early_minutes").notNull().default(60),
   // Tip choices offered at checkout (client tip screen and the staff tip form), percent of the goods after discount.
   tipPercents: integer("tip_percents").array().notNull().default(sql`'{18,20,25}'`),
+  // Card fee (Settings → Checkout & tips), off by default: a surcharge (percent, at most 3%) or a flat convenience fee, added to card
+  // payments where the salon turned it on (desk, online deposits, store). Debit (and prepaid) cards are left out when the processor says so.
+  cardFeeType: text("card_fee_type").$type<"off" | "surcharge" | "convenience">().notNull().default("off"),
+  cardFeeBps: integer("card_fee_bps").notNull().default(0),
+  cardFeeCents: integer("card_fee_cents").notNull().default(0),
+  cardFeeDesk: boolean("card_fee_desk").notNull().default(true),
+  cardFeeOnline: boolean("card_fee_online").notNull().default(true),
+  cardFeeStore: boolean("card_fee_store").notNull().default(true),
+  cardFeeDebitExempt: boolean("card_fee_debit_exempt").notNull().default(true),
   phone: text("phone"),
   email: text("email"),
   // Stripe Connect (Phase 2)
@@ -787,6 +796,8 @@ export const storeCreditLedger = pgTable(
     appointmentId: text("appointment_id"),
     /** For reason = refund: the managed refund reason (refund_reasons.id). */
     refundReasonId: text("refund_reason_id"),
+    /** For reason = refund of a card payment that carried a card fee: the part of deltaCents that is the fee given back. */
+    surchargeCents: integer("surcharge_cents").notNull().default(0),
     note: text("note"),
     createdByUserId: text("created_by_user_id"),
     createdAt: createdAt(),
@@ -931,6 +942,8 @@ export const appointments = pgTable(
     // "paid" until a sale is opened for the appointment (then the deposit becomes
     // a payment on that sale: "applied"), or until it is refunded.
     depositCents: integer("deposit_cents").notNull().default(0),
+    /** The card fee charged on top of the deposit (not part of depositCents); refunded in proportion with it. */
+    depositSurchargeCents: integer("deposit_surcharge_cents").notNull().default(0),
     depositStatus: depositStatus("deposit_status").notNull().default("none"),
     // Online bookings: the cancellation policy as the client saw it, when they agreed by booking, and from which address.
     policyText: text("policy_text"),

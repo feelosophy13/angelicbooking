@@ -11,6 +11,8 @@ import { duration } from "@/lib/format";
 import { BookingForm, WaitlistForm } from "./forms";
 import { PaidBookingForm } from "./payment-form";
 import { depositLabel, onlinePaymentRequirement } from "@/server/online-payments";
+import { cardFeeSettingsOf } from "@angelic/core";
+import { cardFeeQuote } from "@/lib/card-fee";
 import { paymentContextFor, tzFor } from "@/server/locations";
 import { publicSessions } from "@/server/classes";
 import { overridesForService, overridesForStaff, priceLabel, servicePriceRanges, termsOf } from "@/server/stylist-pricing";
@@ -264,7 +266,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
         {req.mode === "none" ? (
           <BookingForm verify={verifyCode} priceLabel={money(service.priceCents)} slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         ) : (
-          <PaidBookingForm verify={verifyCode} priceLabel={money(service.priceCents)} slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} mode={req.mode} full={req.full} amountLabel={formatMoney(req.amountCents, business.currency)} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
+          <PaidBookingForm verify={verifyCode} priceLabel={money(service.priceCents)} slug={slug} serviceId={service.id} staffId={chosen.staffId} startAt={chosen.startAt.toISOString()} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} mode={req.mode} full={req.full} amountLabel={formatMoney(req.amountCents, business.currency)} amountCents={req.amountCents} currency={business.currency} cardFee={req.mode === "deposit" ? cardFeeQuote(cardFeeSettingsOf(business), pay.provider, "online", req.amountCents, business.currency, { cashOption: false }) : null} publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!} brand={brandHex(business.brandColor)} classSessionId={chosen.id} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} />
         )}
       </>
     );
@@ -600,6 +602,9 @@ export default async function PublicBookingPage({ params, searchParams }: { para
               mode={req.mode}
               full={req.full}
               amountLabel={formatMoney(req.amountCents, business.currency)}
+              amountCents={req.amountCents}
+              currency={business.currency}
+              cardFee={req.mode === "deposit" ? cardFeeQuote(cardFeeSettingsOf(business), pay.provider, "online", req.amountCents, business.currency, { cashOption: false }) : null}
               publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!}
               brand={brandHex(business.brandColor)}
               referrals={business.loyaltyEnabled}

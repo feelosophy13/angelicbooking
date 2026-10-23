@@ -37,6 +37,7 @@ export default async function ConfirmedPage({ params, searchParams }: { params: 
       <dl className="mx-auto mt-4 max-w-xs space-y-1 text-left text-sm">
         <div className="flex justify-between gap-4"><dt className="text-stone-500">Total</dt><dd className="font-medium text-stone-800">{formatMoney(total, m.business.currency)}</dd></div>
         {paid ? <div className="flex justify-between gap-4"><dt className="text-stone-500">Deposit paid</dt><dd className="font-medium text-stone-800">{formatMoney(m.appt.depositCents, m.business.currency)}</dd></div> : null}
+        {paid && m.appt.depositSurchargeCents > 0 ? <div className="flex justify-between gap-4"><dt className="text-stone-500">Card fee</dt><dd className="font-medium text-stone-800">{formatMoney(m.appt.depositSurchargeCents, m.business.currency)}</dd></div> : null}
         {paid ? <div className="flex justify-between gap-4"><dt className="text-stone-500">Due at the salon</dt><dd className="font-medium text-stone-800">{formatMoney(Math.max(0, total - m.appt.depositCents), m.business.currency)}</dd></div> : null}
       </dl>
       <div className="mx-auto mt-3 max-w-xs space-y-1 text-left text-sm text-stone-600">

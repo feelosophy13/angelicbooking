@@ -1,13 +1,13 @@
 "use client";
 import { PublicBotCheck } from "@/components/turnstile";
-import { useMemo, useRef, useState, useTransition } from "react";
-import { loadStripe } from "@stripe/stripe-js";
-import { CardElement, Elements, useElements, useStripe } from "@stripe/react-stripe-js";
+import { useRef, useState, useTransition } from "react";
 import { Button, Notice } from "@/components/ui";
+import { StripeCardPay } from "@/components/stripe-card-pay";
+import type { CardFeeQuote } from "@/lib/card-fee";
 import { ContactFields, type BookingDefaults } from "./forms";
 import { useHydrated } from "@/lib/use-hydrated";
 import { policyLine } from "@/lib/policy-text";
-import { abandonOnlinePaymentAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
+import { abandonOnlinePaymentAction, applyDepositFeeAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
 import { PHOTOS_FIELD } from "@/lib/booking-photos";
 import { openHelcimPay } from "@/lib/helcim-pay";
 import { useBookingVerification } from "./verify-contact";
@@ -39,6 +39,11 @@ export function PaidBookingForm(props: {
   /** The up-front payment is the whole price, not a deposit. */
   full?: boolean;
   amountLabel: string;
+  /** The up-front payment in cents (the deposit, before any card fee). */
+  amountCents?: number;
+  /** A card fee on the deposit (Settings → Checkout & tips), shown before paying. */
+  cardFee?: CardFeeQuote | null;
+  currency?: string;
   publishableKey: string;
   brand: string;
   classSessionId?: string | null;
@@ -78,7 +83,7 @@ export function PaidBookingForm(props: {
     waitingFor.current = null;
     if (w) begin({ ...w.raw, verifyToken: token }, w.files);
   }, () => (document.querySelector<HTMLInputElement>('form [name="cf-turnstile-response"]')?.value || null));
-  const stripePromise = useMemo(() => (intent?.provider === "stripe" ? loadStripe(intent.publishableKey ?? props.publishableKey, intent.accountId ? { stripeAccount: intent.accountId } : undefined) : null), [props.publishableKey, intent]);
+  const fee = props.mode === "deposit" ? (props.cardFee ?? null) : null;
 
   if (!intent || !fields) {
     return (
@@ -114,6 +119,7 @@ export function PaidBookingForm(props: {
         {error ? <Notice>{error}</Notice> : null}
         {v.panel}
         {props.priceLabel ? <p className="text-sm font-medium text-stone-800">Price of this visit: {props.priceLabel}</p> : null}
+        {fee ? <p className="text-sm text-stone-700">{fee.notice}</p> : null}
         <PublicBotCheck resetKey={`${error ?? ""}:${v.sends}`} />
         <Button type="submit" disabled={pending || !hydrated || v.busy} className={v.waiting ? "hidden" : "w-full"} style={{ background: props.brand }}>
           {pending ? "One moment…" : props.mode === "deposit" ? props.full ? `Continue to pay ${props.amountLabel}` : `Continue to pay ${props.amountLabel} deposit` : "Continue to add a card"}
@@ -132,13 +138,18 @@ export function PaidBookingForm(props: {
         <span className="font-medium">{fields.firstName} {fields.lastName}</span> · {fields.phone || fields.email}{photoFiles.length ? ` · ${photoFiles.length} photo${photoFiles.length === 1 ? "" : "s"}` : ""}{" "}
         <button type="button" className="underline" onClick={() => { void abandonOnlinePaymentAction(props.slug, props.locationId ?? null, { kind: intent.kind, id: intent.intentId }); setIntent(null); }}>Edit</button>
       </p>
+      {fee && props.amountCents ? (
+        <dl className="space-y-0.5 text-sm">
+          <div className="flex justify-between gap-4"><dt className="text-stone-500">{props.full ? "Visit" : "Deposit"}</dt><dd>{props.amountLabel}</dd></div>
+          <div className="flex justify-between gap-4"><dt className="text-stone-500">Card fee{fee.debitExempt ? " (credit cards)" : ""}</dt><dd>{money(fee.estimateCents, props.currency)}</dd></div>
+          <div className="flex justify-between gap-4 font-medium"><dt>Total</dt><dd>{money(props.amountCents + fee.estimateCents, props.currency)}</dd></div>
+          {fee.debitExempt ? <p className="text-xs text-stone-500">Debit cards pay no fee: {props.amountLabel}.</p> : null}
+        </dl>
+      ) : null}
       {intent.provider === "helcim" ? (
-        <HelcimConfirmStep fields={fields} photos={photoFiles} intent={intent} mode={props.mode} amountLabel={props.amountLabel} brand={props.brand} />
+        <HelcimConfirmStep fields={fields} photos={photoFiles} intent={intent} mode={props.mode} amountLabel={fee && props.amountCents ? money(props.amountCents + fee.estimateCents, props.currency) : props.amountLabel} brand={props.brand} />
       ) : (
-        // Cards only: Stripe's plain card field (the Payment Element also draws Link's bank and buy-now-pay-later offers).
-        <Elements stripe={stripePromise}>
-          <ConfirmStep fields={fields} photos={photoFiles} intent={intent} mode={props.mode} amountLabel={props.amountLabel} brand={props.brand} />
-        </Elements>
+        <ConfirmStep fields={fields} photos={photoFiles} intent={intent} mode={props.mode} amountLabel={fee && props.amountCents ? money(props.amountCents + fee.estimateCents, props.currency) : props.amountLabel} brand={props.brand} slug={props.slug} locationId={props.locationId ?? null} publishableKey={props.publishableKey} walletAmountCents={(props.amountCents ?? 0) + (fee?.estimateCents ?? 0)} currency={props.currency ?? "usd"} />
       )}
     </div>
   );
@@ -178,57 +189,38 @@ function HelcimConfirmStep({ fields, photos, intent, mode, amountLabel, brand }:
   );
 }
 
-function ConfirmStep({ fields, photos, intent, mode, amountLabel, brand }: { fields: Record<string, string>; photos: File[]; intent: Extract<Intent, { provider: "stripe" }>; mode: "deposit" | "card"; amountLabel: string; brand: string }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!stripe || !elements) return;
-    setBusy(true);
-    setError(null);
-    const card = elements.getElement(CardElement);
-    if (!card) return;
-    const billing = { name: `${fields.firstName ?? ""} ${fields.lastName ?? ""}`.trim() || undefined, email: fields.email || undefined, phone: fields.phone || undefined };
-    const r = mode === "deposit"
-      ? await stripe.confirmCardPayment(intent.clientSecret, { payment_method: { card, billing_details: billing } })
-      : await stripe.confirmCardSetup(intent.clientSecret, { payment_method: { card, billing_details: billing } });
-    if (r.error) {
-      setError(r.error.message ?? "Your card was declined.");
-      setBusy(false);
-      return;
-    }
-    const status = mode === "deposit" ? (r as { paymentIntent?: { status: string } }).paymentIntent?.status : (r as { setupIntent?: { status: string } }).setupIntent?.status;
-    if (status !== "succeeded") {
-      setError(`Payment ${status ?? "incomplete"}. Please try again.`);
-      setBusy(false);
-      return;
-    }
-    let attached: FormData | null = null;
-    if (photos.length) {
-      attached = new FormData();
-      for (const f of photos) attached.append(PHOTOS_FIELD, f);
-    }
-    const out = await finishOnlineBookingAction(fields, { kind: intent.kind, id: intent.intentId }, attached);
-    if (out?.error) {
-      setError(out.error);
-      setBusy(false);
-    }
-    // On success the action redirects to the confirmation page.
-  }
-
+/** Stripe: Apple Pay or Google Pay when the device has them, else the card field. The card fee (if any) is settled on the server before the confirm. */
+function ConfirmStep({ fields, photos, intent, mode, amountLabel, brand, slug, locationId, publishableKey, walletAmountCents, currency }: { fields: Record<string, string>; photos: File[]; intent: Extract<Intent, { provider: "stripe" }>; mode: "deposit" | "card"; amountLabel: string; brand: string; slug: string; locationId: string | null; publishableKey: string; walletAmountCents: number; currency: string }) {
+  const billing = { name: `${fields.firstName ?? ""} ${fields.lastName ?? ""}`.trim() || undefined, email: fields.email || undefined, phone: fields.phone || undefined };
   return (
-    <form onSubmit={submit} className="space-y-3">
-      <div className="rounded-lg border border-stone-300 bg-white px-3 py-3">
-        <CardElement options={{ style: { base: { fontSize: "16px", color: "#1c1917", "::placeholder": { color: "#a8a29e" } } } }} />
-      </div>
-      {error ? <Notice>{error}</Notice> : null}
-      <Button type="submit" disabled={!stripe || busy} className="w-full" style={{ background: brand }}>
-        {busy ? "Confirming…" : mode === "deposit" ? `Pay ${amountLabel} and book` : "Save card and book"}
-      </Button>
-      <p className="text-xs text-stone-500">Payments are processed by Stripe. Your card details never touch our servers.</p>
-    </form>
+    <StripeCardPay
+      publishableKey={intent.publishableKey ?? publishableKey}
+      stripeAccount={intent.accountId}
+      clientSecret={intent.clientSecret}
+      mode={mode === "deposit" ? "payment" : "setup"}
+      amountCents={walletAmountCents}
+      currency={currency}
+      saveCard
+      wallets
+      billing={billing}
+      brand={brand}
+      submitLabel={mode === "deposit" ? `Pay ${amountLabel} and book` : "Save card and book"}
+      footnote="Payments are processed by Stripe. Your card details never touch our servers."
+      prepare={mode === "deposit" ? async (pm) => { const r = await applyDepositFeeAction(slug, locationId, intent.intentId, pm); return "error" in r ? { error: r.error } : undefined; } : undefined}
+      done={async () => {
+        let attached: FormData | null = null;
+        if (photos.length) {
+          attached = new FormData();
+          for (const f of photos) attached.append(PHOTOS_FIELD, f);
+        }
+        const out = await finishOnlineBookingAction(fields, { kind: intent.kind, id: intent.intentId }, attached);
+        // On success the action redirects to the confirmation page.
+        return out?.error ?? null;
+      }}
+    />
   );
+}
+
+function money(cents: number, currency = "usd") {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
 }
