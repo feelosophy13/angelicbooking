@@ -17,7 +17,7 @@ type Action = (prev: FillState, formData: FormData) => Promise<FillState>;
  * previous answers prefill, files attach, and the signature is typed and drawn.
  * A failed submit shows the message under the question it is about.
  */
-export function FormFill({ action, hidden, form, defaults, clientName, submitLabel, staffMode = false, before, next, preview = false, botCheck = false }: {
+export function FormFill({ action, hidden, form, defaults, clientName, submitLabel, staffMode = false, before, next, preview = false, botCheck = false, onDone }: {
   action: Action;
   hidden: Record<string, string>;
   /** Extra inputs rendered above the questions (e.g. who is filling in a shared form). */
@@ -33,6 +33,8 @@ export function FormFill({ action, hidden, form, defaults, clientName, submitLab
   preview?: boolean;
   /** Public link anyone can open: add the bot check. */
   botCheck?: boolean;
+  /** Called once the submission is stored (the check-in kiosk moves on to the next form). */
+  onDone?: () => void;
 }) {
   const [state, act] = useActionState<FillState, FormData>(action, undefined);
   const [answers, setAnswers] = useState<Record<string, FormAnswer | undefined>>(() => Object.fromEntries(form.fields.map((f) => [f.id, defaults?.[f.id]])));
@@ -42,6 +44,12 @@ export function FormFill({ action, hidden, form, defaults, clientName, submitLab
     if (!state?.error) return;
     const el = formRef.current?.querySelector<HTMLElement>(state.field ? `[data-q="${state.field}"]` : "[role=alert]");
     el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [state]);
+  // Once per stored submission, however often the parent re-renders with a new callback.
+  const doneRef = useRef(onDone);
+  doneRef.current = onDone;
+  useEffect(() => {
+    if (state?.ok) doneRef.current?.();
   }, [state]);
   if (state?.ok) {
     return (
