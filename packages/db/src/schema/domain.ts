@@ -512,6 +512,28 @@ export const clients = pgTable(
   ],
 );
 
+/**
+ * Family and linked clients (a child, a partner, a parent). One row per direction: `relation` is what the linked client is to the
+ * client ("Mia is Jen's child" is stored with "Jen is Mia's parent"). Each person keeps their own history, notes and forms; a child
+ * without a phone or email of their own gets their messages at a parent's.
+ */
+export const clientLinks = pgTable(
+  "client_links",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    linkedClientId: text("linked_client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    relation: text("relation").$type<"child" | "parent" | "partner" | "other">().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("client_links_pair_uq").on(t.clientId, t.linkedClientId), index("client_links_business_idx").on(t.businessId), check("client_links_not_self", sql`${t.clientId} <> ${t.linkedClientId}`)],
+);
+
 // Stripe Customer per (client, connected account). A business with several locations can
 // have several Stripe accounts, and a customer object only exists on one of them.
 /** Helcim Smart Terminals paired with the app (Settings → Payments): the device code shown on the terminal, per location. */
@@ -943,6 +965,8 @@ export const appointments = pgTable(
     cardSetupIntentId: text("card_setup_intent_id"),
     // Promo code entered online; applied as the discount when checkout opens.
     promoCodeId: text("promo_code_id"),
+    // Booked together online (the client and their guests): the lead appointment's id, on the lead too. Null for a lone visit.
+    groupId: text("group_id").references((): AnyPgColumn => appointments.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -950,7 +974,9 @@ export const appointments = pgTable(
     index("appointments_business_idx").on(t.businessId),
     index("appointments_client_idx").on(t.businessId, t.clientId),
     uniqueIndex("appointments_manage_token_uq").on(t.manageToken),
-    uniqueIndex("appointments_deposit_pi_uq").on(t.depositPaymentIntentId),
+    // One booking per deposit, except a group's guests, who share the lead's charge (each holding its own share).
+    uniqueIndex("appointments_deposit_pi_lead_uq").on(t.depositPaymentIntentId).where(sql`${t.groupId} is null or ${t.groupId} = ${t.id}`),
+    index("appointments_group_idx").on(t.businessId, t.groupId),
     index("appointments_series_idx").on(t.seriesId),
   ],
 );

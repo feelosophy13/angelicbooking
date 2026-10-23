@@ -4,7 +4,7 @@ import { cancelBooking, rescheduleBooking, type PublicState } from "../../action
 import { Button, Notice, Radio, RadioGroup } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
-export function CancelForm({ slug, token, reasons }: { slug: string; token: string; reasons: { id: string; name: string }[] }) {
+export function CancelForm({ slug, token, reasons, group }: { slug: string; token: string; reasons: { id: string; name: string }[]; /** The booker of a group: how many others are still booked, so they can cancel just themselves or everyone. */ group?: number }) {
   const [state, action, pending] = useActionState<PublicState, FormData>(cancelBooking, undefined);
   const [confirm, setConfirm] = useState(false);
   if (state?.ok) return <Notice kind="success">Your appointment has been cancelled.</Notice>;
@@ -14,9 +14,15 @@ export function CancelForm({ slug, token, reasons }: { slug: string; token: stri
       <input type="hidden" name="token" value={token} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       {!confirm ? (
-        <Button type="button" variant="secondary" onClick={() => setConfirm(true)}>Cancel this appointment</Button>
+        <Button type="button" variant="secondary" onClick={() => setConfirm(true)}>{group ? "Cancel…" : "Cancel this appointment"}</Button>
       ) : (
         <div className="space-y-2">
+          {group ? (
+            <RadioGroup legend="Who is cancelling?">
+              <Radio name="scope" value="one" defaultChecked label="Just me" hint={`Your ${group === 1 ? "guest stays" : `${group} guests stay`} booked.`} />
+              <Radio name="scope" value="all" label="Everyone" hint="You and all your guests." />
+            </RadioGroup>
+          ) : null}
           {reasons.length ? (
             <RadioGroup legend="Why are you cancelling?" hint="(optional)">
               {reasons.map((r) => <Radio key={r.id} name="reasonId" value={r.id} label={r.name} />)}

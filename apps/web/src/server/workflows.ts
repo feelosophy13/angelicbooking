@@ -21,6 +21,7 @@
  *   tenant, alone. (A savepoint inside the shared transaction would not do: postgres.js
  *   keeps the first failed query of a transaction and throws it at commit.)
  */
+import { appointmentContact } from "./client-links";
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
 import { db, schema, withJobs, withTenant, type TenantDb, type WorkflowFilters, type WorkflowRunContext, type WorkflowRunLogEntry, type WorkflowStep, type WorkflowTrigger } from "@angelic/db";
 import { instantToISODate, normalizePhone } from "@angelic/core";
@@ -588,18 +589,20 @@ async function advanceRun(tx: TenantDb, business: Business, w: Workflow, run: Wo
       const v = await getVars();
       if (!v.apptCtx) { note(i, "skipped", "Appointment no longer exists"); continue; }
       const plain = reminderTemplate(v.apptCtx.ctx);
-      const t = client.emailOptIn && client.email ? await designedEmail(tx, "reminder", plain, v.apptCtx.ctx, apptVars(business, v.apptCtx.ctx, { last_name: client.lastName })) : plain;
-      const phone = normalizePhone(client.phone);
+      // A child without a phone or email of their own is reminded at a parent's (reminders only, never marketing).
+      const reach = await appointmentContact(tx, client);
+      const t = reach.emailOptIn && reach.email ? await designedEmail(tx, "reminder", plain, v.apptCtx.ctx, apptVars(business, v.apptCtx.ctx, { last_name: client.lastName })) : plain;
+      const phone = normalizePhone(reach.phone);
       let any = false;
-      if (client.emailOptIn && client.email) {
-        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: "reminder", recipient: client.email, subject: t.subject, body: t.html, scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });
+      if (reach.emailOptIn && reach.email) {
+        const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "email", template: "reminder", recipient: reach.email, subject: t.subject, body: t.html, scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });
         out.push(row!.id); any = true;
       }
-      if (client.smsOptIn && phone) {
+      if (reach.smsOptIn && phone) {
         const [row] = await tx.insert(schema.notifications).values({ businessId: business.id, clientId: client.id, appointmentId: run.appointmentId, locationId: run.context.locationId ?? null, channel: "sms", template: "reminder", recipient: phone, body: await smsWithStopNotice(tx, client, smsBody(business, "reminder", v.apptCtx.ctx)), scheduledAt: now, workflowRunId: run.id }).returning({ id: schema.notifications.id });
         out.push(row!.id); any = true;
       }
-      note(i, any ? "queued" : "skipped", any ? `Reminder queued (${[client.emailOptIn && client.email ? "email" : null, client.smsOptIn && phone ? "text" : null].filter(Boolean).join(" + ")})` : "No channel the client has consented to");
+      note(i, any ? "queued" : "skipped", any ? `Reminder queued (${[reach.emailOptIn && reach.email ? "email" : null, reach.smsOptIn && phone ? "text" : null].filter(Boolean).join(" + ")}${reach.via ? ", at a parent's" : ""})` : "No channel the client has consented to");
       continue;
     }
     if (step.type === "review_request") {

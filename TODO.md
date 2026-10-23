@@ -1316,6 +1316,36 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] The campaign form's Layout picker was checked by the send-path test, not clicked through in the browser (the hidden in-app
       browser pane can't drive native dropdowns).
 
+### Booking for more than one person, and family (built 2026-10-23, migration 0139)
+- [x] Booking page details step: "+ Booking for someone else too? Add a guest" (collapsed until used), up to 3 guests. Each guest picks a
+      service, then one of the ways that is free: a provider (or any available) at the same time as the client, or right after the
+      person before them. Each guest gets their own "Add to your visit?" add-ons. With guests in the URL the time step lists only times
+      when everyone fits; a group that no longer fits shows the times that day that do (`server/group-booking.ts`, `lib/group-guests.ts`).
+- [x] Each person becomes their own appointment and client record (a name is enough; phone/email optional), tied by
+      `appointments.group_id` (the booker's appointment id). A guest typed in as "my child / partner / parent" is linked to the booker
+      when the booking made the record; a signed-in client picks family members as guests, or books the visit for one of them.
+- [x] Deposits are worked out per person (their first service's terms on their own visit total), charged together in one payment
+      (Stripe or Helcim), and each appointment holds its own share. The payment is bound to the group (intent metadata `group`), and
+      a deposit that doesn't cover everyone is refused and refunded. Refunding one person's share names its amount (never the whole
+      charge). The one-booking-per-deposit index now covers lead appointments only.
+- [x] One booking code and one bot check cover the guests; the booker's confirmation (email and text) lists everyone. A guest with
+      their own phone or email gets their own confirmation; one without hears through the booker and is still reminded (at a parent's).
+- [x] Manage link: the booker's page lists the group, moves everyone together (same providers and order, only times when everyone fits,
+      one transaction) and cancels "just me" or "everyone"; each guest row opens that guest's own page to move or cancel just them.
+- [x] Staff: the appointment page has a "Booked together" card (everyone side by side) and "Check out together", one ticket with
+      everyone's services and deposits; paying it completes every appointment on it. Each can still be checked out on their own.
+- [x] Client page → Family: link (child, parent, partner, other; stored both ways) and unlink, "Book for …" per person. Each keeps their
+      own history, notes and forms. A child without a phone or email gets confirmations and reminders at a parent's (never marketing).
+- [ ] A refund made in Stripe's dashboard (charge.refunded webhook) on a group's shared charge is recorded against one appointment
+      only (`recordStripeSideRefund` finds the first). Refund group deposits from the app until this splits by share.
+- [ ] A guest's no-show fee: the card was saved on the booker's Stripe customer, so the guest's appointment page offers no saved
+      card. Charge the booker from their own appointment, or add "use the group's card".
+- [ ] Loyalty points for a ticket checked out together all go to the ticket's client (the booker).
+- [ ] The desk can't make a group (book each person and they are not linked as a group); the calendar doesn't mark group members.
+- [ ] The client account page (/book/…/account) doesn't list or manage family yet; only staff link people (or the booking form).
+- [ ] A guest without a phone or email always gets a new client record (unless picked from a signed-in client's family); staff merge
+      duplicates.
+
 ### Add-ons at online booking (built 2026-10-22, migration 0133)
 - [x] Service page → Add-ons: up to 3 services suggested with this one, each at its usual price, a fixed add-on price, or an amount off
       the stylist's own price, and optionally a shorter add-on time (`service_addons`, `server/addons.ts`).

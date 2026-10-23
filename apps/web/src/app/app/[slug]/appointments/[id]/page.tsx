@@ -15,12 +15,13 @@ import { getStaffAvailability } from "@/server/availability";
 import { timingForStaff } from "@/server/stylist-pricing";
 import { formatDateLong, formatMoney, formatTime, shiftISODate } from "@/lib/utils";
 import { BackLink, Button, Card, Field, Input, PageHeader, Select, Textarea, LinkButton } from "@/components/ui";
-import { addService, cancelSeries, changeStatus, moveService, refundDepositAction, removeService, saveNotes, startCheckout } from "./actions";
+import { addService, cancelSeries, changeStatus, moveService, refundDepositAction, removeService, saveNotes, startCheckout, startGroupCheckout } from "./actions";
+import { rowClass, RowLink } from "@/components/row";
 import { getSeriesForAppointment } from "@/server/series";
 import { formsForAppointment } from "@/server/forms";
 import { appUrl } from "@/lib/stripe";
 import { can } from "@angelic/core";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { SlotPickerForm } from "./slot-picker-form";
 import { ServicePicker } from "@/components/service-picker";
@@ -88,7 +89,10 @@ export default async function AppointmentPage({
   const canCheckout = canNote && can(permissions, "checkout.take");
   const canFillForms = can(permissions, "clients.write");
   const { appointment, items, client, services, staff } = data;
-  const existingSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, id), ne(schema.sales.status, "void")), orderBy: desc(schema.sales.createdAt) }));
+  const ownSale = await withTenant(business.id, (tx) => tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, id), ne(schema.sales.status, "void")), orderBy: desc(schema.sales.createdAt) }));
+  // Booked together online (the client and their guests): everyone side by side, and a shared ticket if they were checked out together.
+  const group = appointment.groupId ? await groupMembers(business.id, appointment.groupId) : [];
+  const existingSale = ownSale ?? (group.length ? group.find((g) => g.id === id)?.sale ?? null : null);
   // The rating request for this visit, if one went out: submitted or still waiting.
   const review = await withTenant(business.id, (tx) => tx.query.reviews.findFirst({ where: eq(schema.reviews.appointmentId, id), orderBy: desc(schema.reviews.requestedAt) }));
   const cancelReasonName = appointment.cancellationReasonId ? ((await listCancellationReasons(business.id, { includeRetired: true })).find((r) => r.id === appointment.cancellationReasonId)?.name ?? null) : null;
@@ -360,6 +364,28 @@ export default async function AppointmentPage({
         </div>
 
         <div className="space-y-6">
+          {group.length > 1 ? (
+            <Card className="p-4">
+              <h2 className="font-medium">Booked together</h2>
+              <p className="mb-2 text-xs text-stone-500">One online booking, each person with their own appointment.</p>
+              <ul className="-mx-4 divide-y divide-stone-100">
+                {group.map((g) => (
+                  <li key={g.id} className={g.id === id ? "bg-stone-50 px-4 py-2" : `${rowClass} px-4 py-2`}>
+                    {g.id === id ? <span className="block text-sm font-medium">{g.name} <span className="font-normal text-stone-500">({g.lead ? "booked for everyone, " : ""}this one)</span></span> : <RowLink href={`/app/${slug}/appointments/${g.id}`} className="block text-sm font-medium">{g.name}{g.lead ? <span className="font-normal text-stone-500"> (booked for everyone)</span> : null}</RowLink>}
+                    <span className="block text-xs text-stone-500">{g.services} · {g.staff} · {formatTime(g.start, tz)}{g.status === "cancelled" ? " · Cancelled" : g.status === "completed" ? " · Completed" : ""}</span>
+                  </li>
+                ))}
+              </ul>
+              {canCheckout && group.filter((g) => !g.sale && !["cancelled", "no_show", "completed"].includes(g.status)).length > 1 && !existingSale ? (
+                <form action={startGroupCheckout} className="mt-3">
+                  <input type="hidden" name="slug" value={slug} />
+                  <input type="hidden" name="appointmentId" value={id} />
+                  <Button type="submit" variant="secondary" className="w-full">Check out together · {formatMoney(group.filter((g) => !g.sale && !["cancelled", "no_show", "completed"].includes(g.status)).reduce((s, g) => s + g.total, 0), business.currency)}</Button>
+                </form>
+              ) : null}
+            </Card>
+          ) : null}
+
           {existingSale && can(permissions, "checkout.take") ? (
             <Card className="p-4">
               <h2 className="mb-2 font-medium">Checkout</h2>
@@ -543,4 +569,30 @@ export default async function AppointmentPage({
       </div>
     </>
   );
+}
+
+/** The appointments booked together with this one, booker first, each with its ticket (its own, or a shared one) if it has one. */
+async function groupMembers(businessId: string, groupId: string) {
+  return withTenant(businessId, async (tx) => {
+    const rows = await tx
+      .select({ id: schema.appointments.id, status: schema.appointments.status, first: schema.clients.firstName, last: schema.clients.lastName, itemId: schema.appointmentItems.id, name: schema.appointmentItems.serviceName, staff: schema.staff.displayName, startAt: schema.appointmentItems.startAt, priceCents: schema.appointmentItems.priceCents, itemStatus: schema.appointmentItems.status })
+      .from(schema.appointments)
+      .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id))
+      .innerJoin(schema.staff, eq(schema.staff.id, schema.appointmentItems.staffId))
+      .leftJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
+      .where(eq(schema.appointments.groupId, groupId))
+      .orderBy(asc(schema.appointmentItems.startAt));
+    const ids = [...new Set(rows.map((r) => r.id))];
+    const own = ids.length ? await tx.select({ id: schema.sales.id, number: schema.sales.number, status: schema.sales.status, appointmentId: schema.sales.appointmentId }).from(schema.sales).where(and(inArray(schema.sales.appointmentId, ids), ne(schema.sales.status, "void"))) : [];
+    const carried = rows.length ? await tx.select({ itemId: schema.saleLines.appointmentItemId, id: schema.sales.id, number: schema.sales.number, status: schema.sales.status }).from(schema.saleLines).innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId)).where(and(inArray(schema.saleLines.appointmentItemId, rows.map((r) => r.itemId)), ne(schema.sales.status, "void"))) : [];
+    return ids
+      .map((apptId) => {
+        const mine = rows.filter((r) => r.id === apptId);
+        const live = mine.filter((r) => r.itemStatus !== "cancelled");
+        const shown = (live.length ? live : mine).filter((r) => !r.name.endsWith(" (finish)"));
+        const sale = own.find((x) => x.appointmentId === apptId) ?? carried.find((x) => mine.some((r) => r.itemId === x.itemId)) ?? null;
+        return { id: apptId, lead: apptId === groupId, status: mine[0]!.status, name: `${mine[0]!.first ?? "Walk-in"} ${mine[0]!.last ?? ""}`.trim(), services: shown.map((r) => r.name).join(", "), staff: [...new Set(shown.map((r) => r.staff))].join(" & "), start: mine[0]!.startAt, total: live.reduce((s, r) => s + r.priceCents, 0), sale: sale ? { id: sale.id, number: sale.number, status: sale.status } : null };
+      })
+      .sort((a, b) => (a.lead ? -1 : b.lead ? 1 : a.start.getTime() - b.start.getTime()));
+  });
 }

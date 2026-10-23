@@ -24,6 +24,9 @@ export default async function ConfirmedPage({ params, searchParams }: { params: 
   const end = m.live.reduce<Date>((e, i) => (i.endAt > e ? i.endAt : e), m.start);
   const total = m.live.reduce((s, i) => s + i.priceCents, 0);
   const paid = m.appt.depositStatus === "paid" && m.appt.depositCents > 0;
+  // The booker of a group sees everyone they booked for.
+  const guests = m.group?.lead ? m.group.members.filter((x) => !x.isLead && x.status !== "cancelled") : [];
+  const groupDeposit = m.group?.lead ? m.group.members.reduce((sum, x) => sum + x.depositCents, 0) : 0;
   const address = addressOf(m.location) ?? m.business.addressLine ?? null;
   const phone = m.location?.phone ?? m.business.phone ?? null;
   const g = (d: Date) => d.toISOString().replace(/[-:]|\.\d{3}/g, "");
@@ -39,6 +42,15 @@ export default async function ConfirmedPage({ params, searchParams }: { params: 
         {paid ? <div className="flex justify-between gap-4"><dt className="text-stone-500">Deposit paid</dt><dd className="font-medium text-stone-800">{formatMoney(m.appt.depositCents, m.business.currency)}</dd></div> : null}
         {paid ? <div className="flex justify-between gap-4"><dt className="text-stone-500">Due at the salon</dt><dd className="font-medium text-stone-800">{formatMoney(Math.max(0, total - m.appt.depositCents), m.business.currency)}</dd></div> : null}
       </dl>
+      {guests.length ? (
+        <div className="mx-auto mt-4 max-w-xs text-left text-sm">
+          <p className="font-medium text-stone-800">Also booked</p>
+          <ul className="mt-1 space-y-1 text-stone-600">
+            {guests.map((x) => <li key={x.id}>{x.name}: {x.services.join(", ")} with {x.staffName} at {formatTime(x.start, tz)}</li>)}
+          </ul>
+          {groupDeposit > (paid ? m.appt.depositCents : 0) ? <p className="mt-1 text-stone-500">Deposits paid for everyone: {formatMoney(groupDeposit, m.business.currency)}</p> : null}
+        </div>
+      ) : null}
       <div className="mx-auto mt-3 max-w-xs space-y-1 text-left text-sm text-stone-600">
         {address ? <p className="flex items-start gap-2"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-stone-400" aria-hidden /><span>{m.location?.name ? `${m.location.name}, ` : ""}{address}</span></p> : null}
         {phone ? <p className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-stone-400" aria-hidden /><a href={`tel:${phone}`} className="underline">{phone}</a></p> : null}

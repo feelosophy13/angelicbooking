@@ -19,6 +19,8 @@ import { bookingPhotosFrom, droppedParam } from "@/lib/booking-photos";
 import type { BookingPhotosResult } from "@/server/public-booking";
 import { checkBookingCode, contactVerified, sendBookingCode, VerificationError } from "@/server/booking-verification";
 import { setClientSession } from "@/lib/client-session";
+import { decodeGuests, guestDetailsFrom, type GuestChoice, type GuestDetails } from "@/lib/group-guests";
+import { createGroupBooking, groupPaymentRequirement, groupSignature, planGroup } from "@/server/group-booking";
 
 /** The booking code step: whether this booking may go ahead, and how the client proved it. */
 async function proof(business: PublicBusiness, d: { phone: string | null; email: string | null; verifyToken?: string | null }) {
@@ -90,7 +92,7 @@ const contact = z.object({
   promoCode: z.string().trim().max(40).optional().transform((v) => v || null),
 });
 
-const bookingFields = contact.extend({ verifyToken: z.string().max(600).optional().transform((v) => v || null), slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), quotedPriceCents: z.string().regex(/^\d+$/).optional().transform((v) => (v === undefined ? undefined : Number(v))), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null), locationId: z.string().optional().transform((v) => v || null), extraServiceIds: z.string().optional().transform((v) => (v ? v.split(",").filter(Boolean).slice(0, 4) : [])), embed: z.string().optional() });
+const bookingFields = contact.extend({ verifyToken: z.string().max(600).optional().transform((v) => v || null), slug: z.string(), serviceId: z.string().min(1), staffId: z.string().min(1), quotedPriceCents: z.string().regex(/^\d+$/).optional().transform((v) => (v === undefined ? undefined : Number(v))), startAt: z.string().datetime(), classSessionId: z.string().optional().transform((v) => v || null), locationId: z.string().optional().transform((v) => v || null), extraServiceIds: z.string().optional().transform((v) => (v ? v.split(",").filter(Boolean).slice(0, 4) : [])), embed: z.string().optional(), guests: z.string().max(1000).optional().transform((v) => decodeGuests(v)), forClientId: z.string().max(64).optional().transform((v) => v || null) });
 /** The confirmation page; pictures that could not be used travel along by name so the client sees which ones. */
 const confirmedPath = (d: { slug: string; embed?: string }, token: string, photos?: BookingPhotosResult) => {
   const dropped = photos ? droppedParam(photos.dropped) : null;
@@ -98,14 +100,24 @@ const confirmedPath = (d: { slug: string; embed?: string }, token: string, photo
 };
 type BookingFields = z.infer<typeof bookingFields>;
 
-function parseBooking(raw: Record<string, unknown>): { d: BookingFields } | { error: string } {
+function parseBooking(raw: Record<string, unknown>): { d: BookingFields; guestDetails: GuestDetails[] } | { error: string } {
   const parsed = bookingFields.safeParse(raw);
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Check the form" };
   const d = parsed.data;
   if (!d.phone) return { error: "Enter your mobile number so we can confirm your booking." };
   if (!d.email) return { error: "Enter your email so we can send your confirmation." };
   if (!normalizePhone(d.phone)) return { error: "Enter a valid mobile number." };
-  return { d };
+  if (d.guests.length && d.classSessionId) return { error: "Guests can't be added to a class booking." };
+  const guestDetails = guestDetailsFrom(raw, d.guests.length);
+  if ("error" in guestDetails) return guestDetails;
+  return { d, guestDetails };
+}
+
+/** Guests on this booking: their plan and what the whole group pays up front. Throws a BookingError when someone doesn't fit. */
+async function groupQuote(business: PublicBusiness, d: BookingFields & { guests: GuestChoice[] }) {
+  const pay = await paymentContextFor(business, d.locationId);
+  const plan = await planGroup(business, { serviceId: d.serviceId, staffId: d.staffId, startAt: new Date(d.startAt), extraServiceIds: d.extraServiceIds, locationId: d.locationId, guests: d.guests });
+  return { pay, plan, req: groupPaymentRequirement(business, pay, plan) };
 }
 
 /** What this visit costs: this stylist's price for the service (classes are priced per seat), plus any services added to it. */
@@ -127,6 +139,7 @@ export async function bookOnline(_prev: PublicState, formData: FormData): Promis
     const bot = await publicBotCheck(formData.get("cf-turnstile-response"));
     if (bot) return { error: bot };
   }
+  if (d.guests.length) return bookGroup(business, d, p.guestDetails, formData);
   // Services that need a deposit or a card must go through the payment steps below.
   const service = await withTenant(business.id, (tx) => tx.query.services.findFirst({ where: and(eq(schema.services.id, d.serviceId), eq(schema.services.active, true)) }));
   if (!service) return { error: "That service is no longer available." };
@@ -145,6 +158,27 @@ export async function bookOnline(_prev: PublicState, formData: FormData): Promis
   let photos: BookingPhotosResult | undefined;
   try {
     const r = await createOnlineBooking(business, { ...d, startAt: new Date(d.startAt), ip: formIp(await headers()), photos: bookingPhotosFrom(formData), verifiedVia: verified.via, verificationOn: verified.on });
+    token = r.token;
+    photos = r.photos;
+  } catch (e) {
+    if (e instanceof BookingError) return { error: e.message };
+    throw e;
+  }
+  if (verified.via === "sms" || verified.via === "email") await signInAfterBooking(business, d.slug, token);
+  redirect(confirmedPath(d, token, photos));
+}
+
+/** A free booking with guests: everyone fits, nobody needs a card, one proof of contact covers the group. */
+async function bookGroup(business: PublicBusiness, d: BookingFields, guestDetails: GuestDetails[], formData: FormData): Promise<PublicState> {
+  let token: string;
+  let photos: BookingPhotosResult | undefined;
+  let verified: Awaited<ReturnType<typeof proof>>;
+  try {
+    const { pay, req } = await groupQuote(business, d);
+    if (req.mode !== "none") return { error: "This booking needs a card. Please reload the page and try again." };
+    verified = await proof(business, d);
+    if (!verified.ok) return { error: NEEDS_CODE };
+    const r = await createGroupBooking(business, pay, { ...d, startAt: new Date(d.startAt), ip: formIp(await headers()), photos: bookingPhotosFrom(formData), verifiedVia: verified.via, verificationOn: verified.on, guestDetails });
     token = r.token;
     photos = r.photos;
   } catch (e) {
@@ -185,14 +219,14 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
     throw e;
   }
   const pay = await paymentContextFor(business, d.locationId);
-  let visitPrice: number;
+  let req: { mode: "deposit" | "card" | "none"; amountCents: number };
   try {
-    visitPrice = await priceFor(business, service, d);
+    // With guests, each person's deposit is worked out on their own visit and the group pays the total in one charge.
+    req = d.guests.length ? (await groupQuote(business, d)).req : onlinePaymentRequirement(business, service, pay, await priceFor(business, service, d));
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     throw e;
   }
-  const req = onlinePaymentRequirement(business, service, pay, visitPrice);
   if (req.mode === "none") return { error: "No payment is needed for this booking. Please reload the page." };
   // Proven before any card is charged or saved.
   const verified = await proof(business, d);
@@ -211,7 +245,7 @@ export async function startOnlinePaymentAction(raw: Record<string, string>): Pro
     if (d.classSessionId) await assertSeatOpen(business, d.classSessionId, d.serviceId, d.staffId, startAt);
     else await assertSlotOpen(business, d.serviceId, d.staffId, startAt, new Date(), d.locationId);
     const clientId = await findOrCreateClient(business.id, { ...d, startAt, verifiedVia: verified.via, verificationOn: verified.on });
-    const r = await startOnlinePayment(business, pay, req.mode, { businessId: business.id, clientId, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" }, req.amountCents);
+    const r = await startOnlinePayment(business, pay, req.mode, { businessId: business.id, clientId, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "", group: groupSignature(d.guests) }, req.amountCents);
     if (r.provider === "helcim") return { provider: "helcim", checkoutToken: r.checkoutToken, intentId: r.id, kind: r.kind };
     const browser = await browserStripe(r.accountId!, process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
     return { provider: "stripe", clientSecret: r.clientSecret, intentId: r.id, kind: r.kind, accountId: browser.stripeAccount, publishableKey: browser.publishableKey };
@@ -244,9 +278,10 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
   try {
     const startAt = new Date(d.startAt);
     const pay = await paymentContextFor(business, d.locationId);
-    const verified = await verifyOnlineIntent(business, pay, intent.kind, intent.id, { businessId: business.id, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "" }, intent.helcim);
+    const verified = await verifyOnlineIntent(business, pay, intent.kind, intent.id, { businessId: business.id, serviceId: d.serviceId, staffId: d.staffId, startAt: startAt.toISOString(), locationId: d.locationId ?? "", group: groupSignature(d.guests) }, intent.helcim);
     const v = await proof(business, d);
-    const r = await createOnlineBooking(business, { ...d, startAt, ip: formIp(await headers()), photos: bookingPhotosFrom(photos), verifiedVia: v.via, verificationOn: v.on }, new Date(), verified);
+    const base = { ...d, startAt, ip: formIp(await headers()), photos: bookingPhotosFrom(photos), verifiedVia: v.via, verificationOn: v.on };
+    const r = d.guests.length ? await createGroupBooking(business, pay, { ...base, guestDetails: p.guestDetails }, new Date(), verified) : await createOnlineBooking(business, base, new Date(), verified);
     token = r.token;
     result = r.photos;
     if (v.via === "sms" || v.via === "email") await signInAfterBooking(business, d.slug, null, verified.meta.clientId);
@@ -260,10 +295,10 @@ export async function finishOnlineBookingAction(raw: Record<string, string>, int
 }
 
 export async function cancelBooking(_prev: PublicState, formData: FormData): Promise<PublicState> {
-  const d = z.object({ slug: z.string(), token: z.string().min(10), reasonId: z.string().optional() }).parse(Object.fromEntries(formData));
+  const d = z.object({ slug: z.string(), token: z.string().min(10), reasonId: z.string().optional(), scope: z.enum(["one", "all"]).optional() }).parse(Object.fromEntries(formData));
   let refundFailed = false;
   try {
-    ({ refundFailed } = await cancelOnline(d.slug, d.token, d.reasonId || null));
+    ({ refundFailed } = await cancelOnline(d.slug, d.token, d.reasonId || null, d.scope === "all"));
   } catch (e) {
     if (e instanceof BookingError) return { error: e.message };
     throw e;

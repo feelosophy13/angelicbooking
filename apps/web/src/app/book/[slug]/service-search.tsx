@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui";
 
 /** Finds a service by name or category without drilling through the menu. Submits as a plain GET so it works from a link too. */
-export function ServiceSearch({ value, location }: { value: string; location?: string }) {
+export function ServiceSearch({ value, location, keep }: { value: string; location?: string; /** Other parameters the search keeps (picking a guest's service mid-booking). */ keep?: Record<string, string> }) {
   const router = useRouter();
   const [text, setText] = useState(value);
   return (
@@ -14,7 +14,7 @@ export function ServiceSearch({ value, location }: { value: string; location?: s
       className="relative mb-4"
       onSubmit={(e) => {
         e.preventDefault();
-        const p = new URLSearchParams();
+        const p = new URLSearchParams(keep);
         if (location) p.set("location", location);
         if (text.trim()) p.set("q", text.trim());
         router.push(`?${p.toString()}`);

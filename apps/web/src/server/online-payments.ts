@@ -55,6 +55,8 @@ export interface IntentMeta {
   startAt: string; // ISO
   /** Location the booking is for ("" when the business has one site). */
   locationId: string;
+  /** Guests booked with the client (groupSignature); absent or "" for a booking of one. */
+  group?: string;
 }
 
 /** Create the PaymentIntent / SetupIntent the browser will confirm, on the location's Stripe account. */
@@ -123,10 +125,10 @@ export type VerifiedIntent =
 /** Fetch the intent from Stripe and make sure it is ours, succeeded, and for the booking being made. */
 export async function verifyOnlineIntent(business: PublicBusiness, pay: PaymentContext, kind: "deposit" | "card", intentId: string, expected: Omit<IntentMeta, "clientId">, /** Helcim: the HelcimPay.js answer from the browser. */ eventMessage?: unknown): Promise<VerifiedIntent> {
   const check = (md: Stripe.Metadata) => {
-    if (md.businessId !== expected.businessId || md.serviceId !== expected.serviceId || md.staffId !== expected.staffId || md.startAt !== expected.startAt || (md.locationId ?? "") !== expected.locationId || !md.clientId) {
+    if (md.businessId !== expected.businessId || md.serviceId !== expected.serviceId || md.staffId !== expected.staffId || md.startAt !== expected.startAt || (md.locationId ?? "") !== expected.locationId || (md.group ?? "") !== (expected.group ?? "") || !md.clientId) {
       throw new BookingError("That payment doesn't match this booking. Please start again.");
     }
-    return { businessId: md.businessId, clientId: md.clientId, serviceId: md.serviceId, staffId: md.staffId, startAt: md.startAt, locationId: md.locationId ?? "" } satisfies IntentMeta;
+    return { businessId: md.businessId, clientId: md.clientId, serviceId: md.serviceId, staffId: md.staffId, startAt: md.startAt, locationId: md.locationId ?? "", group: md.group ?? "" } satisfies IntentMeta;
   };
   if (pay.provider === "helcim") {
     let row;
@@ -161,7 +163,12 @@ export async function verifyOnlineIntent(business: PublicBusiness, pay: PaymentC
 
 /** The appointment already created for this intent, if the client refreshed the page after booking. */
 export async function appointmentForIntent(businessId: string, intentId: string) {
-  return withTenant(businessId, (tx) => tx.query.appointments.findFirst({ where: or(eq(schema.appointments.depositPaymentIntentId, intentId), eq(schema.appointments.cardSetupIntentId, intentId)) }));
+  return withTenant(businessId, async (tx) => {
+    const appt = await tx.query.appointments.findFirst({ where: or(eq(schema.appointments.depositPaymentIntentId, intentId), eq(schema.appointments.cardSetupIntentId, intentId)) });
+    // A group's guests share the lead's payment: the booking it made is the group, which the lead's page shows.
+    if (appt?.groupId && appt.groupId !== appt.id) return (await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, appt.groupId) })) ?? appt;
+    return appt;
+  });
 }
 
 /**
@@ -176,6 +183,9 @@ export async function refundDeposit(input: { businessId: string; accountId: stri
     const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { depositRefundAs: true } });
     const refundCents = Math.min(appt.depositCents, Math.max(1, Math.round(input.amountCents ?? appt.depositCents)));
     const partial = refundCents < appt.depositCents;
+    // A group's appointments share one charge, each holding its share: the refund must name this share's amount, or the processor
+    // would give back the whole group's deposit.
+    const shared = !!appt.groupId && !!(await tx.query.appointments.findFirst({ where: and(eq(schema.appointments.depositPaymentIntentId, appt.depositPaymentIntentId), sql`${schema.appointments.id} <> ${appt.id}`), columns: { id: true } }));
     const as = input.as ?? (biz?.depositRefundAs === "store_credit" ? "store_credit" : "original");
     // Under a store-credit policy the money stays on the account and the client gets a balance instead.
     if (as === "store_credit" && appt.clientId) {
@@ -188,21 +198,21 @@ export async function refundDeposit(input: { businessId: string; accountId: stri
       const business = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId) });
       const token = business ? helcimTokenOf({ ...business, paymentProvider: "helcim" }) : null;
       if (!token || !appt.depositProviderPaymentId) throw new BookingError("Helcim isn't connected. Refund the deposit in your Helcim dashboard.");
-      return { appt, refundCents, partial, account: "", helcimToken: token };
+      return { appt, refundCents, partial, shared, account: "", helcimToken: token };
     }
     // Back through the account that took the deposit (the location may have switched accounts since).
     const account = appt.depositStripeAccountId ?? input.accountId;
     if (!account) throw new BookingError("Stripe account not connected.");
-    return { appt, refundCents, partial, account, helcimToken: null as string | null };
+    return { appt, refundCents, partial, shared, account, helcimToken: null as string | null };
   });
   if (typeof prep === "boolean") return prep;
-  const { appt, refundCents, partial, account, helcimToken } = prep;
+  const { appt, refundCents, partial, shared, account, helcimToken } = prep;
   if (helcimToken) {
-    await refundHelcimTransaction(helcimToken, { key: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}`, transactionId: appt.depositProviderPaymentId!, amountCents: refundCents, full: !partial });
+    await refundHelcimTransaction(helcimToken, { key: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}`, transactionId: appt.depositProviderPaymentId!, amountCents: refundCents, full: !partial && !shared });
   } else
   // Stripe is called with no transaction open. A partial refund names its amount; a full one lets Stripe refund what is left. The key
   // carries the deposit as it stood, so a double click is one refund but a second, equal partial refund later is a refund of its own.
-  await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId!, ...(partial ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: account, idempotencyKey: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}` });
+  await stripe().refunds.create({ payment_intent: appt.depositPaymentIntentId!, ...(partial || shared ? { amount: refundCents } : {}), metadata: { appointmentId: appt.id, reason: input.reason } }, { stripeAccount: account, idempotencyKey: `deposit_refund_${appt.id}_${appt.depositCents}_${partial ? refundCents : "all"}` });
   return withTenant(input.businessId, async (tx) => {
     // Only if nothing recorded it meanwhile (a double click, or the webhook for this very refund): then the deposit has already moved on.
     const updated = await tx

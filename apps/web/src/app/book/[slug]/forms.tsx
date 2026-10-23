@@ -2,16 +2,17 @@
 import { PublicBotCheck } from "@/components/turnstile";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { bookOnline, joinWaitlistAction, type PublicState } from "./actions";
-import { Field, Input, Notice, Textarea, Checkbox } from "@/components/ui";
+import { Field, Input, Notice, Textarea, Checkbox, Select } from "@/components/ui";
 import { Disclosure } from "@/components/disclosure";
 import { SubmitButton } from "@/components/form";
 import { policyLine } from "@/lib/policy-text";
 import { PhotoPicker } from "./photo-picker";
 import { useBookingVerification } from "./verify-contact";
+import { GuestFields, type GuestFormInfo } from "./guest-fields";
 
 export type BookingDefaults = { firstName: string; lastName: string; phone: string | null; email: string | null; smsOptIn: boolean; smsMarketingOptIn?: boolean } | null;
 
-export function BookingForm(props: { extraServiceIds?: string[]; /** The price being confirmed, shown on the button. */ priceLabel?: string; slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null; /** The business lets clients attach pictures (Settings → Online booking). */ photos?: boolean; /** Ask for a booking code first (Settings → Booking rules; not for a signed-in client). */ verify?: boolean }) {
+export function BookingForm(props: { extraServiceIds?: string[]; /** The price being confirmed, shown on the button. */ priceLabel?: string; slug: string; serviceId: string; staffId: string; startAt: string; policy: string | null; cancelWindowHours: number; lateFee?: string | null; /** What the page quoted for this stylist, in cents; the server refuses the booking if it has since changed. */ quotedPriceCents?: number; classSessionId?: string | null; referrals?: boolean; defaults?: BookingDefaults; promos?: boolean; embed?: boolean; locationId?: string | null; /** The business lets clients attach pictures (Settings → Online booking). */ photos?: boolean; /** Ask for a booking code first (Settings → Booking rules; not for a signed-in client). */ verify?: boolean; /** Guests booked with this visit. */ guests?: GuestFormInfo; /** A signed-in client's linked people, to book this visit for. */ family?: GuestFormInfo["family"] }) {
   const [state, action] = useActionState<PublicState, FormData>(bookOnline, undefined);
   const d = props.defaults;
   const form = useRef<HTMLFormElement>(null);
@@ -45,7 +46,7 @@ export function BookingForm(props: { extraServiceIds?: string[]; /** The price b
       <input type="hidden" name="startAt" value={props.startAt} />
       {props.extraServiceIds?.length ? <input type="hidden" name="extraServiceIds" value={props.extraServiceIds.join(",")} /> : null}
       {props.quotedPriceCents !== undefined ? <input type="hidden" name="quotedPriceCents" value={props.quotedPriceCents} /> : null}
-      <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} photos={props.photos} />
+      <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} photos={props.photos} guests={props.guests} family={props.family} />
       {state?.error ? <Notice>{state.error}</Notice> : null}
       {v.panel}
       <PublicBotCheck resetKey={`${JSON.stringify(state ?? null)}:${v.sends}`} />
@@ -59,11 +60,19 @@ export function BookingForm(props: { extraServiceIds?: string[]; /** The price b
  * The details every booking asks for, shared by the free and the paid form so they cannot drift.
  * Codes are rare, so they sit behind one "Have a code?" line.
  */
-export function ContactFields({ defaults: d, referrals, promos, photos }: { defaults?: BookingDefaults; referrals?: boolean; promos?: boolean; photos?: boolean }) {
+export function ContactFields({ defaults: d, referrals, promos, photos, guests, family }: { defaults?: BookingDefaults; referrals?: boolean; promos?: boolean; photos?: boolean; guests?: GuestFormInfo; family?: GuestFormInfo["family"] }) {
   const showReferral = !!referrals && !d;
   return (
     <>
       {d ? <p className="text-sm text-stone-600">Booking as <b>{d.firstName} {d.lastName}</b>.</p> : null}
+      {d && family?.length ? (
+        <Field label="Who is this appointment for?" hint="Your details below stay the contact.">
+          <Select name="forClientId" defaultValue="">
+            <option value="">Me</option>
+            {family.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </Select>
+        </Field>
+      ) : null}
       <div className="grid grid-cols-2 gap-3">
         <Field label="First name" required><Input name="firstName" required autoComplete="given-name" defaultValue={d?.firstName} /></Field>
         <Field label="Last name"><Input name="lastName" autoComplete="family-name" defaultValue={d?.lastName} /></Field>
@@ -73,6 +82,7 @@ export function ContactFields({ defaults: d, referrals, promos, photos }: { defa
       {d?.smsOptIn ? <input type="hidden" name="smsConsent" value="on" /> : <SmsConsent />}
       {d?.smsMarketingOptIn ? null : <SmsMarketingConsent />}
       <Field label="Anything we should know?"><Textarea name="notes" rows={2} /></Field>
+      {guests?.people.length ? <GuestFields guests={guests} /> : null}
       {photos ? <PhotoPicker /> : null}
       {showReferral || promos ? (
         <Disclosure title="Have a code?" className="shadow-none">
