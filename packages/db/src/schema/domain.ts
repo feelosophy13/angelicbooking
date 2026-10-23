@@ -183,6 +183,17 @@ export const businesses = pgTable("businesses", {
   termsVersion: text("terms_version"),
   // New businesses stay off the public web and send no messages until the owner has verified their email. Older ones are exempt.
   publishRequiresVerified: boolean("publish_requires_verified").notNull().default(false),
+  // Fill My Books (Marketing → Fill open slots, migration 0138): personal invitations to open slots in the next few days.
+  fillAutoEnabled: boolean("fill_auto_enabled").notNull().default(false), // send once a day without anyone pressing Send
+  fillAutoHour: smallint("fill_auto_hour").notNull().default(10), // the business-local hour the automatic run sends from
+  fillDaysAhead: smallint("fill_days_ahead").notNull().default(3),
+  fillMaxPerSlot: smallint("fill_max_per_slot").notNull().default(3), // invitations to one opening, ever
+  fillMaxPerDay: smallint("fill_max_per_day").notNull().default(20), // invitations a day, by hand and automatic together
+  fillMessage: text("fill_message"), // the invitation wording; null = the default
+  fillAutoRanOn: text("fill_auto_ran_on"), // business-local YYYY-MM-DD of the last automatic run
+  // AI assistant (migration 0138): what the business may spend on Claude a calendar month, and the booking-page chat (off by default).
+  aiMonthlyBudgetCents: integer("ai_monthly_budget_cents").notNull().default(500),
+  aiChatbotEnabled: boolean("ai_chatbot_enabled").notNull().default(false),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -1617,3 +1628,48 @@ export const jobMarkers = pgTable("job_markers", {
   lastRunOn: date("last_run_on").notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * Fill My Books (migration 0138): one personal invitation to an open slot. A booking by the same client made after the invitation
+ * (within FILL_ATTRIBUTION_DAYS) is recorded against it by server/fill-books.ts, so the salon sees what the invitations filled.
+ */
+export const fillInvites = pgTable(
+  "fill_invites",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+    staffId: text("staff_id").references(() => staff.id, { onDelete: "set null" }),
+    serviceId: text("service_id").references(() => services.id, { onDelete: "set null" }),
+    locationId: text("location_id").references(() => locations.id, { onDelete: "set null" }),
+    slotStart: timestamp("slot_start", { withTimezone: true }).notNull(),
+    reason: text("reason").$type<"waitlist" | "overdue" | "regular">().notNull(),
+    channel: notificationChannel("channel").notNull(),
+    notificationId: text("notification_id"),
+    sentByUserId: text("sent_by_user_id"), // null = the automatic daily run
+    bookedAppointmentId: text("booked_appointment_id").references(() => appointments.id, { onDelete: "set null" }),
+    bookedExactSlot: boolean("booked_exact_slot").notNull().default(false),
+    bookedAt: timestamp("booked_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("fill_invites_slot_idx").on(t.businessId, t.staffId, t.slotStart), index("fill_invites_client_idx").on(t.businessId, t.clientId, t.createdAt)],
+);
+
+/** AI assistant (migration 0138): one row per Claude request, with its tokens and cost, for the monthly limit and the usage page. */
+export const aiUsage = pgTable(
+  "ai_usage",
+  {
+    id: id(),
+    businessId: businessId(),
+    feature: text("feature").notNull(), // service_description | campaign | fill_invite | inbox_reply | chatbot
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+    cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+    costMicros: integer("cost_micros").notNull().default(0), // millionths of a US dollar
+    userId: text("user_id"), // null on the booking-page chat
+    createdAt: createdAt(),
+  },
+  (t) => [index("ai_usage_business_idx").on(t.businessId, t.createdAt)],
+);

@@ -10,6 +10,9 @@ import { describeHours } from "@/lib/hours";
 import { cn } from "@/lib/utils";
 import { Stars } from "./ui";
 import { BookingHomeLink, HeaderShell } from "./booking-chrome";
+import { BookingChat } from "./chat";
+import { aiConfigured } from "@/server/ai";
+import { siteUrl } from "@/lib/site-url";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -115,6 +118,7 @@ export default async function BookLayout({ children, params }: { children: React
           <a href={appUrl("/privacy")} className="hit text-xs text-stone-400 hover:text-stone-600">Privacy</a>
         </div>
       </footer>
+      {business.aiChatbotEnabled && business.onlineBookingEnabled && aiConfigured() ? <BookingChat slug={business.slug} name={business.name} base={siteUrl(business)} /> : null}
     </div>
   );
 }

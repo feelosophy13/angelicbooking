@@ -18,7 +18,7 @@ export default async function MarketingLayout({ children, params }: { children: 
   const { permissions } = await requireAction(slug, "marketing.send");
   // A design open in the designer has the whole page: the designer is its own wide two-column builder.
   if (current.startsWith(`${base}/designs/`)) return <>{children}</>;
-  const tab = current.startsWith(`${base}/promos`) ? `${base}/promos` : current.startsWith(`${base}/designs`) ? `${base}/designs` : base;
+  const tab = current.startsWith(`${base}/promos`) ? `${base}/promos` : current.startsWith(`${base}/designs`) ? `${base}/designs` : current.startsWith(`${base}/fill`) ? `${base}/fill` : base;
   return (
     <>
       <PageHeader title="Marketing" />
@@ -39,7 +39,7 @@ export default async function MarketingLayout({ children, params }: { children: 
           </Link>
         ))}
       </div>
-      <Tabs items={[{ href: base, label: "Campaigns" }, { href: `${base}/designs`, label: "Email designs" }, { href: `${base}/promos`, label: "Promo codes" }]} current={tab} />
+      <Tabs items={[{ href: base, label: "Campaigns" }, { href: `${base}/fill`, label: "Fill open slots" }, { href: `${base}/designs`, label: "Email designs" }, { href: `${base}/promos`, label: "Promo codes" }]} current={tab} />
       {children}
     </>
   );

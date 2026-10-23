@@ -6,6 +6,7 @@ import { listCategories } from "@/server/categories";
 import { FormPage } from "@/components/ui";
 import { ActionForm, SubmitButton } from "@/components/form";
 import { ServiceFields } from "@/components/service-fields";
+import { aiConfigured } from "@/server/ai";
 import { createService } from "../actions";
 import { listLocations } from "@/server/locations";
 
@@ -20,7 +21,7 @@ export default async function NewServicePage({ params, searchParams }: { params:
     <FormPage title="New service" backHref={`/app/${slug}/services`} backLabel="Services">
       <ActionForm action={createService}>
         <input type="hidden" name="slug" value={slug} />
-        <ServiceFields categories={categories} locations={locations} offeredAt={[]} defaultCategoryId={categories.some((c) => c.id === category) ? category : null} currency={business.currency} stripeReady={isStripeConfigured() && business.stripeChargesEnabled} paymentsHref={paymentsHrefFor(slug, permissions)} />
+        <ServiceFields aiSlug={aiConfigured() ? slug : undefined} categories={categories} locations={locations} offeredAt={[]} defaultCategoryId={categories.some((c) => c.id === category) ? category : null} currency={business.currency} stripeReady={isStripeConfigured() && business.stripeChargesEnabled} paymentsHref={paymentsHrefFor(slug, permissions)} />
         <SubmitButton pendingText="Saving…">Create service</SubmitButton>
       </ActionForm>
     </FormPage>

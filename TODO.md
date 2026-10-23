@@ -1296,6 +1296,22 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### Fill My Books and the AI assistant (built 2026-10-22, migration 0138; setup and cost in `docs-ops.md`)
+- [x] Fill My Books: Marketing → Fill open slots lists openings over the next few days with suggested clients (waitlist, due back,
+      regulars), consent-checked channel, per-opening and daily caps, a one-tap link to the exact slot, an automatic daily mode in the
+      jobs run, and invitations → bookings (count, exact slot, booked value).
+- [x] AI assistant (Claude `claude-opus-5-5`): "Write/Improve with AI" on the service description, "Draft with AI" on campaigns, "Write in
+      our voice" for the invitation wording, "Suggest a reply" in the Inbox (never sends), and an opt-in booking-page chat (Settings → AI
+      assistant, off by default). Monthly limit per business (default $5), every request logged in `ai_usage`. Hidden without a key.
+- [ ] Add `ANTHROPIC_API_KEY` to `.env` and Render (the owner will), redeploy, then try each button once for real and check the
+      `ai_usage` costs against the estimates in docs-ops.md.
+- [ ] Privacy policy: name Anthropic as a subprocessor for the AI features before any salon turns the booking-page chat on.
+- [ ] Fill My Books has only run against test data (texts in a demo tenant are skipped): send one real invitation to yourself from
+      Angelic Beauty and book through the link, and confirm the booking shows as filled.
+- [ ] Fill My Books follow-ups: attribution is "the invited client booked within 3 days" (not a tracked link); invitations go only for
+      the start of each gap (a long free afternoon is one opening); per-location time zones use the business's clock for the "when"
+      wording.
+
 ### Email designs (built 2026-10-22, migration 0132)
 - [x] Marketing → Email designs: saved designs built from blocks (heading, text with **bold** / *italic* / links, image, two images,
       button, divider, space, footer note), with the logo and brand color applied, merge fields ("Insert field"), a live desktop / phone

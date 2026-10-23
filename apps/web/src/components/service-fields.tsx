@@ -6,17 +6,18 @@ import type { AnyCategory } from "@/server/categories";
 import { ServiceTiming } from "@/components/service-timing";
 import { OnlinePaymentField } from "@/components/online-payment-field";
 import { OfferedAt } from "@/components/offered-at";
+import { AiDescriptionField } from "@/components/ai-description-field";
 
 type Service = { name: string; categoryId: string | null; description: string | null; prepNotes: string | null; imageUrl: string | null; durationMin: number; priceCents: number; gapMin: number; finishMin: number; bufferAfterMin: number; depositCents: number; depositType: string; depositPercent: number; capacity: number; bookableOnline: boolean };
 
 /** The body of the new / edit service forms. */
-export function ServiceFields({ service, categories, locations, offeredAt, defaultCategoryId, currency, stripeReady, paymentsHref }: { service?: Service; categories: AnyCategory[]; locations: { id: string; name: string }[]; offeredAt: string[]; defaultCategoryId?: string | null; currency: string; stripeReady: boolean; paymentsHref: string | null }) {
+export function ServiceFields({ service, categories, locations, offeredAt, defaultCategoryId, currency, stripeReady, paymentsHref, aiSlug }: { service?: Service; categories: AnyCategory[]; locations: { id: string; name: string }[]; offeredAt: string[]; defaultCategoryId?: string | null; currency: string; stripeReady: boolean; paymentsHref: string | null; /** Set when the AI assistant is on: the description box gets "Write with AI". */ aiSlug?: string }) {
   const $ = (c: number) => (c / 100).toFixed(2);
   return (
     <>
       <Field label="Name" name="name" required><Input name="name" defaultValue={service?.name ?? ""} required placeholder="Women's haircut" autoFocus /></Field>
       <Field label="Category" name="categoryIdNew"><CategoryPicker name="categoryId" categories={categories} value={service?.categoryId ?? defaultCategoryId ?? null} /></Field>
-      <Field label="Description" name="description" hint="Shown on the booking page."><Textarea name="description" rows={4} defaultValue={service?.description ?? ""} /></Field>
+      <Field label="Description" name="description" hint="Shown on the booking page.">{aiSlug ? <AiDescriptionField slug={aiSlug} defaultValue={service?.description ?? ""} /> : <Textarea name="description" rows={4} defaultValue={service?.description ?? ""} />}</Field>
       <Field label="Photo" name="image" hint="Shown next to the service on the booking page."><ImageField name="image" removeName={service ? "removeImage" : undefined} current={service?.imageUrl ?? null} /></Field>
       <Field label="Before your visit" name="prepNotes" hint="Prep instructions sent with the confirmation and the reminder, e.g. “Arrive with clean, dry hair.” Leave empty to use the category's note."><Textarea name="prepNotes" rows={4} defaultValue={service?.prepNotes ?? ""} /></Field>
       <ServiceTiming duration={service?.durationMin ?? 45} gap={service?.gapMin ?? 0} finish={service?.finishMin ?? 0} buffer={service?.bufferAfterMin ?? 0} />

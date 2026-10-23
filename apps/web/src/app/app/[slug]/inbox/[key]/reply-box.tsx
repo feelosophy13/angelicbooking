@@ -7,13 +7,16 @@ import { Textarea } from "@/components/ui";
 import { smsSegments } from "@/lib/sms-length";
 import { renderQuickReply, type QuickReply, type QuickReplyContext } from "@/lib/notify/quick-replies";
 import { replyToClient } from "./actions";
+import { AiButton } from "@/components/ai-button";
+import { suggestReplyAction } from "../../ai-actions";
 
 /**
  * The composer under a thread. Enter sends (Shift+Enter for a new line); a quick reply
  * drops its wording in with the client's name and next visit filled in; a paperclip attaches
- * one picture. It clears itself after a send and shows how many texts a long message counts as.
+ * one picture. It clears itself after a send and shows how many texts a long message counts as. With the AI assistant on, "Suggest a
+ * reply" drafts an answer into the box for the desk to edit; it is never sent without someone pressing Send.
  */
-export function ReplyBox({ slug, clientId, quickReplies, context }: { slug: string; clientId: string; quickReplies: QuickReply[]; context: QuickReplyContext }) {
+export function ReplyBox({ slug, clientId, quickReplies, context, ai = false }: { slug: string; clientId: string; quickReplies: QuickReply[]; context: QuickReplyContext; ai?: boolean }) {
   const router = useRouter();
   const [round, setRound] = useState(0);
   const [body, setBody] = useState("");
@@ -40,11 +43,12 @@ export function ReplyBox({ slug, clientId, quickReplies, context }: { slug: stri
     >
       <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="clientId" value={clientId} />
-      {quickReplies.length ? (
-        <div className="flex flex-wrap gap-1.5">
+      {quickReplies.length || ai ? (
+        <div className="flex flex-wrap items-center gap-1.5">
           {quickReplies.map((r) => (
             <button key={r.title} type="button" onClick={() => { setBody(renderQuickReply(r.body, context)); box.current?.focus(); }} className="rounded-full bg-stone-100 px-3 py-2 text-sm text-stone-700 hover:bg-stone-200 lg:pointer-fine:px-2.5 lg:pointer-fine:py-1 lg:pointer-fine:text-xs" title={r.body}>{r.title}</button>
           ))}
+          {ai ? <AiButton label="Suggest a reply" pendingLabel="Thinking…" run={() => suggestReplyAction(slug, clientId)} onDraft={(t) => { setBody(t); box.current?.focus(); }} /> : null}
         </div>
       ) : null}
       <Field label="" name="body">

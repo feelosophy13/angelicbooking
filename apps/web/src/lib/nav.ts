@@ -104,6 +104,9 @@ export interface SettingsStatusSource {
   /** The fixed monthly platform cost from the price book (server/billing.ts planMonthlyCents); null when comped. */
   planMonthlyCents: number | null;
   currency: string;
+  /** The AI assistant is set up on this server (ANTHROPIC_API_KEY); its settings page is listed only then. */
+  aiAvailable?: boolean;
+  aiChatbotEnabled?: boolean;
 }
 
 /**
@@ -120,6 +123,7 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
         { href: `${sb}/profile`, title: "Business profile", blurb: "Name, timezone, logo, brand and app colors, about text and links." },
         { href: `${sb}/locations`, title: "Locations", blurb: "Addresses, opening hours and tax rates.", status: s ? (s.locationCount === 1 ? "1 location" : `${s.locationCount} locations`) : undefined },
         { href: `${sb}/roles`, title: "Roles & permissions", blurb: "What each role can see and do.", action: "members.manage" },
+        ...(s?.aiAvailable ? [{ href: `${sb}/ai`, title: "AI assistant", blurb: "Monthly limit, what it has been used for, and the booking-page chat.", status: s.aiChatbotEnabled ? "chat on" : undefined, action: "settings.business" as const }] : []),
       ],
     },
     {

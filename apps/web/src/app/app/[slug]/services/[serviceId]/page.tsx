@@ -12,6 +12,7 @@ import { AddonsCard } from "./addons-card";
 import { listAddons } from "@/server/addons";
 import { ActionForm, SubmitButton } from "@/components/form";
 import { ServiceFields } from "@/components/service-fields";
+import { aiConfigured } from "@/server/ai";
 import { updateService } from "../actions";
 import { listLocations } from "@/server/locations";
 
@@ -42,7 +43,7 @@ export default async function EditServicePage({ params }: { params: Promise<{ sl
       <ActionForm action={updateService}>
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="serviceId" value={service.id} />
-        <ServiceFields service={service} categories={categories} locations={locations} offeredAt={offeredAt.map((r) => r.locationId)} currency={business.currency} stripeReady={isStripeConfigured() && business.stripeChargesEnabled} paymentsHref={paymentsHrefFor(slug, permissions)} />
+        <ServiceFields aiSlug={aiConfigured() ? slug : undefined} service={service} categories={categories} locations={locations} offeredAt={offeredAt.map((r) => r.locationId)} currency={business.currency} stripeReady={isStripeConfigured() && business.stripeChargesEnabled} paymentsHref={paymentsHrefFor(slug, permissions)} />
         <SubmitButton pendingText="Saving…">Save service</SubmitButton>
       </ActionForm>
     </FormPage>

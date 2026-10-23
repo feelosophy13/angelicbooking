@@ -8,6 +8,7 @@ import { planMonthlyCents } from "@/server/billing";
 import { requireAnyAction } from "@/lib/tenant";
 import { Card, PageHeader } from "@/components/ui";
 import { SETTINGS_ACTIONS, settingsGroups } from "@/lib/nav";
+import { aiConfigured } from "@/server/ai";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -19,7 +20,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
     withTenant(business.id, (tx) => tx.select({ id: schema.locations.id }).from(schema.locations).orderBy(asc(schema.locations.name))),
     can(permissions, "billing.manage") || can(permissions, "settings.business") ? planMonthlyCents(business) : null,
   ]);
-  const groups = settingsGroups(`/app/${slug}`, permissions, { ...business, locationCount: locations.length, planMonthlyCents: monthly });
+  const groups = settingsGroups(`/app/${slug}`, permissions, { ...business, locationCount: locations.length, planMonthlyCents: monthly, aiAvailable: aiConfigured() });
   return (
     <>
       <PageHeader title="Settings" />

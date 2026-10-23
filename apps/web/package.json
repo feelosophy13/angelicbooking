@@ -17,6 +17,7 @@
   "dependencies": {
     "@angelic/core": "workspace:*",
     "@angelic/db": "workspace:*",
+    "@anthropic-ai/sdk": "^1.1.0",
     "@aws-sdk/client-s3": "^3.1149.0",
     "@date-fns/tz": "^1.4.1",
     "@stripe/react-stripe-js": "^7.0.0",
