@@ -1296,6 +1296,33 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### Client check-in kiosk (built 2026-10-22, migration 0134)
+- [x] Settings → Check-in kiosk: turn it on per location (`locations.checkin_token`), open `/checkin/<token>` on the tablet (QR code or
+      address), "New link" unpairs a lost tablet, "Turn off" stops it. "Minutes early" (`businesses.checkin_early_minutes`, default 60)
+      sets when check-in opens; it closes when the visit ends. Same token pattern as the time clock kiosk.
+- [x] Kiosk (`app/checkin/[token]`, `server/checkin-kiosk.ts`): business logo, name and brand color, large touch targets, portrait and
+      landscape. The client types the last 4 digits of their mobile (or the whole number when 4 digits fit more than one client; a family
+      on one number picks their own name). Only first name + last initial, services with the provider's first name, and the time are
+      shown, after a match, with "That's not me". Early or after the end: "please see the front desk".
+- [x] Check in uses the shared status flow (`setAppointmentStatus`, logged as "The client checked in at the kiosk"); the calendar updates.
+      Forms due for the visit are filled in on the tablet first (shared `FormFill`, no prefill: a number isn't proof of identity), or
+      "Do this at the front desk instead" checks in anyway and the visit keeps its forms-due flag.
+- [x] Walk-ins: "I don't have an appointment" takes name and mobile and puts them on today's Waitlist at this location ("Walk-in at the
+      check-in kiosk"), where Book fills in the client. Chosen over a walk-in sale (a ticket with nothing to sell yet) and over a bare
+      message (nothing left for the desk to act on). Attached to an existing client only when the name matches too.
+- [x] Staff alert: anyone with "See every calendar" gets a toast (with Open) within 20 seconds of a kiosk check-in or walk-in while the
+      app is open, and the calendar refreshes (`check-ins/feed`, `checkin-alerts.tsx`).
+- [x] Security: the token only reads today's visits at its location by phone, checks in the matched visit and takes its forms; every write
+      re-checks the number. 60 lookups and 15 misses per kiosk per 10 minutes (after 15 misses all lookups stop, so guessing can't
+      continue until a hit); 40 posts a minute per address; 10 walk-ins per 10 minutes. Resets to Welcome after 1 minute idle (4 on a
+      form) and 8 seconds after a check-in. Tests: `checkin.test.ts`, `checkin-kiosk.test.ts`.
+- [ ] No email or text alert to the desk or the provider: the alert only reaches open app tabs. Add a per-location "text the provider
+      when their client checks in" once Twilio staff messages are wanted.
+- [ ] The link is the credential (like the clock kiosk): anyone with the address can use it until it is reset. A device pairing code
+      (pair once, cookie per tablet, list of paired tablets) would let one lost tablet be removed without touching the others.
+- [ ] Not built: a rebooking prompt after check-in, or "we texted you a link" to fill forms on the client's own phone.
+- [ ] Classes aren't checked in at the kiosk (visits only); class attendance stays on the class session page.
+
 ### Email designs (built 2026-10-22, migration 0132)
 - [x] Marketing → Email designs: saved designs built from blocks (heading, text with **bold** / *italic* / links, image, two images,
       button, divider, space, footer note), with the logo and brand color applied, merge fields ("Insert field"), a live desktop / phone

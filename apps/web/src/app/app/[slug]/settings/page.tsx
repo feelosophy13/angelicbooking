@@ -16,10 +16,10 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
   const { slug } = await params;
   const { business, permissions } = await requireAnyAction(slug, ...SETTINGS_ACTIONS);
   const [locations, monthly] = await Promise.all([
-    withTenant(business.id, (tx) => tx.select({ id: schema.locations.id }).from(schema.locations).orderBy(asc(schema.locations.name))),
+    withTenant(business.id, (tx) => tx.select({ id: schema.locations.id, checkinToken: schema.locations.checkinToken }).from(schema.locations).orderBy(asc(schema.locations.name))),
     can(permissions, "billing.manage") || can(permissions, "settings.business") ? planMonthlyCents(business) : null,
   ]);
-  const groups = settingsGroups(`/app/${slug}`, permissions, { ...business, locationCount: locations.length, planMonthlyCents: monthly });
+  const groups = settingsGroups(`/app/${slug}`, permissions, { ...business, locationCount: locations.length, checkinKiosks: locations.filter((l) => l.checkinToken).length, planMonthlyCents: monthly });
   return (
     <>
       <PageHeader title="Settings" />

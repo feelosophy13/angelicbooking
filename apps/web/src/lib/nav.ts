@@ -101,6 +101,8 @@ export interface SettingsStatusSource {
   paymentProvider?: string;
   helcimApiToken?: string | null;
   locationCount: number;
+  /** Locations with the client check-in kiosk turned on. */
+  checkinKiosks?: number;
   /** The fixed monthly platform cost from the price book (server/billing.ts planMonthlyCents); null when comped. */
   planMonthlyCents: number | null;
   currency: string;
@@ -119,6 +121,7 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
       entries: [
         { href: `${sb}/profile`, title: "Business profile", blurb: "Name, timezone, logo, brand and app colors, about text and links." },
         { href: `${sb}/locations`, title: "Locations", blurb: "Addresses, opening hours and tax rates.", status: s ? (s.locationCount === 1 ? "1 location" : `${s.locationCount} locations`) : undefined },
+        { href: `${sb}/check-in`, title: "Check-in kiosk", blurb: "A tablet at the door where clients check themselves in.", status: s?.checkinKiosks ? "on" : undefined },
         { href: `${sb}/roles`, title: "Roles & permissions", blurb: "What each role can see and do.", action: "members.manage" },
       ],
     },

@@ -19,6 +19,8 @@ import { NavHistory } from "@/components/nav-history";
 import { navSections } from "@/lib/nav";
 import { unreadCount } from "@/server/inbound";
 import { UnreadBadge } from "./unread-badge";
+import { CheckinAlerts } from "./checkin-alerts";
+import { checkinKioskOn } from "@/server/checkin-kiosk";
 import { NavLink } from "./nav-link";
 import { lowStockCount } from "@/server/inventory";
 import { MobileNav, type NavSection } from "./mobile-nav";
@@ -34,6 +36,8 @@ export default async function AppLayout({ children, params }: { children: React.
   void permissionsForRole;
   const lowCount = can(permissions, "inventory.manage") ? await lowStockCount(business.id) : 0;
   const unreadTexts = can(permissions, "clients.messages") ? await unreadCount(business.id) : 0;
+  // Front-door kiosk alerts: only when a location has it on, for people who see every calendar.
+  const kioskAlerts = can(permissions, "appointments.read.any") && (await checkinKioskOn(business.id));
   // Development only: the staff a Provider can be viewed as.
   const viewAsStaff = viewAsEnabled() ? await withTenant(business.id, (tx) => tx.select({ id: schema.staff.id, name: schema.staff.displayName }).from(schema.staff).where(and(eq(schema.staff.active, true), eq(schema.staff.takesAppointments, true))).orderBy(asc(schema.staff.sortOrder), asc(schema.staff.displayName))) : [];
   const roleName = roles.find((r) => r.key === role)?.name ?? role.replace("_", " ");
@@ -126,6 +130,7 @@ export default async function AppLayout({ children, params }: { children: React.
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
+        {kioskAlerts ? <CheckinAlerts slug={slug} since={Date.now()} /> : null}
         <MobileNav sections={sections as NavSection[]} businessName={business.name} businessLogo={business.logoUrl} homeHref={base} userName={`${user.name} · ${roleName}`} tabs={tabs} bookingUrl={bookingUrl} quick={quickActions}>
           <UserMenu user={user} businesses={mine} currentSlug={slug} />
         </MobileNav>
