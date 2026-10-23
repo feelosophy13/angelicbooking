@@ -26,8 +26,11 @@ import { WorkPhotos } from "./work-photos";
 import { ServiceSearch } from "./service-search";
 import { MonthCalendar } from "./calendar";
 import { addonsForService, addonTerms } from "@/server/addons";
+import { decodeGuests, encodeGuests, MAX_GUESTS, type GuestChoice } from "@/lib/group-guests";
+import { groupPaymentRequirement, planGroup, type GroupPlan } from "@/server/group-booking";
+import { linkedClients } from "@/server/client-links";
 
-type SP = { service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string; extra?: string; add?: string; sort?: string; who?: string };
+type SP = { gcat?: string; service?: string; staff?: string; date?: string; time?: string; month?: string; location?: string; session?: string; category?: string; q?: string; extra?: string; add?: string; sort?: string; who?: string; /** Guests booked with the client (lib/group-guests). */ g?: string; /** Adding a guest: "new". */ guest?: string; /** The service picked for the guest being added. */ gsvc?: string };
 
 export default async function PublicBookingPage({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<SP> }) {
   const { slug } = await params;
@@ -95,11 +98,13 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   const withTitle = (id: string, name: string) => { const t = staff.find((s) => s.id === id)?.position; return t ? `${name} · ${t}` : name; };
   const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? "") ? sp.date! : null;
   const extraIds = [...new Set((sp.extra ?? "").split(",").filter(Boolean))].slice(0, 4);
+  const guests = decodeGuests(sp.g);
   const q = (extra: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    // Choosing a different service starts a new visit, so the added services go with the old one.
+    // Choosing a different service starts a new visit, so the added services and guests go with the old one.
     const keepExtras = "service" in extra ? undefined : extraIds.join(",") || undefined;
-    for (const [k, v] of Object.entries({ location: locations.length > 1 ? location?.id : undefined, category: service?.categoryId ?? sp.category, service: service?.id, staff: staffChoice ?? undefined, date: date ?? undefined, extra: keepExtras, time: timeFirst || sp.who === "time" ? sp.time : undefined, ...extra })) if (v) p.set(k, v);
+    const keepGuests = "service" in extra ? undefined : sp.g && guests.length ? encodeGuests(guests) : undefined;
+    for (const [k, v] of Object.entries({ location: locations.length > 1 ? location?.id : undefined, category: service?.categoryId ?? sp.category, service: service?.id, staff: staffChoice ?? undefined, date: date ?? undefined, extra: keepExtras, g: keepGuests, time: timeFirst || sp.who === "time" ? sp.time : undefined, ...extra })) if (v) p.set(k, v);
     return `?${p.toString()}`;
   };
   const locBar = locations.length > 1 && location ? (
@@ -211,6 +216,16 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     ...(staffChoice ? [{ label: "With", value: providerName ?? "", href: timeFirst ? q({ staff: undefined }) : q({ staff: undefined, date: undefined, time: undefined }) }] : []),
     ...extra,
   ];
+
+  /** The slots at which this visit and every guest fit (checked in order, at most 48). */
+  async function groupFits<T>(list: T[], at: (s: T) => { staffId: string; startAt: Date }): Promise<T[]> {
+    const out: T[] = [];
+    for (const s of list.slice(0, 48)) {
+      const fits = await planGroup(business!, { serviceId: service!.id, ...at(s), extraServiceIds: extraIds, locationId: locId, guests }).then(() => true, (e) => { if (e instanceof BookingError) return false; throw e; });
+      if (fits) out.push(s);
+    }
+    return out;
+  }
 
   // ---- Classes: pick a scheduled session instead of a provider + time
   if (service.capacity > 1) {
@@ -388,7 +403,9 @@ export default async function PublicBookingPage({ params, searchParams }: { para
     const rangeEnd = monthEnd < maxDate ? monthEnd : maxDate;
     const rangeDays = rangeEnd < rangeStart ? 0 : Math.round((Date.parse(`${rangeEnd}T00:00:00Z`) - Date.parse(`${rangeStart}T00:00:00Z`)) / 86_400_000) + 1;
     const available = new Set(await getAvailableDates(business, service.id, availStaff, rangeStart, rangeDays, locId));
-    const slots = date ? await getPublicSlots(business, service.id, availStaff, date, new Date(), locId) : [];
+    const allSlots = date ? await getPublicSlots(business, service.id, availStaff, date, new Date(), locId) : [];
+    // With guests, only the times when everyone fits.
+    const slots = guests.length ? await groupFits(allSlots, (s) => ({ staffId: s.staffId, startAt: s.at })) : allSlots;
     const byPeriod = (list: typeof slots) => {
       const groups: { label: string; list: typeof slots }[] = [{ label: "Morning", list: [] }, { label: "Afternoon", list: [] }, { label: "Evening", list: [] }];
       for (const s of list) {
@@ -421,6 +438,8 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           <div id="times" className="scroll-mt-4">
             {!date ? (
               <div className="flex h-full min-h-32 items-center justify-center rounded-2xl border border-dashed border-stone-300 p-6 text-center text-sm text-stone-500">Choose a day to see times.</div>
+            ) : slots.length === 0 && allSlots.length ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">No time on {formatDateLong(date)} fits everyone in your group. Try another day, or <Link href={q({ g: undefined })} className="font-medium underline">remove your guests</Link>.</div>
             ) : slots.length === 0 ? (
               <div className="space-y-3">
                 <p className="text-sm text-stone-600">No openings on {formatDateLong(date)}.</p>
@@ -429,6 +448,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
             ) : (
               <div className="space-y-4">
                 <p className="text-sm font-semibold text-stone-900">{formatDateLong(date)}</p>
+                {guests.length ? <p className="text-xs text-stone-500">Times when you and your {guests.length === 1 ? "guest both fit" : `${guests.length} guests all fit`}.</p> : null}
                 {byPeriod(slots).map((g) => (
                   <div key={g.label}>
                     <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-stone-400">{g.label}</p>
@@ -529,6 +549,160 @@ export default async function PublicBookingPage({ params, searchParams }: { para
   }
   const addonIds = new Set(pairings.map((p) => p.addonServiceId));
   const moreOptions = options.filter((s) => !addonIds.has(s.id));
+
+  // ---- Guests: others booked with this visit, each their own appointment (server/group-booking)
+  const here = { time: sp.time, staff: slot.staffId };
+  const withGuests = (list: GuestChoice[]) => q({ ...here, g: list.length ? encodeGuests(list) : undefined });
+  const planFor = (list: GuestChoice[], at = startAt) => planGroup(business, { serviceId: service.id, staffId: slot.staffId, startAt: at, extraServiceIds: extrasParam, locationId: locId, guests: list });
+  const tryPlan = (list: GuestChoice[], at = startAt) => planFor(list, at).then((p): GroupPlan | null => p, (e) => { if (e instanceof BookingError) return null; throw e; });
+  let group: GroupPlan | null = null;
+  let groupError: string | null = null;
+  if (guests.length && !extraError) {
+    try {
+      group = await planFor(guests);
+    } catch (e) {
+      if (e instanceof BookingError) groupError = e.message;
+      else throw e;
+    }
+  }
+  // The lead's times that day with this provider, for "times when everyone fits".
+  const leadSlotsToday = async () => (date ? (await getPublicSlots(business, service.id, slot.staffId, date, new Date(), locId)).filter((s) => s.free.includes(slot.staffId)).map((s) => s.at) : []);
+  const fitsFor = async (list: GuestChoice[]) => {
+    const out: Date[] = [];
+    for (const at of (await leadSlotsToday()).slice(0, 48)) {
+      if (await tryPlan(list, at)) out.push(at);
+      if (out.length >= 6) break;
+    }
+    return out;
+  };
+  const groupFitTimes = groupError ? await fitsFor(guests) : [];
+  const timeLabel = (d: Date) => formatTime(d, tz);
+  const guestLine = (p: GroupPlan["guests"][number]) => `${[p.serviceName, ...p.extras.map((x) => x.name)].join(" + ")} with ${p.staffName.split(" ")[0]} at ${timeLabel(p.startAt)}`;
+
+  if (sp.guest === "new" && !extraError && !groupError && guests.length < MAX_GUESTS) {
+    const base = group ?? (await planFor([]));
+    const guestService = services.find((x) => x.id === sp.gsvc && x.capacity === 1) ?? null;
+    const back = withGuests(guests);
+    if (!guestService) {
+      // A long menu is browsed the way the first service was: search, or a top-level category, then its services.
+      const oneToOne = services.filter((x) => x.capacity === 1);
+      const liveCats = categories.filter((c) => subtreeIds(categories, c.id).some((cid) => oneToOne.some((x) => x.categoryId === cid)));
+      const tops = buildTree(liveCats);
+      const term = (sp.q ?? "").trim().toLowerCase().slice(0, 80);
+      const cat = liveCats.find((c) => c.id === sp.gcat) ?? null;
+      const browse = oneToOne.length > 12 && tops.length > 1;
+      const shown = term ? oneToOne.filter((x) => `${x.name} ${x.description ?? ""} ${liveCats.find((c) => c.id === x.categoryId)?.name ?? ""}`.toLowerCase().includes(term)) : cat ? oneToOne.filter((x) => x.categoryId && subtreeIds(liveCats, cat.id).includes(x.categoryId)) : browse ? oneToOne.filter((x) => !x.categoryId || !liveCats.some((c) => c.id === x.categoryId)) : oneToOne;
+      const keep = Object.fromEntries(new URLSearchParams(q({ ...here, guest: "new" }).slice(1)));
+      return (
+        <>
+          <StepBack href={cat || term ? q({ ...here, guest: "new" }) : back} />
+          {locBar}
+          <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
+          <StepTitle title={`Add guest ${guests.length + 1}`} subtitle="What would they like? You'll pick who and when next." />
+          <p className="mb-3 text-sm"><Link href={back} className="hit underline" style={{ color: "var(--brand-dark)" }}>Never mind, back to my details</Link></p>
+          {oneToOne.length > 8 ? <ServiceSearch value={sp.q ?? ""} keep={keep} /> : null}
+          {browse && !cat && !term ? (
+            <div className={cn("grid grid-cols-2 gap-3 sm:grid-cols-3", shown.length && "mb-6")}>
+              {tops.map((c) => <CategoryTile key={c.id} href={q({ ...here, guest: "new", gcat: c.id })} name={c.name} imageUrl={c.imageUrl ?? null} description={c.description ?? null} meta={`${oneToOne.filter((x) => x.categoryId && subtreeIds(liveCats, c.id).includes(x.categoryId)).length} services`} />)}
+            </div>
+          ) : null}
+          {cat ? <h2 className="mb-2 text-sm font-semibold text-stone-700">{cat.name}</h2> : null}
+          {term && !shown.length ? <p className="rounded-2xl border border-stone-200 bg-white p-6 text-center text-sm text-stone-500">Nothing matches that. Try a shorter word.</p> : null}
+          <ul className="space-y-3">
+            {shown.map((x) => <ServiceCard key={x.id} href={q({ ...here, guest: "new", gsvc: x.id })} name={x.name} imageUrl={x.imageUrl} description={x.description} durationLabel={serviceMeta(x)} price={priceLabel(ranges?.get(x.id) ?? { min: x.priceCents, max: x.priceCents }, money).label} priceFrom={priceLabel(ranges?.get(x.id) ?? { min: x.priceCents, max: x.priceCents }, money).varies} deposit={depositLabel(x, money) ?? undefined} />)}
+          </ul>
+        </>
+      );
+    }
+    // Every way this guest could join: with each provider (or whoever is free), starting with the client or right after the last person.
+    const pros = await publicProvidersFor(business, guestService.id, locId);
+    const afterAt = (base.guests.at(-1) ?? base.lead).endAt;
+    const prev = guests.length ? `guest ${guests.length}` : "you";
+    const ways: { key: string; timing: "together" | "after"; staffId: string; label: string; plan: GroupPlan["guests"][number] }[] = [];
+    for (const timing of ["together", "after"] as const) {
+      for (const who of [...(pros.length > 1 ? [{ id: "any", displayName: "Any available provider" }] : []), ...pros]) {
+        const choice: GuestChoice = { serviceId: guestService.id, staffId: who.id, timing, extraServiceIds: [] };
+        const p = await tryPlan([...guests, choice]);
+        if (p) ways.push({ key: `${timing}.${who.id}`, timing, staffId: who.id, label: who.id === "any" ? `Any available · ${p.guests.at(-1)!.staffName}` : who.displayName, plan: p.guests.at(-1)! });
+      }
+    }
+    const fitTimesNew = ways.length ? [] : await fitsFor([...guests, { serviceId: guestService.id, staffId: "any", timing: "together", extraServiceIds: [] }]);
+    const sections = [
+      { timing: "together" as const, title: `At the same time · ${timeLabel(startAt)}` },
+      { timing: "after" as const, title: `Right after ${prev} · ${timeLabel(afterAt)}` },
+    ];
+    return (
+      <>
+        <StepBack href={q({ ...here, g: sp.g, guest: "new" })} />
+        {locBar}
+        <Steps labels={stepLabels} current={4} hrefs={stepHrefs(3)} />
+        <StepTitle title={`Who and when for guest ${guests.length + 1}?`} subtitle={`${guestService.name}. Only the choices that are free are shown.`} />
+        <p className="mb-3 text-sm"><Link href={q({ ...here, guest: "new" })} className="hit underline" style={{ color: "var(--brand-dark)" }}>Pick a different service</Link></p>
+        {sections.map((sec) => {
+          const list = ways.filter((o) => o.timing === sec.timing);
+          if (!list.length) return null;
+          return (
+            <section key={sec.timing} className="mb-5">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-stone-500">{sec.title}</h2>
+              <ul className="space-y-2">
+                {list.map((o) => (
+                  <li key={o.key}>
+                    <Link href={withGuests([...guests, { serviceId: guestService.id, staffId: o.staffId, timing: o.timing, extraServiceIds: [] }])} className="flex min-h-14 items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 shadow-sm transition hover:border-[var(--brand-ring)] hover:shadow-md">
+                      <span className="min-w-0 flex-1"><span className="block font-medium text-stone-900">{o.label}</span><span className="block text-xs text-stone-500">{timeLabel(o.plan.startAt)} – {timeLabel(o.plan.endAt)}</span></span>
+                      <span className="w-20 shrink-0 text-right font-semibold tabular-nums text-stone-900">{money(o.plan.totalCents)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          );
+        })}
+        {ways.length === 0 ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p>Nobody is free for {guestService.name} at {timeLabel(startAt)} or right after.</p>
+            {fitTimesNew.length ? (
+              <div className="mt-3">
+                <p className="mb-2 font-medium">Times that day when everyone fits:</p>
+                <div className="flex flex-wrap gap-2">
+                  {fitTimesNew.map((t) => <Link key={t.getTime()} href={q({ ...here, time: t.toISOString(), g: encodeGuests([...guests, { serviceId: guestService.id, staffId: "any", timing: "together", extraServiceIds: [] }]) })} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-medium text-stone-800 hover:border-stone-400">{timeLabel(t)}</Link>)}
+                </div>
+              </div>
+            ) : <p className="mt-2">Try another day, or <Link href={back} className="font-medium underline">go back</Link>.</p>}
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
+  // Each guest's own "Add to your visit?": the add-ons suggested with their service that fit with everyone.
+  const guestAddons: { id: string; name: string; on: boolean; priceCents: number }[][] = [];
+  if (group) {
+    for (const [i, g] of guests.entries()) {
+      const pg = group.guests[i]!;
+      const out: { id: string; name: string; on: boolean; priceCents: number }[] = [];
+      const theirs = await withTenant(business.id, async (tx) => [await addonsForService(tx, g.serviceId), await overridesForStaff(tx, pg.staffId)] as const);
+      for (const p of theirs[0]) {
+        const svc = services.find((x) => x.id === p.addonServiceId);
+        if (!svc || svc.capacity !== 1) continue;
+        const on = g.extraServiceIds.includes(svc.id);
+        const t = addonTerms(p, termsOf(svc, theirs[1].get(svc.id)));
+        if (!on) {
+          // Pinned to the provider they got, so "any" doesn't hop to someone else to make room.
+          const next = guests.map((x, j) => (j === i ? { ...x, staffId: pg.staffId, extraServiceIds: [...x.extraServiceIds, svc.id] } : x));
+          if (!(await tryPlan(next))) continue;
+        }
+        out.push({ id: svc.id, name: svc.name, on, priceCents: t.priceCents });
+      }
+      guestAddons.push(out);
+    }
+  }
+  const toggleGuestAddon = (i: number, id: string) => withGuests(guests.map((x, j) => (j !== i ? x : x.extraServiceIds.includes(id) ? { ...x, extraServiceIds: x.extraServiceIds.filter((e) => e !== id) } : { ...x, staffId: group!.guests[i]!.staffId, extraServiceIds: [...x.extraServiceIds, id] })));
+  const groupReq = group ? groupPaymentRequirement(business, pay, group) : null;
+  const groupTotal = group ? [group.lead, ...group.guests].reduce((sum, p) => sum + p.totalCents, 0) : null;
+  const formReq = groupReq ?? req;
+  // A signed-in client's family: they can book this visit for one of them, and pick them as guests.
+  const family = me ? (await linkedClients(business.id, me.id)).map((f) => ({ id: f.id, name: `${f.firstName} ${f.lastName}`.trim(), relation: f.relation })) : [];
+  const guestForm = group ? { encoded: encodeGuests(guests), people: group.guests.map((p, i) => ({ label: `Guest ${i + 1} · ${guestLine(p)}` })), family } : undefined;
   return (
     <>
       <StepBack href={timeFirst ? q({ staff: undefined }) : q({ time: undefined })} />
@@ -544,6 +718,7 @@ export default async function PublicBookingPage({ params, searchParams }: { para
           ...extras.map((x) => ({ label: "Plus", value: `${x.name}${x.addon ? " (add-on)" : ""} · ${money(x.priceCents)}`, href: q({ time: sp.time, extra: extrasParam.filter((id) => id !== x.serviceId).join(",") || undefined }) })),
           { label: "Duration", value: visitMinutes ? duration(visitMinutes) : spanOf(termsFor(slot.staffId).durationMin) },
           { label: extras.length ? "Total" : "Price", value: money(visitPrice) },
+          ...(group && groupTotal !== null ? [{ label: "Everyone", value: `${money(groupTotal)} · ${group.guests.length + 1} people` }] : []),
         ]}
       />
       {pricierNote(slot.staffId, slot.staffName)}
@@ -585,12 +760,59 @@ export default async function PublicBookingPage({ params, searchParams }: { para
             </section>
           ) : null}
           {moreOptions.length ? <p className="mb-3 text-sm"><Link href={q({ time: sp.time, staff: slot.staffId, add: "1" })} className="underline" style={{ color: "var(--brand-dark)" }}>+ Add another service with {slot.staffName.split(" ")[0]}</Link></p> : null}
-          {req.mode === "none" && depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
-          {req.mode === "none" ? (
-            <BookingForm verify={verifyCode} priceLabel={money(visitPrice)} extraServiceIds={extrasParam} slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={ownPrice} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} photos={business.clientPhotosOnBooking} />
+          {groupError ? (
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p>{groupError} <Link href={withGuests([])} className="font-medium underline">Remove guests</Link> or <Link href={q({ time: undefined })} className="font-medium underline">pick another time</Link>.</p>
+              {groupFitTimes.length ? (
+                <div className="mt-3">
+                  <p className="mb-2 font-medium">Times that day when everyone fits:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {groupFitTimes.map((t) => <Link key={t.getTime()} href={q({ ...here, time: t.toISOString() })} className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 font-medium text-stone-800 hover:border-stone-400">{timeLabel(t)}</Link>)}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : group ? (
+            <section className="mb-4 rounded-2xl border border-stone-200 bg-white p-4" aria-labelledby="guests-title">
+              <h2 id="guests-title" className="font-medium">Your guests</h2>
+              <p className="mb-2 text-xs text-stone-500">Each guest gets their own appointment. You'll enter their names below.</p>
+              <ul className="divide-y divide-stone-100">
+                {group.guests.map((p, i) => (
+                  <li key={i} className="py-2">
+                    <div className="flex items-start gap-3">
+                      <span className="min-w-0 flex-1 text-sm"><span className="block font-medium text-stone-900">Guest {i + 1}</span><span className="block text-stone-600">{guestLine(p)}{guests[i]!.timing === "after" ? " · right after" : ""}</span></span>
+                      <span className="w-20 shrink-0 text-right text-sm font-medium tabular-nums">{money(p.totalCents)}</span>
+                      <Link href={withGuests(guests.filter((_, j) => j !== i))} scroll={false} className="hit shrink-0 text-sm text-stone-500 underline">Remove</Link>
+                    </div>
+                    {guestAddons[i]?.length ? (
+                      <ul className="mt-1">
+                        {guestAddons[i]!.map((a) => (
+                          <li key={a.id}>
+                            <Link href={toggleGuestAddon(i, a.id)} scroll={false} role="checkbox" aria-checked={a.on} className="flex min-h-10 items-center gap-3 py-1">
+                              <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${a.on ? "border-transparent text-white" : "border-stone-300 bg-white"}`} style={a.on ? { background: "var(--brand)" } : undefined} aria-hidden>{a.on ? "✓" : null}</span>
+                              <span className="min-w-0 flex-1 text-sm text-stone-700">Add {a.name}</span>
+                              <span className="whitespace-nowrap text-sm">+{money(a.priceCents)}</span>
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+              {guests.length < MAX_GUESTS ? <p className="mt-2 text-sm"><Link href={q({ ...here, guest: "new" })} className="hit underline" style={{ color: "var(--brand-dark)" }}>+ Add another guest</Link></p> : null}
+            </section>
+          ) : (
+            <p className="mb-3 text-sm"><Link href={q({ ...here, guest: "new" })} className="hit underline" style={{ color: "var(--brand-dark)" }}>+ Booking for someone else too? Add a guest</Link></p>
+          )}
+          {formReq.mode === "none" && depositLabel(service, money) ? <p className="mb-3 text-xs text-stone-600">This service takes {depositLabel(service, money)!.toLowerCase()} up front. The salon will contact you to arrange it.</p> : null}
+          {groupError ? null : formReq.mode === "none" ? (
+            <BookingForm verify={verifyCode} priceLabel={money(groupTotal ?? visitPrice)} guests={guestForm} family={family} extraServiceIds={extrasParam} slug={slug} serviceId={service.id} staffId={slot.staffId} startAt={startAt.toISOString()} quotedPriceCents={ownPrice} policy={business.bookingPolicy} cancelWindowHours={business.cancelWindowHours} lateFee={lateFee} referrals={business.loyaltyEnabled} defaults={defaults} promos={hasPromos} embed={embed} locationId={locId} photos={business.clientPhotosOnBooking} />
           ) : (
             <PaidBookingForm verify={verifyCode}
-              priceLabel={money(visitPrice)}
+              priceLabel={money(groupTotal ?? visitPrice)}
+              guests={guestForm}
+              family={family}
               extraServiceIds={extrasParam}
               slug={slug}
               serviceId={service.id}
@@ -599,12 +821,12 @@ export default async function PublicBookingPage({ params, searchParams }: { para
               quotedPriceCents={ownPrice}
               policy={business.bookingPolicy}
               cancelWindowHours={business.cancelWindowHours} lateFee={lateFee}
-              mode={req.mode}
-              full={req.full}
-              amountLabel={formatMoney(req.amountCents, business.currency)}
-              amountCents={req.amountCents}
+              mode={formReq.mode}
+              full={formReq.full}
+              amountLabel={formatMoney(formReq.amountCents, business.currency)}
+              amountCents={formReq.amountCents}
               currency={business.currency}
-              cardFee={req.mode === "deposit" ? cardFeeQuote(cardFeeSettingsOf(business), pay.provider, "online", req.amountCents, business.currency, { cashOption: false }) : null}
+              cardFee={formReq.mode === "deposit" ? cardFeeQuote(cardFeeSettingsOf(business), pay.provider, "online", formReq.amountCents, business.currency, { cashOption: false }) : null}
               publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!}
               brand={brandHex(business.brandColor)}
               referrals={business.loyaltyEnabled}

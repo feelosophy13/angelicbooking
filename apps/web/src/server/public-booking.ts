@@ -3,12 +3,12 @@ import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { buildBookingSegments, canClientCancel, instantToISODate, isWithinBookingWindow, normalizePhone, onlineBookingWindow, zonedToInstant } from "@angelic/core";
 import { getStaffAvailability, getStaffAvailabilityForDates, staffForService, timingFor } from "./availability";
-import { bookAppointment, BookingError, rescheduleAppointment, rescheduleService, setAppointmentStatus } from "./booking";
+import { bookAppointment, BookingError, rescheduleAppointment, rescheduleAppointments, rescheduleService, setAppointmentStatus } from "./booking";
 import { appointmentForIntent, refundDeposit, refundOrphanIntent, type VerifiedIntent } from "./online-payments";
 import { findReferrer } from "./loyalty";
 import { validatePromo, PromoError } from "./promos";
 import { after } from "next/server";
-import { appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify";
+import { appointmentChangedSilently, appointmentContext, notifyAppointment, queueOneOff } from "@/lib/notify";
 import { triggerWorkflows } from "@/server/workflows";
 import { staffAlertEmail } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
@@ -86,7 +86,7 @@ export async function getPublicMenu(businessId: string, locationId?: string | nu
  * each slot carries the staff member who would take it (first available by sort order).
  */
 /** The service if it is bookable online (and offered at the location), else null. */
-async function publicService(business: PublicBusiness, serviceId: string, locationId?: string | null) {
+export async function publicService(business: PublicBusiness, serviceId: string, locationId?: string | null) {
   return withTenant(business.id, async (tx) => {
     const svc = await tx.query.services.findFirst({ where: and(eq(schema.services.id, serviceId), eq(schema.services.active, true), eq(schema.services.bookableOnline, true)) });
     return svc && (await serviceOfferedAt(tx, svc.id, locationId)) ? svc : null;
@@ -283,12 +283,14 @@ export interface OnlineBookingInput {
   extraServiceIds?: string[] | null;
   /** Pictures the client attached (inspiration, a reference, their current lashes); up to five, ignored when the business turned them off. */
   photos?: File[] | null;
+  /** A signed-in client booking for one of their linked people (a child): the appointment is that person's. */
+  forClientId?: string | null;
 }
 
 export type BookingPhotosResult = { stored: number; dropped: DroppedPhoto[] };
 
 /** The signed-in client for this business, if there is a request with a client session (never throws outside a request). */
-async function signedInClientId(businessId: string): Promise<string | null> {
+export async function signedInClientId(businessId: string): Promise<string | null> {
   try {
     const { getClientSessionId } = await import("@/lib/client-session");
     return await getClientSessionId(businessId);
@@ -308,6 +310,11 @@ export async function findOrCreateClient(businessId: string, input: OnlineBookin
   const clientId = await withTenant(businessId, async (tx) => {
     if (signedIn) {
       const me = await tx.query.clients.findFirst({ where: eq(schema.clients.id, signedIn), columns: { id: true } });
+      // Booking for a family member: only someone linked to the signed-in client, else it is their own booking.
+      if (me && input.forClientId && input.forClientId !== me.id) {
+        const link = await tx.query.clientLinks.findFirst({ where: and(eq(schema.clientLinks.clientId, me.id), eq(schema.clientLinks.linkedClientId, input.forClientId)), columns: { id: true } });
+        if (link) return input.forClientId;
+      }
       if (me) return me.id;
     }
     const phone = normalizePhone(input.phone) ?? input.phone;
@@ -535,7 +542,7 @@ export async function createOnlineBooking(business: PublicBusiness, input: Onlin
 }
 
 /** A deposit was charged but the booking could not be made: give the money back before surfacing the error. */
-async function undoPayment(business: PublicBusiness, paid: VerifiedIntent | undefined) {
+export async function undoPayment(business: PublicBusiness, paid: VerifiedIntent | undefined) {
   if (paid?.kind !== "deposit") return;
   // A double submit: the twin request already booked with this deposit (that's often why this one failed). Keep the money.
   if (await appointmentForIntent(business.id, paid.paymentIntentId)) return;
@@ -552,10 +559,12 @@ async function undoPayment(business: PublicBusiness, paid: VerifiedIntent | unde
   }
 }
 
-function isoDateIn(at: Date, tz: string) {
+export function isoDateIn(at: Date, tz: string) {
   const p = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(at);
   return p; // en-CA gives YYYY-MM-DD
 }
+
+export type GroupMember = { id: string; token: string; status: string; name: string; services: string[]; staffName: string; start: Date; isLead: boolean; depositCents: number };
 
 /** Everything the client's self-service page needs, by secret token. */
 export async function getManagedAppointment(slug: string, token: string) {
@@ -575,17 +584,57 @@ export async function getManagedAppointment(slug: string, token: string) {
     const live = items.filter((i) => i.status !== "cancelled");
     const start = (live[0] ?? items[0])?.startAt ?? null;
     const clientPhotos = (await clientPhotoCounts(tx, [appt.id])).get(appt.id) ?? 0;
-    return { business, appt, location, timeZone: tzFor(business, location), items, live, client, start, clientPhotos, canChange: !!start && appt.status !== "cancelled" && appt.status !== "completed" && appt.status !== "no_show" && canClientCancel(start, new Date(), business) };
+    // Booked together with others: the booker's page lists everyone (and can change them); a guest's own page only says who booked.
+    let group: { lead: boolean; leadName: string | null; members: GroupMember[] } | null = null;
+    if (appt.groupId) {
+      const rows = await tx
+        .select({ id: schema.appointments.id, token: schema.appointments.manageToken, status: schema.appointments.status, firstName: schema.clients.firstName, lastName: schema.clients.lastName, name: schema.appointmentItems.serviceName, staffName: schema.staff.displayName, startAt: schema.appointmentItems.startAt, itemStatus: schema.appointmentItems.status, depositCents: schema.appointments.depositCents, depositStatus: schema.appointments.depositStatus })
+        .from(schema.appointments)
+        .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id))
+        .innerJoin(schema.staff, eq(schema.staff.id, schema.appointmentItems.staffId))
+        .leftJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
+        .where(eq(schema.appointments.groupId, appt.groupId))
+        .orderBy(asc(schema.appointmentItems.startAt));
+      const members = new Map<string, GroupMember>();
+      for (const r of rows) {
+        if (r.name.endsWith(" (finish)")) continue;
+        const live = r.itemStatus !== "cancelled";
+        const m = members.get(r.id) ?? { id: r.id, token: r.token, status: r.status, name: `${r.firstName ?? "Guest"} ${r.lastName ?? ""}`.trim(), services: [], staffName: r.staffName, start: r.startAt, isLead: r.id === appt.groupId, depositCents: r.depositStatus === "paid" ? r.depositCents : 0 };
+        if (live || r.status === "cancelled") m.services.push(r.name);
+        members.set(r.id, m);
+      }
+      const list = [...members.values()].sort((a, b) => (a.isLead ? -1 : b.isLead ? 1 : a.start.getTime() - b.start.getTime()));
+      group = { lead: appt.groupId === appt.id, leadName: list.find((x) => x.isLead)?.name ?? null, members: list };
+    }
+    return { business, appt, location, timeZone: tzFor(business, location), items, live, client, start, clientPhotos, group, canChange: !!start && appt.status !== "cancelled" && appt.status !== "completed" && appt.status !== "no_show" && canClientCancel(start, new Date(), business) };
   });
 }
 
-export async function cancelOnline(slug: string, token: string, reasonId?: string | null) {
+/**
+ * The client cancels online. `everyone` on the booker's page of a group cancels every appointment in it that is still on; otherwise
+ * just this one. Each appointment gives back its own share of the deposit.
+ */
+export async function cancelOnline(slug: string, token: string, reasonId?: string | null, everyone = false) {
   const m = await getManagedAppointment(slug, token);
   if (!m) throw new BookingError("Appointment not found.");
   if (!m.canChange) throw new BookingError(`Online cancellation closes ${m.business.cancelWindowHours} hours before the appointment. Please call ${m.business.phone ?? "the salon"}.`);
   // Optional: only a reason the salon offers to clients counts; anything else is ignored.
   const offered = reasonId ? (await listCancellationReasons(m.business.id)).find((r) => r.id === reasonId && r.clientVisible) : null;
-  const changed = await setAppointmentStatus(m.business.id, m.appt.id, "cancelled", "client", "Cancelled online by client", offered?.id ?? null);
+  const others = everyone && m.group?.lead ? m.group.members.filter((x) => !x.isLead && x.status !== "cancelled" && x.status !== "completed" && x.status !== "no_show") : [];
+  let refundFailed = false;
+  for (const other of others) {
+    // Each guest's own window: one already inside it is left for the salon, as their own page would.
+    const g = await getManagedAppointment(slug, other.token);
+    if (!g?.canChange) continue;
+    refundFailed = (await cancelOne(g, offered?.id ?? null)).refundFailed || refundFailed;
+  }
+  if (m.appt.status === "cancelled") return { refundFailed };
+  return { refundFailed: (await cancelOne(m, offered?.id ?? null)).refundFailed || refundFailed };
+}
+
+/** Cancel one managed appointment: status, deposit back (inside the window), the client told, the salon alerted. */
+async function cancelOne(m: NonNullable<Awaited<ReturnType<typeof getManagedAppointment>>>, reasonId: string | null) {
+  const changed = await setAppointmentStatus(m.business.id, m.appt.id, "cancelled", "client", "Cancelled online by client", reasonId);
   if (!changed) return { refundFailed: false };
   // Inside the cancellation window the deposit goes back automatically (on the account that took it). If that fails the money is still
   // owed: the salon is told (activity log and email) and the client's page says it will be sorted out, rather than that it went back.
@@ -599,9 +648,34 @@ export async function cancelOnline(slug: string, token: string, reasonId?: strin
       await queueOneOff(m.business.id, { channel: "email", template: "deposit_refund_failed", recipient: m.business.email, subject: "A deposit refund didn't go through", body: `<p>A client cancelled online and their deposit should have gone back automatically, but the refund failed: ${(e as Error).message}</p><p><a href="${appUrl(`/app/${m.business.slug}/appointments/${m.appt.id}`)}">Open the appointment</a> and use "Refund deposit".</p>` }).catch(() => undefined);
     }
   });
-  await notifyAppointment(m.business, m.appt.id, "cancellation");
+  // A guest with no phone or email of their own (and no parent to reach) heard through the booker; the booker's page told them.
+  if (m.group && !m.group.lead && !m.client?.phone && !m.client?.email) await appointmentChangedSilently(m.business, m.appt.id, "cancelled");
+  else await notifyAppointment(m.business, m.appt.id, "cancellation");
   await alertBusiness(m.business, m.appt.id, "cancelled");
   return { refundFailed };
+}
+
+/** Every appointment of a group still to come (the booker's page moves them all). */
+function liveMembers(m: NonNullable<Awaited<ReturnType<typeof getManagedAppointment>>>) {
+  return (m.group?.members ?? []).filter((x) => x.status !== "cancelled" && x.status !== "completed" && x.status !== "no_show");
+}
+
+/** Times on `date` the whole group can move to, keeping everyone's place: the booker's open times, each tried as a move that is undone. */
+export async function groupMoveTimes(slug: string, token: string, date: string): Promise<Date[]> {
+  const m = await getManagedAppointment(slug, token);
+  if (!m?.group?.lead || !m.start || !m.live[0]?.serviceId) return [];
+  const ids = liveMembers(m).map((x) => x.id);
+  const now = new Date();
+  // Every time that day on the booker's own grid, not just the booker's open ones: the group may slide into its own old times.
+  const step = m.business.slotIntervalMin * 60_000;
+  const dayStart = zonedToInstant(date, "00:00", m.timeZone).getTime();
+  const out: Date[] = [];
+  for (let t = dayStart; t < dayStart + 86_400_000 && out.length < 48; t += step) {
+    const at = new Date(t);
+    if (!isWithinBookingWindow(at, now, m.business) || at.getTime() === m.start.getTime()) continue;
+    if (await rescheduleAppointments({ businessId: m.business.id, appointmentIds: ids, deltaMs: at.getTime() - m.start.getTime(), actorUserId: "client", trial: true })) out.push(at);
+  }
+  return out;
 }
 
 /**
@@ -613,6 +687,22 @@ export async function rescheduleOnline(slug: string, token: string, newStartAt: 
   if (!m) throw new BookingError("Appointment not found.");
   if (!m.canChange) throw new BookingError(`Online changes close ${m.business.cancelWindowHours} hours before the appointment.`);
   if (m.live.some((i) => i.classSessionId)) throw new BookingError("Seats in a class move with the class. Cancel and book another session instead.");
+  // The booker of a group moves everyone together, same providers, same order; each guest's own page moves just them.
+  const members = m.group?.lead ? liveMembers(m) : [];
+  if (members.length > 1) {
+    if (!m.start || !isWithinBookingWindow(newStartAt, new Date(), m.business)) throw new BookingError("That time can't be booked online.");
+    if (members.some((x) => x.start.getTime() < Date.now() + m.business.cancelWindowHours * 3_600_000)) throw new BookingError(`Someone in your group is inside the ${m.business.cancelWindowHours}-hour window. Please call to move the group.`);
+    await rescheduleAppointments({ businessId: m.business.id, appointmentIds: members.map((x) => x.id), deltaMs: newStartAt.getTime() - m.start.getTime(), actorUserId: "client" });
+    for (const x of members) {
+      if (x.isLead) continue;
+      const g = await getManagedAppointment(slug, x.token);
+      if (g?.client?.phone || g?.client?.email) await notifyAppointment(m.business, x.id, "rescheduled");
+      else await appointmentChangedSilently(m.business, x.id, "rescheduled");
+    }
+    await notifyAppointment(m.business, m.appt.id, "rescheduled");
+    await alertBusiness(m.business, m.appt.id, "rescheduled");
+    return;
+  }
   const first = m.live[0];
   if (!first?.serviceId) throw new BookingError("Please call to reschedule.");
   if (!isWithinBookingWindow(newStartAt, new Date(), m.business)) throw new BookingError("That time can't be booked online.");
@@ -675,7 +765,7 @@ export async function setWaitlistStatus(businessId: string, id: string, status: 
 void isNull; void lt; void inArray; void zonedToInstant;
 
 /** Email the business when a client books/cancels/reschedules online (goes to the business profile email). */
-async function alertBusiness(business: PublicBusiness, appointmentId: string, kind: "booked" | "cancelled" | "rescheduled") {
+export async function alertBusiness(business: PublicBusiness, appointmentId: string, kind: "booked" | "cancelled" | "rescheduled") {
   if (!business.email) return;
   const built = await withTenant(business.id, (tx) => appointmentContext(tx, business, appointmentId));
   if (!built) return;

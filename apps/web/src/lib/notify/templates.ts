@@ -27,6 +27,8 @@ export interface ApptContext {
   prepNotes?: string[];
   /** How many pictures the client attached when booking online (inspiration, their current lashes); 0 or missing when none. */
   clientPhotos?: number;
+  /** The booker of a group: everyone booked with them ("Mia: Kids cut with Ana at 2:30 PM"). */
+  guests?: string[];
 }
 
 /** "2 photos from the client" for the team's messages; null when the client attached none. */
@@ -62,6 +64,8 @@ function details(ctx: ApptContext) {
   return `<table style="font-size:15px;border-collapse:collapse"><tr><td style="padding:4px 12px 4px 0;color:#78716c">When</td><td>${esc(when(ctx))}</td></tr>
 <tr><td style="padding:4px 12px 4px 0;color:#78716c">Service</td><td>${esc(ctx.services)}</td></tr>
 <tr><td style="padding:4px 12px 4px 0;color:#78716c">With</td><td>${esc(ctx.staffName)}</td></tr>${
+    ctx.guests?.length ? `<tr><td style="padding:4px 12px 4px 0;color:#78716c;vertical-align:top">Also booked</td><td>${ctx.guests.map(esc).join("<br>")}</td></tr>` : ""
+  }${
     ctx.depositPaid ? `<tr><td style="padding:4px 12px 4px 0;color:#78716c">Deposit paid</td><td>${esc(ctx.depositPaid)}</td></tr>` : ctx.cardOnFile ? `<tr><td style="padding:4px 12px 4px 0;color:#78716c">Card</td><td>Saved on file (nothing charged)</td></tr>` : ""
   }</table>`;
 }

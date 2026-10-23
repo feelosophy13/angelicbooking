@@ -51,6 +51,8 @@ export function smsBody(business: { smsTemplates: Record<string, string> }, key:
     if (key === "confirmation" && ctx.depositPaid) body = body.replace(" Manage:", ` Deposit paid: ${ctx.depositPaid}. Manage:`);
     if ((key === "confirmation" || key === "reminder") && ctx.formsUrl) body = body.replace(" Manage:", ` Please complete your forms: ${ctx.formsUrl} Manage:`);
   }
+  // A group's booker hears about everyone they booked for, whatever the wording.
+  if ((key === "confirmation" || key === "rescheduled") && ctx.guests?.length) body = `${body} Also booked: ${ctx.guests.join("; ")}.`;
   // Service-specific prep rides on the confirmation and reminder whatever the wording.
   if ((key === "confirmation" || key === "reminder") && ctx.prepNotes?.length) body = `${body} Before your visit: ${ctx.prepNotes.join(" ")}`;
   return body;

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { instantToISODate, lateCancelFeeLabel, weekdayOf } from "@angelic/core";
-import { getAvailableDates, getManagedAppointment, getPublicSlots, publicProvidersFor } from "@/server/public-booking";
+import { getAvailableDates, getManagedAppointment, getPublicSlots, groupMoveTimes, publicProvidersFor } from "@/server/public-booking";
 import { formatDateLong, formatMoney, formatTime, shiftISODate, cn } from "@/lib/utils";
 import { listCancellationReasons } from "@/server/cancellation-reasons";
 import { CancelForm, RescheduleForm } from "./forms";
@@ -22,7 +22,9 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
   // A booking whose services are all cancelled has no live first service; nothing below needs one then (rescheduling is off).
   const firstStaff = first?.staffId ?? "";
   const service = first?.serviceId ?? null;
-  const single = new Set(m.live.map((i) => i.serviceId)).size === 1;
+  // The booker of a group moves everyone together (same providers, same order); each guest's own page moves just them.
+  const others = m.group?.lead ? m.group.members.filter((x) => !x.isLead && x.status !== "cancelled" && x.status !== "completed" && x.status !== "no_show") : [];
+  const single = !others.length && new Set(m.live.map((i) => i.serviceId)).size === 1;
   const canReschedule = m.canChange && !!service && !m.live.some((i) => i.classSessionId);
   const today = instantToISODate(new Date(), tz);
   const locId = m.appt.locationId;
@@ -39,7 +41,7 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
   const rangeEnd = monthEnd < maxDate ? monthEnd : maxDate;
   const rangeDays = rangeEnd < rangeStart ? 0 : Math.round((Date.parse(`${rangeEnd}T00:00:00Z`) - Date.parse(`${rangeStart}T00:00:00Z`)) / 86_400_000) + 1;
   const available = canReschedule ? new Set(await getAvailableDates(m.business, service!, staffChoice, rangeStart, rangeDays, locId)) : new Set<string>();
-  const slots = canReschedule && date ? await getPublicSlots(m.business, service!, staffChoice, date, new Date(), locId) : [];
+  const slots = !canReschedule || !date ? [] : others.length ? (await groupMoveTimes(slug, token, date)).map((at) => ({ at, staffName: "" })) : await getPublicSlots(m.business, service!, staffChoice, date, new Date(), locId);
   const qs = (extra: Record<string, string | undefined>) => {
     const u = new URLSearchParams();
     for (const [k, v] of Object.entries({ staff: staffChoice !== firstStaff ? staffChoice : undefined, month: sp.month, date: date ?? undefined, ...extra })) if (v) u.set(k, v);
@@ -54,16 +56,41 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
 
   return (
     <div className="space-y-4">
-      {sp.moved ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Your appointment has been moved.</p> : null}
+      {sp.moved ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{others.length ? "Everyone in your group has been moved." : "Your appointment has been moved."}</p> : null}
       {sp.cancelled ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">Your appointment has been cancelled.{sp.refund === "pending" ? " Your deposit couldn't be refunded automatically; the salon has been told and will refund it." : ""}</p> : null}
       <div className="rounded-xl border border-stone-200 bg-white p-5">
         <p className="text-xs uppercase tracking-wide text-stone-500">{status.replace("_", " ")}</p>
         <h1 className="mt-1 text-xl font-semibold">{[...new Set(m.live.map((i) => i.name.replace(" (finish)", "")))].join(", ")}</h1>
         <p className="text-stone-700">{day} at {formatTime(m.start, tz)}</p>
         <p className="text-stone-700">with {[...new Set(m.live.map((i) => i.staffName))].join(" & ")}</p>
-        {m.client ? <p className="mt-2 text-sm text-stone-500">Booked for {m.client.firstName} {m.client.lastName}</p> : null}
+        {m.client ? <p className="mt-2 text-sm text-stone-500">Booked for {m.client.firstName} {m.client.lastName}{m.group && !m.group.lead && m.group.leadName ? `, together with ${m.group.leadName}` : ""}</p> : null}
         {m.appt.depositStatus === "paid" ? <p className="mt-1 text-sm text-stone-500">Deposit of {formatMoney(m.appt.depositCents, m.business.currency)} paid. It comes off your bill, and is {m.business.depositRefundAs === "store_credit" ? "returned as store credit" : "refunded"} if you cancel online more than {m.business.cancelWindowHours} hours ahead.</p> : m.appt.depositStatus === "refunded" ? <p className="mt-1 text-sm text-stone-500">Your deposit of {formatMoney(m.appt.depositCents, m.business.currency)} has been {m.business.depositRefundAs === "store_credit" ? "returned as store credit for your next visit" : "refunded"}.</p> : null}
       </div>
+
+      {m.group?.lead && m.group.members.length > 1 ? (
+        <div className="rounded-xl border border-stone-200 bg-white p-5">
+          <h2 className="font-medium">Your group</h2>
+          <p className="mb-2 text-xs text-stone-500">Everyone has their own appointment. Open a guest to move or cancel just them.</p>
+          <ul className="divide-y divide-stone-100">
+            {m.group.members.map((x) => {
+              const body = (
+                <>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-stone-900">{x.isLead ? `${x.name} (you)` : x.name}</span>
+                    <span className="block text-sm text-stone-600">{x.services.join(", ")} with {x.staffName} · {formatTime(x.start, tz)}</span>
+                  </span>
+                  {x.status === "cancelled" ? <span className="shrink-0 text-xs text-stone-500">Cancelled</span> : x.isLead ? null : <span className="shrink-0 text-sm underline" style={{ color: "var(--brand-dark)" }}>Change</span>}
+                </>
+              );
+              return (
+                <li key={x.id}>
+                  {x.isLead || x.status === "cancelled" ? <div className="flex items-center gap-3 py-2">{body}</div> : <Link href={`/book/${slug}/manage/${x.token}`} className="flex min-h-12 items-center gap-3 py-2 hover:bg-stone-50">{body}</Link>}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       {status === "cancelled" ? (
         <div className="rounded-xl border border-stone-200 bg-white p-5 text-sm text-stone-600">
@@ -95,7 +122,7 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
                     ))}
                   </div>
                 ) : null}
-                {!single ? <p className="text-xs text-stone-500">All {m.live.length} services move together, keeping the same order and providers.</p> : null}
+                {others.length ? <p className="text-xs text-stone-500">Everyone in your group moves together, keeping the same providers and order. Only times when everyone fits are shown.</p> : !single ? <p className="text-xs text-stone-500">All {m.live.length} services move together, keeping the same order and providers.</p> : null}
                 <div className="grid gap-4 md:grid-cols-2">
                   <MonthCalendar
                     monthStart={monthStart}
@@ -125,7 +152,7 @@ export default async function ManagePage({ params, searchParams }: { params: Pro
             <p className="mb-3 text-xs text-stone-500">
               Free until {deadlineText}.{depositPaid ? ` Your ${money(m.appt.depositCents)} deposit is ${m.business.depositRefundAs === "store_credit" ? "returned as store credit" : "refunded"} when you cancel in time.` : ""}{lateFee ? ` After that, cancelling carries a fee of ${lateFee}.` : ""}
             </p>
-            <CancelForm slug={slug} token={token} reasons={(await listCancellationReasons(m.business.id)).filter((r) => r.clientVisible).map((r) => ({ id: r.id, name: r.name }))} />
+            <CancelForm slug={slug} token={token} group={others.length || undefined} reasons={(await listCancellationReasons(m.business.id)).filter((r) => r.clientVisible).map((r) => ({ id: r.id, name: r.name }))} />
           </div>
         </>
       )}

@@ -148,6 +148,8 @@ export interface BookAppointmentInput {
    * aren't checked here either way (the desk may book outside them; online checks them before it gets here).
    */
   allowOverlap?: boolean;
+  /** Booked together online with others (see group-booking): the lead appointment's id. */
+  groupId?: string | null;
 }
 
 /** The location an appointment belongs to when none was chosen explicitly. */
@@ -197,6 +199,7 @@ export async function bookAppointment(input: BookAppointmentInput): Promise<{ ap
             : {}),
           cardSetupIntentId: input.cardSetupIntentId ?? null,
           promoCodeId: input.promoCodeId ?? null,
+          groupId: input.groupId ?? null,
           ...(input.policy ? { policyText: input.policy.text, policyAcceptedAt: new Date(), policyAcceptedIp: input.policy.ip } : {}),
         })
         .returning({ id: schema.appointments.id });
@@ -384,6 +387,58 @@ export async function rescheduleAppointment(input: { businessId: string; appoint
     });
   } catch (e) {
     translate(e);
+  }
+}
+
+/** Thrown to roll back a trial move once it has proved the new times work. */
+class TrialMove extends Error {}
+
+/**
+ * Move several appointments booked together (a group: the client and their guests) by the same amount, so everyone keeps their place
+ * relative to each other. One transaction with the overlap check deferred, as rescheduleAppointment: the group may move into its own
+ * old times, and if anyone doesn't fit nobody moves. `trial` checks the move and undoes it (to list the times a whole group can move to).
+ */
+export async function rescheduleAppointments(input: { businessId: string; appointmentIds: string[]; deltaMs: number; actorUserId: string; trial?: boolean }): Promise<boolean> {
+  if (!input.appointmentIds.length || input.deltaMs === 0) return true;
+  try {
+    await withTenant(input.businessId, async (tx) => {
+      const items = (await tx.select().from(schema.appointmentItems).where(inArray(schema.appointmentItems.appointmentId, input.appointmentIds))).filter((i) => i.status !== "cancelled" && i.status !== "completed" && i.status !== "no_show");
+      if (!items.length) throw new BookingError("These appointments can no longer be moved.");
+      if (items.some((i) => i.classSessionId)) throw new BookingError("Seats in a class move with the class.");
+      const biz = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, input.businessId), columns: { timezone: true } });
+      const tz = biz?.timezone ?? "America/New_York";
+      const moved = items.map((i) => ({ item: i, start: new Date(i.startAt.getTime() + input.deltaMs), end: new Date(i.endAt.getTime() + input.deltaMs) }));
+      const staffIds = [...new Set(moved.map((m) => m.item.staffId))];
+      const dates = [...new Set(moved.map((m) => instantToISODate(m.start, tz)))];
+      const blocks = await workingBlocksFor({ businessId: input.businessId, timeZone: tz, staffIds, dates });
+      for (const staffId of staffIds) {
+        for (const day of dates) {
+          const mine = moved.filter((m) => m.item.staffId === staffId && instantToISODate(m.start, tz) === day);
+          if (mine.length && !withinWorkingBlocks(blocks.get(`${staffId}:${day}`) ?? [], mine)) throw new BookingError("Not everyone in your group is free at that time. Please pick another.");
+        }
+      }
+      await tx.execute(sql`set constraints appointment_items_no_double_booking deferred`);
+      for (const staffId of staffIds) await assertNoClassClash(tx, staffId, moved.filter((m) => m.item.staffId === staffId));
+      for (const m of moved) await tx.update(schema.appointmentItems).set({ startAt: m.start, endAt: m.end, allowOverlap: false }).where(eq(schema.appointmentItems.id, m.item.id));
+      // Checked now rather than at commit, so a trial learns the answer before it rolls back.
+      await tx.execute(sql`set constraints appointment_items_no_double_booking immediate`);
+      // Each visit goes where its provider works that day; a group that would end up at different sites doesn't move.
+      for (const id of input.appointmentIds) await followProviderLocation(tx, input.businessId, id);
+      const sites = await tx.selectDistinct({ id: schema.appointments.locationId }).from(schema.appointments).where(inArray(schema.appointments.id, input.appointmentIds));
+      if (sites.length > 1) throw new BookingError("Not everyone's provider works at the same location then. Please pick another time.");
+      if (input.trial) throw new TrialMove();
+      for (const id of input.appointmentIds) await audit(tx, input.businessId, input.actorUserId, "appointment.reschedule", id, { deltaMinutes: Math.round(input.deltaMs / 60_000), group: true });
+    });
+    return true;
+  } catch (e) {
+    if (e instanceof TrialMove) return true;
+    if (input.trial && e instanceof BookingError) return false;
+    try {
+      translate(e);
+    } catch (t) {
+      if (input.trial && t instanceof BookingError) return false;
+      throw t;
+    }
   }
 }
 

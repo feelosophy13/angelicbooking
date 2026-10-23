@@ -1,7 +1,8 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { openFeeSaleForAppointment, openSaleForAppointment, SaleError } from "@/server/sales";
+import { openFeeSaleForAppointment, openGroupSale, openSaleForAppointment, SaleError } from "@/server/sales";
+import { groupAppointments } from "@/server/group-booking";
 import { refundDeposit } from "@/server/online-payments";
 import { paymentContextForAppointment } from "@/server/locations";
 import { cancelSeriesFrom } from "@/server/series";
@@ -150,6 +151,19 @@ export async function startCheckout(formData: FormData) {
     taxRateBps: ctx.business.taxRateBps,
     currency: ctx.business.currency,
   });
+  redirect(`/app/${slug}/sales/${saleId}`);
+}
+
+/** Check out a group booked together on one ticket (this appointment's, with everyone else's services and deposits added). */
+export async function startGroupCheckout(formData: FormData) {
+  const { slug, appointmentId } = base.parse(Object.fromEntries(formData));
+  const ctx = await requireAppointmentAccess(slug, appointmentId, "write", { shared: "allow" });
+  if (!can(ctx.permissions, "checkout.take")) throw new PermissionError();
+  const ids = await groupAppointments(ctx.business.id, appointmentId);
+  // Everyone on the ticket must be someone this person may check out.
+  for (const id of ids) await requireAppointmentAccess(slug, id, "write", { shared: "allow" });
+  // The ticket is the booker's (who usually pays), whichever person's page it was started from.
+  const saleId = await openGroupSale({ businessId: ctx.business.id, appointmentIds: ids, actorUserId: ctx.user.id, taxRateBps: ctx.business.taxRateBps, currency: ctx.business.currency });
   redirect(`/app/${slug}/sales/${saleId}`);
 }
 

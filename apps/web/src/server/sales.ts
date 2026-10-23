@@ -115,6 +115,9 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
     // A voided ticket is history; the visit can be rung up again.
     const existing = await tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, input.appointmentId), sql`${schema.sales.status} <> 'void'`), orderBy: desc(schema.sales.createdAt) });
     if (existing) return existing.id;
+    // A guest already rung up on their group's ticket (Check out together) has that ticket.
+    const joined = await groupTicketFor(tx, input.appointmentId);
+    if (joined) return joined;
     const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, input.appointmentId) });
     if (!appt) throw new SaleError("Appointment not found.");
     const items = await tx
@@ -200,6 +203,67 @@ export async function openSaleForAppointment(input: { businessId: string; appoin
     await audit(tx, input.businessId, input.actorUserId, "sale.open", sale!.id, { appointmentId: appt.id });
     return sale!.id;
   });
+}
+
+/** The live ticket that holds this appointment's services without being its own (a group's shared ticket), if any. */
+async function groupTicketFor(tx: TenantDb, appointmentId: string): Promise<string | null> {
+  const [row] = await tx
+    .select({ saleId: schema.saleLines.saleId })
+    .from(schema.saleLines)
+    .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.id, schema.saleLines.appointmentItemId))
+    .innerJoin(schema.sales, eq(schema.sales.id, schema.saleLines.saleId))
+    .where(and(eq(schema.appointmentItems.appointmentId, appointmentId), sql`${schema.sales.status} <> 'void'`))
+    .limit(1);
+  return row?.saleId ?? null;
+}
+
+/**
+ * Check out a group booked together (the client and their guests) on one ticket: the first appointment's ticket, with every other
+ * appointment's live services and paid deposits added to it. An appointment that already has a ticket of its own keeps it. Paying the
+ * ticket completes every appointment on it.
+ */
+export async function openGroupSale(input: { businessId: string; appointmentIds: string[]; actorUserId: string; taxRateBps: number; currency: string }) {
+  const [leadId, ...rest] = input.appointmentIds;
+  if (!leadId) throw new SaleError("Appointment not found.");
+  const saleId = await openSaleForAppointment({ ...input, appointmentId: leadId });
+  await withTenant(input.businessId, async (tx) => {
+    const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, saleId) });
+    if (!sale || sale.status !== "open") return;
+    let order = (await tx.select({ n: sql<number>`count(*)` }).from(schema.saleLines).where(eq(schema.saleLines.saleId, saleId)))[0]?.n ?? 0;
+    const added: string[] = [];
+    for (const id of rest) {
+      const own = await tx.query.sales.findFirst({ where: and(eq(schema.sales.appointmentId, id), sql`${schema.sales.status} <> 'void'`) });
+      if (own || (await groupTicketFor(tx, id))) continue;
+      const appt = await tx.query.appointments.findFirst({ where: eq(schema.appointments.id, id) });
+      if (!appt || appt.status === "cancelled" || appt.status === "no_show" || appt.status === "completed") continue;
+      const items = (await tx.select().from(schema.appointmentItems).where(and(eq(schema.appointmentItems.appointmentId, id), sql`${schema.appointmentItems.status} <> 'cancelled'`)).orderBy(asc(schema.appointmentItems.sortOrder))).filter((i) => i.priceCents > 0 || i.sortOrder === 0);
+      if (!items.length) continue;
+      await tx.insert(schema.saleLines).values(items.map((i) => ({ businessId: input.businessId, saleId, kind: "service" as const, staffId: i.staffId, serviceId: i.serviceId, appointmentItemId: i.id, name: i.serviceName.replace(" (finish)", ""), quantity: 1, unitCents: i.priceCents, amountCents: i.priceCents, taxable: false, sortOrder: Number(order++) })));
+      if (appt.depositStatus === "paid" && appt.depositCents > 0) {
+        const m = /^([A-Z]+) •••• (\d{4})$/.exec(appt.depositCardLabel ?? "");
+        await tx.insert(schema.payments).values({
+          businessId: input.businessId,
+          saleId,
+          method: "card",
+          status: "succeeded",
+          amountCents: appt.depositCents,
+          tipCents: 0,
+          ...(appt.depositProvider === "helcim" ? { provider: "helcim" as const, providerPaymentId: appt.depositProviderPaymentId, providerInvoice: appt.depositPaymentIntentId } : { stripePaymentIntentId: appt.depositPaymentIntentId, stripeAccountId: appt.depositStripeAccountId }),
+          cardBrand: m?.[1]?.toLowerCase() ?? null,
+          cardLast4: m?.[2] ?? null,
+          note: "Deposit paid online",
+          createdByUserId: input.actorUserId,
+        });
+        await tx.update(schema.appointments).set({ depositStatus: "applied" }).where(eq(schema.appointments.id, id));
+      }
+      added.push(id);
+    }
+    if (!added.length) return;
+    await applyMemberPricing(tx, saleId);
+    await recompute(tx, saleId, input.taxRateBps, await currentDiscount(tx, sale));
+    await audit(tx, input.businessId, input.actorUserId, "sale.group", saleId, { appointmentIds: added });
+  });
+  return saleId;
 }
 
 /**
@@ -823,12 +887,15 @@ async function closeIfPaid(tx: TenantDb, saleId: string, taxRateBps: number, act
       await audit(tx, businessId, actorUserId, "sale.paid", saleId, { total: t.totalCents, fee: true });
       return;
     }
-    if (sale.appointmentId) {
-      await tx.update(schema.appointments).set({ status: "completed" }).where(eq(schema.appointments.id, sale.appointmentId));
+    // The ticket's own appointment, and any others whose services it carries (a group checked out together).
+    const carried = (await tx.selectDistinct({ id: schema.appointmentItems.appointmentId }).from(schema.saleLines).innerJoin(schema.appointmentItems, eq(schema.appointmentItems.id, schema.saleLines.appointmentItemId)).where(eq(schema.saleLines.saleId, saleId))).map((r) => r.id);
+    const done = [...new Set([...(sale.appointmentId ? [sale.appointmentId] : []), ...carried])];
+    for (const apptId of done) {
+      await tx.update(schema.appointments).set({ status: "completed" }).where(eq(schema.appointments.id, apptId));
       await tx
         .update(schema.appointmentItems)
         .set({ status: "completed" })
-        .where(and(eq(schema.appointmentItems.appointmentId, sale.appointmentId), sql`${schema.appointmentItems.status} <> 'cancelled'`));
+        .where(and(eq(schema.appointmentItems.appointmentId, apptId), sql`${schema.appointmentItems.status} <> 'cancelled'`));
     }
     await fulfilOfferLines(tx, businessId, saleId);
     await decrementStockForSale(tx, businessId, saleId);
@@ -836,10 +903,7 @@ async function closeIfPaid(tx: TenantDb, saleId: string, taxRateBps: number, act
     const business = await tx.query.businesses.findFirst({ where: eq(schema.businesses.id, businessId) });
     if (business) {
       await awardPointsForSale(tx, business, { ...sale, ...t, status: "paid" });
-      if (sale.appointmentId) {
-        const apptId = sale.appointmentId;
-        after(() => triggerAppointmentWorkflows(business, "appointment_completed", apptId).catch((e) => console.error("[workflows] completed trigger failed", apptId, (e as Error).message)));
-      }
+      for (const apptId of done) after(() => triggerAppointmentWorkflows(business, "appointment_completed", apptId).catch((e) => console.error("[workflows] completed trigger failed", apptId, (e as Error).message)));
     }
     await audit(tx, businessId, actorUserId, "sale.paid", saleId, { total: t.totalCents });
   }

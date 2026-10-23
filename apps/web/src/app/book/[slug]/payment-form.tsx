@@ -5,6 +5,7 @@ import { Button, Notice } from "@/components/ui";
 import { StripeCardPay } from "@/components/stripe-card-pay";
 import type { CardFeeQuote } from "@/lib/card-fee";
 import { ContactFields, type BookingDefaults } from "./forms";
+import type { GuestFormInfo } from "./guest-fields";
 import { useHydrated } from "@/lib/use-hydrated";
 import { policyLine } from "@/lib/policy-text";
 import { abandonOnlinePaymentAction, applyDepositFeeAction, finishOnlineBookingAction, startOnlinePaymentAction } from "./actions";
@@ -56,6 +57,10 @@ export function PaidBookingForm(props: {
   photos?: boolean;
   /** Ask for a booking code before the card step (Settings → Booking rules; not for a signed-in client). */
   verify?: boolean;
+  /** Guests booked with this visit; the deposit covers everyone. */
+  guests?: GuestFormInfo;
+  /** A signed-in client's linked people, to book this visit for. */
+  family?: GuestFormInfo["family"];
 }) {
   const d = props.defaults;
   const hydrated = useHydrated();
@@ -115,10 +120,10 @@ export function PaidBookingForm(props: {
         {props.classSessionId ? <input type="hidden" name="classSessionId" value={props.classSessionId} /> : null}
         {props.locationId ? <input type="hidden" name="locationId" value={props.locationId} /> : null}
         <p className="text-xs font-medium uppercase tracking-wide text-stone-400">Step 1 of 2 · Your details</p>
-        <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} photos={props.photos} />
+        <ContactFields defaults={d} referrals={props.referrals} promos={props.promos} photos={props.photos} guests={props.guests} family={props.family} />
         {error ? <Notice>{error}</Notice> : null}
         {v.panel}
-        {props.priceLabel ? <p className="text-sm font-medium text-stone-800">Price of this visit: {props.priceLabel}</p> : null}
+        {props.priceLabel ? <p className="text-sm font-medium text-stone-800">{props.guests?.people.length ? "Price for everyone" : "Price of this visit"}: {props.priceLabel}</p> : null}
         {fee ? <p className="text-sm text-stone-700">{fee.notice}</p> : null}
         <PublicBotCheck resetKey={`${error ?? ""}:${v.sends}`} />
         <Button type="submit" disabled={pending || !hydrated || v.busy} className={v.waiting ? "hidden" : "w-full"} style={{ background: props.brand }}>

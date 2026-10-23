@@ -14,7 +14,7 @@ import { requireAction } from "@/lib/tenant";
 import { seesOwnOnly } from "@/lib/appointment-access";
 import { canSeeAllSales, canSeeClientContact, canSeeClientSpend, canSeeReviews, photosScope } from "@/lib/visibility";
 import { formatMoney, formatTime } from "@/lib/utils";
-import { BackLink, Button, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox, MoneyInput } from "@/components/ui";
+import { BackLink, Button, Card, Input, LinkButton, PageHeader, Textarea, Empty, Checkbox, MoneyInput, Select } from "@/components/ui";
 import { ImageField } from "@/components/image-field";
 import { Disclosure } from "@/components/disclosure";
 import { updateClient } from "../actions";
@@ -44,6 +44,9 @@ import { listLocations, paymentContextFor } from "@/server/locations";
 import { canWriteLashMaps, lashMapsFor } from "@/server/lash-maps";
 import { LashMapEyes } from "@/components/lash-map";
 import { smsAvailableFor } from "@/server/messaging";
+import { linkedClients, RELATIONS } from "@/server/client-links";
+import { linkClientAction, unlinkClientAction } from "./family-actions";
+import { ClientPicker } from "@/components/client-picker";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -106,6 +109,9 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
   const { client, visits, sales, packs, memberships, notes, lashMaps, lashWrite } = data;
   const latestLash = lashMaps[0];
   const stopped = await withTenant(business.id, (tx) => isSmsSuppressed(tx, client.phone));
+  // Linked people (a child, a partner, a parent): each keeps their own history; the link is a shortcut and where a child's messages go.
+  const family = await linkedClients(business.id, client.id);
+  const relationLabel = (r: string) => RELATIONS.find((x) => x.value === r)?.label ?? "Linked";
   const activeForms = (await listForms(business.id)).filter((f) => f.active);
   const [submissions, loyalty, reviews, thread, storeCredit, referrals, smsReady, referredBy] = await Promise.all([
     canNotes ? listSubmissionsForClient(business.id, clientId) : Promise.resolve([]),
@@ -353,6 +359,45 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
               </Disclosure>
             ) : null}
           </Card>
+          {family.length || write ? (
+            <Card className="p-4">
+              <h2 className="mb-1 font-medium">Family</h2>
+              {family.length ? (
+                <ul className="-mx-4 divide-y divide-stone-100">
+                  {family.map((p) => (
+                    <li key={p.id} className={`${rowClass} flex items-center gap-2 px-4 py-2`}>
+                      <span className="min-w-0 flex-1">
+                        <RowLink href={`/app/${slug}/clients/${p.id}`} className="block truncate text-sm font-medium">{`${p.firstName} ${p.lastName}`.trim()}</RowLink>
+                        <span className="block text-xs text-stone-500">{relationLabel(p.relation)}{p.relation === "child" && !p.phone && !p.email ? " · messages come to this client" : ""}</span>
+                      </span>
+                      {can(permissions, "appointments.write.any") ? <Link href={`/app/${slug}/appointments/new?clientId=${p.id}`} className="hit relative z-10 shrink-0 text-xs underline">Book for {p.firstName}</Link> : null}
+                      {write ? (
+                        <form action={unlinkClientAction} className="relative z-10 shrink-0">
+                          <input type="hidden" name="slug" value={slug} />
+                          <input type="hidden" name="clientId" value={client.id} />
+                          <input type="hidden" name="linkedClientId" value={p.id} />
+                          <ConfirmSubmit title={`Unlink ${p.firstName}?`} body="Both keep their own history. Online, neither can book for the other any more." confirmLabel="Unlink" variant="ghost" className="text-xs text-stone-500">Unlink</ConfirmSubmit>
+                        </form>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-xs text-stone-500">Link a child, partner or parent to book for them from here. A child without a phone gets their reminders here.</p>}
+              {write ? (
+                <Disclosure variant="inset" title="Link someone" className="mt-3">
+                  <ActionForm action={linkClientAction}>
+                    <input type="hidden" name="slug" value={slug} />
+                    <input type="hidden" name="clientId" value={client.id} />
+                    <Field label="Client" name="linkedClientId"><ClientPicker slug={slug} name="linkedClientId" initial={null} canCreate={false} allowWalkIn={false} placeholder="Search by name, phone or email" /></Field>
+                    <Field label={`They are ${client.firstName}'s`} name="relation">
+                      <Select name="relation" defaultValue="child">{RELATIONS.map((r) => <option key={r.value} value={r.value}>{r.label.toLowerCase()}</option>)}</Select>
+                    </Field>
+                    <SubmitButton variant="secondary" pendingText="Linking…">Link</SubmitButton>
+                  </ActionForm>
+                </Disclosure>
+              ) : null}
+            </Card>
+          ) : null}
           {storeCredit && (storeCredit.balance > 0 || storeCredit.history.length > 0) ? (
             <Card className="p-4 text-sm">
               <h2 className="mb-1 font-medium">Store credit</h2>

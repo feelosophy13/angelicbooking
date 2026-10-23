@@ -3,7 +3,7 @@ import { after } from "next/server";
 import { db, schema, withJobs, withTenant, type TenantDb } from "@angelic/db";
 import { normalizePhone, lateCancelFeeLabel, policyFeeCheck } from "@angelic/core";
 import { appUrl } from "@/lib/stripe";
-import { formatMoney } from "@/lib/utils";
+import { formatMoney, formatTime } from "@/lib/utils";
 import { formsForAppointment } from "@/server/forms";
 import { clientPhotoCounts } from "@/server/visit-photos";
 import { isDemoSlug } from "@/lib/demo";
@@ -22,6 +22,7 @@ import { templates, type ApptContext, type TemplateName } from "./templates";
 import { siteUrl } from "@/lib/site-url";
 import { smsBody, smsWithStopNotice } from "./sms";
 import { apptVars, designedEmail } from "@/server/email-designs";
+import { appointmentContact } from "@/server/client-links";
 
 type Row = typeof schema.notifications.$inferSelect;
 
@@ -68,8 +69,24 @@ export async function appointmentContext(tx: TenantDb, business: typeof schema.b
     formsUrl: (await formsForAppointment(tx, appt.id)).some((f) => !f.current) ? siteUrl(business, `/manage/${appt.manageToken}/forms`) : null,
     prepNotes,
     clientPhotos: (await clientPhotoCounts(tx, [appt.id])).get(appt.id) ?? 0,
+    guests: appt.groupId === appt.id ? await groupGuestLines(tx, appt.id, tzFor(business, location)) : undefined,
   };
   return { appt, client, ctx };
+}
+
+/** For a group's booker: each other person still booked, "Mia: Kids cut with Ana at 2:30 PM". */
+async function groupGuestLines(tx: TenantDb, leadId: string, timeZone: string): Promise<string[]> {
+  const rows = await tx
+    .select({ appointmentId: schema.appointments.id, first: schema.clients.firstName, name: schema.appointmentItems.serviceName, staff: schema.staff.displayName, startAt: schema.appointmentItems.startAt })
+    .from(schema.appointments)
+    .innerJoin(schema.appointmentItems, eq(schema.appointmentItems.appointmentId, schema.appointments.id))
+    .innerJoin(schema.staff, eq(schema.staff.id, schema.appointmentItems.staffId))
+    .leftJoin(schema.clients, eq(schema.clients.id, schema.appointments.clientId))
+    .where(and(eq(schema.appointments.groupId, leadId), sql`${schema.appointments.id} <> ${leadId}`, sql`${schema.appointments.status} <> 'cancelled'`, sql`${schema.appointmentItems.status} <> 'cancelled'`, sql`${schema.appointmentItems.serviceName} not like '% (finish)'`))
+    .orderBy(asc(schema.appointmentItems.startAt));
+  const byAppt = new Map<string, typeof rows>();
+  for (const r of rows) byAppt.set(r.appointmentId, [...(byAppt.get(r.appointmentId) ?? []), r]);
+  return [...byAppt.values()].map((items) => `${items[0]!.first ?? "Guest"}: ${items.map((i) => i.name).join(", ")} with ${items[0]!.staff} at ${formatTime(items[0]!.startAt, timeZone)}`);
 }
 
 /** "Before your visit" lines for these services: the service's own note, else the nearest category note; deduplicated. */
@@ -97,7 +114,9 @@ export async function notifyAppointment(business: typeof schema.businesses.$infe
   const ids = await withTenant(business.id, async (tx) => {
     const built = await appointmentContext(tx, business, appointmentId);
     if (!built || !built.client) return [];
-    const { appt, client, ctx } = built;
+    const { appt, ctx } = built;
+    // A child without a phone or email of their own hears at a parent's.
+    const client = await appointmentContact(tx, built.client);
     const t = templates[template](ctx);
     const rows: (typeof schema.notifications.$inferInsert)[] = [];
     const phone = normalizePhone(client.phone);
