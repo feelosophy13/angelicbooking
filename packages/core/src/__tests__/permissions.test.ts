@@ -37,6 +37,7 @@ describe("default role table (phases 1 and 2)", () => {
     "appointments.read.availability": "", "waitlist.view": "OMF", "waitlist.manage": "OMF", "classes.manage.own": "OM", "classes.manage.any": "OMF",
     "clients.photos": "OMF", "clients.photos.own": "MP", // Manager holds the own variant so it can still edit the Provider role
     "clients.read": "OMFP", "clients.contact": "OMF", "clients.spend": "OMF", "clients.write": "OMF", "clients.notes": "OMFP", "clients.messages": "OMF", "clients.balances": "OMF", "clients.export": "OM",
+    "charts.read.own": "MP", "charts.write.own": "MP", "charts.read.any": "OM", "charts.write.any": "OM", // clinical records: never the desk by default
     "reviews.view": "OMF", "reviews.view.own": "MP", // the plan says P; Manager holds it too so a manager can still edit the Provider role
     "checkout.take": "OMFP", "sales.view.own": "MP", "sales.view.all": "OMF", "checkout.discount": "OMF", "checkout.refund": "OM",
     "checkout.tips.adjust": "OMF",

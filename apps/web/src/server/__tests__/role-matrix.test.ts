@@ -91,13 +91,15 @@ const pages = {
   sales: () => import("@/app/app/[slug]/sales/page"),
   products: () => import("@/app/app/[slug]/products/page"),
   giftCards: () => import("@/app/app/[slug]/gift-cards/page"),
+  clientCharts: () => import("@/app/app/[slug]/clients/[clientId]/charts/page"),
+  chart: () => import("@/app/app/[slug]/charts/[noteId]/page"),
 } satisfies Record<string, () => Promise<PageModule>>;
 
 describe.skipIf(!up)("what each default role sees", () => {
   const tag = crypto.randomUUID().slice(0, 8);
   const biz = `matrix_${tag}`;
   const uid = (k: string) => `${biz}_${k}`;
-  const ids = {} as Record<"jordan" | "ava" | "client" | "service" | "a1" | "a2" | "a3" | "main", string>;
+  const ids = {} as Record<"jordan" | "ava" | "client" | "service" | "a1" | "a2" | "a3" | "main" | "chart", string>;
   let business: typeof schema.businesses.$inferSelect;
   const PHONE = "+17035551001";
   /** How the client list prints it (lib/format.ts `phone`). */
@@ -151,6 +153,9 @@ describe.skipIf(!up)("what each default role sees", () => {
         { businessId: biz, clientId: client!.id, appointmentId: ids.a1, staffId: jordan!.id, locationId: main!.id, rating: 5, comment: "Loved it", submittedAt: new Date() },
         { businessId: biz, clientId: client!.id, appointmentId: ids.a2, staffId: ava!.id, locationId: main!.id, rating: 4, comment: "Nice work Ava", submittedAt: new Date() },
       ]);
+      // A signed treatment chart on Jordan's visit.
+      const [chart] = await tx.insert(schema.chartNotes).values({ businessId: biz, clientId: client!.id, appointmentId: ids.a1, serviceId: svc!.id, serviceName: "Lash Lift", staffId: jordan!.id, templateSnapshot: { name: "SOAP note", fields: [{ id: "s", type: "textarea", label: "Subjective" }] }, answers: { s: "Chart secret: eye sensitivity" }, authorUserId: uid("jordan"), authorName: "Jordan", signedAt: new Date(), signedByUserId: uid("jordan"), signedByName: "Jordan" }).returning();
+      ids.chart = chart!.id;
       await tx.insert(schema.products).values({ businessId: biz, name: "Shampoo", priceCents: 2400, costCents: 900, trackStock: true, stockQty: 7 });
       await tx.insert(schema.giftCards).values({ businessId: biz, code: "GC-TEST-9Q2M", initialCents: 5000, balanceCents: 5000 });
       const yesterday = instantToISODate(at(-1, 10), tz);
@@ -476,6 +481,45 @@ describe.skipIf(!up)("what each default role sees", () => {
       const html = await render(reports);
       expect(html).not.toContain("Service commission");
       expect(html).not.toMatch(/\bStaff\b/);
+    });
+  });
+
+  describe("treatment charts", () => {
+    const CHART = "Chart secret: eye sensitivity";
+    it("a provider reads the charts of their own clients, and the view is in the activity log", async () => {
+      as("provider");
+      expect(await render(pages.client, { clientId: ids.client })).toContain("Charts");
+      expect(await render(pages.clientCharts, { clientId: ids.client })).toContain("SOAP note");
+      expect(await render(pages.chart, { noteId: ids.chart })).toContain(CHART);
+      const logged = await withTenant(biz, (tx) => tx.select().from(schema.auditLog).where(eq(schema.auditLog.entityId, ids.chart)));
+      expect(logged.some((r) => r.action === "chart.view" && r.actorUserId === uid("jordan"))).toBe(true);
+    });
+    it("the manager and owner read every client's charts", async () => {
+      for (const role of ["manager", "owner"] as const) {
+        as(role);
+        expect(await render(pages.chart, { noteId: ids.chart }), role).toContain(CHART);
+      }
+    });
+    it("the front desk has no Charts tab and is refused the charts, though it reads notes", async () => {
+      as("front_desk");
+      const profile = await render(pages.client, { clientId: ids.client });
+      expect(profile).toContain("allergic to latex");
+      expect(profile).not.toContain("Charts");
+      expect(await denied(pages.clientCharts, { clientId: ids.client })).toBe(true);
+      expect(await denied(pages.chart, { noteId: ids.chart })).toBe(true);
+    });
+    it("own charts need the client to be theirs: a login with no staff member sees none", async () => {
+      as("front_desk", { permissions: only("clients.read", "charts.read.own") });
+      expect(await denied(pages.chart, { noteId: ids.chart })).toBe(true);
+      expect(await denied(pages.clientCharts, { clientId: ids.client })).toBe(true);
+    });
+    it("the appointment shows its charts only to those who may read them", async () => {
+      as("provider");
+      expect(await render(pages.appointment, { id: ids.a1 })).toContain("SOAP note");
+      as("front_desk");
+      const desk = await render(pages.appointment, { id: ids.a1 });
+      expect(desk).not.toContain("SOAP note");
+      expect(desk).not.toContain("Chart this visit");
     });
   });
 

@@ -39,6 +39,12 @@ export const ACTIONS = [
   "clients.photos", // the gallery and visit photos, everyone's
   "clients.photos.own", // the gallery and a profile's photos filtered to the lines they performed (migration 0120)
   "clients.balances", // store credit and loyalty balances
+  // Treatment charts (SOAP notes), added 2026-10-22 (migration 0140). Clinical records, so their own permissions: "own" is the clients
+  // the person has a visit with, "any" every client. Not implied by clients.notes; the front desk has none by default.
+  "charts.read.own",
+  "charts.read.any",
+  "charts.write.own", // start, fill in and sign charts, and add addenda, for their own clients
+  "charts.write.any",
   // Reviews (split out of clients.read 2026-10-18, migration 0119)
   "reviews.view", // every review, per-provider averages, ratings on client profiles, API reviews:read
   "reviews.view.own", // the reviews of visits they performed
@@ -120,6 +126,10 @@ export const PERMISSION_GROUPS: { title: string; description: string; items: { a
       { action: "clients.photos", label: "See every visit photo", description: "The Gallery and the before-and-after photos on a client's profile, for every stylist." },
       { action: "clients.photos.own", label: "See their own visit photos", description: "The Gallery and a profile's photos, only from the services they performed." },
       { action: "clients.messages", label: "Read client texts", description: "The Inbox and a client's text thread. Replying also needs \"Add and edit clients\"." },
+      { action: "charts.read.own", label: "Read their own clients' charts", description: "Treatment charts (SOAP notes) of clients they have a visit with. Every chart they open is in the activity log." },
+      { action: "charts.read.any", label: "Read every client's charts", description: "Treatment charts of every client, whoever wrote them. Every chart they open is in the activity log." },
+      { action: "charts.write.own", label: "Chart their own clients", description: "Start and sign charts, and add addenda to signed ones, for clients they have a visit with." },
+      { action: "charts.write.any", label: "Chart any client", description: "Start and sign charts, and add addenda, for every client." },
       { action: "clients.balances", label: "See store credit and points", description: "A client's store credit and loyalty balances, and their history." },
       { action: "clients.export", label: "Download the client list", description: "Export every client (contact details, spend, notes) as a CSV file. Each download is in the activity log." },
     ],
@@ -238,7 +248,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {
   ]),
   provider: new Set<Action>([
     "appointments.read.own", "appointments.write.own",
-    "clients.read", "clients.notes", "clients.photos.own",
+    "clients.read", "clients.notes", "clients.photos.own", "charts.read.own", "charts.write.own",
     "reviews.view.own",
     "checkout.take", "sales.view.own",
     "staff.directory",

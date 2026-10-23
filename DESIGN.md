@@ -327,6 +327,18 @@ Every uploaded picture is optimized before it is stored. This is a rule, not a p
   linked, and the client page links to the Gallery with `?client=`.
 - **Elsewhere** show pairs with `PairCard` and `pairViews`; do not draw your own photo grid.
 
+## Treatment charts
+
+- **Clinical records, their own permissions.** Charts are read and written only through `server/charts.ts`, which checks
+  `charts.read.*` / `charts.write.*` per client ("own" = clients the person has a visit with). Never let `clients.notes` stand in for
+  them, never show a chart on the booking site, embed, client account or an API, and log every opening with `auditEvent` (`chart.*`).
+- **Signed means locked.** A chart is a draft until signed; after that nothing on it changes (the database refuses too) and anything
+  new is an addendum with its own author and time. Never add an "edit" to a signed chart.
+- **A chart keeps its template.** The fields are copied onto the chart when it is started (`template_snapshot`), so read a chart's own
+  fields, never the template's.
+- **Quick on a tablet.** Choices with up to four options are radio buttons in a row, longer ones a select; the diagram is tapped, not
+  drawn; the last chart for the same service is one tap away above the form, folded.
+
 ## Inventory
 
 - **One place changes stock.** Every change goes through `applyMove` in `server/inventory.ts`: it writes the history row, the location's count and the product's total together. Nothing else may write

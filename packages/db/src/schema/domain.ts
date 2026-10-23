@@ -874,6 +874,79 @@ export const lashMaps = pgTable(
   (t) => [index("lash_maps_client_idx").on(t.businessId, t.clientId, t.createdAt)],
 );
 
+// Treatment charts (SOAP notes). The salon designs templates; a chart is a template filled in for one client, usually at one visit and
+// for one service, and signed by the provider. Signed charts are locked (a trigger refuses changes to what was recorded, migration 0140)
+// and later corrections are addenda, each with its own time and author. The field and answer shapes are @angelic/core charts.ts.
+type ChartFieldJson = { id: string; type: string; label: string; required?: boolean; options?: string[]; diagram?: string; hint?: string };
+type ChartAnswerJson = string | string[] | { x: number; y: number; note?: string }[];
+export const chartTemplates = pgTable(
+  "chart_templates",
+  {
+    id: id(),
+    businessId: businessId(),
+    name: text("name").notNull(),
+    description: text("description"),
+    fields: jsonb("fields").$type<ChartFieldJson[]>().notNull().default(sql`'[]'::jsonb`),
+    // The services this template is the default chart for ("Chart this visit" opens it). Empty = offered, never preselected.
+    serviceIds: text("service_ids").array().notNull().default(sql`'{}'::text[]`),
+    // The starter it was made from (soap, facial, lash, pmu, massage), so the starter list can say "added".
+    starterKey: text("starter_key"),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("chart_templates_business_idx").on(t.businessId)],
+);
+
+export const chartNotes = pgTable(
+  "chart_notes",
+  {
+    id: id(),
+    businessId: businessId(),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    appointmentId: text("appointment_id").references(() => appointments.id, { onDelete: "set null" }),
+    serviceId: text("service_id").references(() => services.id, { onDelete: "set null" }),
+    // The provider the chart is for (who did the work), when the person charting is on staff.
+    staffId: text("staff_id").references(() => staff.id, { onDelete: "set null" }),
+    templateId: text("template_id").references(() => chartTemplates.id, { onDelete: "set null" }),
+    // The template as it was when the chart was started, so later edits to the template never change a chart.
+    templateSnapshot: jsonb("template_snapshot").$type<{ name: string; fields: ChartFieldJson[] }>().notNull(),
+    answers: jsonb("answers").$type<Record<string, ChartAnswerJson>>().notNull().default(sql`'{}'::jsonb`),
+    // Names are kept as written so the record reads the same after a login or staff member is removed.
+    serviceName: text("service_name"),
+    authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
+    authorName: text("author_name").notNull(),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    signedByUserId: text("signed_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    signedByName: text("signed_by_name"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("chart_notes_client_idx").on(t.businessId, t.clientId, t.createdAt),
+    index("chart_notes_appointment_idx").on(t.appointmentId),
+  ],
+);
+
+// What was added to a signed chart, in order. Never edited or removed (a trigger refuses it).
+export const chartAddenda = pgTable(
+  "chart_addenda",
+  {
+    id: id(),
+    businessId: businessId(),
+    noteId: text("note_id")
+      .notNull()
+      .references(() => chartNotes.id, { onDelete: "cascade" }),
+    authorUserId: text("author_user_id").references(() => user.id, { onDelete: "set null" }),
+    authorName: text("author_name").notNull(),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("chart_addenda_note_idx").on(t.noteId, t.createdAt)],
+);
+
 // A standing appointment ("every 4 weeks with Maria"). Each occurrence is a
 // normal appointment row pointing back here, so the calendar, checkout and
 // notifications need no special cases.

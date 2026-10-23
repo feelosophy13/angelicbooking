@@ -127,6 +127,7 @@ export function settingsGroups(base: string, permissions: Perms, status?: Settin
       entries: [
         { href: `${sb}/booking`, title: "Booking rules", blurb: "Notice, cancellation window, reminders, deposits and no-show fee.", status: s ? (s.onlineBookingEnabled ? "on" : "off") : undefined, action: "settings.booking" },
         { href: `${sb}/forms`, title: "Forms", blurb: "Intake questionnaires and waivers.", action: "forms.manage" },
+        { href: `${sb}/charts`, title: "Chart templates", blurb: "SOAP notes and treatment charts providers fill in and sign.", action: "forms.manage" },
         { href: `${sb}/reviews`, title: "Reviews", blurb: "Rating requests and your Google review link.", action: "settings.booking" },
         { href: `${sb}/loyalty`, title: "Loyalty & referrals", blurb: "Points, redemption value and referral bonuses.", status: s ? (s.loyaltyEnabled ? "on" : "off") : undefined, action: "settings.booking" },
         { href: `${sb}/store`, title: "Online store", blurb: "Gift cards and products on your booking page.", status: s ? (s.storeEnabled ? "on" : s.giftCardsOnline ? "gift cards" : "off") : undefined, action: "settings.booking" },
