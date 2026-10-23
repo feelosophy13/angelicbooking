@@ -7,7 +7,7 @@ import { schema, withTenant, type TenantDb } from "@angelic/db";
 import { normalizeBlocks, renderEmail, SAMPLE_VARS, type EmailBrand, type EmailDesign, type MergeVars } from "@/lib/email-design";
 import { postalAddress } from "@/server/locations";
 import type { SystemEmailKey } from "@/lib/email-design/system";
-import { giftCardEmail, orderEmail, receiptEmail, reviewRequestTemplate, templates, type ApptContext, type BrandCtx } from "@/lib/notify/templates";
+import { giftCardEmail, invoiceEmail, orderEmail, receiptEmail, reviewRequestTemplate, templates, type ApptContext, type BrandCtx } from "@/lib/notify/templates";
 import { appUrl } from "@/lib/stripe";
 import { siteUrl } from "@/lib/site-url";
 import { formatTime } from "@/lib/utils";
@@ -113,6 +113,7 @@ export function sampleSystemEmail(business: Business, key: SystemEmailKey, brand
     case "receipt":
       return { ...receiptEmail({ ...brand, number: 1042, when: new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeZone: business.timezone }).format(new Date()), clientName: "Maria Lopez", lines: [{ name: "Classic Lash Full Set", quantity: 1, amount: money(150) }, { name: "Lash cleanser", quantity: 1, amount: money(18) }], subtotal: money(168), discount: null, tax: money(1.08), taxRate: "6%", tip: money(30), total: money(199.08), payments: [{ label: "Visa •••• 4242", amount: money(199.08) }], refunded: null, footer: business.receiptFooter }), vars };
     case "gift_card": return { ...giftCardEmail(brand, { code: "GIFT-7K2P-M9QD", amount: money(100), from: "Jess", message: "Happy birthday! Treat yourself.", bookingUrl: siteUrl(business) }), vars };
+    case "invoice": return { ...invoiceEmail(brand, { number: 1044, lines: [{ name: "Bridal hair and makeup", quantity: 1, amount: money(350) }, { name: "Bridesmaid hair", quantity: 4, amount: money(480) }], subtotal: money(830), discount: null, tax: null, total: money(830), paid: null, balance: money(830), dueNow: money(415), dueDate: "November 14", note: "Thank you for choosing us for your big day!", payUrl: siteUrl(business, "/invoice/sample") }), vars };
     case "order": return { ...orderEmail(brand, { number: 1043, lines: [{ name: "Lash cleanser", quantity: 2, amount: money(36) }], total: money(38.16), method: "pickup", address: null }), vars };
   }
 }

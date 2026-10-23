@@ -1296,6 +1296,34 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### Invoices (built 2026-10-23, migration 0136)
+- [x] Sales & checkout → Invoices: a bill the client pays online (a bridal party, an event, a balance owed, a deposit for a big job).
+      Services (with the stylist's own price), products and custom lines with a price and quantity, a discount ($ or %), tax at the
+      location's rate (or none), a due date, a note, an optional deposit (a percent or an amount now) and reminders on or off.
+      List with status (draft, sent, viewed, partly paid, paid, overdue, void), search, and what is owed and overdue.
+- [x] Built as an ordinary open sale (`source = 'invoice'`) with an `invoices` row (token, due date, deposit, sent / viewed / reminded),
+      so pricing is `computeTotals` and the payment, close, stock, loyalty, refund and payroll code is the ticket's. A paid invoice is a
+      paid sale; custom lines are service lines with no service, credited to their stylist for commission. Unpaid invoices stay off the
+      Tickets "Open" list.
+- [x] Send by email (the designable "Invoice" email under Settings → Email designs) and/or text, resend, void (unpaid only; the
+      discount permission, like voiding a ticket), record a check or cash (`checkout.take`; a check is method "other" with "Check #…").
+- [x] Client page `/book/<slug>/invoice/<token>` (32 random bytes; drafts never shown; looked up inside the business's tenant; no
+      index, no Referer): brand, lines, totals, payments so far; pay the deposit, the balance or another amount by card on the salon's
+      Stripe account (PaymentIntent with the platform fee) or Helcim (HelcimPay.js purchase). Receipts once per payment (page, webhook
+      or sweep): "payment received" for a part, the full receipt when paid off, and a note to the business email for online payments.
+- [x] Reminders from the 5-minute job, 9am–8pm local: 3 days before, on the due date, 1 and 7 days after, each once, by the channels
+      it was sent on. Helcim payments whose page closed are recorded by the same job after 5 minutes (never refunded by the deposit sweep).
+- [x] Tests: `lib/__tests__/invoices.test.ts` (status, deposit, amounts, reminder steps) and `server/__tests__/invoices.test.ts`
+      (totals, token privacy, check then card to a paid sale with stock and receipts once, void rules, list filter = page rule,
+      reminders once). Checked in the browser on demo-twosites with a Stripe test card (deposit, then the balance).
+- [ ] Helcim invoice payments are type-checked and follow the store's tested path, but were not run (no Helcim test account yet).
+- [ ] No tip on the client's pay page; a tip goes on from the sale (Add tip after payment).
+- [ ] Changing a sent invoice doesn't tell the client (the link shows the new version); send it again by hand.
+- [ ] Only people with `checkout.take` or `sales.view.all` see invoices; a stylist with `sales.view.own` doesn't see invoices they are
+      credited on. Decide whether they should.
+- [ ] Products on an unpaid invoice don't hold stock; they leave stock when it is paid off, like a ticket.
+- [ ] No "New invoice" button on the client's page yet (`/sales/invoices/new?clientId=…` already fills the client in).
+
 ### Email designs (built 2026-10-22, migration 0132)
 - [x] Marketing → Email designs: saved designs built from blocks (heading, text with **bold** / *italic* / links, image, two images,
       button, divider, space, footer note), with the logo and brand color applied, merge fields ("Insert field"), a live desktop / phone
@@ -1312,6 +1340,7 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       the logo for email.
 - [ ] The standard (undesigned) emails still use the old div-based wrapper (`shell` in `lib/notify/templates.ts`), which Outlook lays
       out full width. Move it onto the table renderer.
+- [x] Invoice (sending and its reminders) added to the designable emails, 2026-10-23.
 - [ ] Not designable yet: staff alerts, team invites, form copies, referral-code emails and workflow "notify staff" emails.
 - [ ] The campaign form's Layout picker was checked by the send-path test, not clicked through in the browser (the hidden in-app
       browser pane can't drive native dropdowns).

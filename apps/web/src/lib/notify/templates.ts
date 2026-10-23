@@ -229,3 +229,54 @@ ${r.payments.map((p) => row(p.label, p.amount)).join("")}${r.refunded ? row("Ref
 <p style="margin-top:20px">Thank you for visiting!</p>${r.footer ? `<p style="margin-top:8px;color:#78716c;font-size:13px;white-space:pre-line">${esc(r.footer)}</p>` : ""}${r.referral ? `<p style="margin-top:12px;padding:12px;background:#f5f5f4;border-radius:8px">${esc(r.referral)}</p>` : ""}`;
   return parts(r, `Your receipt from ${r.businessName} (#${r.number})`, r.businessName, body);
 }
+
+export interface InvoiceEmailCtx {
+  number: number;
+  lines: { name: string; quantity: number; amount: string }[];
+  subtotal: string;
+  discount: string | null;
+  tax: string | null;
+  total: string;
+  paid: string | null;
+  balance: string;
+  /** The deposit asked for now, when there is one still to pay. */
+  dueNow: string | null;
+  /** "November 3, 2026", or null with no due date. */
+  dueDate: string | null;
+  note: string | null;
+  payUrl: string;
+  /** A reminder rather than the first send: "before" (coming up), "due" (today), "after" (past due). */
+  reminder?: "before" | "due" | "after" | null;
+}
+
+/** An invoice to pay online, or a reminder of one: the lines, what is owed and the Pay button. */
+export function invoiceEmail(ctx: BrandCtx, i: InvoiceEmailCtx) {
+  const row = (l: string, v: string, bold = false) => `<tr><td style="padding:3px 0;${bold ? "font-weight:600" : ""}">${esc(l)}</td><td style="padding:3px 0;text-align:right;${bold ? "font-weight:600" : ""}">${esc(v)}</td></tr>`;
+  const lead =
+    i.reminder === "after" ? `A reminder that invoice #${i.number} was due${i.dueDate ? ` on ${esc(i.dueDate)}` : ""}.`
+    : i.reminder === "due" ? `A reminder that invoice #${i.number} is due today.`
+    : i.reminder === "before" ? `A reminder that invoice #${i.number} is due${i.dueDate ? ` on ${esc(i.dueDate)}` : " soon"}.`
+    : `Here is invoice #${i.number} from ${esc(ctx.businessName)}${i.dueDate ? `, due ${esc(i.dueDate)}` : ""}.`;
+  const payLabel = i.dueNow ? `Pay ${i.dueNow} now` : `Pay ${i.balance}`;
+  const body = `<p style="font-size:15px;margin:0 0 12px">${lead}</p>
+${i.note ? `<p style="margin:0 0 12px;padding:12px;background:#f5f5f4;border-radius:8px;white-space:pre-line">${esc(i.note)}</p>` : ""}
+<table style="width:100%;font-size:15px;border-collapse:collapse">
+${i.lines.map((l) => row(l.quantity > 1 ? `${l.name} × ${l.quantity}` : l.name, l.amount)).join("")}
+<tr><td colspan="2" style="border-top:1px solid #e7e5e4;padding-top:8px"></td></tr>
+${row("Subtotal", i.subtotal)}${i.discount ? row("Discount", `-${i.discount}`) : ""}${i.tax ? row("Tax", i.tax) : ""}
+${row("Total", i.total, true)}${i.paid ? row("Paid", `-${i.paid}`) : ""}${i.paid ? row("Balance", i.balance, true) : ""}
+</table>
+${i.dueNow ? `<p style="margin-top:12px;font-size:14px">A deposit of <b>${esc(i.dueNow)}</b> is due now; the rest can be paid later from the same link.</p>` : ""}
+<p style="margin-top:16px"><a href="${i.payUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">${esc(payLabel)}</a></p>
+<p style="font-size:13px;color:#78716c">Pay securely by card from the link. Questions? Reply to this email or call us.</p>`;
+  const subject = i.reminder === "after" ? `Past due: invoice #${i.number} from ${ctx.businessName}` : i.reminder ? `Reminder: invoice #${i.number} from ${ctx.businessName}` : `Invoice #${i.number} from ${ctx.businessName}`;
+  return parts(ctx, subject, i.reminder === "after" ? "Your invoice is past due" : i.reminder ? "Invoice reminder" : "You have an invoice", body);
+}
+
+/** A part payment on an invoice: what was paid and what is left (the full receipt goes out once it is paid off). */
+export function invoicePaymentEmail(ctx: BrandCtx, i: { number: number; amount: string; method: string; balance: string; payUrl: string }) {
+  const body = `<p style="font-size:15px;margin:0 0 12px">We received your payment of <b>${esc(i.amount)}</b> (${esc(i.method)}) toward invoice #${i.number}. Thank you!</p>
+<p style="font-size:15px">Balance left: <b>${esc(i.balance)}</b></p>
+<p style="margin-top:16px"><a href="${i.payUrl}" style="display:inline-block;background:#6d28d9;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px">View invoice</a></p>`;
+  return parts(ctx, `Payment received for invoice #${i.number} · ${ctx.businessName}`, "Payment received", body);
+}
