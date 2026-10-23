@@ -84,8 +84,8 @@ export function MobileNav({ sections, businessName, businessLogo, homeHref, user
   );
 }
 
-import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, Receipt, GraduationCap, Star, Megaphone, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox } from "lucide-react";
-const ICONS: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, Receipt, GraduationCap, Star, Megaphone, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox };
+import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, Receipt, GraduationCap, Star, Megaphone, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox, Banknote } from "lucide-react";
+const ICONS: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, Receipt, GraduationCap, Star, Megaphone, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox, Banknote };
 function Icon({ name, className }: { name: string; className?: string }) {
   const C = ICONS[name] ?? CalendarDays;
   return <C className={className} />;

@@ -324,6 +324,57 @@ export const saleLines = pgTable(
   (t) => [index("sale_lines_sale_idx").on(t.saleId), index("sale_lines_business_staff_idx").on(t.businessId, t.staffId), uniqueIndex("sale_lines_payment_uq").on(t.paymentId).where(sql`${t.paymentId} is not null`)],
 );
 
+/**
+ * A cash drawer's day at one location (and register, when a site runs more than one): opened with a float, closed with a count. Cash
+ * payments and refunds are stamped with the open drawer by a database trigger (migration 0137), so expected cash at close is the float,
+ * plus the cash taken, less the cash refunded, plus pay-ins, less payouts and cash tips paid out (core/closeout.ts).
+ */
+export const drawerSessions = pgTable(
+  "drawer_sessions",
+  {
+    id: id(),
+    businessId: businessId(),
+    locationId: text("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    register: text("register").notNull().default("Main"),
+    status: text("status").$type<"open" | "closed">().notNull().default("open"),
+    openingFloatCents: integer("opening_float_cents").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
+    openedByUserId: text("opened_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedByUserId: text("closed_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    // At close: what the drawer should have held, what was counted (by denomination, cents value → how many, when given) and the difference.
+    expectedCents: integer("expected_cents"),
+    countedCents: integer("counted_cents"),
+    overShortCents: integer("over_short_cents"),
+    denominations: jsonb("denominations").$type<Record<string, number>>(),
+    closeNote: text("close_note"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("drawer_sessions_open_uq").on(t.locationId, sql`lower(${t.register})`).where(sql`${t.status} = 'open'`), index("drawer_sessions_business_idx").on(t.businessId, t.locationId, t.openedAt)],
+);
+
+/** Cash put in or taken out of an open drawer, with a reason: a change run (pay-in), petty cash (payout), a tip handed over in cash. */
+export const drawerMovements = pgTable(
+  "drawer_movements",
+  {
+    id: id(),
+    businessId: businessId(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => drawerSessions.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"pay_in" | "payout" | "tip_payout">().notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    reason: text("reason").notNull(),
+    // A tip paid out: who received it.
+    staffId: text("staff_id").references(() => staff.id, { onDelete: "set null" }),
+    createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("drawer_movements_session_idx").on(t.sessionId, t.createdAt)],
+);
+
 export const payments = pgTable(
   "payments",
   {
@@ -356,6 +407,8 @@ export const payments = pgTable(
     cardBrand: text("card_brand"),
     cardLast4: text("card_last4"),
     note: text("note"),
+    /** Cash only: the drawer it went into, stamped by a trigger on insert (migration 0137). */
+    drawerSessionId: text("drawer_session_id").references(() => drawerSessions.id, { onDelete: "set null" }),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -443,6 +496,8 @@ export const refunds = pgTable(
     stripeRefundId: text("stripe_refund_id"),
     /** Helcim: the refund transaction id. */
     providerRefundId: text("provider_refund_id"),
+    /** A refund of a cash payment: the drawer the cash came out of, stamped by a trigger on insert (migration 0137). */
+    drawerSessionId: text("drawer_session_id").references(() => drawerSessions.id, { onDelete: "set null" }),
     createdByUserId: text("created_by_user_id").references(() => user.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },

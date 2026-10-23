@@ -197,6 +197,7 @@ export default async function ReportsPage({
           </details>
         </div>
         <LinkButton href={`?from=${prevFrom}&to=${prevTo}${lq}`} size="sm" variant="ghost" aria-label="Previous period">‹ Prior period</LinkButton>
+        <LinkButton href={`/app/${slug}/reports/closing${locationFilter ? `?location=${locationFilter}` : ""}`} size="sm" variant="ghost">Closing report</LinkButton>
         {sales.length || appts.length ? (
           <details className="relative">
             <summary className="flex cursor-pointer select-none items-center gap-1 rounded-lg px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 marker:content-none [&::-webkit-details-marker]:hidden"><Download className="h-4 w-4" /> Export</summary>

@@ -4,6 +4,7 @@ export * from "./permissions";
 export * from "./pricing";
 export * from "./booking-policy";
 export * from "./payroll";
+export * from "./closeout";
 export * from "./membership";
 export * from "./cancellation";
 export * from "./platform-pricing";

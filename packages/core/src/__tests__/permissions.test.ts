@@ -40,7 +40,7 @@ describe("default role table (phases 1 and 2)", () => {
     "reviews.view": "OMF", "reviews.view.own": "MP", // the plan says P; Manager holds it too so a manager can still edit the Provider role
     "checkout.take": "OMFP", "sales.view.own": "MP", "sales.view.all": "OMF", "checkout.discount": "OMF", "checkout.refund": "OM",
     "checkout.tips.adjust": "OMF",
-    "giftcards.view": "OMF", "giftcards.issue": "OM", "reports.view": "OM", "reports.staff": "OM", "payroll.manage": "OM", "payroll.view.own": "",
+    "giftcards.view": "OMF", "giftcards.issue": "OM", "drawer.manage": "OMF", "reports.view": "OM", "reports.staff": "OM", "payroll.manage": "OM", "payroll.view.own": "",
     "staff.self.hours": "", "staff.self.services": "",
     "staff.directory": "OMFP", "staff.schedules.view": "OMF", "staff.manage": "OM", "time.view.all": "OMF", "time.edit": "OM", "members.manage": "OM",
     "catalog.view": "OMFP", "catalog.prices": "OMFP", "catalog.costs": "OM", "services.manage": "OM", "inventory.view": "OMF", "inventory.log": "OMFP", "inventory.manage": "OM",

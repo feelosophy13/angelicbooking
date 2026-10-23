@@ -91,6 +91,9 @@ const pages = {
   sales: () => import("@/app/app/[slug]/sales/page"),
   products: () => import("@/app/app/[slug]/products/page"),
   giftCards: () => import("@/app/app/[slug]/gift-cards/page"),
+  drawer: () => import("@/app/app/[slug]/drawer/page"),
+  drawerHistory: () => import("@/app/app/[slug]/drawer/history/page"),
+  closing: () => import("@/app/app/[slug]/reports/closing/page"),
 } satisfies Record<string, () => Promise<PageModule>>;
 
 describe.skipIf(!up)("what each default role sees", () => {
@@ -422,6 +425,36 @@ describe.skipIf(!up)("what each default role sees", () => {
       expect(f).toContain("$50.00");
       as("provider");
       expect(await denied(pages.giftCards)).toBe(true);
+    });
+  });
+
+  describe("cash drawer and closing report", () => {
+    it("the desk and the manager open the drawer; a provider is refused", async () => {
+      for (const role of ["front_desk", "manager", "owner"] as const) {
+        as(role);
+        expect(await render(pages.drawer), role).toContain("Open the drawer");
+      }
+      as("provider");
+      expect(await denied(pages.drawer)).toBe(true);
+    });
+    it("history and the closing report need reports.view: the desk closes without them, the manager sees both", async () => {
+      as("front_desk");
+      const desk = await render(pages.drawer);
+      expect(desk).not.toContain("Closing report");
+      expect(await denied(pages.drawerHistory)).toBe(true);
+      expect(await denied(pages.closing)).toBe(true);
+      as("manager");
+      expect(await render(pages.drawer)).toContain("Closing report");
+      expect(await render(pages.drawerHistory)).toContain("Close-out history");
+      const z = await render(pages.closing, {}, { location: ids.main });
+      expect(z).toContain("Payments by method");
+      expect(z).toContain("Cash");
+    });
+    it("reports.view alone sees the drawer page read-only, with no open form", async () => {
+      as("front_desk", { permissions: only("reports.view") });
+      const html = await render(pages.drawer);
+      expect(html).toContain("No drawer is open");
+      expect(html).not.toContain("Open the drawer");
     });
   });
 
