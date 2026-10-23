@@ -5,7 +5,7 @@
  */
 import type { EmailDesign, FieldScope } from "./index";
 
-export const SYSTEM_EMAIL_KEYS = ["confirmation", "reminder", "rescheduled", "cancellation", "forms_nudge", "review_request", "receipt", "gift_card", "order"] as const;
+export const SYSTEM_EMAIL_KEYS = ["confirmation", "reminder", "rescheduled", "cancellation", "forms_nudge", "review_request", "receipt", "gift_card", "order", "invoice"] as const;
 export type SystemEmailKey = (typeof SYSTEM_EMAIL_KEYS)[number];
 
 export const isSystemEmailKey = (k: string): k is SystemEmailKey => (SYSTEM_EMAIL_KEYS as readonly string[]).includes(k);
@@ -19,6 +19,7 @@ export const SYSTEM_EMAILS: Record<SystemEmailKey, { label: string; when: string
   review_request: { label: "Review request", when: "After a completed visit, from the review request automation.", scopes: ["all", "appointment", "review"], subject: "How was your visit to {business}?", heading: "Thanks for coming in, {first_name}!", core: "The five rating stars and the “Don't ask me again” link." },
   receipt: { label: "Receipt", when: "When a receipt is emailed from a sale.", scopes: ["all"], subject: "", heading: "{business}", core: "The receipt: what was bought, tax, tip, total and how it was paid, and your receipt footer." },
   gift_card: { label: "Gift card", when: "When a gift card bought online is sent to its recipient.", scopes: ["all"], subject: "", heading: "You've got a gift card!", core: "The amount, the code, the sender's message and a Book button." },
+  invoice: { label: "Invoice", when: "When an invoice is sent to a client, and its reminders before and after the due date.", scopes: ["all"], subject: "", heading: "You have an invoice", core: "The invoice's lines, total, what was paid, the deposit due now, your note and the Pay button." },
   order: { label: "Online store order", when: "After an order in the online store.", scopes: ["all"], subject: "", heading: "Order received", core: "The items ordered, the total, and pickup or shipping details." },
 };
 

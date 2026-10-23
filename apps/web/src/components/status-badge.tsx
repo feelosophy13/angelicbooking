@@ -31,6 +31,11 @@ const TONE: Record<string, string> = {
   void: "bg-stone-100 text-stone-500 ring-stone-200",
   refunded: "bg-stone-100 text-stone-600 ring-stone-200",
   failed: "bg-red-50 text-red-700 ring-red-200",
+  // Invoices
+  draft: "bg-stone-100 text-stone-600 ring-stone-200",
+  viewed: "bg-sky-50 text-sky-800 ring-sky-200",
+  partly_paid: "bg-amber-50 text-amber-800 ring-amber-200",
+  overdue: "bg-red-50 text-red-700 ring-red-200",
 };
 
 export function StatusBadge({ status, className }: { status: string; className?: string }) {

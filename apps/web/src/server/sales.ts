@@ -338,7 +338,8 @@ export async function listSales(businessId: string, f: SalesListFilter) {
   const q = f.q?.trim() ?? "";
   return withTenant(businessId, async (tx) => {
     const conds = [];
-    if (f.status === "open") conds.push(eq(schema.sales.status, "open"));
+    // An unpaid invoice lives on the Invoices list until it is paid; then it is a sale like any other.
+    if (f.status === "open") conds.push(eq(schema.sales.status, "open"), sql`${schema.sales.source} <> 'invoice'`);
     if (f.status === "closed") conds.push(sql`${schema.sales.status} in ('paid','refunded','void')`);
     if (f.from) conds.push(gte(schema.sales.createdAt, f.from));
     if (f.to) conds.push(lt(schema.sales.createdAt, f.to));
@@ -842,6 +843,16 @@ async function closeIfPaid(tx: TenantDb, saleId: string, taxRateBps: number, act
     }
     await audit(tx, businessId, actorUserId, "sale.paid", saleId, { total: t.totalCents });
   }
+}
+
+/** Recompute a sale's totals after its lines were written directly (an invoice saved from its editor); closes it if that paid it off. */
+export async function recomputeSale(tx: TenantDb, businessId: string, saleId: string, taxRateBps: number, actorUserId: string) {
+  const sale = await tx.query.sales.findFirst({ where: eq(schema.sales.id, saleId) });
+  if (!sale) throw new SaleError("Sale not found.");
+  const t = await recompute(tx, saleId, taxRateBps, await currentDiscount(tx, sale));
+  // Nothing paid is never "paid off", even at a total of zero.
+  if (t.paidCents > 0 && t.paidCents >= t.totalCents) await closeIfPaid(tx, saleId, taxRateBps, actorUserId, businessId);
+  return t;
 }
 
 /** Re-evaluate a sale after an external payment row was added (gift card, credit). */

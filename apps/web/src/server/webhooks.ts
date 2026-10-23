@@ -7,6 +7,7 @@ import { markCardPaymentFailed, markCardPaymentSucceeded, recordStripeSideRefund
 import { withTenant } from "@angelic/db";
 import { queueOneOff } from "@/lib/notify";
 import { sendOrderEmailsOnce } from "./store";
+import { invoicePaidByWebhook } from "./invoices";
 import { handleRenewalFailed, handleRenewalInvoice, handleSubscriptionDeleted } from "./membership-billing";
 
 /**
@@ -61,6 +62,8 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<"processed
           });
           // An online order paid while the buyer's page was closed still gets its receipt and gift card emails (sent once).
           if (pi.metadata?.kind === "order" && pi.metadata.saleId && pi.metadata.businessId === business.id) await sendOrderEmailsOnce(business.id, pi.metadata.saleId);
+          // An invoice paid while the client's page was closed still gets its receipt (sent once per payment).
+          if (pi.metadata?.kind === "invoice" && pi.metadata.saleId && pi.metadata.businessId === business.id) await invoicePaidByWebhook(business, pi.metadata.saleId);
           outcome = "processed";
         }
         break;

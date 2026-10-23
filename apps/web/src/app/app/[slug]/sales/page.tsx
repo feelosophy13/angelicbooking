@@ -8,7 +8,8 @@ import { salesScope } from "@/lib/visibility";
 import { listSales } from "@/server/sales";
 import { listLocations } from "@/server/locations";
 import { formatMoney, shiftISODate, cn } from "@/lib/utils";
-import { Button, Card, Empty, Input, PageHeader, Select } from "@/components/ui";
+import { Button, Card, Empty, Input, PageHeader, Select, Tabs } from "@/components/ui";
+import { salesTabs } from "./tabs";
 import { Field } from "@/components/form";
 import { LinkRow } from "@/components/table-row";
 import { StatusBadge } from "@/components/status-badge";
@@ -42,6 +43,7 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
       <PageHeader title="Sales & checkout">
         {can(permissions, "reports.view") ? <Link href={`/app/${slug}/reports?from=${today}&to=${today}`} className="text-sm text-brand-700 underline">Today&apos;s report</Link> : null}
       </PageHeader>
+      {canSell || can(permissions, "sales.view.all") ? <Tabs items={salesTabs(slug)} /> : null}
       <div className={`mb-4 grid gap-4 ${canSell ? "xl:grid-cols-[1fr_360px]" : ""}`}>
         <Card className="p-3">
           <div className="flex flex-wrap items-center gap-2">

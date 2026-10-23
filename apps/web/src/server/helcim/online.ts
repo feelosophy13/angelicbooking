@@ -7,11 +7,11 @@ import { ensureHelcimCustomer } from "./payments";
 
 type Business = typeof schema.businesses.$inferSelect;
 type Checkout = typeof schema.helcimCheckouts.$inferSelect;
-export type CheckoutPurpose = "deposit" | "card" | "order";
+export type CheckoutPurpose = "deposit" | "card" | "order" | "invoice";
 
 export class HelcimCheckoutError extends Error {}
 
-const TYPE: Record<CheckoutPurpose, "purchase" | "verify" | "preauth"> = { deposit: "purchase", card: "verify", order: "preauth" };
+const TYPE: Record<CheckoutPurpose, "purchase" | "verify" | "preauth"> = { deposit: "purchase", card: "verify", order: "preauth", invoice: "purchase" };
 
 /**
  * Open a HelcimPay.js checkout for the booking page or the store: a deposit is charged (purchase), a card hold saves the card without a
@@ -107,8 +107,9 @@ export async function refundUnusedCheckout(business: Business, id: string) {
  * after payment they are refunded (or, for a card hold, simply dropped) and the business's activity log says so. Run by the 5-minute job.
  */
 export async function sweepHelcimCheckouts(): Promise<{ checked: number; refunded: number; failed: number }> {
-  // Store orders are settled by the store's own sweep (capture or release after a stock check), not refunded here.
-  const stale = await withJobs((tx) => tx.select().from(schema.helcimCheckouts).where(and(eq(schema.helcimCheckouts.status, "paid"), sql`${schema.helcimCheckouts.purpose} <> 'order'`, lt(schema.helcimCheckouts.paidAt, sql`now() - interval '20 minutes'`))));
+  // Store orders are settled by the store's own sweep (capture or release after a stock check), and invoice payments by the invoice
+  // sweep (recorded on the invoice, never refunded): not here.
+  const stale = await withJobs((tx) => tx.select().from(schema.helcimCheckouts).where(and(eq(schema.helcimCheckouts.status, "paid"), sql`${schema.helcimCheckouts.purpose} not in ('order', 'invoice')`, lt(schema.helcimCheckouts.paidAt, sql`now() - interval '20 minutes'`))));
   let refunded = 0;
   let failed = 0;
   for (const row of stale) {

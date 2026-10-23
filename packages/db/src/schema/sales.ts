@@ -487,6 +487,47 @@ export const stripePaymentDomains = pgTable(
   (t) => [primaryKey({ columns: [t.accountId, t.domain, t.livemode] })],
 );
 
+/**
+ * A bill sent to a client to pay online (a bridal party, an event, a balance owed). The money is an ordinary sale (source "invoice"): its
+ * lines, discount, tax and payments live there, so a paid invoice is a paid sale. Stored status is the lifecycle the desk sets (draft,
+ * sent, void); viewed, partly paid, paid and overdue are worked out from the sale and the dates (lib/invoices.ts).
+ */
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: id(),
+    businessId: businessId(),
+    saleId: text("sale_id")
+      .notNull()
+      .references(() => sales.id, { onDelete: "cascade" }),
+    /** The client's link (/book/<slug>/invoice/<token>): 32 random bytes, the only way in without signing in. */
+    token: text("token").notNull(),
+    status: text("status").$type<"draft" | "sent" | "void">().notNull().default("draft"),
+    dueOn: text("due_on"), // YYYY-MM-DD in the business's time zone
+    /** Shown to the client on the invoice. */
+    note: text("note"),
+    /** "Pay this much now": a percent of the total or an amount. Null = the whole balance. */
+    depositType: text("deposit_type").$type<"percent" | "amount">(),
+    depositValue: integer("deposit_value"),
+    /** Automatic reminders before and after the due date. */
+    remind: boolean("remind").notNull().default(true),
+    /** Which reminders went out ("before", "due", "after_1", "after_7"), so each goes once. */
+    remindersSent: text("reminders_sent").array().notNull().default(sql`'{}'::text[]`),
+    /** Payments a receipt was already sent for (the page and the webhook both try). */
+    receiptedPaymentIds: text("receipted_payment_ids").array().notNull().default(sql`'{}'::text[]`),
+    sentToEmail: text("sent_to_email"),
+    sentToPhone: text("sent_to_phone"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    viewedAt: timestamp("viewed_at", { withTimezone: true }),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    voidedAt: timestamp("voided_at", { withTimezone: true }),
+    createdByUserId: text("created_by_user_id"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("invoices_sale_uq").on(t.saleId), uniqueIndex("invoices_token_uq").on(t.token), index("invoices_business_idx").on(t.businessId, t.status, t.dueOn)],
+);
+
 export const SALES_TENANT_TABLES = ["products", "sales", "sale_lines", "payments", "refunds"] as const;
 
 // ---------------------------------------------------------------------------

@@ -541,13 +541,13 @@ export const helcimDevices = pgTable(
   (t) => [uniqueIndex("helcim_devices_code_uq").on(t.businessId, t.code)],
 );
 
-/** A HelcimPay.js checkout opened online (booking deposit or card hold, store order), kept until its result is verified and used. */
+/** A HelcimPay.js checkout opened online (booking deposit or card hold, store order, invoice payment), kept until its result is verified and used. */
 export const helcimCheckouts = pgTable(
   "helcim_checkouts",
   {
     id: id(),
     businessId: businessId(),
-    purpose: text("purpose").$type<"deposit" | "card" | "order">().notNull(),
+    purpose: text("purpose").$type<"deposit" | "card" | "order" | "invoice">().notNull(),
     meta: jsonb("meta").$type<Record<string, string>>().notNull(),
     amountCents: integer("amount_cents").notNull(),
     checkoutToken: text("checkout_token").notNull(),
