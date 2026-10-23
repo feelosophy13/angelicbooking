@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { aiConfigured } from "@/server/ai";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { asc, eq } from "drizzle-orm";
@@ -42,7 +43,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             ) : <p className="whitespace-pre-line rounded-lg bg-stone-50 p-3">{campaign.body}</p>}
           </div>
         ) : (
-          <CampaignForm action={updateCampaign} slug={slug} campaign={campaign} services={services} staff={staff} locations={locations} designs={designs} submitLabel="Save" sms={sms} />
+          <CampaignForm ai={aiConfigured()} action={updateCampaign} slug={slug} campaign={campaign} services={services} staff={staff} locations={locations} designs={designs} submitLabel="Save" sms={sms} />
         )}
       </Card>
       <div className="space-y-4">

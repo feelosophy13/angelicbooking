@@ -967,6 +967,13 @@
       "when": 1795203700000,
       "tag": "0137_cash_drawer",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1795203800000,
+      "tag": "0138_fill_books_ai",
+      "breakpoints": true
     }
   ]
 }

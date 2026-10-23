@@ -283,6 +283,43 @@ Current state (2026-10-10): sandbox endpoints exist and the sandbox keys are on 
   served from `/api/files/<id>` with immutable caching. Move to object storage if they grow past a few hundred MB.
 - **Provider calendar feeds** are public by secret token (`/api/calendar/<token>.ics`); reset from the staff profile.
 
+## AI assistant (Claude, added 2026-10-22, migration 0138)
+
+Service descriptions, campaign and Fill My Books wording, Inbox reply suggestions and the optional booking-page chat call Claude
+through the Anthropic SDK (`@anthropic-ai/sdk`), server-side only (`apps/web/src/server/ai.ts`, prompts in `server/ai-features.ts`).
+
+**Setup.** Create a key at console.anthropic.com (Settings → API keys) and set `ANTHROPIC_API_KEY` in the root `.env` and on the Render
+web service, then redeploy. Until it is set every AI button, the Settings → AI assistant page and the chat stay hidden. For trying the
+screens on a laptop without a key, `AI_FAKE=1` answers with canned sample text (ignored when `NODE_ENV=production`).
+
+**Model and request.** `claude-opus-5-5`, effort `low`, adaptive thinking (the model default), server-side refusal fallback
+(`fallbacks: "default"`, beta `server-side-fallback-2026-07-01`). The chat caches its system block (the salon's menu, hours, policy)
+between turns. Timeout 60 s, one retry.
+
+**Cost.** $4 per million input tokens, $20 per million output (thinking counts as output); cached input is read at a tenth. Rough
+per-request costs: a service description or campaign draft about 1–1.5¢, an Inbox suggestion about 1¢, a chat answer about 3¢ for the
+first question and under 1¢ after (cached menu). A busy salon (100 suggestions, 20 descriptions, 10 campaigns, 300 chat answers a
+month) comes to about $4/month. Every request is logged in `ai_usage` (tokens and cost in micro-dollars); each business has a monthly
+limit (`businesses.ai_monthly_budget_cents`, default $5, editable by the owner under Settings → AI assistant, 0 turns it off). The chat
+is also rate-limited (20 questions per visitor per 10 minutes, 300 per salon per day). Platform-wide spend: the Anthropic console, or
+`select business_id, sum(cost_micros)/1e6 as usd from ai_usage where created_at >= date_trunc('month', now()) group by 1`.
+
+**Privacy.** Prompts carry the salon's own public facts and the words staff are drafting. A client is at most a first name; text a
+client typed (Inbox threads, chat questions) has emails and phone numbers replaced before it is sent; a client's phone or email is
+never put in a prompt (`ai.test.ts` checks). Nothing an AI drafts is sent without a person pressing Send; the chat can't book or change
+anything. Anthropic's API terms apply (no training on API data by default); mention the AI subprocessor in the privacy policy before
+turning the chat on for a salon.
+
+## Fill My Books (added 2026-10-22, migration 0138)
+
+Marketing → Fill open slots (`server/fill-books.ts`, logic in `lib/fill-books.ts`). Openings are gaps in each bookable stylist's
+availability over the next `fill_days_ahead` days that fit their typical service; suggested clients are the day's waitlist, clients due
+back (their usual gap between visits, or the lapsed-after days) and the stylist's regulars, never anyone booked ahead or invited in the
+last 5 days. Invitations are marketing messages (marketing consent, STOP list, quiet hours, postal address for email) except for
+waitlisted clients, who asked. Limits per business: invitations per opening (default 3) and per day (default 20). The automatic mode
+runs inside the 5-minute jobs call (`fillMyBooks` in its output), once a day per business from its chosen hour. A booking by an invited
+client within 3 days is recorded on `fill_invites` (shown on the page). Demo businesses queue but never send.
+
 ## Image storage (Cloudflare R2, added 2026-10-13)
 
 Pictures and client files can live in Cloudflare R2 instead of Postgres. Without the `R2_*` variables the app

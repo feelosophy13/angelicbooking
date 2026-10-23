@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { aiConfigured } from "@/server/ai";
 import { asc, eq } from "drizzle-orm";
 import { schema, withTenant } from "@angelic/db";
 import { requireAction } from "@/lib/tenant";
@@ -23,7 +24,7 @@ export default async function NewCampaignPage({ params }: { params: Promise<{ sl
   ]);
   return (
     <Card className="max-w-3xl p-5">
-      <CampaignForm action={createCampaign} slug={slug} campaign={null} services={services} staff={staff} locations={locations} designs={designs} submitLabel="Save draft" sms={sms} />
+      <CampaignForm ai={aiConfigured()} action={createCampaign} slug={slug} campaign={null} services={services} staff={staff} locations={locations} designs={designs} submitLabel="Save draft" sms={sms} />
     </Card>
   );
 }
