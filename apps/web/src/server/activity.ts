@@ -141,6 +141,8 @@ async function shape(rows: (typeof schema.auditLog.$inferSelect)[], currency: st
     let diff: Record<string, unknown> = {};
     try { diff = r.diff ? (JSON.parse(r.diff) as Record<string, unknown>) : {}; } catch { /* leave empty */ }
     const d = describe(r.action, diff, currency, source);
+    // Only the front-door kiosk checks a client in as "client" (Settings → Check-in kiosk).
+    if (r.actorUserId === "client" && r.action === "appointment.checked_in") d.what = "checked in at the kiosk";
     return { id: r.id, at: r.at, actor: actorName(r.actorUserId, r.action), what: d.what, detail: d.detail, onTicket: r.entity === "sale" || r.action.startsWith("payment.") || r.action.startsWith("refund.") };
   });
   const created = events.find((e, i) => rows[i]!.action === "appointment.create" || rows[i]!.action === "appointment.block" || rows[i]!.action === "class.enrol");

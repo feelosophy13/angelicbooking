@@ -81,6 +81,8 @@ export const businesses = pgTable("businesses", {
   lapsedAfterDays: integer("lapsed_after_days").notNull().default(90),
   // Online booking asks for a one-time code sent to the client's phone (or email) before it books (Settings → Booking rules).
   verifyBookingContact: boolean("verify_booking_contact").notNull().default(true),
+  // Self check-in kiosk: how many minutes before the appointment a client may check themselves in (Settings → Check-in kiosk).
+  checkinEarlyMinutes: smallint("checkin_early_minutes").notNull().default(60),
   // Tip choices offered at checkout (client tip screen and the staff tip form), percent of the goods after discount.
   tipPercents: integer("tip_percents").array().notNull().default(sql`'{18,20,25}'`),
   phone: text("phone"),
@@ -213,6 +215,8 @@ export const locations = pgTable(
     taxRateBps: integer("tax_rate_bps"),
     // Secret in the printed clock-in QR code for this site (/clock/<token>). Null until first shown.
     clockToken: text("clock_token").unique(),
+    // Secret in the client check-in kiosk's address (/checkin/<token>). Null = the kiosk is off; a new one unpairs the old tablet.
+    checkinToken: text("checkin_token").unique(),
     isDefault: boolean("is_default").notNull().default(false),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
