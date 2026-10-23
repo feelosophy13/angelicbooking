@@ -60,6 +60,7 @@ export function navSections(base: string, permissions: Perms): NavSectionDef[] {
     ] },
     { title: "Money", items: [
       ...(canOpenSales(permissions) ? [it(`${base}/sales`, "Sales & checkout", "Receipt")] : []),
+      ...(ok("drawer.manage") || ok("reports.view") ? [it(`${base}/drawer`, "Cash drawer", "Banknote")] : []),
       ...(ok("reports.view") ? [it(`${base}/reports`, "Reports", "BarChart3")] : []),
       ...(ok("payroll.manage") ? [it(`${base}/payroll`, "Payroll", "Wallet")] : ok("payroll.view.own") ? [it(`${base}/payroll`, "My pay", "Wallet")] : []),
     ] },

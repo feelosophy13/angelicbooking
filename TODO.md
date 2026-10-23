@@ -1296,6 +1296,31 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [x] Per-business SMS templates / tone; include "Reply STOP" wording on the first message only. Done 2026-10-10 (Settings → Messages → Text wording).
 - [ ] Usage allowance per plan tier if pricing moves to tiers.
 
+### End-of-day close-out: cash drawer and closing report (built 2026-10-22, migration 0137)
+- [x] Money → Cash drawer: open the drawer per location with a starting float (the last count is offered), record payouts, pay-ins and
+      cash tips paid out with a reason (removable while open), and count and close by total or by bill and coin. Expected cash is
+      float + cash taken − cash refunded − cash tips paid out + pay-ins − payouts (`core/closeout.ts`); the difference shows as you type,
+      and one over $1.00 either way needs a note. A second register at a site is "Open another register".
+- [x] Cash lands in a drawer by a database trigger on `payments` and `refunds` (any path that takes or returns cash, including late
+      cash tips): the open drawer at the ticket's location, the one the person taking it opened first. Cash taken with no drawer open
+      is in no count; the closing report says how much.
+- [x] Close-out history (`/drawer/history`): who opened and closed each drawer, expected, counted, over/short with the note, totals
+      and a per-close over/short chart. Reports → Closing report (`/reports/closing`): one location and day, payments by method with
+      tips and refunds, card totals per processor (Stripe, Helcim) to match the payout, Card (own terminal) for its batch, tickets
+      closed (services, products, other, discounts, tax, tips), deposits taken online, drawers closed, open tickets still unpaid.
+      Prints cleanly and downloads as CSV.
+- [x] Permission `drawer.manage` (Front desk, Manager, Owner; migration 0137 back-fills stored roles that take payments and see every
+      ticket). History and the closing report need `reports.view`. Tests: `core closeout.test.ts`, `server/drawer.test.ts`, role matrix.
+- [ ] A closed drawer can't be reopened or its count corrected; a mistake needs a pay-in / payout on the next day's drawer. Add
+      "Reopen" for someone with reports.view, with an audit entry.
+- [ ] A cash tip paid out of the drawer doesn't reach payroll. If the client tipped by card and the desk hands the stylist cash, payroll
+      still pays the card tip on the pay sheet: paid twice. Either mark the tip as paid out in payroll or keep tip payouts to cash tips.
+- [ ] Processor match is before fees and by day charged; a deposit refunded before checkout (appointment deposit refunds) isn't taken
+      off the processor net, and Stripe / Helcim pay out a day or two later. Pull the actual payout (Stripe balance transactions,
+      Helcim settlement) to compare automatically.
+- [ ] "Open tickets still unpaid" for a past day uses each ticket's status now (a ticket paid since then drops off).
+- [ ] No safe drop / bank deposit flow beyond recording it as a payout, and no blind count (the desk sees expected while counting).
+
 ### Email designs (built 2026-10-22, migration 0132)
 - [x] Marketing → Email designs: saved designs built from blocks (heading, text with **bold** / *italic* / links, image, two images,
       button, divider, space, footer note), with the logo and brand color applied, merge fields ("Insert field"), a live desktop / phone

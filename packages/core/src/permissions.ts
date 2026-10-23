@@ -51,6 +51,7 @@ export const ACTIONS = [
   "checkout.refund", // send money back: refunds, store credit, deposit refunds (on a ticket they may see)
   "giftcards.view", // the Gift cards page: masked codes and balances
   "giftcards.issue", // create a gift card nobody paid for (a comp or a correction); selling one at checkout is checkout.take
+  "drawer.manage", // open the cash drawer with a float, record pay-ins and payouts, count and close it (migration 0137); history and the closing report are reports.view
   "reports.view",
   "reports.staff", // the per-person table in Reports: services, products and tips by staff member (migration 0120)
   "payroll.manage", // run payroll for everyone (was payroll.view until migration 0120)
@@ -144,6 +145,7 @@ export const PERMISSION_GROUPS: { title: string; description: string; items: { a
       { action: "checkout.refund", label: "Refund payments", description: "Refund a sale, give store credit, or refund a deposit, on a ticket they can see." },
       { action: "giftcards.view", label: "Look up gift cards", description: "The Gift cards page: balances and masked codes." },
       { action: "giftcards.issue", label: "Issue free gift cards", description: "Create a gift card with no payment (a comp or a correction), and see full codes." },
+      { action: "drawer.manage", label: "Open and close the cash drawer", description: "Start the day with a float, record pay-ins and payouts, and count and close the drawer. Close-out history and the closing report need \"View business reports\"." },
       { action: "reports.view", label: "View business reports", description: "Sales, tips, refunds and cancellations across the business." },
       { action: "reports.staff", label: "See sales by staff member", description: "The per-person table in Reports: who sold what, and their tips." },
       { action: "payroll.manage", label: "Run payroll for everyone", description: "Pay rules, pay sheets, adjustments and finalizing periods, for the whole team." },
@@ -232,7 +234,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {
     "appointments.read.any", "appointments.read.own", "appointments.write.any", "appointments.write.own", "waitlist.view", "waitlist.manage", "classes.manage.any",
     "clients.read", "clients.contact", "clients.spend", "clients.write", "clients.notes", "clients.messages", "clients.photos", "clients.balances",
     "reviews.view",
-    "checkout.take", "sales.view.all", "checkout.discount", "checkout.tips.adjust", "giftcards.view",
+    "checkout.take", "sales.view.all", "checkout.discount", "checkout.tips.adjust", "giftcards.view", "drawer.manage",
     "staff.directory", "staff.schedules.view", "time.view.all",
     "catalog.view", "catalog.prices", "inventory.view", "inventory.log",
   ]),
@@ -249,7 +251,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, ReadonlySet<Action>> = {
 export const DEFAULT_ROLE_META: Record<Role, { name: string; description: string }> = {
   owner: { name: "Owner", description: "Everything, including payments, billing and API keys. Can't be edited." },
   manager: { name: "Manager", description: "Runs the salon day to day: every calendar, client, ticket, report, payroll and setting. No Stripe, billing or API keys." },
-  front_desk: { name: "Front desk", description: "Books and checks out for everyone: every calendar, client and ticket, the waitlist and gift cards. No reports, pay or settings." },
+  front_desk: { name: "Front desk", description: "Books and checks out for everyone: every calendar, client and ticket, the waitlist, gift cards and the cash drawer. No reports, pay or settings." },
   provider: { name: "Provider", description: "Their own calendar, the clients they see (no contact details or spend), their own tickets, reviews and photos." },
 };
 

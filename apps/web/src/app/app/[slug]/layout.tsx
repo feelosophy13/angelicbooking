@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox } from "lucide-react";
+import { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, ExternalLink, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox, Banknote } from "lucide-react";
 import { can } from "@angelic/core";
 import { isDelinquent } from "@/lib/billing-config";
 import { requireBusiness, listMyBusinesses } from "@/lib/tenant";
@@ -25,7 +25,7 @@ import { MobileNav, type NavSection } from "./mobile-nav";
 import { NewMenu, type NewItem } from "./new-menu";
 import { blockingAccess, bookingAccess } from "@/lib/appointment-access";
 
-const ICON: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox };
+const ICON: Record<string, React.ComponentType<{ className?: string }>> = { CalendarDays, CalendarCheck, CalendarClock, ListOrdered, Clock, Users, UserCog, Scissors, ShoppingBag, Package, BadgePercent, Gift, BarChart3, Wallet, Settings, GraduationCap, Star, Megaphone, Receipt, Workflow, FileText, Heart, Images, ShieldCheck, Boxes, MessageSquare, KeyRound, Inbox, Banknote };
 
 export default async function AppLayout({ children, params }: { children: React.ReactNode; params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -137,13 +137,13 @@ export default async function AppLayout({ children, params }: { children: React.
             </div>
           ) : null}
           {awaitingVerification ? (
-            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 print:hidden">
               Verify your email to publish your booking page and send messages. We emailed {user.email}.{" "}
               <ResendVerification email={user.email} callbackURL={`/app/${slug}`} />
             </div>
           ) : null}
           {plan.state === "trial" && can(permissions, "billing.manage") ? (
-            <div className={`mb-4 rounded-lg border px-4 py-2 text-sm ${plan.daysLeft <= 3 ? "border-amber-200 bg-amber-50 text-amber-900" : "border-brand-100 bg-brand-50/60 text-brand-900"}`}>
+            <div className={`mb-4 rounded-lg border px-4 py-2 text-sm print:hidden ${plan.daysLeft <= 3 ? "border-amber-200 bg-amber-50 text-amber-900" : "border-brand-100 bg-brand-50/60 text-brand-900"}`}>
               Free trial: {plan.daysLeft} day{plan.daysLeft === 1 ? "" : "s"} left. <Link href={`${base}/settings/billing`} className="underline">Add a card</Link> so nothing stops when it ends; you won&apos;t be charged until then.
             </div>
           ) : null}
