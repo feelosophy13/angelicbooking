@@ -47,6 +47,8 @@ import { smsAvailableFor } from "@/server/messaging";
 import { linkedClients, RELATIONS } from "@/server/client-links";
 import { linkClientAction, unlinkClientAction } from "./family-actions";
 import { ClientPicker } from "@/components/client-picker";
+import { canChartClient } from "@/server/charts";
+import { ClientTabs } from "./client-tabs";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string; clientId: string }> }): Promise<Metadata> {
   const { slug, clientId } = await params;
@@ -103,10 +105,11 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
     ]);
     const lashMaps = canNotes ? await lashMapsFor(tx, clientId) : [];
     const lashWrite = canNotes && (await canWriteLashMaps(tx, { permissions, staffId }, clientId));
-    return { client, visits, sales, packs, memberships, notes, lashMaps, lashWrite };
+    const chartsTab = await canChartClient(tx, { permissions, staffId }, clientId, "read");
+    return { client, visits, sales, packs, memberships, notes, lashMaps, lashWrite, chartsTab };
   });
   if (!data) notFound();
-  const { client, visits, sales, packs, memberships, notes, lashMaps, lashWrite } = data;
+  const { client, visits, sales, packs, memberships, notes, lashMaps, lashWrite, chartsTab } = data;
   const latestLash = lashMaps[0];
   const stopped = await withTenant(business.id, (tx) => isSmsSuppressed(tx, client.phone));
   // Linked people (a child, a partner, a parent): each keeps their own history; the link is a shortcut and where a child's messages go.
@@ -183,6 +186,7 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
         {can(permissions, "checkout.take") ? <LinkButton href={`/app/${slug}/sales/new?clientId=${client.id}`} variant="secondary"><Receipt className="h-4 w-4" /> Sale</LinkButton> : null}
         {can(permissions, "appointments.write.any") ? <LinkButton href={`/app/${slug}/appointments/new?clientId=${client.id}`} variant="primary"><Plus className="h-4 w-4" /> Book appointment</LinkButton> : null}
       </PageHeader>
+      <ClientTabs slug={slug} clientId={client.id} charts={chartsTab} />
       {/* At a glance: the numbers the desk asks about before anything else. */}
       <Card className={`mb-6 grid grid-cols-2 gap-px overflow-hidden bg-stone-100 ${glance.length === 5 ? "sm:grid-cols-3 lg:grid-cols-5" : "sm:grid-cols-4"}`}>
         {glance.map((g) => (

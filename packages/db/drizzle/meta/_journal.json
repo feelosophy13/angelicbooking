@@ -981,6 +981,13 @@
       "when": 1795203900000,
       "tag": "0139_group_bookings_family",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1795204000000,
+      "tag": "0140_charts",
+      "breakpoints": true
     }
   ]
 }

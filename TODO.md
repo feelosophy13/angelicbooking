@@ -1406,6 +1406,36 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
 - [ ] Fill My Books follow-ups: attribution is "the invited client booked within 3 days" (not a tracked link); invitations go only for
       the start of each gap (a long free afternoon is one opening); per-location time zones use the business's clock for the "when"
       wording.
+### Treatment charts / SOAP notes (built 2026-10-22, migration 0140)
+- [x] Settings → Chart templates: the salon's templates, built with the forms builder (heading, short and long answer, checkboxes,
+      choose one, yes/no, number, date, face or body diagram, visit photos, instructions), each optionally set as the chart that opens
+      first for some services. Starters ship ready to use without adding them: SOAP note, Facial treatment, Lash service, Permanent
+      makeup, Massage; "Add and edit" copies one (ticking the services whose names suit it). Managed with `forms.manage`.
+- [x] "Chart this visit" on the appointment (Charts card) and "New chart" on the client's Charts tab. Opens on the service's template,
+      else the starter that suits the service's name, else SOAP; the client's last signed chart for the same service is folded away
+      above it, with "Start from its answers". Diagram: tap to drop numbered marks, a note per mark. Photos: tick the visit's own
+      photos. A chart keeps a copy of its template, so editing a template never changes a chart.
+- [x] Save draft or Sign. Signing needs the fields marked "Needed to sign", records the signer's name and time, and locks the chart:
+      the app refuses changes and a database trigger refuses them too (`chart_notes_signed_lock`). Later changes are addenda, each
+      with its author and time, never edited (`chart_addenda_append_only`). Drafts are changed or deleted only by whoever started them
+      (or someone who charts every client); signed charts are never deleted (only with the client).
+- [x] Client page tabs Profile / Charts: "Last time, by service" cards, then every chart with service, chart, provider and status
+      filters and paging. Print or PDF view (`/print/charts/…`) with the addenda.
+- [x] Permissions `charts.read.own` / `charts.read.any` / `charts.write.own` / `charts.write.any` ("own" = clients they have a visit
+      with). Defaults: Owner and Manager everything, Provider own, Front desk none (charts are clinical; `clients.notes` doesn't imply
+      them). Migration 0140 back-fills stored roles the same way. Every chart opened, listed, printed, signed or added to is in the
+      activity log (`chart.*`). A guard test keeps charts out of the booking site, embed, client accounts and both APIs.
+- [x] Tests: `packages/core/src/__tests__/charts.test.ts` (templates, answers, lock, scope), `server/__tests__/charts.test.ts`
+      (Postgres: lock in app and DB, addenda, own vs any, isolation), role matrix (who sees the Charts tab and charts), `charts-guard`.
+      Checked in the browser at 768×1024 as the owner: chart a facial, mark the face, sign, addendum, Charts tab, print, add a starter.
+- [ ] Deleting a client deletes their charts with them (cascade). Medical and spa record rules in many states want charts kept for
+      years: decide on archive-instead-of-delete for clients with signed charts before medspa customers use this.
+- [ ] Signing is the signed-in person's name and time; no PIN or password re-entry, no drawn signature, no co-signature by a
+      supervising provider (medspa). Add those if a customer needs them.
+- [ ] Not in the mobile API or the iOS app, the client data export, or the public API (deliberately, for now).
+- [ ] A chart can only include photos already on the visit; there is no upload from the chart itself.
+- [ ] The chart page doesn't show who has viewed it; that is only in Settings → Activity log (filter "chart").
+- [ ] Not tried on a real tablet or with a provider login yet (only the role matrix checks a Provider), and the demo seed has no charts.
 
 ### Email designs (built 2026-10-22, migration 0132)
 - [x] Marketing → Email designs: saved designs built from blocks (heading, text with **bold** / *italic* / links, image, two images,

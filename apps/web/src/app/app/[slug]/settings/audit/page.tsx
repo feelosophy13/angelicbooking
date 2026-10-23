@@ -76,6 +76,8 @@ export default async function AuditPage({ params, searchParams }: { params: Prom
                   <td className="whitespace-nowrap px-4 py-2">
                     {r.entity === "appointment" && r.entityId ? (
                       <Link href={`/app/${slug}/appointments/${r.entityId}`} className="text-brand-700 underline">appointment</Link>
+                    ) : r.entity === "chart" && r.entityId ? (
+                      <Link href={`/app/${slug}/charts/${r.entityId}`} className="text-brand-700 underline">chart</Link>
                     ) : (
                       r.entity
                     )}

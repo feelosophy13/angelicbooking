@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { StatusBadge } from "@/components/status-badge";
+import { rowClass, RowLink } from "@/components/row";
 import { Disclosure } from "@/components/disclosure";
 import { ActivityTrail } from "@/components/activity-trail";
 import { appointmentActivity } from "@/server/activity";
@@ -16,7 +17,6 @@ import { timingForStaff } from "@/server/stylist-pricing";
 import { formatDateLong, formatMoney, formatTime, shiftISODate } from "@/lib/utils";
 import { BackLink, Button, Card, Field, Input, PageHeader, Select, Textarea, LinkButton } from "@/components/ui";
 import { addService, cancelSeries, changeStatus, moveService, refundDepositAction, removeService, saveNotes, startCheckout, startGroupCheckout } from "./actions";
-import { rowClass, RowLink } from "@/components/row";
 import { getSeriesForAppointment } from "@/server/series";
 import { formsForAppointment } from "@/server/forms";
 import { appUrl } from "@/lib/stripe";
@@ -37,6 +37,8 @@ import { pairsForAppointment, photoTagsInUse } from "@/server/visit-photos";
 import { savedCardsForClient } from "@/server/card-on-file";
 import { listLocations, paymentContextForAppointment, tzFor } from "@/server/locations";
 import { MapPin, CalendarPlus } from "lucide-react";
+import { canChartClient, chartsForAppointment } from "@/server/charts";
+import { ChartStatusBadge } from "../../charts/parts";
 
 const STATUS_LABEL: Record<string, string> = {
   booked: "Booked",
@@ -105,6 +107,8 @@ export default async function AppointmentPage({
   // The client's latest lash map, on any visit where they have one or a lash service is booked.
   const lash = client && appointment.kind === "visit" ? await withTenant(business.id, async (tx) => ({ map: (await lashMapsFor(tx, client.id, 1))[0] ?? null, write: await canWriteLashMaps(tx, { permissions, staffId }, client.id) })) : null;
   const showLash = !!lash && (!!lash.map || (lash.write && items.some((i) => /lash/i.test(i.serviceName))));
+  // Treatment charts for this visit: only for someone who may read this client's charts (never implied by the appointment permissions).
+  const charts = client && appointment.kind === "visit" ? await withTenant(business.id, async (tx) => (await canChartClient(tx, { permissions, staffId }, client.id, "read")) ? { rows: await chartsForAppointment(tx, id), write: await canChartClient(tx, { permissions, staffId }, client.id, "write") } : null) : null;
   const series = appointment.seriesId ? await getSeriesForAppointment(business.id, id) : null;
   const forms = await withTenant(business.id, (tx) => formsForAppointment(tx, id));
   const pay = await paymentContextForAppointment(business, id);
@@ -342,6 +346,33 @@ export default async function AppointmentPage({
               </form>
             ) : appointment.notes ? <p className="whitespace-pre-line text-sm text-stone-700">{appointment.notes}</p> : <p className="text-sm text-stone-500">No notes for this visit.</p>}
           </Card>
+
+          {charts && client ? (
+            <Card className="p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h2 className="font-medium">Charts</h2>
+                {charts.write && charts.rows.length ? <Link href={`/app/${slug}/charts/new?clientId=${client.id}&appointmentId=${id}`} className="hit text-sm text-brand-700 hover:underline">Another chart</Link> : null}
+              </div>
+              {charts.rows.length ? (
+                <ul className="divide-y divide-stone-100 text-sm">
+                  {charts.rows.map((c) => (
+                    <li key={c.id} className={`${rowClass} -mx-2 flex items-center gap-3 rounded-lg px-2 py-2`}>
+                      <div className="min-w-0 flex-1">
+                        <RowLink href={`/app/${slug}/charts/${c.id}`} className="font-medium">{c.templateSnapshot.name}{c.serviceName ? ` · ${c.serviceName}` : ""}</RowLink>
+                        <p className="truncate text-xs text-stone-500">{c.signedAt ? `Signed by ${c.signedByName}` : `Started by ${c.authorName}`}</p>
+                      </div>
+                      <ChartStatusBadge signed={!!c.signedAt} />
+                    </li>
+                  ))}
+                </ul>
+              ) : charts.write ? (
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-stone-500">Record what you did and saw, then sign it.</p>
+                  <LinkButton href={`/app/${slug}/charts/new?clientId=${client.id}&appointmentId=${id}`} variant="secondary" size="sm">Chart this visit</LinkButton>
+                </div>
+              ) : <p className="text-sm text-stone-500">No chart for this visit.</p>}
+            </Card>
+          ) : null}
 
           {showLash && lash && client ? (
             <Card className="p-4">

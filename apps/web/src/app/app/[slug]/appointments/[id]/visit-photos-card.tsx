@@ -44,7 +44,7 @@ export function VisitPhotosCard({ slug, appointmentId, groups, pairs, tagSuggest
   const byKey = new Map(pairs.map((p) => [p.key, p]));
   const listId = `photo-tags-${appointmentId}`;
   return (
-    <Card className="p-4">
+    <Card id="photos" className="p-4 scroll-mt-20">
       <h2 className="mb-1 font-medium">Photos</h2>
       <p className="mb-3 text-xs text-stone-500">Before and after, kept private to your team and found again in the Gallery.</p>
       <div className="space-y-5">
