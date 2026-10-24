@@ -96,9 +96,14 @@ describe("closing report", () => {
 
   it("card totals per processor leave out deposits applied today, add deposits taken online today, and take off card refunds", () => {
     expect(report.processors).toEqual([
-      { provider: "helcim", chargedCents: 15000, depositsCents: 3000, refundsCents: 500, netCents: 17500 },
-      { provider: "stripe", chargedCents: 8000, depositsCents: 2500, refundsCents: 1500, netCents: 9000 },
+      { provider: "helcim", chargedCents: 15000, depositsCents: 3000, refundsCents: 500, depositRefundsCents: 0, netCents: 17500 },
+      { provider: "stripe", chargedCents: 8000, depositsCents: 2500, refundsCents: 1500, depositRefundsCents: 0, netCents: 9000 },
     ]);
+  });
+
+  it("takes deposits refunded before checkout off the processor's net", () => {
+    const r = closingReport({ payments: [], refunds: [], tickets: [], deposits: [], depositRefunds: [{ provider: "stripe", amountCents: 2000 }] });
+    expect(r.processors).toEqual([{ provider: "stripe", chargedCents: 0, depositsCents: 0, refundsCents: 0, depositRefundsCents: 2000, netCents: -2000 }]);
   });
 
   it("splits tickets into services, products and the rest, with discounts, tax and tips", () => {

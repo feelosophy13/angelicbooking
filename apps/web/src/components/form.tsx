@@ -16,7 +16,8 @@ const LabelsCtx = createContext<((name: string, label: string) => void) | undefi
  * page shows (a hidden input, a form-level failure), worded with the field's visible label.
  * Edits are guarded: leaving the page with unsaved changes asks first.
  */
-export function ActionForm({ action, children, className, onSuccess }: { action: Action; children: React.ReactNode; className?: string; onSuccess?: () => void }) {
+/** `onReset`: React clears the form after each submit, so a field that shows or hides others from state can go back to its start too. */
+export function ActionForm({ action, children, className, onSuccess, onReset }: { action: Action; children: React.ReactNode; className?: string; onSuccess?: () => void; onReset?: () => void }) {
   const [state, act] = useActionState(action, undefined);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const register = useCallback((name: string, label: string) => {
@@ -43,7 +44,7 @@ export function ActionForm({ action, children, className, onSuccess }: { action:
   return (
     <Ctx.Provider value={state}>
       <LabelsCtx.Provider value={register}>
-        <form ref={formRef} action={act} className={cn("space-y-4", className)} noValidate onInput={() => { dirty.current = true; }} onSubmit={() => { dirty.current = false; }}>
+        <form ref={formRef} action={act} className={cn("space-y-4", className)} noValidate onInput={() => { dirty.current = true; }} onSubmit={() => { dirty.current = false; }} onReset={onReset}>
           {banner ? (
             <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{banner}</div>
           ) : null}

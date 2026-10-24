@@ -6,7 +6,7 @@ import { DENOMINATIONS } from "@angelic/core";
 import { requireAction } from "@/lib/tenant";
 import { f, formAction, FormError } from "@/lib/form";
 import { setFlash } from "@/lib/flash";
-import { addDrawerMovement, closeDrawer, DrawerError, openDrawer, removeDrawerMovement } from "@/server/drawer";
+import { addDrawerMovement, closeDrawer, correctClosedDrawer, DrawerError, openDrawer, removeDrawerMovement } from "@/server/drawer";
 import { formatMoney } from "@/lib/utils";
 
 const asForm = (e: unknown) => (e instanceof DrawerError ? new FormError(e.message, e.field) : e);
@@ -79,5 +79,32 @@ export const closeDrawerAction = formAction(
     await setFlash(diff === 0 ? "Drawer closed. It balances." : `Drawer closed, ${formatMoney(Math.abs(diff), ctx.business.currency)} ${diff > 0 ? "over" : "short"}.`);
     revalidatePath(`/app/${d.slug}/drawer`);
     redirect(`/app/${d.slug}/drawer/${d.sessionId}`);
+  },
+);
+
+/** Correct a closed drawer (recount, or a missed pay-in / payout / tip payout). Managers and owners: it needs reports.view. */
+export const correctDrawerAction = formAction(
+  z.object({
+    slug: z.string(),
+    sessionId: f.id(),
+    counted: f.moneyOptional().optional(),
+    missedKind: z.enum(["", "pay_in", "payout", "tip_payout"]).default(""),
+    missedAmount: f.moneyOptional().optional(),
+    missedReason: f.optional(120).optional(),
+    missedStaffId: f.optional(80).optional(),
+    reason: f.text(1, 300),
+  }),
+  async (d) => {
+    const ctx = await requireAction(d.slug, "reports.view");
+    if (d.missedKind && !d.missedAmount) throw new FormError("Enter the missed amount.", "missedAmount");
+    const missed = d.missedKind && d.missedAmount ? { kind: d.missedKind, amountCents: d.missedAmount, reason: d.missedReason || (d.missedKind === "tip_payout" ? "Cash tip" : d.missedKind === "pay_in" ? "Pay-in" : "Payout"), staffId: d.missedStaffId || null } : null;
+    try {
+      await correctClosedDrawer({ businessId: ctx.business.id, sessionId: d.sessionId, countedCents: d.counted ?? null, missed, reason: d.reason, actorUserId: ctx.user.id, actorName: ctx.user.name });
+    } catch (e) {
+      throw asForm(e);
+    }
+    revalidatePath(`/app/${d.slug}/drawer/${d.sessionId}`);
+    revalidatePath(`/app/${d.slug}/drawer/history`);
+    return "Close-out corrected";
   },
 );

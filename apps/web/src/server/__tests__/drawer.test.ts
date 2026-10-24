@@ -10,7 +10,8 @@ import { eq } from "drizzle-orm";
 import { db, schema, withTenant } from "@angelic/db";
 import { instantToISODate, zonedToInstant } from "@angelic/core";
 import { addServiceLine, openWalkInSale, recordManualPayment, refundPayment, setTips } from "@/server/sales";
-import { addDrawerMovement, closeDrawer, closingDay, DrawerError, drawerHistory, getDrawer, openDrawer, openDrawers } from "@/server/drawer";
+import { getPayrollInputs } from "@/server/payroll";
+import { addDrawerMovement, closeDrawer, closingDay, correctClosedDrawer, DrawerError, drawerHistory, getDrawer, openDrawer, openDrawers } from "@/server/drawer";
 import { reachable, setupKit } from "@/lib/__tests__/api-test-kit";
 import { shiftISODate } from "@/lib/utils";
 
@@ -113,6 +114,31 @@ describe.skipIf(!up)("cash drawer and closing report", () => {
     expect(hist.map((h) => [h.s.id, h.s.overShortCents, h.openedByName])).toEqual([[drawerId, -100, "Dana Desk"]]);
   });
 
+  it("a closed drawer can be corrected: a recount and a movement missed while it was open, both kept on the record", async () => {
+    await expect(correctClosedDrawer({ businessId: kit.A, sessionId: drawerId, countedCents: null, missed: null, reason: "x", actorUserId: userId, actorName: "Dana Desk" })).rejects.toThrow(/Change the count/);
+    await expect(correctClosedDrawer({ businessId: kit.A, sessionId: drawerId, countedCents: 30_800, missed: null, reason: " ", actorUserId: userId, actorName: "Dana Desk" })).rejects.toThrow(/why/);
+    // A $5 cash tip handed over but not entered: expected drops to $303; the count stands at $307, so $4 over.
+    const r = await correctClosedDrawer({ businessId: kit.A, sessionId: drawerId, countedCents: null, missed: { kind: "tip_payout", amountCents: 500, reason: "Cash tip", staffId: stylist }, reason: "Forgot to enter Sam's tip", actorUserId: userId, actorName: "Dana Desk" });
+    expect(r).toEqual({ expectedCents: 30_300, countedCents: 30_700, overShortCents: 400 });
+    // Then a recount finds $303 exactly.
+    const r2 = await correctClosedDrawer({ businessId: kit.A, sessionId: drawerId, countedCents: 30_300, missed: null, reason: "Recounted", actorUserId: userId, actorName: "Dana Desk" });
+    expect(r2.overShortCents).toBe(0);
+    const d = (await getDrawer(kit.A, drawerId))!;
+    expect(d.status).toBe("closed");
+    expect(d.denominations).toBeNull();
+    expect(d.closeNote).toBe("Corrected by Dana Desk: Forgot to enter Sam's tip\nCorrected by Dana Desk: Recounted");
+    expect(d.movements.filter((m) => m.kind === "tip_payout").map((m) => m.reason)).toContain("Cash tip (added after closing)");
+  });
+
+  it("payroll takes tips paid out of the drawer off the pay sheet, so they aren't paid twice", async () => {
+    const today = instantToISODate(new Date(), business.timezone);
+    const inputs = await getPayrollInputs(business, { start: today, end: today });
+    const mine = inputs.adjustments.filter((a) => a.staffId === stylist && a.label.startsWith("Tip paid out from the drawer"));
+    expect(mine.map((a) => [a.amountCents, a.countsAsPay]).sort()).toEqual([[-1000, false], [-500, false]]);
+    const split = await getPayrollInputs(business, { start: today, end: today }, main, { split: true });
+    expect(split.adjustments).toEqual([]);
+  });
+
   it("the closing report adds up the day by method, with refunds, card totals per processor, deposits and open tickets", async () => {
     // A Stripe card payment, a deposit applied today (charged online on another day), a deposit taken online today and an unpaid ticket.
     ids.card = await ticket(main);
@@ -125,6 +151,9 @@ describe.skipIf(!up)("cash drawer and closing report", () => {
         { businessId: kit.A, saleId: ids.card, method: "card", status: "succeeded", amountCents: 6000, stripePaymentIntentId: `pi_desk_${kit.A}` },
       ]);
       await tx.update(schema.sales).set({ status: "paid", paidCents: 10_000, closedAt: new Date() }).where(eq(schema.sales.id, ids.card));
+      // A deposit refunded to the card today after a cancellation: $10 back through Stripe.
+      const [cancelled] = await tx.insert(schema.appointments).values({ businessId: kit.A, locationId: main, depositCents: 1000, depositStatus: "refunded", depositProvider: "stripe", createdAt: new Date(Date.now() - 3 * 86_400_000) }).returning();
+      await tx.insert(schema.auditLog).values({ businessId: kit.A, actorUserId: userId, action: "deposit.refund", entity: "appointment", entityId: cancelled!.id, diff: JSON.stringify({ cents: 1000, kept: 0 }) });
       return booked!;
     });
     expect(dep.depositCents).toBe(2500);
@@ -138,7 +167,7 @@ describe.skipIf(!up)("cash drawer and closing report", () => {
     expect(by.external_card).toMatchObject({ amountCents: 12_000, tipsCents: 2000 });
     expect(r.totals).toMatchObject({ amountCents: 33_000, refundsCents: 3000, netCents: 30_000 });
     // Stripe: $60 at the desk + $25 deposit booked online today; the $40 deposit applied today was charged on its booking day.
-    expect(r.processors).toEqual([{ provider: "stripe", chargedCents: 6000, depositsCents: 2500, refundsCents: 0, netCents: 8500 }]);
+    expect(r.processors).toEqual([{ provider: "stripe", chargedCents: 6000, depositsCents: 2500, refundsCents: 0, depositRefundsCents: 1000, netCents: 7500 }]);
     expect(r.deposits).toEqual({ count: 1, amountCents: 2500 });
     expect(r.tickets).toMatchObject({ count: 3, servicesCents: 30_000, productsCents: 0, tipCents: 3000 });
     expect(r.openTickets.map((t) => [t.id, t.dueCents])).toEqual([[ids.open, 10_000]]);

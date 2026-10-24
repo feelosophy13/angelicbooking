@@ -10,6 +10,7 @@ import { StackTable } from "@/components/stack-table";
 import { PrintButton } from "@/app/print/forms/[slug]/[submissionId]/print-button";
 import { listLocations } from "@/server/locations";
 import { closingDay } from "@/server/drawer";
+import { processorActuals, type ProcessorActuals } from "@/server/processor-actuals";
 import { paymentMethodLabel } from "@/lib/payment-methods";
 import { formatDateLong, formatMoney, formatTime, shiftISODate } from "@/lib/utils";
 import { siteLabels } from "@/lib/location-ui";
@@ -33,7 +34,8 @@ export default async function ClosingReportPage({ params, searchParams }: { para
   const date = sp.date && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : today;
   const base = `/app/${slug}`;
   if (!loc) return <Empty title="Add a location first" body="The closing report is per location." action={{ href: `${base}/settings/locations`, label: "Locations" }} />;
-  const r = await closingDay(business.id, loc.id, zonedToInstant(date, "00:00", tz), zonedToInstant(shiftISODate(date, 1), "00:00", tz));
+  const from = zonedToInstant(date, "00:00", tz), to = zonedToInstant(shiftISODate(date, 1), "00:00", tz);
+  const [r, actual] = await Promise.all([closingDay(business.id, loc.id, from, to), processorActuals(business, loc.id, from, to, date)]);
   const multi = locations.length > 1;
   const qs = (over: { date?: string }) => {
     const p = new URLSearchParams();
@@ -115,7 +117,7 @@ export default async function ClosingReportPage({ params, searchParams }: { para
               <div className="overflow-x-auto">
                 <StackTable className="w-full text-sm">
                   <thead className="text-left text-xs text-stone-500">
-                    <tr><th className={th}>Processor</th><th className={`${th} text-right`}>Charged at the desk</th><th className={`${th} text-right`}>Online deposits</th><th className={`${th} text-right`}>Refunds</th><th className={`${th} text-right`}>Net, before fees</th></tr>
+                    <tr><th className={th}>Processor</th><th className={`${th} text-right`}>Charged at the desk</th><th className={`${th} text-right`}>Online deposits</th><th className={`${th} text-right`}>Refunds</th><th className={`${th} text-right`}>Deposits refunded</th><th className={`${th} text-right`}>Net, before fees</th></tr>
                   </thead>
                   <tbody className="divide-y divide-stone-100">
                     {r.processors.map((p) => (
@@ -124,6 +126,7 @@ export default async function ClosingReportPage({ params, searchParams }: { para
                         <td className={num}>{money(p.chargedCents)}</td>
                         <td className={num}>{money(p.depositsCents)}</td>
                         <td className={num}>{p.refundsCents ? `− ${money(p.refundsCents)}` : money(0)}</td>
+                        <td className={num}>{p.depositRefundsCents ? `− ${money(p.depositRefundsCents)}` : money(0)}</td>
                         <td className={`${num} font-medium`}>{money(p.netCents)}</td>
                       </tr>
                     ))}
@@ -133,6 +136,7 @@ export default async function ClosingReportPage({ params, searchParams }: { para
                         <td className={num}>{money(ownTerminal.amountCents)}</td>
                         <td className={num}>—</td>
                         <td className={num}>{ownTerminal.refundsCents ? `− ${money(ownTerminal.refundsCents)}` : money(0)}</td>
+                        <td className={num}>—</td>
                         <td className={`${num} font-medium`}>{money(ownTerminal.netCents)}</td>
                       </tr>
                     ) : null}
@@ -142,6 +146,8 @@ export default async function ClosingReportPage({ params, searchParams }: { para
               <p className="px-4 pb-3 text-xs text-stone-500">A deposit is counted on the day it was charged online, not when it is applied at checkout. The processor pays out less its fees, often a day or two later.{ownTerminal ? " Match Card (own terminal) against that terminal's batch report." : ""}</p>
             </Card>
           ) : null}
+
+          {actual ? <ProcessorActualsCard actual={actual} expectedCents={r.processors.find((p) => p.provider === actual.provider)?.netCents ?? 0} money={money} /> : null}
 
           <div className="grid gap-4 lg:grid-cols-2">
             <Card className="break-inside-avoid">
@@ -204,5 +210,43 @@ export default async function ClosingReportPage({ params, searchParams }: { para
         </div>
       )}
     </div>
+  );
+}
+
+function ProcessorActualsCard({ actual, expectedCents, money }: { actual: ProcessorActuals; expectedCents: number; money: (c: number) => string }) {
+  const name = PROVIDER_LABEL[actual.provider] ?? actual.provider;
+  const row = (label: string, cents: number, strong = false) => (
+    <div className={`flex justify-between px-4 py-2 ${strong ? "font-semibold" : ""}`}><dt className={strong ? "" : "text-stone-600"}>{label}</dt><dd className="tabular-nums">{cents < 0 ? `− ${money(-cents)}` : money(cents)}</dd></div>
+  );
+  return (
+    <Card className="break-inside-avoid">
+      <h2 className="border-b border-stone-200 px-4 py-3 font-semibold text-stone-800">What {name} recorded</h2>
+      {"error" in actual ? (
+        <p className="px-4 py-3 text-sm text-amber-700">{actual.error}</p>
+      ) : actual.provider === "stripe" ? (
+        <>
+          <dl className="divide-y divide-stone-100 text-sm">
+            {row("Charged", actual.grossCents)}
+            {row("Refunded", -actual.refundsCents)}
+            {row("Fees", -actual.feesCents)}
+            {row("Net to your balance", actual.netCents, true)}
+            {row(`Difference from the app (${money(expectedCents)} before fees)`, actual.grossCents - actual.refundsCents - expectedCents)}
+            {row(actual.payouts.length ? `Paid out to your bank today (${actual.payouts.length})` : "Paid out to your bank today", actual.payouts.reduce((n, p) => n + p.amountCents, 0))}
+          </dl>
+          <p className="px-4 pb-3 text-xs text-stone-500">Read live from Stripe for this calendar day. A difference usually means a charge made outside the app, or one the app recorded on another day.{actual.sharedAccount ? " Other locations take money on the same Stripe account, so these numbers include them." : ""} Today&apos;s payout is money from earlier days.</p>
+        </>
+      ) : actual.batches.length ? (
+        <>
+          <dl className="divide-y divide-stone-100 text-sm">
+            {actual.batches.map((b) => (
+              <div key={b.id} className="flex justify-between px-4 py-2"><dt className="text-stone-600">Batch {b.id} · {b.count} {b.count === 1 ? "sale" : "sales"} · {money(b.salesCents)} less {money(b.refundsCents)} refunded</dt><dd className="tabular-nums font-medium">{money(b.netCents)}</dd></div>
+            ))}
+          </dl>
+          <p className="px-4 pb-3 text-xs text-stone-500">Helcim closes a batch once a day (5 PM Mountain Time unless you changed it), so a batch can span part of two days here. Helcim deposits each batch less its fees, which its own statement shows.</p>
+        </>
+      ) : (
+        <p className="px-4 py-3 text-sm text-stone-500">No Helcim batch closed on this day.</p>
+      )}
+    </Card>
   );
 }

@@ -1382,13 +1382,19 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       Prints cleanly and downloads as CSV.
 - [x] Permission `drawer.manage` (Front desk, Manager, Owner; migration 0137 back-fills stored roles that take payments and see every
       ticket). History and the closing report need `reports.view`. Tests: `core closeout.test.ts`, `server/drawer.test.ts`, role matrix.
-- [ ] A closed drawer can't be reopened or its count corrected; a mistake needs a pay-in / payout on the next day's drawer. Add
-      "Reopen" for someone with reports.view, with an audit entry.
-- [ ] A cash tip paid out of the drawer doesn't reach payroll. If the client tipped by card and the desk hands the stylist cash, payroll
-      still pays the card tip on the pay sheet: paid twice. Either mark the tip as paid out in payroll or keep tip payouts to cash tips.
-- [ ] Processor match is before fees and by day charged; a deposit refunded before checkout (appointment deposit refunds) isn't taken
-      off the processor net, and Stripe / Helcim pay out a day or two later. Pull the actual payout (Stripe balance transactions,
-      Helcim settlement) to compare automatically.
+- [x] Correct a closed drawer (2026-10-23, `correctClosedDrawer`, reports.view): recount and/or add a payout, pay-in or tip payout
+      missed while it was open (dated at the close, marked "added after closing"); expected and over/short are worked out again, the
+      reason is appended to the close note and the before/after goes to the audit log (`drawer.correct`). It stays closed.
+- [x] Cash tips paid out of the drawer come off the pay sheet (2026-10-23): `getPayrollInputs` adds one automatic line per tip payout
+      in the period ("Tip paid out from the drawer · date", minus the amount, not pay), so a card tip handed over in cash isn't paid
+      twice. Left out of per-location split pay sheets, like other adjustments.
+- [x] Processor match (2026-10-23): deposits refunded to the card before checkout (`deposit.refund` audit entries) come off the
+      processor net; the closing report shows what the processor itself recorded for the day (`server/processor-actuals.ts`):
+      Stripe balance transactions (charged, refunded, fees, net, difference from the app) and payouts arriving that day; Helcim
+      batches closed that day. Read live on each view.
+- [ ] Processor match gaps: a deposit's card fee given back with it isn't in the audit amount (small); a deposit refunded from the
+      Stripe dashboard (webhook) isn't counted; Stripe numbers cover the whole account when several locations share it (the report
+      says so); Helcim batches close at 5 PM Mountain, not at midnight, and carry no fees. Untested against a live connected account.
 - [ ] "Open tickets still unpaid" for a past day uses each ticket's status now (a ticket paid since then drops off).
 - [ ] No safe drop / bank deposit flow beyond recording it as a payout, and no blind count (the desk sees expected while counting).
 ### Fill My Books and the AI assistant (built 2026-10-22, migration 0138; setup and cost in `docs-ops.md`)

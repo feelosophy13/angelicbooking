@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { db, schema, withTenant, type TenantDb } from "@angelic/db";
 import { CARD_FEE_METHODS, computePayroll, isScheduledPeriod, lineCommissionCents, periodContaining, rangesOverlap, salaryShare, weekStartOf, splitTips, zonedToInstant, type Adjustment, type HoursEntry, type OmittedLine, type PayrollEmployee, type PayrollLine, type PayrollResult, type PaySchedule, type TipPart } from "@angelic/core";
 import { shiftISODate } from "@/lib/utils";
@@ -340,7 +340,7 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
     withTenant(business.id, async (tx) => {
       // Scheduled changes whose date has arrived land on the staff record here, so lists stay current.
       await syncCurrentRates(tx, localDate(new Date(), business.timezone));
-      const [staff, hours, adjustments] = await Promise.all([
+      const [staff, hours, adjustments, tipPayouts] = await Promise.all([
         tx.select().from(schema.staff).orderBy(asc(schema.staff.displayName)),
         tx
           .select({ staffId: schema.timeEntries.staffId, date: schema.timeEntries.date, minutes: schema.timeEntries.minutes, locationId: schema.timeEntries.locationId })
@@ -353,10 +353,15 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
           // An adjustment belongs to the period that contains the day it was dated from, so it shows once however the period's start and
           // end are picked (not only when they match the dates it was entered with).
           .where(and(gte(schema.payrollAdjustments.periodStart, period.start), lte(schema.payrollAdjustments.periodStart, period.end))),
+        // Tips the desk handed a stylist in cash from the drawer during the period: already in their hand, so taken off the pay sheet.
+        tx
+          .select({ staffId: schema.drawerMovements.staffId, amountCents: schema.drawerMovements.amountCents, createdAt: schema.drawerMovements.createdAt })
+          .from(schema.drawerMovements)
+          .where(and(eq(schema.drawerMovements.kind, "tip_payout"), sql`${schema.drawerMovements.staffId} is not null`, gte(schema.drawerMovements.createdAt, zonedToInstant(period.start, "00:00", business.timezone)), lt(schema.drawerMovements.createdAt, zonedToInstant(shiftISODate(period.end, 1), "00:00", business.timezone)))),
       ]);
       // Pay settings as they stood in the period (an old period re-runs with its old rates; a change inside it splits the period).
       const rates = await ratesForPeriod(tx, staff.map((x) => x.id), period.start, period.end);
-      return { staff, hours, adjustments, rates };
+      return { staff, hours, adjustments, tipPayouts, rates };
     }),
   ]);
   const split = !!opts.split && !!locationId;
@@ -382,7 +387,13 @@ export async function getPayrollInputs(business: Business, period: PayrollPeriod
     };
   });
   const hours: HoursEntry[] = rest.hours.filter((h) => !split || h.locationId === locationId).map((h) => ({ staffId: h.staffId, date: h.date, minutes: h.minutes }));
-  const adjustments: Adjustment[] = split ? [] : rest.adjustments.map((a) => ({ staffId: a.staffId, label: a.label, amountCents: a.amountCents, countsAsPay: a.countsAsPay }));
+  const adjustments: Adjustment[] = split
+    ? []
+    : [
+        ...rest.adjustments.map((a) => ({ staffId: a.staffId, label: a.label, amountCents: a.amountCents, countsAsPay: a.countsAsPay })),
+        // Automatic, one per payout: the pay sheet shows the tips earned, then this line for the part already paid out of the drawer.
+        ...rest.tipPayouts.map((t) => ({ staffId: t.staffId!, label: `Tip paid out from the drawer · ${localDate(t.createdAt, business.timezone)}`, amountCents: -t.amountCents, countsAsPay: false })),
+      ];
   const nameOf = new Map(employees.map((e) => [e.staffId, e.name]));
   const rateChanges = rest.rates.changes.map((c) => ({ ...c, name: nameOf.get(c.staffId) ?? "" }));
   return {

@@ -157,6 +157,52 @@ export async function closeDrawer(input: { businessId: string; sessionId: string
   });
 }
 
+/**
+ * Correct a drawer after it was closed: a recount, and/or a pay-in, payout or tip payout that was missed while it was open. Expected cash
+ * is worked out again from everything the drawer holds, the over/short follows the new count, the reason is added to the close note and
+ * the before and after go to the activity log. For someone who sees reports (managers, owners); the desk can't change a closed count.
+ */
+export async function correctClosedDrawer(input: {
+  businessId: string;
+  sessionId: string;
+  countedCents: number | null;
+  missed: { kind: "pay_in" | "payout" | "tip_payout"; amountCents: number; reason: string; staffId: string | null } | null;
+  reason: string;
+  actorUserId: string;
+  actorName: string;
+}) {
+  const reason = input.reason.trim();
+  if (!reason) throw new DrawerError("Say why it's being corrected.", "reason");
+  if (input.countedCents == null && !input.missed) throw new DrawerError("Change the count, or add what was missed.", "counted");
+  if (input.countedCents != null && input.countedCents < 0) throw new DrawerError("Enter the amount counted.", "counted");
+  if (input.missed && input.missed.amountCents <= 0) throw new DrawerError("Enter the missed amount.", "missedAmount");
+  if (input.missed?.kind === "tip_payout" && !input.missed.staffId) throw new DrawerError("Choose who the tip was paid to.", "missedStaffId");
+  return withTenant(input.businessId, async (tx) => {
+    const [s] = await tx.select().from(schema.drawerSessions).where(eq(schema.drawerSessions.id, input.sessionId)).for("update");
+    if (!s) throw new DrawerError("Drawer not found.");
+    if (s.status !== "closed") throw new DrawerError("This drawer is still open: change it on the drawer itself.");
+    if (input.missed) {
+      // Dated when the drawer closed, so it lands in that day (and that pay period, for a tip payout), not today.
+      await tx.insert(schema.drawerMovements).values({ businessId: input.businessId, sessionId: s.id, kind: input.missed.kind, amountCents: input.missed.amountCents, reason: `${input.missed.reason} (added after closing)`, staffId: input.missed.kind === "tip_payout" ? input.missed.staffId : null, createdByUserId: input.actorUserId, createdAt: s.closedAt ?? new Date() });
+    }
+    const { expectedCents } = await flowsOf(tx, s);
+    const countedCents = input.countedCents ?? s.countedCents ?? 0;
+    const diff = overShort(countedCents, expectedCents);
+    const stamp = `Corrected by ${input.actorName}: ${reason}`;
+    await tx
+      .update(schema.drawerSessions)
+      .set({ expectedCents, countedCents, overShortCents: diff, denominations: input.countedCents != null ? null : s.denominations, closeNote: [s.closeNote, stamp].filter(Boolean).join("\n") })
+      .where(eq(schema.drawerSessions.id, s.id));
+    await audit(tx, input.businessId, input.actorUserId, "drawer.correct", s.id, {
+      reason,
+      before: { expectedCents: s.expectedCents, countedCents: s.countedCents, overShortCents: s.overShortCents },
+      after: { expectedCents, countedCents, overShortCents: diff },
+      missed: input.missed,
+    });
+    return { expectedCents, countedCents, overShortCents: diff };
+  });
+}
+
 /** Closed drawers between two instants (by close time), newest first, optionally at one location. */
 export async function drawerHistory(businessId: string, opts: { from: Date; to: Date; locationId?: string | null }) {
   return withTenant(businessId, (tx) =>
@@ -181,7 +227,7 @@ export interface ClosingDay extends ClosingReport {
 export async function closingDay(businessId: string, locationId: string, from: Date, to: Date): Promise<ClosingDay> {
   return withTenant(businessId, async (tx) => {
     const atLoc = eq(schema.sales.locationId, locationId);
-    const [payRows, refundRows, ticketRows, depositRows, openRows] = await Promise.all([
+    const [payRows, refundRows, ticketRows, depositRows, openRows, depositRefundRows] = await Promise.all([
       tx
         .select({ id: schema.payments.id, saleId: schema.payments.saleId, method: schema.payments.method, provider: schema.payments.provider, amountCents: schema.payments.amountCents, drawerSessionId: schema.payments.drawerSessionId, depositPi: schema.appointments.depositPaymentIntentId, pi: schema.payments.stripePaymentIntentId, invoice: schema.payments.providerInvoice })
         .from(schema.payments)
@@ -217,6 +263,13 @@ export async function closingDay(businessId: string, locationId: string, from: D
         .leftJoin(schema.clients, eq(schema.clients.id, schema.sales.clientId))
         .where(and(atLoc, eq(schema.sales.status, "open"), lt(schema.sales.createdAt, to), sql`${schema.sales.totalCents} > ${schema.sales.paidCents}`))
         .orderBy(asc(schema.sales.createdAt)),
+      // Deposits refunded on the day while still on their appointment (refundDeposit logs each with its amount; store-credit refunds
+      // keep the money, so they aren't here).
+      tx
+        .select({ provider: schema.appointments.depositProvider, diff: schema.auditLog.diff })
+        .from(schema.auditLog)
+        .innerJoin(schema.appointments, eq(schema.appointments.id, schema.auditLog.entityId))
+        .where(and(eq(schema.auditLog.action, "deposit.refund"), eq(schema.appointments.locationId, locationId), gte(schema.auditLog.at, from), lt(schema.auditLog.at, to))),
     ]);
     const saleIds = ticketRows.map((t) => t.saleId);
     const [tipLines, ticketPays] = saleIds.length
@@ -235,6 +288,10 @@ export async function closingDay(businessId: string, locationId: string, from: D
         payments: ticketPays.filter((p) => p.saleId === t.saleId),
       })),
       deposits: depositRows,
+      depositRefunds: depositRefundRows.map((r) => {
+        const d = (typeof r.diff === "string" ? JSON.parse(r.diff) : r.diff) as { cents?: number } | null;
+        return { provider: r.provider, amountCents: Math.round(Number(d?.cents ?? 0)) };
+      }).filter((r) => r.amountCents > 0),
     });
     const drawers = await tx
       .select({ s: schema.drawerSessions, locationName: schema.locations.name, openedByName: opener, closedByName: closer })

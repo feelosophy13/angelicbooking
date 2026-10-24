@@ -6,7 +6,7 @@ import { Input, MoneyInput, Select, Textarea } from "@/components/ui";
 import { Disclosure } from "@/components/disclosure";
 import { Segmented } from "../sales/[saleId]/forms";
 import { cn, formatMoney } from "@/lib/utils";
-import { closeDrawerAction, drawerMovementAction, openDrawerAction } from "./actions";
+import { closeDrawerAction, correctDrawerAction, drawerMovementAction, openDrawerAction } from "./actions";
 
 const toCents = (v: string) => (/^\$?\d{1,7}(\.\d{1,2})?$/.test(v.trim()) ? Math.round(Number(v.trim().replace("$", "")) * 100) : null);
 
@@ -45,7 +45,7 @@ export function MovementForm({ slug, sessionId, currency, staff }: { slug: strin
           <MoneyInput name="amount" currency={currency.toUpperCase()} />
         </Field>
         {kind === "tip_payout" ? (
-          <Field label="Paid to" name="staffId" required>
+          <Field label="Paid to" name="staffId" required hint="Taken off their next pay sheet as already paid, so payroll doesn't pay it twice.">
             <Select name="staffId" defaultValue="">
               <option value="" disabled>Choose a person</option>
               {staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -119,5 +119,46 @@ export function CloseDrawerForm({ slug, sessionId, currency, expectedCents }: { 
       )}
       <SubmitButton pendingText="Closing…">Close drawer</SubmitButton>
     </ActionForm>
+  );
+}
+
+/**
+ * Correct a drawer after closing: a recount and/or something missed while it was open. Opens on demand; the reason is required and
+ * goes on the close note and in the activity log.
+ */
+export function CorrectDrawerForm({ slug, sessionId, currency, countedCents, staff }: { slug: string; sessionId: string; currency: string; countedCents: number | null; staff: { id: string; name: string }[] }) {
+  const [missed, setMissed] = useState<"" | "pay_in" | "payout" | "tip_payout">("");
+  return (
+    <Disclosure title="Correct this close-out" hint="recount or something missed">
+      <ActionForm action={correctDrawerAction} onReset={() => setMissed("")}>
+        <input type="hidden" name="slug" value={slug} />
+        <input type="hidden" name="sessionId" value={sessionId} />
+        <Field label="Counted" name="counted" hint={`Leave as is to keep ${countedCents != null ? formatMoney(countedCents, currency) : "the count"}.`}>
+          <MoneyInput name="counted" currency={currency.toUpperCase()} defaultValue={countedCents != null ? (countedCents / 100).toFixed(2) : ""} />
+        </Field>
+        <Field label="Missed while it was open" name="missedKind">
+          <Select name="missedKind" value={missed} onChange={(e) => setMissed(e.target.value as typeof missed)}>
+            <option value="">Nothing</option>
+            <option value="payout">A payout</option>
+            <option value="pay_in">A pay-in</option>
+            <option value="tip_payout">A tip paid out</option>
+          </Select>
+        </Field>
+        {missed ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Amount" name="missedAmount" required><MoneyInput name="missedAmount" currency={currency.toUpperCase()} /></Field>
+            {missed === "tip_payout" ? (
+              <Field label="Paid to" name="missedStaffId" required hint="Taken off their pay sheet for that day's period.">
+                <Select name="missedStaffId" defaultValue=""><option value="" disabled>Choose a person</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select>
+              </Field>
+            ) : (
+              <Field label="What it was" name="missedReason"><Input name="missedReason" maxLength={120} placeholder={missed === "pay_in" ? "Change run" : "Supplies"} /></Field>
+            )}
+          </div>
+        ) : null}
+        <Field label="Why it's being corrected" name="reason" required><Textarea name="reason" rows={2} maxLength={300} placeholder="Recounted the next morning: a $20 was stuck in the tray." /></Field>
+        <SubmitButton variant="secondary" pendingText="Saving…">Save correction</SubmitButton>
+      </ActionForm>
+    </Disclosure>
   );
 }

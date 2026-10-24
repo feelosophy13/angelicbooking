@@ -131,7 +131,7 @@ export function DrawerPanel({ d, slug, currency, tz, canManage, staff }: { d: Dr
               <div className="flex justify-between"><dt className="text-stone-600">Counted</dt><dd className="tabular-nums">{money(d.countedCents ?? 0)}</dd></div>
               <div className="flex justify-between border-t border-stone-100 pt-2"><dt className="font-medium">Over / short</dt><dd><OverShort cents={d.overShortCents ?? 0} currency={currency} /></dd></div>
             </dl>
-            {d.closeNote ? <p className="mt-3 rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-700">{d.closeNote}</p> : null}
+            {d.closeNote ? <p className="mt-3 whitespace-pre-line rounded-lg bg-stone-50 px-3 py-2 text-sm text-stone-700">{d.closeNote}</p> : null}
             {d.denominations ? (
               <table className="mt-4 w-full text-sm">
                 <caption className="mb-1 text-left text-xs font-medium text-stone-500">Counted by bill and coin</caption>

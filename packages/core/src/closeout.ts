@@ -127,6 +127,8 @@ export interface ProcessorRow {
   /** Deposits charged at online booking today. */
   depositsCents: number;
   refundsCents: number;
+  /** Deposits given back today before they reached a ticket (cancellations, courtesy refunds): money back through the processor too. */
+  depositRefundsCents: number;
   /** What should reach the payout for this day, before the processor's fees. */
   netCents: number;
 }
@@ -144,7 +146,8 @@ export interface ClosingReport {
  * the sale was); `tickets` are the tickets closed on the day, which decide tips by method, sales, discounts and tax (as on Reports);
  * `deposits` are the deposits taken at online booking on the day.
  */
-export function closingReport(input: { payments: CloseoutPayment[]; refunds: CloseoutRefund[]; tickets: CloseoutTicket[]; deposits: CloseoutDeposit[] }): ClosingReport {
+export function closingReport(input: { payments: CloseoutPayment[]; refunds: CloseoutRefund[]; tickets: CloseoutTicket[]; deposits: CloseoutDeposit[]; /** Deposits refunded on the day while still on their appointment. */ depositRefunds?: CloseoutDeposit[] }): ClosingReport {
+  const depositRefunds = input.depositRefunds ?? [];
   const tipByMethod = new Map<string, number>();
   for (const t of input.tickets) {
     const per = tipsPerPayment(t.tips, t.payments);
@@ -161,12 +164,13 @@ export function closingReport(input: { payments: CloseoutPayment[]; refunds: Clo
       return { method, count: pays.length, amountCents, tipsCents: tipByMethod.get(method) ?? 0, refundsCents, netCents: amountCents - refundsCents };
     });
   const add = (k: "count" | "amountCents" | "tipsCents" | "refundsCents" | "netCents") => methods.reduce((n, r) => n + r[k], 0);
-  const providers = [...new Set([...input.payments.filter((p) => PROCESSOR_METHODS.has(p.method)).map((p) => p.provider), ...input.deposits.map((d) => d.provider), ...input.refunds.filter((r) => PROCESSOR_METHODS.has(r.method)).map((r) => r.provider)])].sort();
+  const providers = [...new Set([...input.payments.filter((p) => PROCESSOR_METHODS.has(p.method)).map((p) => p.provider), ...input.deposits.map((d) => d.provider), ...input.refunds.filter((r) => PROCESSOR_METHODS.has(r.method)).map((r) => r.provider), ...depositRefunds.map((d) => d.provider)])].sort();
   const processors: ProcessorRow[] = providers.map((provider) => {
     const chargedCents = input.payments.filter((p) => p.provider === provider && PROCESSOR_METHODS.has(p.method) && !p.appliedDeposit).reduce((n, p) => n + p.amountCents, 0);
     const depositsCents = input.deposits.filter((d) => d.provider === provider).reduce((n, d) => n + d.amountCents, 0);
     const refundsCents = input.refunds.filter((r) => r.provider === provider && PROCESSOR_METHODS.has(r.method)).reduce((n, r) => n + r.amountCents, 0);
-    return { provider, chargedCents, depositsCents, refundsCents, netCents: chargedCents + depositsCents - refundsCents };
+    const depositRefundsCents = depositRefunds.filter((d) => d.provider === provider).reduce((n, d) => n + d.amountCents, 0);
+    return { provider, chargedCents, depositsCents, refundsCents, depositRefundsCents, netCents: chargedCents + depositsCents - refundsCents - depositRefundsCents };
   });
   const tsum = (k: keyof Omit<CloseoutTicket, "saleId" | "tips" | "payments">) => input.tickets.reduce((n, t) => n + t[k], 0);
   const subtotalCents = tsum("subtotalCents");

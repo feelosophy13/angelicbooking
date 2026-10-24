@@ -28,6 +28,8 @@ export type HelcimTransaction = {
   approvalCode?: string | null;
 };
 
+export type HelcimCardBatch = { id: number; dateCreated: string; dateClosed?: string | null; closed: boolean | number; totalSales?: number; totalRefunds?: number; totalReversed?: number; netSales?: number; countApproved?: number };
+
 export type HelcimCard = { id: number; cardToken: string; cardF6L4: string; cardExpiry?: string | null; cardHolderName?: string | null };
 
 async function call<T>(token: string, method: "GET" | "POST" | "DELETE", path: string, body?: unknown, idempotencyKey?: string): Promise<T> {
@@ -77,6 +79,10 @@ export const helcim = {
     call<HelcimTransaction>(token, "POST", "/payment/reverse", { cardTransactionId: p.transactionId, ipAddress: p.ipAddress }, idemKey("reverse", p.key)),
   refund: (token: string, p: { key: string; transactionId: number; amountCents: number; ipAddress: string }) =>
     call<HelcimTransaction>(token, "POST", "/payment/refund", { originalTransactionId: p.transactionId, amount: dollars(p.amountCents), ipAddress: p.ipAddress }, idemKey("refund", p.key)),
+
+  // --- Card batches (settlement) ---
+  /** Recent card batches. A batch closes once a day (5 PM by default) and is what Helcim deposits; dates are Mountain Time. */
+  cardBatches: (token: string) => call<HelcimCardBatch[]>(token, "GET", "/card-batches"),
 
   // --- HelcimPay.js ---
   initializeCheckout: (token: string, p: { paymentType: "purchase" | "preauth" | "verify"; amountCents: number; currency: string; customerCode?: string | null; brandColor?: string | null }) =>
