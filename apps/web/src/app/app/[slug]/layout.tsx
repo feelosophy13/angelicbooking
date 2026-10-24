@@ -51,6 +51,7 @@ export default async function AppLayout({ children, params }: { children: React.
   const newItems: NewItem[] = [
     ...(bookingAccess(permissions, staffId ?? null) ? [{ href: `${base}/appointments/new`, label: "Appointment", hint: "Book a client in", icon: "appointment" as const }] : []),
     ...(can(permissions, "checkout.take") ? [{ href: `${base}/sales/new`, label: "Sale", hint: "Products, gift cards, a walk-in", icon: "sale" as const }] : []),
+    ...(can(permissions, "checkout.take") ? [{ href: `${base}/sales/invoices/new`, label: "Invoice", hint: "A bill the client pays online", icon: "invoice" as const }] : []),
     ...(can(permissions, "clients.write") ? [{ href: `${base}/clients/new`, label: "Client", hint: "Add to your client list", icon: "client" as const }] : []),
     ...(blockingAccess(permissions, staffId ?? null) ? [{ href: `${base}/appointments/block`, label: "Blocked time", hint: "Lunch, a meeting, time away", icon: "block" as const }] : []),
   ];

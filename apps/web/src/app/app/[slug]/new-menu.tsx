@@ -2,15 +2,15 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Ban, CalendarPlus, ChevronDown, Plus, Receipt, UserPlus } from "lucide-react";
+import { Ban, CalendarPlus, ChevronDown, FileText, Plus, Receipt, UserPlus } from "lucide-react";
 
-export type NewItem = { href: string; label: string; hint: string; icon: "appointment" | "sale" | "client" | "block" };
+export type NewItem = { href: string; label: string; hint: string; icon: "appointment" | "sale" | "invoice" | "client" | "block" };
 
-const ICONS = { appointment: CalendarPlus, sale: Receipt, client: UserPlus, block: Ban };
+const ICONS = { appointment: CalendarPlus, sale: Receipt, invoice: FileText, client: UserPlus, block: Ban };
 
 /**
  * "+ New" at the top of the sidebar and the phone menu: one button that opens what can be started from anywhere (an appointment, a
- * sale, a client, blocked time), each only for those allowed to. With a single choice it is that choice's button, no menu.
+ * sale, an invoice, a client, blocked time), each only for those allowed to. With a single choice it is that choice's button, no menu.
  */
 export function NewMenu({ items }: { items: NewItem[] }) {
   const [open, setOpen] = useState(false);

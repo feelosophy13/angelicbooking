@@ -45,7 +45,7 @@ import { canWriteLashMaps, lashMapsFor } from "@/server/lash-maps";
 import { LashMapEyes } from "@/components/lash-map";
 import { smsAvailableFor } from "@/server/messaging";
 import { linkedClients, RELATIONS } from "@/server/client-links";
-import { linkClientAction, unlinkClientAction } from "./family-actions";
+import { addFamilyMemberAction, linkClientAction, unlinkClientAction } from "./family-actions";
 import { ClientPicker } from "@/components/client-picker";
 import { canChartClient } from "@/server/charts";
 import { ClientTabs } from "./client-tabs";
@@ -388,7 +388,29 @@ export default async function ClientPage({ params }: { params: Promise<{ slug: s
                 </ul>
               ) : <p className="text-xs text-stone-500">Link a child, partner or parent to book for them from here. A child without a phone gets their reminders here.</p>}
               {write ? (
-                <Disclosure variant="inset" title="Link someone" className="mt-3">
+                <Disclosure variant="inset" title="Add a family member" hint="not a client yet" className="mt-3">
+                  <ActionForm action={addFamilyMemberAction}>
+                    <input type="hidden" name="slug" value={slug} />
+                    <input type="hidden" name="clientId" value={client.id} />
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="First name" name="firstName" required><Input name="firstName" autoComplete="off" /></Field>
+                      <Field label="Last name" name="lastName"><Input name="lastName" defaultValue={client.lastName} autoComplete="off" /></Field>
+                    </div>
+                    <Field label={`They are ${client.firstName}'s`} name="relation">
+                      <Select name="relation" defaultValue="child">{RELATIONS.map((r) => <option key={r.value} value={r.value}>{r.label.toLowerCase()}</option>)}</Select>
+                    </Field>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Mobile (optional)" name="phone" hint={`Leave blank and their reminders come to ${client.firstName}.`}><Input name="phone" type="tel" autoComplete="off" /></Field>
+                      <Field label="Email (optional)" name="email"><Input name="email" type="email" autoComplete="off" /></Field>
+                    </div>
+                    <Field label="Birthday (optional)" name="birthday"><Input name="birthday" type="date" className="w-44" /></Field>
+                    <Checkbox name="addAnyway" label="Add as a new client anyway" hint="Only if a client with the same name is someone else." />
+                    <SubmitButton variant="secondary" pendingText="Adding…">Add and link</SubmitButton>
+                  </ActionForm>
+                </Disclosure>
+              ) : null}
+              {write ? (
+                <Disclosure variant="inset" title="Link someone" hint="already a client" className="mt-2">
                   <ActionForm action={linkClientAction}>
                     <input type="hidden" name="slug" value={slug} />
                     <input type="hidden" name="clientId" value={client.id} />

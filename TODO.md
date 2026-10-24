@@ -1478,6 +1478,8 @@ Operational detail (ids, commands, env names) lives in `docs-ops.md`; product pl
       everyone's services and deposits; paying it completes every appointment on it. Each can still be checked out on their own.
 - [x] Client page → Family: link (child, parent, partner, other; stored both ways) and unlink, "Book for …" per person. Each keeps their
       own history, notes and forms. A child without a phone or email gets confirmations and reminders at a parent's (never marketing).
+- [x] Client page → Family → "Add a family member" (2026-10-23): creates the new client and links them in one step; phone and email
+      optional (a child without either gets messages through this client); a same-name client on file is offered first ("Link someone").
 - [ ] A refund made in Stripe's dashboard (charge.refunded webhook) on a group's shared charge is recorded against one appointment
       only (`recordStripeSideRefund` finds the first). Refund group deposits from the app until this splits by share.
 - [ ] A guest's no-show fee: the card was saved on the booker's Stripe customer, so the guest's appointment page offers no saved
