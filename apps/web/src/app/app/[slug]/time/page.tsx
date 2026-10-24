@@ -70,10 +70,10 @@ export default async function TimePage({ params, searchParams }: { params: Promi
         </AutoSubmitForm>
         {edit ? <LinkButton href={`/app/${slug}/time/new`} variant="primary" size="sm"><Plus className="h-4 w-4" /> Add hours</LinkButton> : null}
       </PageHeader>
-      <div className="max-w-3xl">
+      <div>
         <div className="space-y-6">
           {data.me ? (
-            <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <Card className="flex max-w-3xl flex-wrap items-center justify-between gap-3 p-4">
               <div>
                 <p className="font-medium">{data.me.displayName}</p>
                 <p className="text-sm text-stone-600">{data.open?.clockInAt ? `Clocked in at ${formatTime(data.open.clockInAt, tz)}` : "Not clocked in"}</p>
@@ -85,7 +85,7 @@ export default async function TimePage({ params, searchParams }: { params: Promi
             </Card>
           ) : null}
           {manage ? (
-            <Card className="p-4">
+            <Card className="max-w-3xl p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="font-medium">Clock-in QR code</h2>
@@ -120,15 +120,15 @@ export default async function TimePage({ params, searchParams }: { params: Promi
                 <tbody className="divide-y divide-stone-100">
                   {data.entries.map((e) => (
                     <tr key={e.id} className={e.note?.includes("Auto clock-out") ? "bg-amber-50" : ""}>
-                      <td className="px-4 py-2">{dateShort(e.date)}</td>
+                      <td className="whitespace-nowrap px-4 py-2">{dateShort(e.date)}</td>
                       <td className="px-4 py-2">{name.get(e.staffId)}</td>
-                      <td className="px-4 py-2 text-stone-600">{e.clockInAt ? `${formatTime(e.clockInAt, tz)} – ${e.clockOutAt ? formatTime(e.clockOutAt, tz) : "…"}` : "manual"}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-stone-600">{e.clockInAt ? `${formatTime(e.clockInAt, tz)} – ${e.clockOutAt ? formatTime(e.clockOutAt, tz) : "…"}` : "manual"}</td>
                       {multiLocation ? <td className="px-4 py-2 text-stone-600">{locName(e.locationId) ?? ""}</td> : null}
                       <td className="px-4 py-2 text-right">{fmtHours(e.minutes)}</td>
                       <td className="px-4 py-2 text-stone-600">{e.note ?? ""}</td>
                       <td className="px-2 py-2 text-right">{edit ? (
                         <details className="inline-block text-left">
-                          <summary className="hit w-fit cursor-pointer text-xs text-stone-500 hover:text-stone-800">Edit</summary>
+                          <summary className="hit w-fit cursor-pointer list-none text-xs [&::-webkit-details-marker]:hidden text-stone-500 hover:text-stone-800">Edit</summary>
                           <form action={editTimeEntry} className="mt-1 flex w-52 flex-col gap-1">
                             <input type="hidden" name="slug" value={slug} /><input type="hidden" name="id" value={e.id} />
                             <Input name="hours" type="number" step="0.25" min={0} max={24} defaultValue={(e.minutes / 60).toFixed(2)} aria-label="Hours" />
